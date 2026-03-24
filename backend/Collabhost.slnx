@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Collabhost.Api.Tests/Collabhost.Api.Tests.csproj" />
+  <Project Path="Collabhost.Api/Collabhost.Api.csproj" />
+  <Project Path="Collabhost.AppHost/Collabhost.AppHost.csproj" />
+  <Project Path="Collabhost.ServiceDefaults/Collabhost.ServiceDefaults.csproj" />
+</Solution>
