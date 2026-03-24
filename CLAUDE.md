@@ -4,6 +4,8 @@
 
 Collabhost is a **mini self-hosted application platform** — a control plane for managing local services, workers, MCP servers, and scheduled jobs from a single dashboard. It is not a full PaaS. It manages processes on the host machine, routes traffic through Caddy, and provides operational visibility.
 
+See [[.agents/WORKFLOW]] for planning process. See [[COLLABOARD]] for board conventions.
+
 **Mental model:**
 - **Caddy** = front door (edge reverse proxy, TLS, routing)
 - **ASP.NET Core** = control tower (app registry, process supervision, health, auth)
@@ -18,7 +20,7 @@ Collabhost is a **mini self-hosted application platform** — a control plane fo
 | Backend | .NET 10 / C# (Minimal API, EF Core, SQLite) |
 | Frontend | React 18 + TypeScript, Vite, Tailwind, shadcn/ui |
 | Testing | xUnit + Shouldly, Arrange-Act-Assert |
-| Orchestration | Aspire 13.1, OpenTelemetry |
+| Orchestration | Aspire 13.3, OpenTelemetry |
 | Jobs | Hangfire (persistent, recurring, dashboard built-in) |
 | Reverse Proxy | Caddy (edge), managed externally |
 | Agent protocol | MCP (HTTP transport) |
@@ -214,6 +216,70 @@ Modules register routes, processes, scheduled jobs, dashboard widgets, and healt
 
 **Delegates:** Raw HTTP serving (Kestrel), TLS termination (Caddy), reverse proxy transport (Caddy), cron parsing (Hangfire), log storage engine (future — Loki or similar).
 
+## Dispatching Work
+
+### Dispatch Rules
+
+- **Spec first:** Write specs to `.agents/specs/` before dispatching. No dispatch without a spec.
+- Include ALL context the child needs — it has no memory of this session
+- **Ask, don't guess:** Include: "If you get stuck or unsure, report back rather than guessing."
+- Max 3 follow-up rounds per task before escalating to user
+- Dispatch in parallel when independent, sequentially when dependent
+
+### Sub-Agent Conventions
+
+When dispatching coding or evaluation sub-agents via the Agent tool:
+
+- **Model:** Always use `model: "opus"` (Opus High)
+- **Skills:** Instruct sub-agents to use skills appropriate to the task — e.g., dotnet-dev for C# tasks, typescript-dev for TypeScript. A research agent doesn't need coding skills.
+- **Report format:** Every sub-agent must return a standardized report. Include this template in the prompt:
+
+    ```
+    Return your findings in this standardized format:
+
+    ## Report: <card or task title>
+
+    ### Summary
+    <1-2 sentence verdict>
+
+    ### Deliverable Status
+    | Deliverable | Status | Notes |
+    |---|---|---|
+    | <item> | Done / Partial / Missing | <detail> |
+
+    ### Verification
+    - Build: <pass/fail/not run — which sub-project(s)>
+    - Smoke test: <pass/fail/not run>
+
+    ### Files Touched
+    - <path> — <created/modified/read> — <what changed>
+
+    ### Gaps & Issues
+    1. <issue description>
+
+    ### Convention Violations
+    <list or "None">
+
+    ### Recommendation
+    <next steps, move to Review, stays in Ready, etc.>
+    ```
+
+### Parallel Dispatch (Worktrees)
+
+**Partition by resource, not by task.** When dispatching parallel agents, group work by the files being touched — not by the card or task being worked on. Two cards that edit the same files must go to the same agent. Two cards that touch completely separate projects can go to separate agents. The rule: **if two agents could write to the same file, they must be the same agent.**
+
+When multiple agents need the same repo simultaneously, use **git worktrees** for physically separate working directories.
+
+```powershell
+git worktree add ../<repo>-wt-<short-name> -b feature/<branch-name> <start-point>
+```
+
+Each worktree needs its own dependency install. The `.git` store is shared.
+
+## Skills
+
+Use available skills proactively when the task matches — e.g., invoke dotnet-dev when writing C# or typescript-dev for TypeScript. Skills are declared in your session; no need to search directories.
+
 ## Agent Behavior Rules
 
 1. **Safety over speed.** Never auto-fix lint errors — report to user.
@@ -222,15 +288,16 @@ Modules register routes, processes, scheduled jobs, dashboard widgets, and healt
 4. **On any issues, errors, or unexpected behavior — stop and ask.**
 5. **Max 3 follow-ups before escalation.**
 
-## Relationships
+## Relationship to Other Projects
 
 | Project | Path | Relationship |
 |---------|------|-------------|
 | **Collaboard** | `../collaboard` | Kanban tracking via MCP SSE. Work tracked on `collabhost` board. |
 | **Collabot** | `../collabot` | Agent platform. Will consume Collabhost for service orchestration. |
+| **Collabot TUI** | `../collabot-tui` | Terminal UI for Collabot. |
 | **Ecosystem** | `../ecosystem` | Shared tooling. Collabhost may consume ecosystem scripts. |
-| **Lab** | `../lab` | Research workspace. Architecture decisions researched here. |
-| **KB** | `../kb` | Conventions and patterns. |
+| **Research Lab** | `../lab` | Research workspace. Architecture decisions researched here. |
+| **Knowledge Base** | `../kb` | Conventions and patterns. |
 
 ## Git Rules
 
@@ -238,6 +305,10 @@ Modules register routes, processes, scheduled jobs, dashboard widgets, and healt
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`
 - Squash merge to main
 - All changes via feature branch + PR
+
+## Context Window Management
+
+When working on a specific subsystem (`backend/` or `frontend/`), stay scoped to that directory. Don't read source code from the other subsystem — it wastes context and risks confusion. Cross-subsystem features should be partitioned into separate tasks.
 
 ## Path Conventions
 
