@@ -1,5 +1,10 @@
 using System.Reflection;
 
+using Collabhost.Api.Auth;
+using Collabhost.Api.Data;
+using Collabhost.Api.Data.Interceptors;
+using Collabhost.Api.Features;
+
 // --version flag
 if (args.Contains("--version"))
 {
@@ -20,9 +25,8 @@ builder.AddServiceDefaults();
 
 // Database
 var connectionString = builder.Configuration.GetConnectionString("Host")
-    ?? "Data Source=./data/collabhost.db";
+    ?? "Data Source=./db/collabhost.db";
 
-// Ensure data directory exists
 var dbPath = connectionString.Replace("Data Source=", "");
 var dbDir = Path.GetDirectoryName(Path.GetFullPath(dbPath));
 if (dbDir is not null)
@@ -30,11 +34,23 @@ if (dbDir is not null)
     Directory.CreateDirectory(dbDir);
 }
 
+builder.Services.AddDbContext<CollabhostDbContext>
+(
+    options => options
+        .UseSqlite(connectionString)
+        .AddInterceptors(new AuditInterceptor())
+);
+
+// Auth
+using var earlyLoggerFactory = LoggerFactory.Create(b => b.AddConsole());
+var earlyLogger = earlyLoggerFactory.CreateLogger("Collabhost.Startup");
+builder.Services.AddCollabhostAuth(builder.Configuration, earlyLogger);
+
+// Feature modules (auto-discovered via reflection)
+builder.Services.AddFeatureModules(Assembly.GetExecutingAssembly());
+
 // OpenAPI
 builder.Services.AddOpenApi();
-
-// Health checks
-builder.Services.AddHealthChecks();
 
 // CORS (development only)
 if (builder.Environment.IsDevelopment())
@@ -44,33 +60,41 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
+// Ensure database is created (dev only -- use migrations in prod)
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
+    await db.Database.EnsureCreatedAsync();
+}
+
 // Development middleware
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-    app.UseCors(policy => policy
-        .AllowAnyOrigin()
-        .AllowAnyMethod()
-        .AllowAnyHeader());
+    app.UseCors
+    (
+        policy => policy
+            .AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+    );
 }
 
-// API endpoints
-var api = app.MapGroup("/api/v1");
+// Auth middleware
+app.UseCollabhostAuth();
 
-api.MapGet("/status", () => Results.Ok(new
-{
-    status = "healthy",
-    version = Assembly.GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? "0.1.0",
-    timestamp = DateTimeOffset.UtcNow
-}));
+// Feature module endpoints (auto-discovered)
+app.MapFeatureModuleEndpoints();
 
 // SPA fallback
 app.UseStaticFiles();
 app.MapFallbackToFile("index.html");
 
-// Default health/alive endpoints
+// Default health/alive endpoints (from ServiceDefaults)
 app.MapDefaultEndpoints();
 
 app.Run();
+
+// Make Program class accessible for WebApplicationFactory in tests
+public partial class Program { }

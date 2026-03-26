@@ -28,7 +28,7 @@ backend/Collabhost.Api/wwwroot/
 *.db-shm
 *.db-wal
 *.db.bak-*
-data/
+backend/Collabhost.Api/db/
 
 # IDE / editor
 .vscode/
