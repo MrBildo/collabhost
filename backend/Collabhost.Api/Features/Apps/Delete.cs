@@ -15,7 +15,7 @@ public static class Delete
         {
             var app = await _db.Apps
                 .Include(a => a.EnvironmentVariables)
-                .FirstOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
+                .SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
 
             if (app is null)
             {

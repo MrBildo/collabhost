@@ -22,16 +22,18 @@ public static class GetAll
         public async Task<QueryResult<List<Response>>> HandleAsync(CancellationToken ct = default)
         {
             var results = await _db.Database
-                .SqlQuery<Response>($"""
+                .SqlQuery<Response>(
+                    $"""
                     SELECT
                         a.ExternalId,
                         a.Name,
                         a.DisplayName,
-                        at.DisplayName AS AppTypeName,
+                        at.DisplayName  AS AppTypeName,
                         a.Port,
                         a.AutoStart
-                    FROM Apps a
-                    INNER JOIN AppTypes at ON a.AppTypeId = at.Id
+                    FROM App a
+                    INNER JOIN AppType at
+                        ON a.AppTypeId = at.Id
                     ORDER BY a.Name
                     """)
                 .ToListAsync(ct);

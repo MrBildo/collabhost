@@ -1,5 +1,6 @@
 using Collabhost.Api.Common;
 using Collabhost.Api.Data;
+using Collabhost.Api.Domain.Lookups;
 
 namespace Collabhost.Api.Features.Apps;
 
@@ -38,14 +39,14 @@ public static class Update
 
         public async Task<CommandResult> HandleAsync(Command command, CancellationToken ct = default)
         {
-            var app = await _db.Apps.FirstOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
+            var app = await _db.Apps.SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
             if (app is null)
             {
                 return CommandResult.Fail("NOT_FOUND", "App not found.");
             }
 
             // Validate lookup reference
-            var restartPolicyExists = await _db.RestartPolicies.AnyAsync(p => p.Id == command.RestartPolicyId, ct);
+            var restartPolicyExists = await _db.Set<RestartPolicy>().AnyAsync(p => p.Id == command.RestartPolicyId, ct);
             if (!restartPolicyExists)
             {
                 return CommandResult.Fail("INVALID_RESTART_POLICY", "The specified RestartPolicyId does not exist.");

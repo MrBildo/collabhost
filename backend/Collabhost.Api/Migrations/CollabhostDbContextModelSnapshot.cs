@@ -96,7 +96,7 @@ namespace Collabhost.Api.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Apps", (string)null);
+                    b.ToTable("App", (string)null);
                 });
 
             modelBuilder.Entity("Collabhost.Api.Domain.Entities.EnvironmentVariable", b =>
@@ -132,7 +132,7 @@ namespace Collabhost.Api.Migrations
                     b.HasIndex("AppId", "Name")
                         .IsUnique();
 
-                    b.ToTable("EnvironmentVariables", (string)null);
+                    b.ToTable("EnvironmentVariable", (string)null);
                 });
 
             modelBuilder.Entity("Collabhost.Api.Domain.Lookups.AppType", b =>
@@ -172,12 +172,12 @@ namespace Collabhost.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("AppTypes", (string)null);
+                    b.ToTable("AppType", (string)null);
 
                     b.HasData(
                         new
                         {
-                            Id = new Guid("a1b2c3d4-0001-0001-0001-000000000001"),
+                            Id = new Guid("acdb6994-2c22-42f5-bf89-68c42c9f980c"),
                             DisplayName = "Executable",
                             IsActive = true,
                             Name = "Executable",
@@ -185,7 +185,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("a1b2c3d4-0001-0001-0001-000000000002"),
+                            Id = new Guid("d71d5599-bad3-4b28-8920-1aae916bd3cb"),
                             DisplayName = "NPM Package",
                             IsActive = true,
                             Name = "NpmPackage",
@@ -193,7 +193,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("a1b2c3d4-0001-0001-0001-000000000003"),
+                            Id = new Guid("7dc8cc9f-1600-447a-85f4-cbc0fc44e6fc"),
                             DisplayName = "Static Site",
                             IsActive = true,
                             Name = "StaticSite",
@@ -238,12 +238,12 @@ namespace Collabhost.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("RestartPolicies", (string)null);
+                    b.ToTable("RestartPolicy", (string)null);
 
                     b.HasData(
                         new
                         {
-                            Id = new Guid("a1b2c3d4-0002-0002-0002-000000000001"),
+                            Id = new Guid("2f2f6115-b6ef-4db4-b3c7-200a4dbb3408"),
                             DisplayName = "Never",
                             IsActive = true,
                             Name = "Never",
@@ -251,7 +251,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("a1b2c3d4-0002-0002-0002-000000000002"),
+                            Id = new Guid("a5806eba-9dcd-4145-acc3-7bcabd699829"),
                             DisplayName = "On Crash",
                             IsActive = true,
                             Name = "OnCrash",
@@ -259,7 +259,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("a1b2c3d4-0002-0002-0002-000000000003"),
+                            Id = new Guid("3902811f-674d-483a-9d6b-8b8917d83c0f"),
                             DisplayName = "Always",
                             IsActive = true,
                             Name = "Always",

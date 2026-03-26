@@ -10,7 +10,7 @@ public class AppTypeMapping : LookupEntityMapping<AppType>
     {
         base.Configure(builder);
 
-        builder.ToTable("AppTypes");
+        builder.ToTable("AppType");
 
         builder.HasData
         (

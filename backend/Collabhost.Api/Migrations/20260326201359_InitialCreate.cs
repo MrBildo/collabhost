@@ -14,7 +14,7 @@ public partial class InitialCreate : Migration
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.CreateTable(
-            name: "Apps",
+            name: "App",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "TEXT", nullable: false),
@@ -37,11 +37,11 @@ public partial class InitialCreate : Migration
             },
             constraints: table =>
             {
-                table.PrimaryKey("PK_Apps", x => x.Id);
+                table.PrimaryKey("PK_App", x => x.Id);
             });
 
         migrationBuilder.CreateTable(
-            name: "AppTypes",
+            name: "AppType",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "TEXT", nullable: false),
@@ -55,11 +55,11 @@ public partial class InitialCreate : Migration
             },
             constraints: table =>
             {
-                table.PrimaryKey("PK_AppTypes", x => x.Id);
+                table.PrimaryKey("PK_AppType", x => x.Id);
             });
 
         migrationBuilder.CreateTable(
-            name: "RestartPolicies",
+            name: "RestartPolicy",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "TEXT", nullable: false),
@@ -73,11 +73,11 @@ public partial class InitialCreate : Migration
             },
             constraints: table =>
             {
-                table.PrimaryKey("PK_RestartPolicies", x => x.Id);
+                table.PrimaryKey("PK_RestartPolicy", x => x.Id);
             });
 
         migrationBuilder.CreateTable(
-            name: "EnvironmentVariables",
+            name: "EnvironmentVariable",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "TEXT", nullable: false),
@@ -89,50 +89,50 @@ public partial class InitialCreate : Migration
             },
             constraints: table =>
             {
-                table.PrimaryKey("PK_EnvironmentVariables", x => x.Id);
+                table.PrimaryKey("PK_EnvironmentVariable", x => x.Id);
                 table.ForeignKey(
-                    name: "FK_EnvironmentVariables_Apps_AppId",
+                    name: "FK_EnvironmentVariable_App_AppId",
                     column: x => x.AppId,
-                    principalTable: "Apps",
+                    principalTable: "App",
                     principalColumn: "Id",
                     onDelete: ReferentialAction.Cascade);
             });
 
         migrationBuilder.InsertData(
-            table: "AppTypes",
+            table: "AppType",
             columns: ["Id", "Description", "DisplayName", "IsActive", "Name", "Ordinal"],
             values: new object[,]
             {
-                { new Guid("a1b2c3d4-0001-0001-0001-000000000001"), null, "Executable", true, "Executable", 0 },
-                { new Guid("a1b2c3d4-0001-0001-0001-000000000002"), null, "NPM Package", true, "NpmPackage", 1 },
-                { new Guid("a1b2c3d4-0001-0001-0001-000000000003"), null, "Static Site", true, "StaticSite", 2 }
+                { new Guid("7dc8cc9f-1600-447a-85f4-cbc0fc44e6fc"), null, "Static Site", true, "StaticSite", 2 },
+                { new Guid("acdb6994-2c22-42f5-bf89-68c42c9f980c"), null, "Executable", true, "Executable", 0 },
+                { new Guid("d71d5599-bad3-4b28-8920-1aae916bd3cb"), null, "NPM Package", true, "NpmPackage", 1 }
             });
 
         migrationBuilder.InsertData(
-            table: "RestartPolicies",
+            table: "RestartPolicy",
             columns: ["Id", "Description", "DisplayName", "IsActive", "Name", "Ordinal"],
             values: new object[,]
             {
-                { new Guid("a1b2c3d4-0002-0002-0002-000000000001"), null, "Never", true, "Never", 0 },
-                { new Guid("a1b2c3d4-0002-0002-0002-000000000002"), null, "On Crash", true, "OnCrash", 1 },
-                { new Guid("a1b2c3d4-0002-0002-0002-000000000003"), null, "Always", true, "Always", 2 }
+                { new Guid("2f2f6115-b6ef-4db4-b3c7-200a4dbb3408"), null, "Never", true, "Never", 0 },
+                { new Guid("3902811f-674d-483a-9d6b-8b8917d83c0f"), null, "Always", true, "Always", 2 },
+                { new Guid("a5806eba-9dcd-4145-acc3-7bcabd699829"), null, "On Crash", true, "OnCrash", 1 }
             });
 
         migrationBuilder.CreateIndex(
-            name: "IX_Apps_ExternalId",
-            table: "Apps",
+            name: "IX_App_ExternalId",
+            table: "App",
             column: "ExternalId",
             unique: true);
 
         migrationBuilder.CreateIndex(
-            name: "IX_Apps_Name",
-            table: "Apps",
+            name: "IX_App_Name",
+            table: "App",
             column: "Name",
             unique: true);
 
         migrationBuilder.CreateIndex(
-            name: "IX_EnvironmentVariables_AppId_Name",
-            table: "EnvironmentVariables",
+            name: "IX_EnvironmentVariable_AppId_Name",
+            table: "EnvironmentVariable",
             columns: ["AppId", "Name"],
             unique: true);
     }
@@ -141,15 +141,15 @@ public partial class InitialCreate : Migration
     protected override void Down(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.DropTable(
-            name: "AppTypes");
+            name: "AppType");
 
         migrationBuilder.DropTable(
-            name: "EnvironmentVariables");
+            name: "EnvironmentVariable");
 
         migrationBuilder.DropTable(
-            name: "RestartPolicies");
+            name: "RestartPolicy");
 
         migrationBuilder.DropTable(
-            name: "Apps");
+            name: "App");
     }
 }

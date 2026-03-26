@@ -1,6 +1,7 @@
 using Collabhost.Api.Common;
 using Collabhost.Api.Data;
 using Collabhost.Api.Domain.Entities;
+using Collabhost.Api.Domain.Lookups;
 using Collabhost.Api.Services;
 
 namespace Collabhost.Api.Features.Apps;
@@ -51,13 +52,13 @@ public static class Create
         public async Task<CommandResult<string>> HandleAsync(Command command, CancellationToken ct = default)
         {
             // Validate lookup references exist
-            var appTypeExists = await _db.AppTypes.AnyAsync(t => t.Id == command.AppTypeId, ct);
+            var appTypeExists = await _db.Set<AppType>().AnyAsync(t => t.Id == command.AppTypeId, ct);
             if (!appTypeExists)
             {
                 return CommandResult<string>.Fail("INVALID_APP_TYPE", "The specified AppTypeId does not exist.");
             }
 
-            var restartPolicyExists = await _db.RestartPolicies.AnyAsync(p => p.Id == command.RestartPolicyId, ct);
+            var restartPolicyExists = await _db.Set<RestartPolicy>().AnyAsync(p => p.Id == command.RestartPolicyId, ct);
             if (!restartPolicyExists)
             {
                 return CommandResult<string>.Fail("INVALID_RESTART_POLICY", "The specified RestartPolicyId does not exist.");

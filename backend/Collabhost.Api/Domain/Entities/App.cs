@@ -58,6 +58,9 @@ public class App : AggregateRoot
         };
     }
 
+    // TODO: Consider refactoring UpdateConfiguration — bulk-setter is an encapsulation cheat.
+    // Evaluate granular mutation methods (e.g. UpdateDisplayName, ChangeRestartPolicy) once
+    // domain behavior is clearer.
     public void UpdateConfiguration
     (
         string displayName,

@@ -53,40 +53,46 @@ public static class Get
         public async Task<QueryResult<DetailResponse>> HandleAsync(Query query, CancellationToken ct = default)
         {
             var result = await _db.Database
-                .SqlQuery<Response>($"""
+                .SqlQuery<Response>(
+                    $"""
                     SELECT
                         a.ExternalId,
                         a.Name,
                         a.DisplayName,
-                        at.DisplayName AS AppTypeName,
+                        at.DisplayName  AS AppTypeName,
                         a.InstallDirectory,
                         a.CommandLine,
                         a.Arguments,
                         a.WorkingDirectory,
-                        rp.DisplayName AS RestartPolicyName,
+                        rp.DisplayName  AS RestartPolicyName,
                         a.Port,
                         a.HealthEndpoint,
                         a.UpdateCommand,
                         a.AutoStart,
                         a.RegisteredAt
-                    FROM Apps a
-                    INNER JOIN AppTypes at ON a.AppTypeId = at.Id
-                    INNER JOIN RestartPolicies rp ON a.RestartPolicyId = rp.Id
+                    FROM App a
+                    INNER JOIN AppType at
+                        ON a.AppTypeId = at.Id
+                    INNER JOIN RestartPolicy rp
+                        ON a.RestartPolicyId = rp.Id
                     WHERE a.ExternalId = {query.ExternalId}
                     """)
-                .FirstOrDefaultAsync(ct);
+                .SingleOrDefaultAsync(ct);
 
             if (result is null)
             {
                 return QueryResult<DetailResponse>.Fail("App not found");
             }
 
-            // Fetch env vars separately (can't nest via SqlQuery)
             var envVars = await _db.Database
-                .SqlQuery<EnvironmentVariableResponse>($"""
-                    SELECT ev.Name, ev.Value
-                    FROM EnvironmentVariables ev
-                    INNER JOIN Apps a ON ev.AppId = a.Id
+                .SqlQuery<EnvironmentVariableResponse>(
+                    $"""
+                    SELECT
+                        ev.Name,
+                        ev.Value
+                    FROM EnvironmentVariable ev
+                    INNER JOIN App a
+                        ON ev.AppId = a.Id
                     WHERE a.ExternalId = {query.ExternalId}
                     ORDER BY ev.Name
                     """)

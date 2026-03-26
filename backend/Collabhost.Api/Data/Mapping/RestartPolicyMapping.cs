@@ -10,7 +10,7 @@ public class RestartPolicyMapping : LookupEntityMapping<RestartPolicy>
     {
         base.Configure(builder);
 
-        builder.ToTable("RestartPolicies");
+        builder.ToTable("RestartPolicy");
 
         builder.HasData
         (
