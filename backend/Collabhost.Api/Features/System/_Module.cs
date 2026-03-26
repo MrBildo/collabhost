@@ -2,8 +2,6 @@ namespace Collabhost.Api.Features.System;
 
 public class SystemModule : IFeatureModule
 {
-    public IServiceCollection RegisterServices(IServiceCollection services) => services;
-
     public IEndpointRouteBuilder MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         var group = endpoints
