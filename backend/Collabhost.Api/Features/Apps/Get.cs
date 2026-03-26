@@ -56,26 +56,26 @@ public static class Get
                 .SqlQuery<Response>(
                     $"""
                     SELECT
-                        a.ExternalId,
-                        a.Name,
-                        a.DisplayName,
-                        at.DisplayName  AS AppTypeName,
-                        a.InstallDirectory,
-                        a.CommandLine,
-                        a.Arguments,
-                        a.WorkingDirectory,
-                        rp.DisplayName  AS RestartPolicyName,
-                        a.Port,
-                        a.HealthEndpoint,
-                        a.UpdateCommand,
-                        a.AutoStart,
-                        a.RegisteredAt
-                    FROM App a
-                    INNER JOIN AppType at
-                        ON a.AppTypeId = at.Id
-                    INNER JOIN RestartPolicy rp
-                        ON a.RestartPolicyId = rp.Id
-                    WHERE a.ExternalId = {query.ExternalId}
+                        A.[ExternalId]
+                        ,A.[Name]
+                        ,A.[DisplayName]
+                        ,AT.[DisplayName] AS [AppTypeName]
+                        ,A.[InstallDirectory]
+                        ,A.[CommandLine]
+                        ,A.[Arguments]
+                        ,A.[WorkingDirectory]
+                        ,RP.[DisplayName] AS [RestartPolicyName]
+                        ,A.[Port]
+                        ,A.[HealthEndpoint]
+                        ,A.[UpdateCommand]
+                        ,A.[AutoStart]
+                        ,A.[RegisteredAt]
+                    FROM
+                        [App] A
+                        INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
+                        INNER JOIN [RestartPolicy] RP ON RP.[Id] = A.[RestartPolicyId]
+                    WHERE
+                        A.[ExternalId] = {query.ExternalId}
                     """)
                 .SingleOrDefaultAsync(ct);
 
@@ -88,13 +88,15 @@ public static class Get
                 .SqlQuery<EnvironmentVariableResponse>(
                     $"""
                     SELECT
-                        ev.Name,
-                        ev.Value
-                    FROM EnvironmentVariable ev
-                    INNER JOIN App a
-                        ON ev.AppId = a.Id
-                    WHERE a.ExternalId = {query.ExternalId}
-                    ORDER BY ev.Name
+                        EV.[Name]
+                        ,EV.[Value]
+                    FROM
+                        [EnvironmentVariable] EV
+                        INNER JOIN [App] A ON A.[Id] = EV.[AppId]
+                    WHERE
+                        A.[ExternalId] = {query.ExternalId}
+                    ORDER BY
+                        EV.[Name]
                     """)
                 .ToListAsync(ct);
 

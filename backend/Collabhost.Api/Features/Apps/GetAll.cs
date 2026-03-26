@@ -25,16 +25,17 @@ public static class GetAll
                 .SqlQuery<Response>(
                     $"""
                     SELECT
-                        a.ExternalId,
-                        a.Name,
-                        a.DisplayName,
-                        at.DisplayName  AS AppTypeName,
-                        a.Port,
-                        a.AutoStart
-                    FROM App a
-                    INNER JOIN AppType at
-                        ON a.AppTypeId = at.Id
-                    ORDER BY a.Name
+                        A.[ExternalId]
+                        ,A.[Name]
+                        ,A.[DisplayName]
+                        ,AT.[DisplayName] AS [AppTypeName]
+                        ,A.[Port]
+                        ,A.[AutoStart]
+                    FROM
+                        [App] A
+                        INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
+                    ORDER BY
+                        A.[Name]
                     """)
                 .ToListAsync(ct);
 
