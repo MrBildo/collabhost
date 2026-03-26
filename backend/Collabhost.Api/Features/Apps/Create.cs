@@ -2,6 +2,7 @@ using Collabhost.Api.Common;
 using Collabhost.Api.Data;
 using Collabhost.Api.Domain.Entities;
 using Collabhost.Api.Domain.Lookups;
+using Collabhost.Api.Domain.Values;
 using Collabhost.Api.Services;
 
 namespace Collabhost.Api.Features.Apps;
@@ -51,6 +52,28 @@ public static class Create
 
         public async Task<CommandResult<string>> HandleAsync(Command command, CancellationToken ct = default)
         {
+            // Validate required fields
+            var (slugValid, slugError) = AppSlugValue.CanCreate(command.Name);
+            if (!slugValid)
+            {
+                return CommandResult<string>.Fail("INVALID_NAME", slugError);
+            }
+
+            if (string.IsNullOrWhiteSpace(command.DisplayName))
+            {
+                return CommandResult<string>.Fail("INVALID_DISPLAY_NAME", "Display name is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(command.InstallDirectory))
+            {
+                return CommandResult<string>.Fail("INVALID_INSTALL_DIRECTORY", "Install directory is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(command.CommandLine))
+            {
+                return CommandResult<string>.Fail("INVALID_COMMAND_LINE", "Command line is required.");
+            }
+
             // Validate lookup references exist
             var appTypeExists = await _db.Set<AppType>().AnyAsync(t => t.Id == command.AppTypeId, ct);
             if (!appTypeExists)
@@ -65,11 +88,11 @@ public static class Create
             }
 
             // Check for duplicate name
-            var normalizedName = command.Name.ToLowerInvariant().Trim();
-            var nameExists = await _db.Apps.AnyAsync(a => a.Name == normalizedName, ct);
+            var slug = AppSlugValue.Create(command.Name);
+            var nameExists = await _db.Apps.AnyAsync(a => a.Name == slug.Value, ct);
             if (nameExists)
             {
-                return CommandResult<string>.Fail("DUPLICATE_NAME", $"An app with the name '{normalizedName}' already exists.");
+                return CommandResult<string>.Fail("DUPLICATE_NAME", $"An app with the name '{slug.Value}' already exists.");
             }
 
             var app = App.Register

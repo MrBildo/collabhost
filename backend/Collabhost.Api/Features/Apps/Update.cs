@@ -39,6 +39,22 @@ public static class Update
 
         public async Task<CommandResult> HandleAsync(Command command, CancellationToken ct = default)
         {
+            // Validate required fields
+            if (string.IsNullOrWhiteSpace(command.DisplayName))
+            {
+                return CommandResult.Fail("INVALID_DISPLAY_NAME", "Display name is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(command.InstallDirectory))
+            {
+                return CommandResult.Fail("INVALID_INSTALL_DIRECTORY", "Install directory is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(command.CommandLine))
+            {
+                return CommandResult.Fail("INVALID_COMMAND_LINE", "Command line is required.");
+            }
+
             var app = await _db.Apps.SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
             if (app is null)
             {

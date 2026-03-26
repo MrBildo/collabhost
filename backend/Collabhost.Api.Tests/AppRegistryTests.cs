@@ -163,6 +163,101 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
     }
 
     [Fact]
+    public async Task CreateApp_WithEmptyName_ReturnsBadRequest()
+    {
+        // Arrange
+        var client = _fixture.CreateAuthenticatedClient();
+        var request = new
+        {
+            Name = "",
+            DisplayName = "Some Display Name",
+            AppTypeId = IdentifierCatalog.AppTypes.Executable,
+            InstallDirectory = "C:\\apps\\test",
+            CommandLine = "test.exe",
+            Arguments = (string?)null,
+            WorkingDirectory = (string?)null,
+            RestartPolicyId = IdentifierCatalog.RestartPolicies.Never,
+            HealthEndpoint = (string?)null,
+            UpdateCommand = (string?)null,
+            AutoStart = false
+        };
+
+        // Act
+        var response = await client.PostAsJsonAsync("/api/v1/apps", request);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task CreateApp_WithEmptyDisplayName_ReturnsBadRequest()
+    {
+        // Arrange
+        var client = _fixture.CreateAuthenticatedClient();
+        var request = new
+        {
+            Name = "valid-slug",
+            DisplayName = "",
+            AppTypeId = IdentifierCatalog.AppTypes.Executable,
+            InstallDirectory = "C:\\apps\\test",
+            CommandLine = "test.exe",
+            Arguments = (string?)null,
+            WorkingDirectory = (string?)null,
+            RestartPolicyId = IdentifierCatalog.RestartPolicies.Never,
+            HealthEndpoint = (string?)null,
+            UpdateCommand = (string?)null,
+            AutoStart = false
+        };
+
+        // Act
+        var response = await client.PostAsJsonAsync("/api/v1/apps", request);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task CreateApp_WithInvalidSlugCharacters_ReturnsBadRequest()
+    {
+        // Arrange
+        var client = _fixture.CreateAuthenticatedClient();
+        var request = new
+        {
+            Name = "My App!",
+            DisplayName = "My App",
+            AppTypeId = IdentifierCatalog.AppTypes.Executable,
+            InstallDirectory = "C:\\apps\\test",
+            CommandLine = "test.exe",
+            Arguments = (string?)null,
+            WorkingDirectory = (string?)null,
+            RestartPolicyId = IdentifierCatalog.RestartPolicies.Never,
+            HealthEndpoint = (string?)null,
+            UpdateCommand = (string?)null,
+            AutoStart = false
+        };
+
+        // Act
+        var response = await client.PostAsJsonAsync("/api/v1/apps", request);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task CreateApp_WithValidSlug_ReturnsCreated()
+    {
+        // Arrange
+        var client = _fixture.CreateAuthenticatedClient();
+        var request = CreateValidRequest("valid-slug-test");
+
+        // Act
+        var response = await client.PostAsJsonAsync("/api/v1/apps", request);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+    }
+
+    [Fact]
     public async Task CreateApp_WithDuplicateName_ReturnsBadRequest()
     {
         // Arrange
