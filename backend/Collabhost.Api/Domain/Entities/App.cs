@@ -1,3 +1,5 @@
+using Collabhost.Api.Domain.Values;
+
 namespace Collabhost.Api.Domain.Entities;
 
 public class App : AggregateRoot
@@ -23,7 +25,7 @@ public class App : AggregateRoot
 
     public static App Register
     (
-        string name,
+        AppSlugValue name,
         string displayName,
         Guid appTypeId,
         string installDirectory,
@@ -36,14 +38,14 @@ public class App : AggregateRoot
         bool autoStart
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
         ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandLine);
 
         return new App
         {
-            Name = name.ToLowerInvariant().Trim(),
+            Name = name.Value,
             DisplayName = displayName.Trim(),
             AppTypeId = appTypeId,
             InstallDirectory = installDirectory,

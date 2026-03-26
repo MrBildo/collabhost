@@ -97,7 +97,7 @@ public static class Create
 
             var app = App.Register
             (
-                command.Name,
+                slug,
                 command.DisplayName,
                 command.AppTypeId,
                 command.InstallDirectory,
