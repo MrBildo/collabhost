@@ -4,6 +4,7 @@ using Collabhost.Api.Auth;
 using Collabhost.Api.Data;
 using Collabhost.Api.Data.Interceptors;
 using Collabhost.Api.Features;
+using Collabhost.Api.Services;
 
 // --version flag
 if (args.Contains("--version"))
@@ -48,6 +49,9 @@ builder.Services.AddCollabhostAuth(builder.Configuration, earlyLogger);
 
 // Feature modules (auto-discovered via reflection)
 builder.Services.AddFeatureModules(Assembly.GetExecutingAssembly());
+
+// Infrastructure services
+builder.Services.AddScoped<PortAllocator>();
 
 // OpenAPI
 builder.Services.AddOpenApi();
