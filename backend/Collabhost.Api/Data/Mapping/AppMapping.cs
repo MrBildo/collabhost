@@ -1,4 +1,5 @@
 using Collabhost.Api.Domain.Entities;
+using Collabhost.Api.Domain.Values;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Collabhost.Api.Data.Mapping;
@@ -17,7 +18,10 @@ public class AppMapping : IEntityTypeConfiguration<App>
         builder.HasIndex(e => e.ExternalId).IsUnique();
 
         // Slug used in domain routing (e.g. myapp.collab.internal) — 100 is generous for a hostname-safe slug
-        builder.Property(e => e.Name).HasMaxLength(100).IsRequired();
+        builder.Property(e => e.Name)
+            .HasConversion(v => v.Value, s => AppSlugValue.Create(s))
+            .HasMaxLength(100)
+            .IsRequired();
         builder.HasIndex(e => e.Name).IsUnique();
 
         // Human-readable label shown in dashboard

@@ -4,7 +4,7 @@ namespace Collabhost.Api.Domain.Entities;
 
 public class App : AggregateRoot
 {
-    public string Name { get; private set; } = default!;
+    public AppSlugValue Name { get; private set; } = default!;
     public string DisplayName { get; private set; } = default!;
     public Guid AppTypeId { get; private set; }
     public string InstallDirectory { get; private set; } = default!;
@@ -45,7 +45,7 @@ public class App : AggregateRoot
 
         return new App
         {
-            Name = name.Value,
+            Name = name,
             DisplayName = displayName.Trim(),
             AppTypeId = appTypeId,
             InstallDirectory = installDirectory,

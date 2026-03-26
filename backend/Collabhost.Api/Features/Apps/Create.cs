@@ -89,7 +89,7 @@ public static class Create
 
             // Check for duplicate name
             var slug = AppSlugValue.Create(command.Name);
-            var nameExists = await _db.Apps.AnyAsync(a => a.Name == slug.Value, ct);
+            var nameExists = await _db.Apps.AnyAsync(a => a.Name == slug, ct);
             if (nameExists)
             {
                 return CommandResult<string>.Fail("DUPLICATE_NAME", $"An app with the name '{slug.Value}' already exists.");
