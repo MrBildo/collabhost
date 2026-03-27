@@ -102,7 +102,7 @@ cd frontend && npm run test
 ## Core Modules
 
 ### App Registry
-- App definitions: name (slug, used in domain), display name, type (Executable, NpmPackage, StaticSite), install directory, command, args, working directory, environment variables (separate table rows), port (auto-assigned via bind-to-zero), health endpoint, update command, auto-start, restart policy (Never/OnCrash/Always)
+- App definitions: name (slug, used in domain), display name, type (Executable, NpmPackage, StaticSite), install directory, command, args, working directory, environment variables (separate table rows), port (auto-assigned via bind-to-zero), health endpoint, update command, update timeout (per-app, nullable, defaults 300s), auto-start, restart policy (Never/OnCrash/Always)
 - ULID primary keys
 
 ### Process Supervisor
@@ -119,6 +119,16 @@ cd frontend && npm run test
 - One-off delayed jobs
 - Job history + result logging
 - Built-in Hangfire dashboard
+
+### App Updates
+- `POST /api/v1/apps/{id}/update` — SSE-streamed orchestration
+- Flow: stop (if running) → run UpdateCommand via shell → start (if was running)
+- Real-time SSE events: `status` (phase changes), `log` (stdout/stderr lines), `result` (final outcome)
+- Per-app concurrency guard (`UpdateCoordinator` singleton, rejects 409)
+- Per-app `UpdateTimeoutSeconds` (nullable, defaults to 300s)
+- Shell wrapping: `cmd.exe /c` on Windows, `/bin/sh -c` on Linux
+- Channel-based ordered SSE delivery (not fire-and-forget)
+- `RunToCompletionAsync` on `IManagedProcessRunner` for one-shot commands
 
 ### Dashboard API
 - Status overview
@@ -155,7 +165,7 @@ REST API under `/api/v1/`:
 /api/v1/apps/{id}/restart   # Restart app process
 /api/v1/apps/{id}/status    # Process state, PID, uptime
 /api/v1/apps/{id}/logs      # Log retrieval (ring buffer)
-/api/v1/apps/{id}/update    # Run update script
+/api/v1/apps/{id}/update    # Run update script (SSE-streamed)
 /api/v1/routes              # Proxy route listing
 /api/v1/caddy/reload        # Force Caddy config regeneration
 /api/v1/status              # System status
@@ -188,7 +198,18 @@ public static class AppEndpoints
 - Guard clauses: `ArgumentNullException.ThrowIfNull()`
 - Collection expressions: `[]`
 - Expression-bodied members for one-liners
+- `SingleAsync` (not `FirstAsync`) for single-result entity lookups by ID
 - `.editorconfig` enforced
+
+## SSE Endpoint Pattern
+
+For long-running operations (update, future log streaming):
+
+- Validate and return normal HTTP errors (404/400/409) **before** committing to SSE
+- Set `Content-Type: text/event-stream`, `Cache-Control: no-cache` then `StartAsync()`
+- Use `Channel<T>` for thread-safe ordered event delivery from callbacks — never fire-and-forget writes to `HttpContext.Response`
+- Complete the channel and await the consumer task before sending the final result event
+- Shell-wrap user-provided commands: `cmd.exe /c` (Windows) / `/bin/sh -c` (Linux)
 
 ## Frontend Style
 
