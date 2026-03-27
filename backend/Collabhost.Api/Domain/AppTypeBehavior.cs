@@ -9,10 +9,11 @@ public static class AppTypeBehavior
         appTypeId != IdentifierCatalog.AppTypes.StaticSite;
 
     public static bool SupportsEnvVars(Guid appTypeId) =>
-        HasProcess(appTypeId);
+        appTypeId != IdentifierCatalog.AppTypes.StaticSite;
 
     public static bool SupportsHealthCheck(Guid appTypeId) =>
-        HasProcess(appTypeId) && IsRoutable(appTypeId);
+        appTypeId != IdentifierCatalog.AppTypes.StaticSite
+        && appTypeId != IdentifierCatalog.AppTypes.ProxyService;
 
     // Routing
     public static bool IsRoutable(Guid appTypeId) =>
@@ -21,8 +22,8 @@ public static class AppTypeBehavior
     public static string ProxyMode(Guid appTypeId) => appTypeId switch
     {
         _ when appTypeId == IdentifierCatalog.AppTypes.StaticSite => "file_server",
-        _ when IsRoutable(appTypeId) => "reverse_proxy",
-        _ => "none"
+        _ when appTypeId == IdentifierCatalog.AppTypes.ProxyService => "none",
+        _ => "reverse_proxy"
     };
 
     // Protection
@@ -30,9 +31,9 @@ public static class AppTypeBehavior
         appTypeId == IdentifierCatalog.AppTypes.ProxyService;
 
     public static bool IsDeletable(Guid appTypeId) =>
-        !IsProtected(appTypeId);
+        appTypeId != IdentifierCatalog.AppTypes.ProxyService;
 
     // Startup
     public static int StartupPriority(Guid appTypeId) =>
-        IsProtected(appTypeId) ? 0 : 1;
+        appTypeId == IdentifierCatalog.AppTypes.ProxyService ? 0 : 1;
 }
