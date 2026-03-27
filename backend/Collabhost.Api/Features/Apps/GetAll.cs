@@ -12,6 +12,8 @@ public static class GetAll
         string DisplayName,
         string AppTypeName,
         int? Port,
+        string? UpdateCommand,
+        int? UpdateTimeoutSeconds,
         bool AutoStart
     );
 
@@ -30,6 +32,8 @@ public static class GetAll
                         ,A.[DisplayName]
                         ,AT.[DisplayName] AS [AppTypeName]
                         ,A.[Port]
+                        ,A.[UpdateCommand]
+                        ,A.[UpdateTimeoutSeconds]
                         ,A.[AutoStart]
                     FROM
                         [App] A

@@ -15,6 +15,7 @@ public class App : AggregateRoot
     public int? Port { get; private set; }
     public string? HealthEndpoint { get; private set; }
     public string? UpdateCommand { get; private set; }
+    public int? UpdateTimeoutSeconds { get; private set; }
     public bool AutoStart { get; private set; }
     public DateTime RegisteredAt { get; private init; }
 
@@ -35,6 +36,7 @@ public class App : AggregateRoot
         Guid restartPolicyId,
         string? healthEndpoint,
         string? updateCommand,
+        int? updateTimeoutSeconds,
         bool autoStart
     )
     {
@@ -55,6 +57,7 @@ public class App : AggregateRoot
             RestartPolicyId = restartPolicyId,
             HealthEndpoint = healthEndpoint,
             UpdateCommand = updateCommand,
+            UpdateTimeoutSeconds = updateTimeoutSeconds,
             AutoStart = autoStart,
             RegisteredAt = DateTime.UtcNow
         };
@@ -73,6 +76,7 @@ public class App : AggregateRoot
         Guid restartPolicyId,
         string? healthEndpoint,
         string? updateCommand,
+        int? updateTimeoutSeconds,
         bool autoStart
     )
     {
@@ -88,6 +92,7 @@ public class App : AggregateRoot
         RestartPolicyId = restartPolicyId;
         HealthEndpoint = healthEndpoint;
         UpdateCommand = updateCommand;
+        UpdateTimeoutSeconds = updateTimeoutSeconds;
         AutoStart = autoStart;
     }
 

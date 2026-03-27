@@ -1,6 +1,6 @@
 namespace Collabhost.Api.Data;
 
-public record AppLookup(Guid Id, string ExternalId, string DisplayName, Guid AppTypeId);
+public record AppLookup(Guid Id, string ExternalId, string DisplayName, Guid AppTypeId, string? UpdateCommand);
 
 public static class CollabhostDbContextExtensions
 {
@@ -20,6 +20,7 @@ public static class CollabhostDbContextExtensions
                         ,A.[ExternalId]
                         ,A.[DisplayName]
                         ,A.[AppTypeId]
+                        ,A.[UpdateCommand]
                     FROM
                         [App] A
                     WHERE

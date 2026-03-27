@@ -45,6 +45,7 @@ public class AppMapping : IEntityTypeConfiguration<App>
 
         // Shell command to run updates — can include args, so 1000 like Arguments
         builder.Property(e => e.UpdateCommand).HasMaxLength(1000);
+        builder.Property(e => e.UpdateTimeoutSeconds);
         builder.Property(e => e.AutoStart);
         builder.Property(e => e.RegisteredAt);
 

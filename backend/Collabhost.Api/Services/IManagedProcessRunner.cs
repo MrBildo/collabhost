@@ -3,7 +3,11 @@ namespace Collabhost.Api.Services;
 public interface IManagedProcessRunner
 {
     IProcessHandle Start(ProcessStartConfig config);
+
+    Task<ProcessRunResult> RunToCompletionAsync(ProcessStartConfig config, TimeSpan timeout, CancellationToken ct = default);
 }
+
+public record ProcessRunResult(int ExitCode, bool TimedOut);
 
 public record ProcessStartConfig
 (
