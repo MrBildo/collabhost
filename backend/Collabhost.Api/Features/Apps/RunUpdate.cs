@@ -74,7 +74,7 @@ public static class RunUpdate
 
             var fullApp = await db.Apps
                 .Include(a => a.EnvironmentVariables)
-                .FirstAsync(a => a.Id == app.Id, ct);
+                .SingleAsync(a => a.Id == app.Id, ct);
 
             var envVars = new Dictionary<string, string>();
             foreach (var ev in fullApp.EnvironmentVariables)
