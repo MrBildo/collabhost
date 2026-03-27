@@ -319,6 +319,7 @@ Use available skills proactively when the task matches — e.g., invoke dotnet-d
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`
 - Squash merge to main
 - All changes via feature branch + PR
+- **Commit everything.** When work is done, `git status` must be clean. Docs, CLAUDE.md, .gitignore, config — everything gets committed with the current work. Never leave changes uncommitted for later.
 
 ## Context Window Management
 
