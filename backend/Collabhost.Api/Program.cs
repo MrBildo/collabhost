@@ -52,6 +52,9 @@ builder.Services.AddFeatureModules(Assembly.GetExecutingAssembly());
 
 // Infrastructure services
 builder.Services.AddScoped<PortAllocator>();
+builder.Services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();
+builder.Services.AddSingleton<ProcessSupervisor>();
+builder.Services.AddHostedService<ProcessSupervisor>(sp => sp.GetRequiredService<ProcessSupervisor>());
 
 // OpenAPI
 builder.Services.AddOpenApi();

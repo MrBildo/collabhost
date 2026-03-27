@@ -14,6 +14,11 @@ public class AppsModule : IFeatureModule
         group.MapPut("/{externalId}", Update.HandleAsync);
         group.MapDelete("/{externalId}", Delete.HandleAsync);
 
+        group.MapPost("/{externalId}/start", Start.HandleAsync);
+        group.MapPost("/{externalId}/stop", Stop.HandleAsync);
+        group.MapPost("/{externalId}/restart", Restart.HandleAsync);
+        group.MapGet("/{externalId}/status", GetStatus.HandleAsync);
+
         return endpoints;
     }
 }

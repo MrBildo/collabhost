@@ -18,4 +18,14 @@ public static class StringCatalog
         public const string OnCrash = "On Crash";
         public const string Always = "Always";
     }
+
+    public static class ProcessStates
+    {
+        public const string Stopped = "Stopped";
+        public const string Starting = "Starting";
+        public const string Running = "Running";
+        public const string Stopping = "Stopping";
+        public const string Crashed = "Crashed";
+        public const string Restarting = "Restarting";
+    }
 }
