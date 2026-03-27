@@ -22,7 +22,7 @@ See [[.agents/WORKFLOW]] for planning process. See [[COLLABOARD]] for board conv
 | Testing | xUnit + Shouldly, Arrange-Act-Assert |
 | Orchestration | Aspire 13.3, OpenTelemetry |
 | Jobs | Hangfire (persistent, recurring, dashboard built-in) |
-| Reverse Proxy | Caddy (edge), managed externally |
+| Reverse Proxy | Caddy (edge), managed by Collabhost via JSON API |
 | Agent protocol | MCP (HTTP transport) |
 
 ## Structure
@@ -102,15 +102,19 @@ cd frontend && npm run test
 ## Core Modules
 
 ### App Registry
-- App definitions: name, type (web, worker, mcp, static, proxy-only), executable, args, working directory, environment variables, local bind port, route metadata, health endpoint, auto-start, restart policy
+- App definitions: name (slug, used in domain), display name, type (Executable, NpmPackage, StaticSite), install directory, command, args, working directory, environment variables (separate table rows), port (auto-assigned via bind-to-zero), health endpoint, update command, auto-start, restart policy (Never/OnCrash/Always)
+- ULID primary keys
 
 ### Process Supervisor
 - Start/stop/restart managed processes
-- Capture stdout/stderr
-- Crash detection + restart with backoff
-- PID tracking
+- Capture stdout/stderr into in-memory ring buffer per process
+- Crash detection + restart with exponential backoff
+- PID + uptime tracking, restart count with grace period
+- Env var injection at process launch
+- Auto-start on Collabhost startup
+- StaticSite type: no process (Caddy serves directly)
 
-### Scheduler (Hangfire)
+### Scheduler (Hangfire) — post-MVP
 - Cron/interval recurring jobs
 - One-off delayed jobs
 - Job history + result logging
@@ -118,15 +122,18 @@ cd frontend && npm run test
 
 ### Dashboard API
 - Status overview
-- Log tailing
+- Log retrieval (ring buffer)
 - App config CRUD
 - Route listing
-- Job management
+- App update orchestration
 
 ### Proxy Config (Caddy)
-- Generate/update Caddy config for managed apps
-- Route: `app.lan → localhost:<port>`
-- Collabhost manages the config, Caddy handles the traffic
+- Collabhost manages Caddy as a supervised process
+- Config via Caddy JSON API at `localhost:2019` (not Caddyfile)
+- `@id` tags on every route for direct CRUD
+- Route: `<app>.collab.internal` → `reverse_proxy localhost:<port>` or `file_server`
+- HTTPS via Caddy internal CA + `tls internal`
+- Base domain configurable (default `collab.internal`)
 
 ## Auth Model
 
@@ -142,15 +149,18 @@ Header-based: `X-User-Key` (ULID). Same pattern as Collaboard.
 REST API under `/api/v1/`:
 
 ```
-/api/v1/apps          # App registry CRUD
-/api/v1/processes     # Process lifecycle (start/stop/restart/status)
-/api/v1/jobs          # Job scheduling and history
-/api/v1/routes        # Proxy route configuration
-/api/v1/logs          # Log retrieval and tailing
-/api/v1/health        # System health overview
+/api/v1/apps                # App registry CRUD
+/api/v1/apps/{id}/start     # Start app process
+/api/v1/apps/{id}/stop      # Stop app process
+/api/v1/apps/{id}/restart   # Restart app process
+/api/v1/apps/{id}/status    # Process state, PID, uptime
+/api/v1/apps/{id}/logs      # Log retrieval (ring buffer)
+/api/v1/apps/{id}/update    # Run update script
+/api/v1/routes              # Proxy route listing
+/api/v1/caddy/reload        # Force Caddy config regeneration
+/api/v1/status              # System status
+/health                     # Health check
 ```
-
-MCP endpoint: `/mcp`
 
 ## Endpoint Structure
 
@@ -280,6 +290,10 @@ Each worktree needs its own dependency install. The `.git` store is shared.
 
 Use available skills proactively when the task matches — e.g., invoke dotnet-dev when writing C# or typescript-dev for TypeScript. Skills are declared in your session; no need to search directories.
 
+## Persistence Rules
+
+**IMPORTANT:** Auto-memory (`.claude/projects/.../memory/`) is ONLY for soft personal preferences (e.g., "user likes terse responses", "user prefers interrogation-style planning"). All project decisions, conventions, workflows, and hard rules MUST go into project infrastructure files: `CLAUDE.md`, `.agents/WORKFLOW.md`, `COLLABOARD.md`, roadmap, specs, etc. If it's about how the project works, update the relevant infra doc — not memory.
+
 ## Agent Behavior Rules
 
 1. **Safety over speed.** Never auto-fix lint errors — report to user.
@@ -305,6 +319,7 @@ Use available skills proactively when the task matches — e.g., invoke dotnet-d
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`
 - Squash merge to main
 - All changes via feature branch + PR
+- **Commit everything.** When work is done, `git status` must be clean. Docs, CLAUDE.md, .gitignore, config — everything gets committed with the current work. Never leave changes uncommitted for later.
 
 ## Context Window Management
 

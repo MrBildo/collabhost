@@ -68,6 +68,19 @@ public class CollabhostApiFixture : WebApplicationFactory<Program>
 
                 services.AddSingleton<IManagedProcessRunner, FakeProcessRunner>();
 
+                // Replace proxy config client with fake for tests
+                var proxyDescriptor = services.SingleOrDefault
+                (
+                    d => d.ServiceType == typeof(IProxyConfigClient)
+                );
+
+                if (proxyDescriptor is not null)
+                {
+                    services.Remove(proxyDescriptor);
+                }
+
+                services.AddSingleton<IProxyConfigClient, FakeProxyConfigClient>();
+
                 using var sp = services.BuildServiceProvider();
                 using var scope = sp.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();

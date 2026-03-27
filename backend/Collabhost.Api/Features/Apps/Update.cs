@@ -1,6 +1,7 @@
 using Collabhost.Api.Common;
 using Collabhost.Api.Data;
 using Collabhost.Api.Domain.Lookups;
+using Collabhost.Api.Services;
 
 namespace Collabhost.Api.Features.Apps;
 
@@ -33,9 +34,14 @@ public static class Update
         bool AutoStart
     );
 
-    public class Handler(CollabhostDbContext db)
+    public class Handler
+    (
+        CollabhostDbContext db,
+        ProxyConfigManager proxyConfigManager
+    )
     {
         private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
+        private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
 
         public async Task<CommandResult> HandleAsync(Command command, CancellationToken ct = default)
         {
@@ -82,6 +88,8 @@ public static class Update
             );
 
             await _db.SaveChangesAsync(ct);
+
+            _ = _proxyConfigManager.SyncRoutesAsync();
 
             return CommandResult.Success();
         }

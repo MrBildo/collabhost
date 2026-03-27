@@ -7,6 +7,7 @@ public static class IdentifierCatalog
         public static readonly Guid Executable = new("acdb6994-2c22-42f5-bf89-68c42c9f980c");
         public static readonly Guid NpmPackage = new("d71d5599-bad3-4b28-8920-1aae916bd3cb");
         public static readonly Guid StaticSite = new("7dc8cc9f-1600-447a-85f4-cbc0fc44e6fc");
+        public static readonly Guid ProxyService = new("76a3e5b7-d751-4eba-aac2-b1c26c1f9ca3");
     }
 
     public static class RestartPolicies

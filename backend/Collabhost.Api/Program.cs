@@ -6,6 +6,8 @@ using Collabhost.Api.Data.Interceptors;
 using Collabhost.Api.Features;
 using Collabhost.Api.Services;
 
+using Microsoft.Extensions.Options;
+
 // --version flag
 if (args.Contains("--version"))
 {
@@ -55,6 +57,15 @@ builder.Services.AddScoped<PortAllocator>();
 builder.Services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();
 builder.Services.AddSingleton<ProcessSupervisor>();
 builder.Services.AddHostedService<ProcessSupervisor>(sp => sp.GetRequiredService<ProcessSupervisor>());
+
+// Proxy services
+builder.Services.Configure<ProxySettings>(builder.Configuration.GetSection("Proxy"));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<ProxySettings>>().Value);
+builder.Services.AddHttpClient<CaddyProxyConfigClient>();
+builder.Services.AddSingleton<IProxyConfigClient>(sp => sp.GetRequiredService<CaddyProxyConfigClient>());
+builder.Services.AddSingleton<ProxyConfigGenerator>();
+builder.Services.AddSingleton<ProxyConfigManager>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ProxyConfigManager>());
 
 // OpenAPI
 builder.Services.AddOpenApi();

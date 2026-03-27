@@ -21,6 +21,7 @@ backend/**/obj/
 
 # Aspire local state
 .aspire/
+aspire.config.json
 
 # Collabhost app
 backend/Collabhost.Api/wwwroot/
