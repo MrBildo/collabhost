@@ -6,6 +6,65 @@ public class WindowsProcessRunner : IManagedProcessRunner
 {
     public IProcessHandle Start(ProcessStartConfig config)
     {
+        var startInfo = CreateStartInfo(config);
+
+        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        var handle = new ProcessHandle(process, config.OnOutput);
+
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        return handle;
+    }
+
+    public async Task<ProcessRunResult> RunToCompletionAsync(ProcessStartConfig config, TimeSpan timeout, CancellationToken ct = default)
+    {
+        var startInfo = CreateStartInfo(config);
+
+        using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+            {
+                config.OnOutput(e.Data, LogStream.StdOut);
+            }
+        };
+
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+            {
+                config.OnOutput(e.Data, LogStream.StdErr);
+            }
+        };
+
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+
+        try
+        {
+            await process.WaitForExitAsync(timeoutCts.Token);
+            return new ProcessRunResult(process.ExitCode, false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            return new ProcessRunResult(-1, true);
+        }
+    }
+
+    private static ProcessStartInfo CreateStartInfo(ProcessStartConfig config)
+    {
         var startInfo = new ProcessStartInfo
         {
             FileName = config.Command,
@@ -22,14 +81,7 @@ public class WindowsProcessRunner : IManagedProcessRunner
             startInfo.EnvironmentVariables[key] = value;
         }
 
-        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        var handle = new ProcessHandle(process, config.OnOutput);
-
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-
-        return handle;
+        return startInfo;
     }
 
     private class ProcessHandle : IProcessHandle

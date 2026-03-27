@@ -6,11 +6,25 @@ public class FakeProcessRunner : IManagedProcessRunner
 {
     public FakeProcessHandle? LastHandle { get; private set; }
 
+    public ProcessRunResult NextRunResult { get; set; } = new(0, false);
+    public ProcessStartConfig? LastRunConfig { get; private set; }
+    public int RunToCompletionCallCount { get; private set; }
+
     public IProcessHandle Start(ProcessStartConfig config)
     {
         var handle = new FakeProcessHandle(config.OnOutput);
         LastHandle = handle;
         return handle;
+    }
+
+    public Task<ProcessRunResult> RunToCompletionAsync(ProcessStartConfig config, TimeSpan timeout, CancellationToken ct = default)
+    {
+        LastRunConfig = config;
+        RunToCompletionCallCount++;
+
+        config.OnOutput("fake update output", LogStream.StdOut);
+
+        return Task.FromResult(NextRunResult);
     }
 }
 

@@ -22,6 +22,7 @@ public static class Create
         Guid RestartPolicyId,
         string? HealthEndpoint,
         string? UpdateCommand,
+        int? UpdateTimeoutSeconds,
         bool AutoStart
     );
 
@@ -37,6 +38,7 @@ public static class Create
         Guid RestartPolicyId,
         string? HealthEndpoint,
         string? UpdateCommand,
+        int? UpdateTimeoutSeconds,
         bool AutoStart
     );
 
@@ -110,6 +112,7 @@ public static class Create
                 command.RestartPolicyId,
                 command.HealthEndpoint,
                 command.UpdateCommand,
+                command.UpdateTimeoutSeconds,
                 command.AutoStart
             );
 
@@ -148,6 +151,7 @@ public static class Create
             request.RestartPolicyId,
             request.HealthEndpoint,
             request.UpdateCommand,
+            request.UpdateTimeoutSeconds,
             request.AutoStart
         );
 

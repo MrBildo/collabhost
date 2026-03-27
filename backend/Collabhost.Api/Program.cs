@@ -57,6 +57,7 @@ builder.Services.AddScoped<PortAllocator>();
 builder.Services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();
 builder.Services.AddSingleton<ProcessSupervisor>();
 builder.Services.AddHostedService<ProcessSupervisor>(sp => sp.GetRequiredService<ProcessSupervisor>());
+builder.Services.AddSingleton<UpdateCoordinator>();
 
 // Proxy services
 builder.Services.Configure<ProxySettings>(builder.Configuration.GetSection("Proxy"));

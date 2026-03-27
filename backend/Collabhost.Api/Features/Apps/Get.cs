@@ -21,6 +21,7 @@ public static class Get
         int? Port,
         string? HealthEndpoint,
         string? UpdateCommand,
+        int? UpdateTimeoutSeconds,
         bool AutoStart,
         DateTime RegisteredAt
     );
@@ -41,6 +42,7 @@ public static class Get
         int? Port,
         string? HealthEndpoint,
         string? UpdateCommand,
+        int? UpdateTimeoutSeconds,
         bool AutoStart,
         DateTime RegisteredAt,
         List<EnvironmentVariableResponse> EnvironmentVariables
@@ -68,6 +70,7 @@ public static class Get
                         ,A.[Port]
                         ,A.[HealthEndpoint]
                         ,A.[UpdateCommand]
+                        ,A.[UpdateTimeoutSeconds]
                         ,A.[AutoStart]
                         ,A.[RegisteredAt]
                     FROM
@@ -114,6 +117,7 @@ public static class Get
                 result.Port,
                 result.HealthEndpoint,
                 result.UpdateCommand,
+                result.UpdateTimeoutSeconds,
                 result.AutoStart,
                 result.RegisteredAt,
                 envVars
