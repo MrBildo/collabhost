@@ -17,24 +17,24 @@ public class RestartPolicyMapping : LookupEntityMapping<RestartPolicy>
             new RestartPolicy
             {
                 Id = IdentifierCatalog.RestartPolicies.Never,
-                Name = "Never",
-                DisplayName = StringCatalog.RestartPolicies.Never,
+                Name = StringCatalog.RestartPolicies.Never,
+                DisplayName = "Never",
                 Ordinal = 0,
                 IsActive = true
             },
             new RestartPolicy
             {
                 Id = IdentifierCatalog.RestartPolicies.OnCrash,
-                Name = "OnCrash",
-                DisplayName = StringCatalog.RestartPolicies.OnCrash,
+                Name = StringCatalog.RestartPolicies.OnCrash,
+                DisplayName = "On Crash",
                 Ordinal = 1,
                 IsActive = true
             },
             new RestartPolicy
             {
                 Id = IdentifierCatalog.RestartPolicies.Always,
-                Name = "Always",
-                DisplayName = StringCatalog.RestartPolicies.Always,
+                Name = StringCatalog.RestartPolicies.Always,
+                DisplayName = "Always",
                 Ordinal = 2,
                 IsActive = true
             }

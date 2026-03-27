@@ -1,0 +1,24 @@
+namespace Collabhost.Api.Services;
+
+public interface IManagedProcessRunner
+{
+    IProcessHandle Start(ProcessStartConfig config);
+}
+
+public record ProcessStartConfig
+(
+    string Command,
+    string? Arguments,
+    string WorkingDirectory,
+    Dictionary<string, string> EnvironmentVariables,
+    Action<string, LogStream> OnOutput
+);
+
+public interface IProcessHandle : IDisposable
+{
+    int Pid { get; }
+    bool HasExited { get; }
+    int? ExitCode { get; }
+    event Action<int>? Exited;
+    void Kill();
+}

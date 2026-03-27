@@ -15,4 +15,14 @@ public static class IdentifierCatalog
         public static readonly Guid OnCrash = new("a5806eba-9dcd-4145-acc3-7bcabd699829");
         public static readonly Guid Always = new("3902811f-674d-483a-9d6b-8b8917d83c0f");
     }
+
+    public static class ProcessStates
+    {
+        public static readonly Guid Stopped = new("b0a1c2d3-e4f5-6789-abcd-ef0123456789");
+        public static readonly Guid Starting = new("c1b2a3d4-f5e6-7890-bcde-f01234567890");
+        public static readonly Guid Running = new("d2c3b4a5-0617-8901-cdef-012345678901");
+        public static readonly Guid Stopping = new("e3d4c5b6-1728-9012-def0-123456789012");
+        public static readonly Guid Crashed = new("f4e5d6c7-2839-0123-ef01-234567890123");
+        public static readonly Guid Restarting = new("05f6e7d8-394a-1234-f012-345678901234");
+    }
 }

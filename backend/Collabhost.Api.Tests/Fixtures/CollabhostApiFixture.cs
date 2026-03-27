@@ -1,4 +1,5 @@
 using Collabhost.Api.Data;
+using Collabhost.Api.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -53,6 +54,19 @@ public class CollabhostApiFixture : WebApplicationFactory<Program>
                 (
                     options => options.UseSqlite(_connection)
                 );
+
+                // Replace process runner with fake for tests
+                var runnerDescriptor = services.SingleOrDefault
+                (
+                    d => d.ServiceType == typeof(IManagedProcessRunner)
+                );
+
+                if (runnerDescriptor is not null)
+                {
+                    services.Remove(runnerDescriptor);
+                }
+
+                services.AddSingleton<IManagedProcessRunner, FakeProcessRunner>();
 
                 using var sp = services.BuildServiceProvider();
                 using var scope = sp.CreateScope();
