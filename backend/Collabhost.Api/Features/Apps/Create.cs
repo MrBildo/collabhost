@@ -1,5 +1,6 @@
 using Collabhost.Api.Common;
 using Collabhost.Api.Data;
+using Collabhost.Api.Domain;
 using Collabhost.Api.Domain.Entities;
 using Collabhost.Api.Domain.Lookups;
 using Collabhost.Api.Domain.Values;
@@ -44,11 +45,13 @@ public static class Create
     public class Handler
     (
         CollabhostDbContext db,
-        PortAllocator portAllocator
+        PortAllocator portAllocator,
+        ProxyConfigManager proxyConfigManager
     )
     {
         private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
         private readonly PortAllocator _portAllocator = portAllocator ?? throw new ArgumentNullException(nameof(portAllocator));
+        private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
 
         public async Task<CommandResult<string>> HandleAsync(Command command, CancellationToken ct = default)
         {
@@ -116,6 +119,11 @@ public static class Create
 
             _db.Apps.Add(app);
             await _db.SaveChangesAsync(ct);
+
+            if (AppTypeBehavior.IsRoutable(command.AppTypeId))
+            {
+                _ = _proxyConfigManager.SyncRoutesAsync();
+            }
 
             return CommandResult<string>.Success(app.ExternalId);
         }

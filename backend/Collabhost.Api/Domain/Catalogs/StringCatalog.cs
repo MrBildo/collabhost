@@ -10,6 +10,7 @@ public static class StringCatalog
         public const string Executable = "Executable";
         public const string NpmPackage = "NpmPackage";
         public const string StaticSite = "StaticSite";
+        public const string ProxyService = "ProxyService";
     }
 
     public static class RestartPolicies

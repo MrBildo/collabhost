@@ -37,6 +37,14 @@ public class AppTypeMapping : LookupEntityMapping<AppType>
                 DisplayName = "Static Site",
                 Ordinal = 2,
                 IsActive = true
+            },
+            new AppType
+            {
+                Id = IdentifierCatalog.AppTypes.ProxyService,
+                Name = StringCatalog.AppTypes.ProxyService,
+                DisplayName = "Proxy Service",
+                Ordinal = 3,
+                IsActive = true
             }
         );
     }

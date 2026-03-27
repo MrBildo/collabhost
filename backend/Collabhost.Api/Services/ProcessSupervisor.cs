@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 
 using Collabhost.Api.Data;
+using Collabhost.Api.Domain;
 using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Domain.Entities;
 
@@ -44,11 +45,13 @@ public class ProcessSupervisor
                 """)
             .ToListAsync(cancellationToken);
 
-        foreach (var app in autoStartApps)
+        var sortedApps = autoStartApps.OrderBy(a => AppTypeBehavior.StartupPriority(a.AppTypeId)).ToList();
+
+        foreach (var app in sortedApps)
         {
-            if (app.AppTypeId == IdentifierCatalog.AppTypes.StaticSite)
+            if (!AppTypeBehavior.HasProcess(app.AppTypeId))
             {
-                _logger.LogDebug("Skipping auto-start for static site '{AppName}'", app.Name);
+                _logger.LogDebug("Skipping auto-start for '{AppName}' — app type has no process", app.Name);
                 continue;
             }
 

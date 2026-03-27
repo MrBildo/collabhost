@@ -1,6 +1,6 @@
 using Collabhost.Api.Common;
 using Collabhost.Api.Data;
-using Collabhost.Api.Domain.Catalogs;
+using Collabhost.Api.Domain;
 using Collabhost.Api.Services;
 
 namespace Collabhost.Api.Features.Apps;
@@ -27,9 +27,9 @@ public static class Start
                 return CommandResult<ProcessStatusResponse>.Fail("NOT_FOUND", "App not found.");
             }
 
-            if (app.AppTypeId == IdentifierCatalog.AppTypes.StaticSite)
+            if (!AppTypeBehavior.HasProcess(app.AppTypeId))
             {
-                return CommandResult<ProcessStatusResponse>.Fail("STATIC_SITE", "Static sites have no process to manage.");
+                return CommandResult<ProcessStatusResponse>.Fail("NO_PROCESS", "This app type has no process to manage.");
             }
 
             try
