@@ -18,6 +18,7 @@ public class AppsModule : IFeatureModule
         group.MapPost("/{externalId}/stop", Stop.HandleAsync);
         group.MapPost("/{externalId}/restart", Restart.HandleAsync);
         group.MapGet("/{externalId}/status", GetStatus.HandleAsync);
+        group.MapGet("/{externalId}/logs", GetLogs.HandleAsync);
 
         return endpoints;
     }
