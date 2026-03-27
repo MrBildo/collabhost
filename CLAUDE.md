@@ -57,7 +57,8 @@ collabhost/
 │   │   ├── Migrations/        # EF Core migrations
 │   │   ├── data/              # SQLite database (gitignored)
 │   │   └── appsettings.json
-│   └── Collabhost.Api.Tests/  # Integration tests
+│   ├── Collabhost.Api.Tests/  # Integration tests (WebApplicationFactory + fakes)
+│   └── Collabhost.AppHost.Tests/  # Aspire smoke tests (real Kestrel)
 ├── frontend/
 │   ├── package.json
 │   ├── vite.config.ts
@@ -98,6 +99,10 @@ cd frontend && npm run dev
 cd backend && dotnet test
 cd frontend && npm run test
 ```
+
+`dotnet test` runs both test projects:
+- `Collabhost.Api.Tests` — in-memory integration tests with fakes (fast, no external deps)
+- `Collabhost.AppHost.Tests` — Aspire smoke tests against real Kestrel (boots the AppHost, real SQLite + process runner)
 
 ## Core Modules
 
