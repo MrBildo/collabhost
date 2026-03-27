@@ -14,7 +14,7 @@ public record ProcessStartConfig
     string Command,
     string? Arguments,
     string WorkingDirectory,
-    Dictionary<string, string> EnvironmentVariables,
+    IReadOnlyDictionary<string, string> EnvironmentVariables,
     Action<string, LogStream> OnOutput
 );
 

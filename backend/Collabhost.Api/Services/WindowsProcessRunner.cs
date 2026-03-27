@@ -84,7 +84,7 @@ public class WindowsProcessRunner : IManagedProcessRunner
         return startInfo;
     }
 
-    private class ProcessHandle : IProcessHandle
+    private sealed class ProcessHandle : IProcessHandle
     {
         private readonly Process _process;
 

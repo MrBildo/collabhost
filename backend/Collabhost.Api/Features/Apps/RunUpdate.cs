@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
 
@@ -16,6 +17,7 @@ public static class RunUpdate
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+#pragma warning disable MA0051 // Long method justified — SSE streaming orchestration with sequential phases
     public static async Task HandleAsync
     (
         string externalId,
@@ -76,7 +78,7 @@ public static class RunUpdate
                 .Include(a => a.EnvironmentVariables)
                 .SingleAsync(a => a.Id == app.Id, ct);
 
-            var envVars = new Dictionary<string, string>();
+            var envVars = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var ev in fullApp.EnvironmentVariables)
             {
                 envVars[ev.Name] = ev.Value;
@@ -84,7 +86,7 @@ public static class RunUpdate
 
             if (fullApp.Port.HasValue)
             {
-                envVars["PORT"] = fullApp.Port.Value.ToString();
+                envVars["PORT"] = fullApp.Port.Value.ToString(CultureInfo.InvariantCulture);
             }
 
             var logChannel = Channel.CreateUnbounded<(string StreamName, string Line)>();
@@ -151,6 +153,7 @@ public static class RunUpdate
             coordinator.Release(app.Id);
         }
     }
+#pragma warning restore MA0051
 
     private static async Task WriteSseEventAsync(HttpContext context, string eventType, object data, CancellationToken ct)
     {

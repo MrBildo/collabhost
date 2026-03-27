@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -167,7 +168,7 @@ public class AppUpdateTests(CollabhostApiFixture fixture) : IClassFixture<Collab
     private static string ToTitleCase(string input)
     {
         var words = input.Split('-', ' ');
-        return string.Join(" ", words.Select(w => char.ToUpper(w[0]) + w[1..]));
+        return string.Join(" ", words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
     }
 
     private static object CreateValidRequest(string name, string? updateCommand = null) =>
@@ -209,7 +210,7 @@ public class AppUpdateTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         return json.RootElement.GetProperty("externalId").GetString()!;
     }
 
-    private record SseEvent(string EventType, string Data);
+    private sealed record SseEvent(string EventType, string Data);
 
     private static List<SseEvent> ParseSseEvents(string body)
     {
@@ -221,11 +222,11 @@ public class AppUpdateTests(CollabhostApiFixture fixture) : IClassFixture<Collab
 
         foreach (var line in lines)
         {
-            if (line.StartsWith("event: "))
+            if (line.StartsWith("event: ", StringComparison.Ordinal))
             {
                 currentEvent = line["event: ".Length..].Trim();
             }
-            else if (line.StartsWith("data: "))
+            else if (line.StartsWith("data: ", StringComparison.Ordinal))
             {
                 currentData = line["data: ".Length..].Trim();
             }

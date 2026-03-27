@@ -25,7 +25,7 @@ public class CollabhostApiFixture : WebApplicationFactory<Program>
             {
                 config.AddInMemoryCollection
                 (
-                    new Dictionary<string, string?>
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
                     {
                         ["Auth:AdminKey"] = TestAdminKey
                     }

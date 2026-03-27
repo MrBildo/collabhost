@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 
 using Collabhost.Api.Data;
 using Collabhost.Api.Domain;
@@ -73,7 +74,9 @@ public class ProcessSupervisor
     {
         _logger.LogInformation("Process supervisor stopping — killing all managed processes");
 
+#pragma warning disable VSTHRD103 // Timer.Dispose() is lightweight and Timer doesn't implement IAsyncDisposable
         _graceTimer?.Dispose();
+#pragma warning restore VSTHRD103
 
         await _lock.WaitAsync(cancellationToken);
         try
@@ -185,7 +188,7 @@ public class ProcessSupervisor
             throw new InvalidOperationException("App not found.");
         }
 
-        var envVars = new Dictionary<string, string>();
+        var envVars = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var ev in app.EnvironmentVariables)
         {
             envVars[ev.Name] = ev.Value;
@@ -193,7 +196,7 @@ public class ProcessSupervisor
 
         if (app.Port.HasValue)
         {
-            envVars["PORT"] = app.Port.Value.ToString();
+            envVars["PORT"] = app.Port.Value.ToString(CultureInfo.InvariantCulture);
         }
 
         var managed = new ManagedProcess(app.Id, app.ExternalId, app.DisplayName);
@@ -335,14 +338,7 @@ public class ProcessSupervisor
         }
     }
 
-    private ManagedProcess GetOrThrow(Guid appId)
-    {
-        return !_processes.TryGetValue(appId, out var process)
-            ? throw new KeyNotFoundException("No process state found for this app.")
-            : process;
-    }
-
-    private record AutoStartApp(Guid Id, string ExternalId, string Name, Guid AppTypeId);
+    private sealed record AutoStartApp(Guid Id, string ExternalId, string Name, Guid AppTypeId);
 
     public void Dispose()
     {
@@ -353,5 +349,7 @@ public class ProcessSupervisor
         {
             process.Dispose();
         }
+
+        GC.SuppressFinalize(this);
     }
 }

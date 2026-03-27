@@ -3,7 +3,7 @@ namespace Collabhost.Api.Services;
 public class RingBuffer<T>(int capacity = 1000)
 {
     private readonly T[] _buffer = new T[capacity];
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private int _head;
     private int _count;
 

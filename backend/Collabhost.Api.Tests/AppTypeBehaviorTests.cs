@@ -15,7 +15,7 @@ public class AppTypeBehaviorTests
         "NpmPackage" => IdentifierCatalog.AppTypes.NpmPackage,
         "StaticSite" => IdentifierCatalog.AppTypes.StaticSite,
         "ProxyService" => IdentifierCatalog.AppTypes.ProxyService,
-        _ => throw new ArgumentException($"Unknown app type label: {label}")
+        _ => throw new ArgumentException($"Unknown app type label: {label}", nameof(label))
     };
 
     [Theory]

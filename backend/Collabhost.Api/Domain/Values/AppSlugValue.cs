@@ -5,7 +5,10 @@ namespace Collabhost.Api.Domain.Values;
 public partial class AppSlugValue
 {
     // Lowercase alphanumeric and hyphens, no leading/trailing/consecutive hyphens, 1-100 chars
-    [GeneratedRegex(@"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", RegexOptions.Compiled)]
+    // MA0009: Not vulnerable — simple character class [a-z0-9-] with no nested quantifiers, input bounded to 100 chars
+#pragma warning disable MA0009
+    [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", RegexOptions.ExplicitCapture)]
+#pragma warning restore MA0009
     private static partial Regex SlugPattern();
 
     public string Value { get; }
@@ -29,7 +32,7 @@ public partial class AppSlugValue
             return (false, "App name must contain only lowercase letters, numbers, and hyphens. It cannot start or end with a hyphen.");
         }
 
-        if (normalized.Contains("--"))
+        if (normalized.Contains("--", StringComparison.Ordinal))
         {
             return (false, "App name must not contain consecutive hyphens.");
         }

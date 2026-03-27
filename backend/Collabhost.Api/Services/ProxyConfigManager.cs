@@ -39,7 +39,9 @@ public class ProxyConfigManager
         {
             try
             {
+#pragma warning disable VSTHRD003 // Avoid awaiting foreign Tasks — IHostedService pattern: StartAsync fires, StopAsync drains. No sync context in ASP.NET Core.
                 await _startupTask;
+#pragma warning restore VSTHRD003
             }
             catch (OperationCanceledException)
             {

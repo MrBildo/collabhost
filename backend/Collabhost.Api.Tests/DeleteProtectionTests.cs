@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -50,7 +51,7 @@ public class DeleteProtectionTests(CollabhostApiFixture fixture) : IClassFixture
     private static string ToTitleCase(string input)
     {
         var words = input.Split('-', ' ');
-        return string.Join(" ", words.Select(w => char.ToUpper(w[0]) + w[1..]));
+        return string.Join(" ", words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
     }
 
     private static object CreateValidRequest(string name, bool proxyService = false)

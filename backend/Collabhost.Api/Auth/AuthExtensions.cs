@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Collabhost.Api.Auth;
 
 public static class AuthExtensions
@@ -11,7 +13,7 @@ public static class AuthExtensions
     {
         services.Configure<AuthSettings>(configuration.GetSection("Auth"));
 
-        var generatedKey = Ulid.NewUlid().ToString();
+        var generatedKey = Ulid.NewUlid().ToString(null, CultureInfo.InvariantCulture);
 
         services.PostConfigure<AuthSettings>
         (

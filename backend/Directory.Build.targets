@@ -1,0 +1,6 @@
+<Project>
+  <!-- Test project suppressions (evaluated after .csproj, so IsTestProject is available) -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+</Project>

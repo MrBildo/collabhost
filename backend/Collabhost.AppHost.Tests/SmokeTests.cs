@@ -155,7 +155,7 @@ public class SmokeTests(AppHostFixture fixture)
         routes.GetArrayLength().ShouldBeGreaterThan(0);
 
         var matchingRoute = routes.EnumerateArray()
-            .FirstOrDefault(r => r.GetProperty("domain").GetString()!.StartsWith(slug));
+            .FirstOrDefault(r => r.GetProperty("domain").GetString()!.StartsWith(slug, StringComparison.Ordinal));
         matchingRoute.ValueKind.ShouldNotBe(JsonValueKind.Undefined);
         matchingRoute.GetProperty("proxyMode").GetString().ShouldBe("reverse_proxy");
     }

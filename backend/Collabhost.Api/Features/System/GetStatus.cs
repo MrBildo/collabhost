@@ -6,7 +6,7 @@ public static class GetStatus
 {
     public record Response(string Status, string Version, DateTimeOffset Timestamp);
 
-    public static Ok<Response> HandleAsync()
+    public static Ok<Response> Handle()
     {
         var version = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion

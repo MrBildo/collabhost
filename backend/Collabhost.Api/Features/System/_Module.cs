@@ -8,7 +8,7 @@ public class SystemModule : IFeatureModule
             .MapGroup("/api/v1")
             .WithTags("System");
 
-        group.MapGet("/status", GetStatus.HandleAsync);
+        group.MapGet("/status", GetStatus.Handle);
 
         return endpoints;
     }

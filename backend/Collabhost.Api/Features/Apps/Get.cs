@@ -45,7 +45,7 @@ public static class Get
         int? UpdateTimeoutSeconds,
         bool AutoStart,
         DateTime RegisteredAt,
-        List<EnvironmentVariableResponse> EnvironmentVariables
+        IReadOnlyList<EnvironmentVariableResponse> EnvironmentVariables
     );
 
     public class Handler(CollabhostDbContext db)

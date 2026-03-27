@@ -54,5 +54,8 @@ public class FakeProcessHandle(Action<string, LogStream>? onOutput = null) : IPr
         }
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
+    }
 }

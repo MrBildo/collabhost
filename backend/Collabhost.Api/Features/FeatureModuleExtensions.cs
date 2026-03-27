@@ -17,7 +17,7 @@ public static class FeatureModuleExtensions
         foreach (var moduleType in moduleTypes)
         {
             var module = (IFeatureModule)Activator.CreateInstance(moduleType)!;
-            services.AddSingleton(typeof(IFeatureModule), module);
+            services.AddSingleton<IFeatureModule>(module);
         }
 
         return services;

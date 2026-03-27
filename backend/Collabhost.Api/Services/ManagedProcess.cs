@@ -116,5 +116,6 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
     {
         CancelPendingRestart();
         _handle?.Dispose();
+        GC.SuppressFinalize(this);
     }
 }
