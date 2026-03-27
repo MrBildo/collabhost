@@ -193,7 +193,7 @@ public class ProcessSupervisor
             envVars["PORT"] = app.Port.Value.ToString();
         }
 
-        var managed = new ManagedProcess(app.Id, app.ExternalId, app.Name);
+        var managed = new ManagedProcess(app.Id, app.ExternalId, app.DisplayName);
         managed.MarkStarting();
 
         var config = new ProcessStartConfig

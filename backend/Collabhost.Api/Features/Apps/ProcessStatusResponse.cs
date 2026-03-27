@@ -35,7 +35,7 @@ internal static class ProcessStatusMapper
         (
             externalId,
             appName,
-            StringCatalog.ProcessStates.Stopped,
+            "Stopped",
             null,
             null,
             null,
@@ -45,12 +45,12 @@ internal static class ProcessStatusMapper
 
     private static string ResolveStateName(Guid stateId) => stateId switch
     {
-        _ when stateId == IdentifierCatalog.ProcessStates.Stopped => StringCatalog.ProcessStates.Stopped,
-        _ when stateId == IdentifierCatalog.ProcessStates.Starting => StringCatalog.ProcessStates.Starting,
-        _ when stateId == IdentifierCatalog.ProcessStates.Running => StringCatalog.ProcessStates.Running,
-        _ when stateId == IdentifierCatalog.ProcessStates.Stopping => StringCatalog.ProcessStates.Stopping,
-        _ when stateId == IdentifierCatalog.ProcessStates.Crashed => StringCatalog.ProcessStates.Crashed,
-        _ when stateId == IdentifierCatalog.ProcessStates.Restarting => StringCatalog.ProcessStates.Restarting,
+        _ when stateId == IdentifierCatalog.ProcessStates.Stopped => "Stopped",
+        _ when stateId == IdentifierCatalog.ProcessStates.Starting => "Starting",
+        _ when stateId == IdentifierCatalog.ProcessStates.Running => "Running",
+        _ when stateId == IdentifierCatalog.ProcessStates.Stopping => "Stopping",
+        _ when stateId == IdentifierCatalog.ProcessStates.Crashed => "Crashed",
+        _ when stateId == IdentifierCatalog.ProcessStates.Restarting => "Restarting",
         _ => "Unknown"
     };
 }

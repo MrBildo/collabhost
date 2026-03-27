@@ -17,24 +17,24 @@ public class AppTypeMapping : LookupEntityMapping<AppType>
             new AppType
             {
                 Id = IdentifierCatalog.AppTypes.Executable,
-                Name = "Executable",
-                DisplayName = StringCatalog.AppTypes.Executable,
+                Name = StringCatalog.AppTypes.Executable,
+                DisplayName = "Executable",
                 Ordinal = 0,
                 IsActive = true
             },
             new AppType
             {
                 Id = IdentifierCatalog.AppTypes.NpmPackage,
-                Name = "NpmPackage",
-                DisplayName = StringCatalog.AppTypes.NpmPackage,
+                Name = StringCatalog.AppTypes.NpmPackage,
+                DisplayName = "NPM Package",
                 Ordinal = 1,
                 IsActive = true
             },
             new AppType
             {
                 Id = IdentifierCatalog.AppTypes.StaticSite,
-                Name = "StaticSite",
-                DisplayName = StringCatalog.AppTypes.StaticSite,
+                Name = StringCatalog.AppTypes.StaticSite,
+                DisplayName = "Static Site",
                 Ordinal = 2,
                 IsActive = true
             }

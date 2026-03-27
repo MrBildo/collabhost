@@ -20,19 +20,7 @@ public static class Stop
 
         public async Task<CommandResult<ProcessStatusResponse>> HandleAsync(Command command, CancellationToken ct = default)
         {
-            var app = await _db.Database
-                .SqlQuery<AppLookup>(
-                    $"""
-                    SELECT
-                        A.[Id]
-                        ,A.[ExternalId]
-                        ,A.[AppTypeId]
-                    FROM
-                        [App] A
-                    WHERE
-                        A.[ExternalId] = {command.ExternalId}
-                    """)
-                .SingleOrDefaultAsync(ct);
+            var app = await _db.FindAppByExternalIdAsync(command.ExternalId, ct);
 
             if (app is null)
             {
@@ -65,18 +53,14 @@ public static class Stop
     {
         var result = await handler.HandleAsync(new Command(externalId), ct);
 
-        if (result.IsSuccess)
+        Results<Ok<ProcessStatusResponse>, NotFound, ProblemHttpResult> response = result switch
         {
-            return TypedResults.Ok(result.Value);
-        }
-
-        return result.ErrorCode switch
-        {
-            "NOT_FOUND" => TypedResults.NotFound(),
-            "ALREADY_STOPPED" => TypedResults.Problem(result.ErrorMessage, statusCode: 409),
+            { IsSuccess: true } => TypedResults.Ok(result.Value),
+            { ErrorCode: "NOT_FOUND" } => TypedResults.NotFound(),
+            { ErrorCode: "ALREADY_STOPPED" } => TypedResults.Problem(result.ErrorMessage, statusCode: 409),
             _ => TypedResults.Problem(result.ErrorMessage, statusCode: 400)
         };
-    }
 
-    internal record AppLookup(Guid Id, string ExternalId, Guid AppTypeId);
+        return response;
+    }
 }

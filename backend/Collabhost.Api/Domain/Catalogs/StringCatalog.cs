@@ -1,21 +1,21 @@
 namespace Collabhost.Api.Domain.Catalogs;
 
-// Display name constants. Stubbed in — the canonical display names live in the database.
-// Use these for seeding and for cases where you need a display name without a DB round-trip.
+// Immutable machine-readable Name constants for lookup entities.
+// These match the [Name] column in the database and are used for seeding and code-level references.
 
 public static class StringCatalog
 {
     public static class AppTypes
     {
         public const string Executable = "Executable";
-        public const string NpmPackage = "NPM Package";
-        public const string StaticSite = "Static Site";
+        public const string NpmPackage = "NpmPackage";
+        public const string StaticSite = "StaticSite";
     }
 
     public static class RestartPolicies
     {
         public const string Never = "Never";
-        public const string OnCrash = "On Crash";
+        public const string OnCrash = "OnCrash";
         public const string Always = "Always";
     }
 

@@ -19,19 +19,7 @@ public static class GetStatus
 
         public async Task<QueryResult<ProcessStatusResponse>> HandleAsync(Query query, CancellationToken ct = default)
         {
-            var app = await _db.Database
-                .SqlQuery<AppLookup>(
-                    $"""
-                    SELECT
-                        A.[Id]
-                        ,A.[ExternalId]
-                        ,A.[Name]
-                    FROM
-                        [App] A
-                    WHERE
-                        A.[ExternalId] = {query.ExternalId}
-                    """)
-                .SingleOrDefaultAsync(ct);
+            var app = await _db.FindAppByExternalIdAsync(query.ExternalId, ct);
 
             if (app is null)
             {
@@ -42,7 +30,7 @@ public static class GetStatus
 
             var response = managed is not null
                 ? ProcessStatusMapper.Map(managed)
-                : ProcessStatusMapper.Stopped(app.ExternalId, app.Name);
+                : ProcessStatusMapper.Stopped(app.ExternalId, app.DisplayName);
 
             return QueryResult<ProcessStatusResponse>.Success(response);
         }
@@ -61,6 +49,4 @@ public static class GetStatus
             ? TypedResults.Ok(result.Value)
             : TypedResults.NotFound();
     }
-
-    internal record AppLookup(Guid Id, string ExternalId, string Name);
 }
