@@ -287,6 +287,7 @@ dotnet_diagnostic.CA1000.severity = none
 dotnet_diagnostic.CA1711.severity = none
 dotnet_diagnostic.CA1716.severity = none
 dotnet_diagnostic.CA1510.severity = error
+dotnet_diagnostic.CA1708.severity = none
 dotnet_diagnostic.CA1822.severity = none
 dotnet_diagnostic.CA1829.severity = error
 dotnet_diagnostic.CA1841.severity = error
