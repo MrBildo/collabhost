@@ -54,8 +54,8 @@ var app = builder.Build();
 // Ensure database is created (dev only -- use migrations in prod)
 if (app.Environment.IsDevelopment())
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<Collabhost.Api.Data.CollabhostDbContext>();
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
     await db.Database.EnsureCreatedAsync();
 }
 
