@@ -6,8 +6,8 @@ public static class FeatureModuleExtensions
 {
     public static IServiceCollection AddFeatureModules(this IServiceCollection services, Assembly assembly)
     {
-        // Auto-register all nested Handler classes found in the Features namespace
-        AddFeatureHandlers(services, assembly);
+        // Auto-register all query handler classes found in the Features namespace
+        AddFeatureQueryHandlers(services, assembly);
 
         // Discover and register IFeatureModule instances for endpoint mapping
         var moduleTypes = assembly.GetTypes()
@@ -33,14 +33,13 @@ public static class FeatureModuleExtensions
         return app;
     }
 
-    private static void AddFeatureHandlers(IServiceCollection services, Assembly assembly)
+    private static void AddFeatureQueryHandlers(IServiceCollection services, Assembly assembly)
     {
         var handlerTypes = assembly.GetTypes()
             .Where
             (
-                t => t is { IsClass: true, IsAbstract: false, IsNested: true }
-                    && t.Name == "Handler"
-                    && t.DeclaringType is { IsAbstract: true, IsSealed: true }
+                t => t is { IsClass: true, IsAbstract: false, IsNested: false }
+                    && t.Name.EndsWith("QueryHandler", StringComparison.Ordinal)
                     && (t.Namespace?.Contains(".Features") ?? false)
             );
 

@@ -17,39 +17,9 @@ public static class GetAll
         bool AutoStart
     );
 
-    public class Handler(CollabhostDbContext db)
-    {
-        private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
-
-        public async Task<QueryResult<List<Response>>> HandleAsync(CancellationToken ct = default)
-        {
-            var results = await _db.Database
-                .SqlQuery<Response>(
-                    $"""
-                    SELECT
-                        A.[ExternalId]
-                        ,A.[Name]
-                        ,A.[DisplayName]
-                        ,AT.[DisplayName] AS [AppTypeName]
-                        ,A.[Port]
-                        ,A.[UpdateCommand]
-                        ,A.[UpdateTimeoutSeconds]
-                        ,A.[AutoStart]
-                    FROM
-                        [App] A
-                        INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
-                    ORDER BY
-                        A.[Name]
-                    """)
-                .ToListAsync(ct);
-
-            return QueryResult<List<Response>>.Success(results);
-        }
-    }
-
     public static async Task<Results<Ok<List<Response>>, ProblemHttpResult>> HandleAsync
     (
-        Handler handler,
+        GetAllQueryHandler handler,
         CancellationToken ct
     )
     {
@@ -58,5 +28,35 @@ public static class GetAll
         return result.IsSuccess
             ? TypedResults.Ok(result.Value)
             : TypedResults.Problem(result.ErrorMessage, statusCode: 500);
+    }
+}
+
+public class GetAllQueryHandler(CollabhostDbContext db)
+{
+    private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
+
+    public async Task<QueryResult<List<GetAll.Response>>> HandleAsync(CancellationToken ct = default)
+    {
+        var results = await _db.Database
+            .SqlQuery<GetAll.Response>(
+                $"""
+                SELECT
+                    A.[ExternalId]
+                    ,A.[Name]
+                    ,A.[DisplayName]
+                    ,AT.[DisplayName] AS [AppTypeName]
+                    ,A.[Port]
+                    ,A.[UpdateCommand]
+                    ,A.[UpdateTimeoutSeconds]
+                    ,A.[AutoStart]
+                FROM
+                    [App] A
+                    INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
+                ORDER BY
+                    A.[Name]
+                """)
+            .ToListAsync(ct);
+
+        return QueryResult<List<GetAll.Response>>.Success(results);
     }
 }

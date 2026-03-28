@@ -6,10 +6,9 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-Recommended</AnalysisLevel>
     <!-- CA1873: Log argument evaluation — not a hot path (same as CA1848)
-         S3218: Nested class shadowing — temporary, pending vertical slice restructure (card #20)
          S3881: Full dispose pattern — overkill for sealed internal types
          S6966: DisposeAsync — types don't implement IAsyncDisposable -->
-    <NoWarn>$(NoWarn);CA1873;S3218;S3881;S6966</NoWarn>
+    <NoWarn>$(NoWarn);CA1873;S3881;S6966</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
