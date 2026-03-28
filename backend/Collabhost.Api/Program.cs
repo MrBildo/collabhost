@@ -52,6 +52,9 @@ builder.Services.AddCollabhostAuth(builder.Configuration, earlyLogger);
 // Feature modules (auto-discovered via reflection)
 builder.Services.AddFeatureModules(Assembly.GetExecutingAssembly());
 
+// Command dispatcher (auto-discovers ICommandHandler<,> implementations)
+builder.Services.AddCommandDispatcher();
+
 // Infrastructure services
 builder.Services.AddScoped<PortAllocator>();
 builder.Services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();

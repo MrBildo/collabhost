@@ -7,50 +7,14 @@ namespace Collabhost.Api.Features.Apps;
 
 public static class Delete
 {
-    public record Command(string ExternalId);
-
-    public class Handler
-    (
-        CollabhostDbContext db,
-        ProxyConfigManager proxyConfigManager
-    )
-    {
-        private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
-        private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
-
-        public async Task<CommandResult> HandleAsync(Command command, CancellationToken ct = default)
-        {
-            var app = await _db.Apps
-                .Include(a => a.EnvironmentVariables)
-                .SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
-
-            if (app is null)
-            {
-                return CommandResult.Fail("NOT_FOUND", "App not found.");
-            }
-
-            if (!AppTypeBehavior.IsDeletable(app.AppTypeId))
-            {
-                return CommandResult.Fail("PROTECTED", "This app type cannot be deleted.");
-            }
-
-            _db.Apps.Remove(app);
-            await _db.SaveChangesAsync(ct);
-
-            _ = _proxyConfigManager.SyncRoutesAsync();
-
-            return CommandResult.Success();
-        }
-    }
-
     public static async Task<Results<NoContent, NotFound, ProblemHttpResult>> HandleAsync
     (
         string externalId,
-        Handler handler,
+        CommandDispatcher dispatcher,
         CancellationToken ct
     )
     {
-        var result = await handler.HandleAsync(new Command(externalId), ct);
+        var result = await dispatcher.DispatchAsync(new DeleteCommand(externalId), ct);
 
         Results<NoContent, NotFound, ProblemHttpResult> response = result switch
         {
@@ -61,5 +25,41 @@ public static class Delete
         };
 
         return response;
+    }
+}
+
+public record DeleteCommand(string ExternalId) : ICommand<Empty>;
+
+public class DeleteCommandHandler
+(
+    CollabhostDbContext db,
+    ProxyConfigManager proxyConfigManager
+) : ICommandHandler<DeleteCommand, Empty>
+{
+    private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
+    private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
+
+    public async Task<CommandResult<Empty>> HandleAsync(DeleteCommand command, CancellationToken ct = default)
+    {
+        var app = await _db.Apps
+            .Include(a => a.EnvironmentVariables)
+            .SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
+
+        if (app is null)
+        {
+            return CommandResult<Empty>.Fail("NOT_FOUND", "App not found.");
+        }
+
+        if (!AppTypeBehavior.IsDeletable(app.AppTypeId))
+        {
+            return CommandResult<Empty>.Fail("PROTECTED", "This app type cannot be deleted.");
+        }
+
+        _db.Apps.Remove(app);
+        await _db.SaveChangesAsync(ct);
+
+        _ = _proxyConfigManager.SyncRoutesAsync();
+
+        return CommandResult<Empty>.Success(Empty.Value);
     }
 }
