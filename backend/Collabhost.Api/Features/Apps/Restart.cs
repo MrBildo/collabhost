@@ -14,7 +14,7 @@ public static class Restart
         CancellationToken ct
     )
     {
-        var result = await dispatcher.DispatchAsync<RestartCommand, ProcessStatusResponse>(new RestartCommand(externalId), ct);
+        var result = await dispatcher.DispatchAsync(new RestartCommand(externalId), ct);
 
         Results<Ok<ProcessStatusResponse>, NotFound, ProblemHttpResult> response = result switch
         {

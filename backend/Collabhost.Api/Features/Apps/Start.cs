@@ -14,7 +14,7 @@ public static class Start
         CancellationToken ct
     )
     {
-        var result = await dispatcher.DispatchAsync<StartCommand, ProcessStatusResponse>(new StartCommand(externalId), ct);
+        var result = await dispatcher.DispatchAsync(new StartCommand(externalId), ct);
 
         Results<Ok<ProcessStatusResponse>, NotFound, ProblemHttpResult> response = result switch
         {

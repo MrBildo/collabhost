@@ -51,7 +51,7 @@ public static class Create
             request.AutoStart
         );
 
-        var result = await dispatcher.DispatchAsync<CreateCommand, string>(command, ct);
+        var result = await dispatcher.DispatchAsync(command, ct);
 
         return result.IsSuccess
             ? TypedResults.Created($"/api/v1/apps/{result.Value}", new Response(result.Value!))

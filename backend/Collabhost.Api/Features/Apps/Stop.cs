@@ -14,7 +14,7 @@ public static class Stop
         CancellationToken ct
     )
     {
-        var result = await dispatcher.DispatchAsync<StopCommand, ProcessStatusResponse>(new StopCommand(externalId), ct);
+        var result = await dispatcher.DispatchAsync(new StopCommand(externalId), ct);
 
         Results<Ok<ProcessStatusResponse>, NotFound, ProblemHttpResult> response = result switch
         {
