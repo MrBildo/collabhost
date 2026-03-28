@@ -1,8 +1,3 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
-using Collabhost.Api.Services;
-
 namespace Collabhost.Api.Features.Proxy;
 
 public static class GetRoutes
@@ -19,11 +14,11 @@ public static class GetRoutes
 
     public static async Task<Results<Ok<RouteListResponse>, ProblemHttpResult>> HandleAsync
     (
-        GetRoutesQueryHandler handler,
+        CommandDispatcher dispatcher,
         CancellationToken ct
     )
     {
-        var result = await handler.HandleAsync(ct);
+        var result = await dispatcher.DispatchAsync(new GetRoutesCommand(), ct);
 
         return result.IsSuccess
             ? TypedResults.Ok(result.Value)
@@ -31,16 +26,18 @@ public static class GetRoutes
     }
 }
 
-public class GetRoutesQueryHandler
+public record GetRoutesCommand : ICommand<RouteListResponse>;
+
+public class GetRoutesCommandHandler
 (
     CollabhostDbContext db,
     ProxySettings settings
-)
+) : ICommandHandler<GetRoutesCommand, RouteListResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProxySettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
 
-    public async Task<QueryResult<RouteListResponse>> HandleAsync(CancellationToken ct = default)
+    public async Task<CommandResult<RouteListResponse>> HandleAsync(GetRoutesCommand command, CancellationToken ct = default)
     {
         var rows = await _db.Database
             .SqlQuery<GetRoutes.RouteQueryRow>(
@@ -84,7 +81,7 @@ public class GetRoutesQueryHandler
             )
             .ToList();
 
-        return QueryResult<RouteListResponse>.Success
+        return CommandResult<RouteListResponse>.Success
         (
             new RouteListResponse(routes, _settings.BaseDomain)
         );

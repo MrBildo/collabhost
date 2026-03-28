@@ -1,6 +1,3 @@
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
-
 namespace Collabhost.Api.Services;
 
 public class ProxyConfigManager
@@ -17,22 +14,22 @@ public class ProxyConfigManager
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
     private readonly ProxySettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     private readonly ILogger<ProxyConfigManager> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private CancellationTokenSource? _startupCts;
+    private CancellationTokenSource? _startupCancellation;
     private Task? _startupTask;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _startupTask = Task.Run(() => StartupPollAsync(_startupCts.Token), _startupCts.Token);
+        _startupCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _startupTask = Task.Run(() => StartupPollAsync(_startupCancellation.Token), _startupCancellation.Token);
         return Task.CompletedTask;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_startupCts is not null)
+        if (_startupCancellation is not null)
         {
-            await _startupCts.CancelAsync();
-            _startupCts.Dispose();
+            await _startupCancellation.CancelAsync();
+            _startupCancellation.Dispose();
         }
 
         if (_startupTask is not null)

@@ -2,10 +2,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
 
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
-using Collabhost.Api.Services;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class RunUpdate
@@ -78,15 +74,15 @@ public static class RunUpdate
                 .Include(a => a.EnvironmentVariables)
                 .SingleAsync(a => a.Id == app.Id, ct);
 
-            var envVars = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var ev in fullApp.EnvironmentVariables)
+            var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var variable in fullApp.EnvironmentVariables)
             {
-                envVars[ev.Name] = ev.Value;
+                environmentVariables[variable.Name] = variable.Value;
             }
 
             if (fullApp.Port.HasValue)
             {
-                envVars["PORT"] = fullApp.Port.Value.ToString(CultureInfo.InvariantCulture);
+                environmentVariables["PORT"] = fullApp.Port.Value.ToString(CultureInfo.InvariantCulture);
             }
 
             var logChannel = Channel.CreateUnbounded<(string StreamName, string Line)>();
@@ -99,16 +95,16 @@ public static class RunUpdate
                 }
             }, ct);
 
-            var (shellCommand, shellArgs) = OperatingSystem.IsWindows()
+            var (shellCommand, shellArguments) = OperatingSystem.IsWindows()
                 ? ("cmd.exe", $"/c {fullApp.UpdateCommand!}")
                 : ("/bin/sh", $"-c \"{fullApp.UpdateCommand!}\"");
 
-            var updateConfig = new ProcessStartConfig
+            var updateConfiguration = new ProcessStartConfig
             (
                 shellCommand,
-                shellArgs,
+                shellArguments,
                 fullApp.WorkingDirectory ?? fullApp.InstallDirectory,
-                envVars,
+                environmentVariables,
                 (line, stream) =>
                 {
                     var streamName = stream == LogStream.StdOut ? "stdout" : "stderr";
@@ -117,7 +113,7 @@ public static class RunUpdate
             );
 
             var timeout = TimeSpan.FromSeconds(fullApp.UpdateTimeoutSeconds ?? DefaultUpdateTimeoutSeconds);
-            var runResult = await runner.RunToCompletionAsync(updateConfig, timeout, ct);
+            var runResult = await runner.RunToCompletionAsync(updateConfiguration, timeout, ct);
 
             logChannel.Writer.Complete();
             await logWriterTask;

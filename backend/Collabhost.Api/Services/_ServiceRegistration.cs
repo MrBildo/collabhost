@@ -1,6 +1,4 @@
-using Collabhost.Api.Data;
 using Collabhost.Api.Data.Interceptors;
-using Collabhost.Api.Services;
 
 using Microsoft.Extensions.Options;
 
@@ -15,11 +13,11 @@ public static class InfrastructureServiceExtensions
             var connectionString = configuration.GetConnectionString("Host")
                 ?? "Data Source=./db/collabhost.db";
 
-            var dbPath = connectionString.Replace("Data Source=", "");
-            var dbDir = Path.GetDirectoryName(Path.GetFullPath(dbPath));
-            if (dbDir is not null)
+            var databasePath = connectionString.Replace("Data Source=", "");
+            var databaseDirectory = Path.GetDirectoryName(Path.GetFullPath(databasePath));
+            if (databaseDirectory is not null)
             {
-                Directory.CreateDirectory(dbDir);
+                Directory.CreateDirectory(databaseDirectory);
             }
 
             services.AddDbContext<CollabhostDbContext>

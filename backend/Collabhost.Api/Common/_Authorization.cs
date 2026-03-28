@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+
 using Microsoft.Extensions.Options;
 
 namespace Collabhost.Api.Auth;
@@ -12,12 +13,12 @@ public class AuthorizationSettings
 public class ApiKeyAuthorizationMiddleware
 (
     RequestDelegate next,
-    IOptionsMonitor<AuthorizationSettings> authSettings,
+    IOptionsMonitor<AuthorizationSettings> authorizationSettings,
     ILogger<ApiKeyAuthorizationMiddleware> logger
 )
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
-    private readonly IOptionsMonitor<AuthorizationSettings> _authSettings = authSettings ?? throw new ArgumentNullException(nameof(authSettings));
+    private readonly IOptionsMonitor<AuthorizationSettings> _authorizationSettings = authorizationSettings ?? throw new ArgumentNullException(nameof(authorizationSettings));
     private readonly ILogger<ApiKeyAuthorizationMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     private static readonly string[] _skipPrefixes = ["/health", "/alive", "/openapi"];
@@ -38,7 +39,7 @@ public class ApiKeyAuthorizationMiddleware
         }
 
         var userKey = context.Request.Headers["X-User-Key"].FirstOrDefault();
-        var adminKey = _authSettings.CurrentValue.AdminKey;
+        var adminKey = _authorizationSettings.CurrentValue.AdminKey;
 
         if (adminKey is null || userKey != adminKey)
         {

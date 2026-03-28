@@ -5,3 +5,4 @@ public class AppType : LookupEntity { }
 public class ProcessState : LookupEntity;
 
 public class RestartPolicy : LookupEntity { }
+

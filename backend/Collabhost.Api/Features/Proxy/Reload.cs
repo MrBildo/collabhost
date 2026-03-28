@@ -1,5 +1,3 @@
-using Collabhost.Api.Services;
-
 namespace Collabhost.Api.Features.Proxy;
 
 public static class Reload

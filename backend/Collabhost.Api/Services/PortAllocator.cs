@@ -1,8 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
 
-using Collabhost.Api.Data;
-
 namespace Collabhost.Api.Services;
 
 public class PortAllocator(CollabhostDbContext db)

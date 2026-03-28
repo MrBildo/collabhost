@@ -21,8 +21,12 @@ public record ProcessStartConfig
 public interface IProcessHandle : IDisposable
 {
     int Pid { get; }
+
     bool HasExited { get; }
+
     int? ExitCode { get; }
+
     event Action<int>? Exited;
+
     void Kill();
 }

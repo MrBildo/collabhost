@@ -1,13 +1,7 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-using Collabhost.Api.Services;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class GetLogs
 {
-    public record Query(string ExternalId, int Count, LogStream? StreamFilter);
-
     public record LogEntryResponse(DateTime Timestamp, string Stream, string Content);
 
     public record Response(IReadOnlyList<LogEntryResponse> Entries, int TotalBuffered);
@@ -15,7 +9,7 @@ public static class GetLogs
     public static async Task<Results<Ok<Response>, NotFound, ProblemHttpResult>> HandleAsync
     (
         string externalId,
-        GetLogsQueryHandler handler,
+        CommandDispatcher dispatcher,
         CancellationToken ct,
         int count = 100,
         string? stream = null
@@ -37,7 +31,7 @@ public static class GetLogs
             _ => null
         };
 
-        var result = await handler.HandleAsync(new Query(externalId, count, streamFilter), ct);
+        var result = await dispatcher.DispatchAsync(new GetLogsCommand(externalId, count, streamFilter), ct);
 
         return result.IsSuccess
             ? TypedResults.Ok(result.Value)
@@ -45,44 +39,46 @@ public static class GetLogs
     }
 }
 
-public class GetLogsQueryHandler
+public record GetLogsCommand(string ExternalId, int Count, LogStream? StreamFilter) : ICommand<GetLogs.Response>;
+
+public class GetLogsCommandHandler
 (
     CollabhostDbContext db,
     ProcessSupervisor supervisor
-)
+) : ICommandHandler<GetLogsCommand, GetLogs.Response>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
 
-    public async Task<QueryResult<GetLogs.Response>> HandleAsync(GetLogs.Query query, CancellationToken ct = default)
+    public async Task<CommandResult<GetLogs.Response>> HandleAsync(GetLogsCommand command, CancellationToken ct = default)
     {
-        var app = await _db.FindAppByExternalIdAsync(query.ExternalId, ct);
+        var app = await _db.FindAppByExternalIdAsync(command.ExternalId, ct);
 
         if (app is null)
         {
-            return QueryResult<GetLogs.Response>.Fail("App not found.");
+            return CommandResult<GetLogs.Response>.Fail("NOT_FOUND", "App not found.");
         }
 
         var managed = _supervisor.GetStatus(app.Id);
 
         if (managed is null)
         {
-            return QueryResult<GetLogs.Response>.Success(new GetLogs.Response([], 0));
+            return CommandResult<GetLogs.Response>.Success(new GetLogs.Response([], 0));
         }
 
         var totalBuffered = managed.LogBuffer.Count;
-        var count = Math.Clamp(query.Count, 1, 1000);
+        var count = Math.Clamp(command.Count, 1, 1000);
 
-        var entries = query.StreamFilter is not null
+        var entries = command.StreamFilter is not null
             ? [.. managed.LogBuffer
                 .GetAll()
-                .Where(e => e.Stream == query.StreamFilter.Value)
+                .Where(e => e.Stream == command.StreamFilter.Value)
                 .TakeLast(count)
                 .Select(e => new GetLogs.LogEntryResponse(e.Timestamp, e.Stream.ToString(), e.Content))]
             : (IReadOnlyList<GetLogs.LogEntryResponse>)[.. managed.LogBuffer
                 .GetLast(count)
                 .Select(e => new GetLogs.LogEntryResponse(e.Timestamp, e.Stream.ToString(), e.Content))];
 
-        return QueryResult<GetLogs.Response>.Success(new GetLogs.Response(entries, totalBuffered));
+        return CommandResult<GetLogs.Response>.Success(new GetLogs.Response(entries, totalBuffered));
     }
 }

@@ -1,6 +1,3 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class GetAll
@@ -19,11 +16,11 @@ public static class GetAll
 
     public static async Task<Results<Ok<List<Response>>, ProblemHttpResult>> HandleAsync
     (
-        GetAllQueryHandler handler,
+        CommandDispatcher dispatcher,
         CancellationToken ct
     )
     {
-        var result = await handler.HandleAsync(ct);
+        var result = await dispatcher.DispatchAsync(new GetAllAppsCommand(), ct);
 
         return result.IsSuccess
             ? TypedResults.Ok(result.Value)
@@ -31,11 +28,13 @@ public static class GetAll
     }
 }
 
-public class GetAllQueryHandler(CollabhostDbContext db)
+public record GetAllAppsCommand : ICommand<List<GetAll.Response>>;
+
+public class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandHandler<GetAllAppsCommand, List<GetAll.Response>>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
 
-    public async Task<QueryResult<List<GetAll.Response>>> HandleAsync(CancellationToken ct = default)
+    public async Task<CommandResult<List<GetAll.Response>>> HandleAsync(GetAllAppsCommand command, CancellationToken ct = default)
     {
         var results = await _db.Database
             .SqlQuery<GetAll.Response>(
@@ -57,6 +56,6 @@ public class GetAllQueryHandler(CollabhostDbContext db)
                 """)
             .ToListAsync(ct);
 
-        return QueryResult<List<GetAll.Response>>.Success(results);
+        return CommandResult<List<GetAll.Response>>.Success(results);
     }
 }

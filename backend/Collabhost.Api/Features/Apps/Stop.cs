@@ -1,8 +1,3 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
-using Collabhost.Api.Services;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class Stop

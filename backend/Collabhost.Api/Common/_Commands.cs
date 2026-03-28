@@ -1,7 +1,5 @@
 using System.Reflection;
 
-using Collabhost.Api.Common;
-
 namespace Collabhost.Api.Common
 {
 #pragma warning disable S2326 // Phantom type parameter used for handler constraint resolution
