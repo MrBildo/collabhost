@@ -52,10 +52,14 @@ collabhost/
 │   ├── Collabhost.AppHost/    # Aspire orchestrator
 │   ├── Collabhost.ServiceDefaults/  # Shared telemetry/health
 │   ├── Collabhost.Api/        # Main API project
-│   │   ├── Endpoints/         # Endpoint group classes
-│   │   ├── Models/            # Entity/response models
+│   │   ├── Common/            # Command dispatcher, result types (Command.cs, CommandResult.cs, QueryResult.cs)
+│   │   ├── Features/          # Vertical slices grouped by domain (Apps/, Proxy/, System/)
+│   │   ├── Domain/            # Entities, lookups, value objects
+│   │   ├── Data/              # EF Core DbContext
 │   │   ├── Migrations/        # EF Core migrations
-│   │   ├── data/              # SQLite database (gitignored)
+│   │   ├── Services/          # Cross-cutting services
+│   │   ├── Auth/              # Auth logic
+│   │   ├── db/                # SQLite database (gitignored)
 │   │   └── appsettings.json
 │   ├── Collabhost.Api.Tests/  # Integration tests (WebApplicationFactory + fakes)
 │   └── Collabhost.AppHost.Tests/  # Aspire smoke tests (real Kestrel)
@@ -105,6 +109,14 @@ cd frontend && npm run test
 - `Collabhost.AppHost.Tests` — Aspire smoke tests against real Kestrel (boots the AppHost, real SQLite + process runner)
 
 ## Core Modules
+
+### Command Dispatcher
+- `ICommand<TResult>` / `ICommandHandler<TCommand, TResult>` — command pattern for all write operations
+- `CommandDispatcher` with type-inferring `DispatchAsync` (resolves handlers via DI)
+- `AddCommandDispatcher()` extension — auto-scans assembly for handler registrations
+- `Empty` struct for void-result commands (`ICommand<Empty>`)
+- `CommandResult<T>` / `QueryResult<T>` — result types with success/fail factory methods
+- All types in `Common/Command.cs` (dispatcher + registration extension in same file)
 
 ### App Registry
 - App definitions: name (slug, used in domain), display name, type (Executable, NpmPackage, StaticSite), install directory, command, args, working directory, environment variables (separate table rows), port (auto-assigned via bind-to-zero), health endpoint, update command, update timeout (per-app, nullable, defaults 300s), auto-start, restart policy (Never/OnCrash/Always)
@@ -177,18 +189,20 @@ REST API under `/api/v1/`:
 /health                     # Health check
 ```
 
-## Endpoint Structure
+## Endpoint Structure (Vertical Slices)
 
-Static classes under `backend/Collabhost.Api/Endpoints/`. One file per resource.
+Organized under `backend/Collabhost.Api/Features/`, grouped by domain (`Apps/`, `Proxy/`, `System/`). One file per operation (e.g., `Create.cs`, `GetAll.cs`, `Delete.cs`).
 
-```csharp
-public static class AppEndpoints
-{
-    public static RouteGroupBuilder MapAppEndpoints(this RouteGroupBuilder group) { ... }
-}
-```
+Each **command** file contains three top-level types:
+1. **Static endpoint class** — `Request`/`Response` records + `HandleAsync` (HTTP layer only, dispatches via `CommandDispatcher`)
+2. **Command record** — implements `ICommand<TResult>` (use `ICommand<Empty>` for void-result commands)
+3. **Handler class** — implements `ICommandHandler<TCommand, TResult>`, contains all business logic
 
-`Program.cs` is a thin composition root — it wires services and maps endpoint groups.
+Each **query** file contains two top-level types:
+1. **Static endpoint class** — `Response` record + `HandleAsync` (injects the query handler directly)
+2. **Query handler class** — returns `QueryResult<T>`, injected into endpoint via DI
+
+Each domain folder has a `_Module.cs` implementing `IFeatureModule` to map routes. `Program.cs` is a thin composition root — it wires services and auto-discovers feature modules.
 
 ## C# Conventions
 
@@ -205,6 +219,10 @@ public static class AppEndpoints
 - Expression-bodied members for one-liners
 - `SingleAsync` (not `FirstAsync`) for single-result entity lookups by ID
 - `.editorconfig` enforced
+
+## Analyzers
+
+The backend uses four Roslyn analyzers enforced across all projects: .NET Analyzers (latest-Recommended), Meziantou, VS.Threading, and SonarAnalyzer. Rules are configured via `.editorconfig`. `Directory.Build.props` sets shared properties, analyzer packages, and project-wide suppressions. `Directory.Build.targets` adds test-specific suppressions (e.g., CA1707 for test method naming).
 
 ## SSE Endpoint Pattern
 
