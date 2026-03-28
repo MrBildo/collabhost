@@ -72,9 +72,10 @@ public class ProcessSupervisor
     {
         _logger.LogInformation("Process supervisor stopping — killing all managed processes");
 
-#pragma warning disable VSTHRD103 // Timer.Dispose() is lightweight and Timer doesn't implement IAsyncDisposable
-        _graceTimer?.Dispose();
-#pragma warning restore VSTHRD103
+        if (_graceTimer is not null)
+        {
+            await _graceTimer.DisposeAsync();
+        }
 
         await _lock.WaitAsync(cancellationToken);
         try

@@ -85,7 +85,7 @@ app.MapFallbackToFile("index.html");
 // Default health/alive endpoints (from ServiceDefaults)
 app.MapDefaultEndpoints();
 
-app.Run();
+await app.RunAsync();
 
 // Make Program class accessible for WebApplicationFactory in tests
 public partial class Program { }

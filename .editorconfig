@@ -314,6 +314,7 @@ dotnet_diagnostic.S4487.severity = error
 # Meziantou
 dotnet_diagnostic.MA0004.severity = none
 dotnet_diagnostic.MA0006.severity = none
+dotnet_diagnostic.MA0042.severity = error
 dotnet_diagnostic.MA0046.severity = none
 dotnet_diagnostic.MA0048.severity = none
 
