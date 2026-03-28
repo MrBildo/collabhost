@@ -27,7 +27,7 @@ public class AppTypeBehaviorTests
     (
         string label,
         bool hasProcess,
-        bool supportsEnvVars,
+        bool supportsEnvironmentVariables,
         bool supportsHealthCheck,
         bool isRoutable,
         bool isProtected,
@@ -41,7 +41,7 @@ public class AppTypeBehaviorTests
 
         // Act & Assert
         AppTypeBehavior.HasProcess(appTypeId).ShouldBe(hasProcess, $"{label}.HasProcess");
-        AppTypeBehavior.SupportsEnvVars(appTypeId).ShouldBe(supportsEnvVars, $"{label}.SupportsEnvVars");
+        AppTypeBehavior.SupportsEnvironmentVariables(appTypeId).ShouldBe(supportsEnvironmentVariables, $"{label}.SupportsEnvironmentVariables");
         AppTypeBehavior.SupportsHealthCheck(appTypeId).ShouldBe(supportsHealthCheck, $"{label}.SupportsHealthCheck");
         AppTypeBehavior.IsRoutable(appTypeId).ShouldBe(isRoutable, $"{label}.IsRoutable");
         AppTypeBehavior.IsProtected(appTypeId).ShouldBe(isProtected, $"{label}.IsProtected");

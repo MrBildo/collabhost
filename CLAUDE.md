@@ -52,13 +52,12 @@ collabhost/
 │   ├── Collabhost.AppHost/    # Aspire orchestrator
 │   ├── Collabhost.ServiceDefaults/  # Shared telemetry/health
 │   ├── Collabhost.Api/        # Main API project
-│   │   ├── Common/            # Command dispatcher, result types (Command.cs, CommandResult.cs, QueryResult.cs)
+│   │   ├── Common/            # Command dispatcher (_Commands.cs), auth (_Authorization.cs)
 │   │   ├── Features/          # Vertical slices grouped by domain (Apps/, Proxy/, System/)
-│   │   ├── Domain/            # Entities, lookups, value objects
-│   │   ├── Data/              # EF Core DbContext
+│   │   ├── Domain/            # Entities, lookups, value objects (consolidated _-prefixed files)
+│   │   ├── Data/              # EF Core DbContext (includes extensions)
 │   │   ├── Migrations/        # EF Core migrations
-│   │   ├── Services/          # Cross-cutting services
-│   │   ├── Auth/              # Auth logic
+│   │   ├── Services/          # Cross-cutting services + DI registration (_ServiceRegistration.cs)
 │   │   ├── db/                # SQLite database (gitignored)
 │   │   └── appsettings.json
 │   ├── Collabhost.Api.Tests/  # Integration tests (WebApplicationFactory + fakes)
@@ -111,12 +110,12 @@ cd frontend && npm run test
 ## Core Modules
 
 ### Command Dispatcher
-- `ICommand<TResult>` / `ICommandHandler<TCommand, TResult>` — command pattern for all write operations
+- `ICommand<TResult>` / `ICommandHandler<TCommand, TResult>` — unified command pattern for ALL operations (reads and writes)
 - `CommandDispatcher` with type-inferring `DispatchAsync` (resolves handlers via DI)
 - `AddCommandDispatcher()` extension — auto-scans assembly for handler registrations
 - `Empty` struct for void-result commands (`ICommand<Empty>`)
-- `CommandResult<T>` / `QueryResult<T>` — result types with success/fail factory methods
-- All types in `Common/Command.cs` (dispatcher + registration extension in same file)
+- `CommandResult<T>` — result type with success/fail factory methods
+- All types in `Common/_Commands.cs` (dispatcher + result types + registration extension)
 
 ### App Registry
 - App definitions: name (slug, used in domain), display name, type (Executable, NpmPackage, StaticSite), install directory, command, args, working directory, environment variables (separate table rows), port (auto-assigned via bind-to-zero), health endpoint, update command, update timeout (per-app, nullable, defaults 300s), auto-start, restart policy (Never/OnCrash/Always)
@@ -193,14 +192,10 @@ REST API under `/api/v1/`:
 
 Organized under `backend/Collabhost.Api/Features/`, grouped by domain (`Apps/`, `Proxy/`, `System/`). One file per operation (e.g., `Create.cs`, `GetAll.cs`, `Delete.cs`).
 
-Each **command** file contains three top-level types:
+Each file (command or query) contains three top-level types:
 1. **Static endpoint class** — `Request`/`Response` records + `HandleAsync` (HTTP layer only, dispatches via `CommandDispatcher`)
 2. **Command record** — implements `ICommand<TResult>` (use `ICommand<Empty>` for void-result commands)
 3. **Handler class** — implements `ICommandHandler<TCommand, TResult>`, contains all business logic
-
-Each **query** file contains two top-level types:
-1. **Static endpoint class** — `Response` record + `HandleAsync` (injects the query handler directly)
-2. **Query handler class** — returns `QueryResult<T>`, injected into endpoint via DI
 
 Each domain folder has a `_Module.cs` implementing `IFeatureModule` to map routes. `Program.cs` is a thin composition root — it wires services and auto-discovers feature modules.
 
@@ -219,6 +214,10 @@ Each domain folder has a `_Module.cs` implementing `IFeatureModule` to map route
 - Expression-bodied members for one-liners
 - `SingleAsync` (not `FirstAsync`) for single-result entity lookups by ID
 - `.editorconfig` enforced
+- **Verbose naming** — full words, no abbreviations (`Authorization` not `Auth`, `EnvironmentVariables` not `EnvVars`, `Configuration` not `Config`)
+- **Consolidated `_` prefix files** — group related types into single `_`-prefixed files (e.g., `_Commands.cs`, `_Authorization.cs`, `_BaseEntities.cs`). The `_` signals "module of related types, not a single type."
+- **Blank line between all members** — methods, properties, fields, constructors in classes/structs/interfaces get blank line separation
+- **C# 14 extension blocks** — use `extension(T target) { }` syntax for extension methods, not traditional `static class` + `this` parameter
 
 ## Analyzers
 
