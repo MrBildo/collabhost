@@ -1,19 +1,24 @@
+using System.Globalization;
 using System.Text.Json;
-
 using Microsoft.Extensions.Options;
 
 namespace Collabhost.Api.Auth;
 
-public class ApiKeyAuthMiddleware
+public class AuthorizationSettings
+{
+    public string? AdminKey { get; set; }
+}
+
+public class ApiKeyAuthorizationMiddleware
 (
     RequestDelegate next,
-    IOptionsMonitor<AuthSettings> authSettings,
-    ILogger<ApiKeyAuthMiddleware> logger
+    IOptionsMonitor<AuthorizationSettings> authSettings,
+    ILogger<ApiKeyAuthorizationMiddleware> logger
 )
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
-    private readonly IOptionsMonitor<AuthSettings> _authSettings = authSettings ?? throw new ArgumentNullException(nameof(authSettings));
-    private readonly ILogger<ApiKeyAuthMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IOptionsMonitor<AuthorizationSettings> _authSettings = authSettings ?? throw new ArgumentNullException(nameof(authSettings));
+    private readonly ILogger<ApiKeyAuthorizationMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     private static readonly string[] _skipPrefixes = ["/health", "/alive", "/openapi"];
 
@@ -64,3 +69,51 @@ public class ApiKeyAuthMiddleware
             && path.Equals("/api/v1/status", StringComparison.OrdinalIgnoreCase);
     }
 }
+
+public static class AuthorizationExtensions
+{
+    extension(IServiceCollection services)
+    {
+        public IServiceCollection AddCollabhostAuth
+        (
+            IConfiguration configuration,
+            ILogger logger
+        )
+        {
+            services.Configure<AuthorizationSettings>(configuration.GetSection("Auth"));
+
+            var generatedKey = Ulid.NewUlid().ToString(null, CultureInfo.InvariantCulture);
+
+            services.PostConfigure<AuthorizationSettings>
+            (
+                s =>
+                {
+                    if (s.AdminKey is not null)
+                    {
+                        return;
+                    }
+
+                    s.AdminKey = generatedKey;
+
+                    logger.LogWarning
+                    (
+                        "No Auth:AdminKey configured. Generated temporary key: {AdminKey}",
+                        generatedKey
+                    );
+                }
+            );
+
+            return services;
+        }
+    }
+
+    extension(IApplicationBuilder app)
+    {
+        public IApplicationBuilder UseCollabhostAuth()
+        {
+            app.UseMiddleware<ApiKeyAuthorizationMiddleware>();
+            return app;
+        }
+    }
+}
+
