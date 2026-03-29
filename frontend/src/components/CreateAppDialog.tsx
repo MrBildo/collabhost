@@ -118,7 +118,8 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
     setError(null);
 
     const appTypeGuid = APP_TYPES.find((t) => t.displayName === form.appTypeId)?.id ?? '';
-    const policyGuid = RESTART_POLICIES.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
+    const policyGuid =
+      RESTART_POLICIES.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
 
     const request: CreateAppRequest = {
       name: form.name,

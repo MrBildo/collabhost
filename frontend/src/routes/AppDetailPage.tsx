@@ -819,4 +819,3 @@ function buildFormState(app: AppDetail): ConfigFormState {
     environmentVariables: app.environmentVariables.map((envVar) => ({ ...envVar })),
   };
 }
-
