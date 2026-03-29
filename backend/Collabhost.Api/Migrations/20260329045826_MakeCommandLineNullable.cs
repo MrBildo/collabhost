@@ -1,40 +1,39 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Collabhost.Api.Migrations
+namespace Collabhost.Api.Migrations;
+
+/// <inheritdoc />
+public partial class MakeCommandLineNullable : Migration
 {
     /// <inheritdoc />
-    public partial class MakeCommandLineNullable : Migration
+    protected override void Up(MigrationBuilder migrationBuilder)
     {
-        /// <inheritdoc />
-        protected override void Up(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.AlterColumn<string>(
-                name: "CommandLine",
-                table: "App",
-                type: "TEXT",
-                maxLength: 500,
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "TEXT",
-                oldMaxLength: 500);
-        }
+        migrationBuilder.AlterColumn<string>(
+            name: "CommandLine",
+            table: "App",
+            type: "TEXT",
+            maxLength: 500,
+            nullable: true,
+            oldClrType: typeof(string),
+            oldType: "TEXT",
+            oldMaxLength: 500);
+    }
 
-        /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.AlterColumn<string>(
-                name: "CommandLine",
-                table: "App",
-                type: "TEXT",
-                maxLength: 500,
-                nullable: false,
-                defaultValue: "",
-                oldClrType: typeof(string),
-                oldType: "TEXT",
-                oldMaxLength: 500,
-                oldNullable: true);
-        }
+    /// <inheritdoc />
+    protected override void Down(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.AlterColumn<string>(
+            name: "CommandLine",
+            table: "App",
+            type: "TEXT",
+            maxLength: 500,
+            nullable: false,
+            defaultValue: "",
+            oldClrType: typeof(string),
+            oldType: "TEXT",
+            oldMaxLength: 500,
+            oldNullable: true);
     }
 }

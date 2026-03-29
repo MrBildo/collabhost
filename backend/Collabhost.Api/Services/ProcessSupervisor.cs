@@ -180,13 +180,7 @@ public class ProcessSupervisor
 
         var app = await db.Apps
             .Include(a => a.EnvironmentVariables)
-            .FirstOrDefaultAsync(a => a.Id == appId, ct);
-
-        if (app is null)
-        {
-            throw new InvalidOperationException("App not found.");
-        }
-
+            .FirstOrDefaultAsync(a => a.Id == appId, ct) ?? throw new InvalidOperationException("App not found.");
         if (!AppTypeBehavior.HasProcess(app.AppTypeId))
         {
             throw new InvalidOperationException("Static sites do not have a managed process.");
