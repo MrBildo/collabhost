@@ -408,13 +408,16 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
   }
 
   function handleSave() {
+    const policyGuid =
+      RESTART_POLICIES.find((p) => p.name === form.restartPolicyId)?.id ?? '';
+
     const request: UpdateAppRequest = {
       displayName: form.displayName,
       installDirectory: form.installDirectory,
       commandLine: form.commandLine,
       arguments: form.arguments || null,
       workingDirectory: form.workingDirectory || null,
-      restartPolicyId: form.restartPolicyId,
+      restartPolicyId: policyGuid,
       healthEndpoint: form.healthEndpoint || null,
       updateCommand: form.updateCommand || null,
       updateTimeoutSeconds: form.updateTimeoutSeconds ? Number(form.updateTimeoutSeconds) : null,
@@ -475,9 +478,7 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
     },
     {
       label: 'Restart Policy',
-      value:
-        RESTART_POLICIES.find((policy) => policy.id === form.restartPolicyId)?.name ??
-        form.restartPolicyId,
+      value: form.restartPolicyId,
       field: 'restartPolicyId',
       isSelect: true,
       selectOptions: RESTART_POLICIES,
@@ -552,7 +553,7 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
                       </SelectTrigger>
                       <SelectContent>
                         {field.selectOptions.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>
+                          <SelectItem key={option.id} value={option.name}>
                             {option.name}
                           </SelectItem>
                         ))}
@@ -807,7 +808,7 @@ function buildFormState(app: AppDetail): ConfigFormState {
     commandLine: app.commandLine,
     arguments: app.arguments ?? '',
     workingDirectory: app.workingDirectory ?? '',
-    restartPolicyId: policyMatch?.id ?? RESTART_POLICIES[0].id,
+    restartPolicyId: policyMatch?.name ?? RESTART_POLICIES[0].name,
     healthEndpoint: app.healthEndpoint ?? '',
     updateCommand: app.updateCommand ?? '',
     updateTimeoutSeconds: app.updateTimeoutSeconds?.toString() ?? '',

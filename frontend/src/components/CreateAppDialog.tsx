@@ -51,17 +51,15 @@ type FormState = {
   autoStart: boolean;
 };
 
-const STATIC_SITE_TYPE_ID = APP_TYPES.find((t) => t.name === 'StaticSite')!.id;
-
 const INITIAL_FORM_STATE: FormState = {
   displayName: '',
   name: '',
-  appTypeId: APP_TYPES[0].id,
+  appTypeId: APP_TYPES[0].name,
   installDirectory: '',
   commandLine: '',
   arguments: '',
   workingDirectory: '',
-  restartPolicyId: RESTART_POLICIES[0].id,
+  restartPolicyId: RESTART_POLICIES[0].name,
   healthEndpoint: '',
   updateCommand: '',
   updateTimeoutSeconds: '',
@@ -74,7 +72,7 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const isStaticSite = form.appTypeId === STATIC_SITE_TYPE_ID;
+  const isStaticSite = form.appTypeId === 'StaticSite';
 
   const handleReset = React.useCallback(() => {
     setForm(INITIAL_FORM_STATE);
@@ -119,15 +117,18 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
     event.preventDefault();
     setError(null);
 
+    const appTypeGuid = APP_TYPES.find((t) => t.name === form.appTypeId)?.id ?? '';
+    const policyGuid = RESTART_POLICIES.find((p) => p.name === form.restartPolicyId)?.id ?? '';
+
     const request: CreateAppRequest = {
       name: form.name,
       displayName: form.displayName,
-      appTypeId: form.appTypeId,
+      appTypeId: appTypeGuid,
       installDirectory: form.installDirectory,
       commandLine: form.commandLine,
       arguments: form.arguments || null,
       workingDirectory: form.workingDirectory || null,
-      restartPolicyId: form.restartPolicyId,
+      restartPolicyId: policyGuid,
       healthEndpoint: form.healthEndpoint || null,
       updateCommand: form.updateCommand || null,
       updateTimeoutSeconds: form.updateTimeoutSeconds ? Number(form.updateTimeoutSeconds) : null,
@@ -205,7 +206,7 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
                 </SelectTrigger>
                 <SelectContent>
                   {APP_TYPES.map((type) => (
-                    <SelectItem key={type.id} value={type.id}>
+                    <SelectItem key={type.id} value={type.name}>
                       {type.name}
                     </SelectItem>
                   ))}
@@ -230,7 +231,7 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
                 </SelectTrigger>
                 <SelectContent>
                   {RESTART_POLICIES.map((policy) => (
-                    <SelectItem key={policy.id} value={policy.id}>
+                    <SelectItem key={policy.id} value={policy.name}>
                       {policy.name}
                     </SelectItem>
                   ))}
