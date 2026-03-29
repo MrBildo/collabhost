@@ -139,8 +139,11 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
       await createApp.mutateAsync(request);
       toast.success('App created');
       handleOpenChange(false);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+    } catch (err: unknown) {
+      const axiosError = err as { response?: { data?: { errorMessage?: string } } };
+      const message =
+        axiosError?.response?.data?.errorMessage ??
+        (err instanceof Error ? err.message : String(err));
       setError(message);
       toast.error('Failed to create app');
     }
