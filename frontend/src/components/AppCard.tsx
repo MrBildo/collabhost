@@ -38,6 +38,7 @@ export function AppCard({ app }: AppCardProps) {
   const stopApp = useStopApp();
   const restartApp = useRestartApp();
 
+  const isStaticSite = app.appTypeName === 'Static Site';
   const processState: ProcessState = status?.processState ?? 'Stopped';
   const statusConfig = STATUS_MAP[processState];
   const isTransitioning =
@@ -120,7 +121,9 @@ export function AppCard({ app }: AppCardProps) {
       </CardContent>
 
       <CardFooter className="gap-1">
-        {isTransitioning || isMutating ? (
+        {isStaticSite ? (
+          <span className="text-xs text-muted-foreground">Served by Caddy</span>
+        ) : isTransitioning || isMutating ? (
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         ) : (
           <>

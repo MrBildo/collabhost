@@ -92,6 +92,7 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
   const appUpdate = useAppUpdate(appId);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
 
+  const isStaticSite = app?.appTypeName === 'Static Site';
   const processState: ProcessState = status?.processState ?? 'Stopped';
   const statusConfig = STATUS_MAP[processState];
   const isTransitioning =
@@ -158,16 +159,20 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
 
           <div className="flex items-center gap-2">
             {/* Status indicator */}
-            <div className="flex items-center gap-2 mr-2">
-              <div className={cn('h-2 w-2 rounded-full', statusConfig.color)} />
-              <span className="text-sm">{statusConfig.label}</span>
-              {status?.pid !== null && status?.pid !== undefined && (
-                <span className="text-xs text-muted-foreground">PID {status.pid}</span>
-              )}
-            </div>
+            {isStaticSite ? (
+              <span className="mr-2 text-sm text-muted-foreground">Served by Caddy</span>
+            ) : (
+              <div className="flex items-center gap-2 mr-2">
+                <div className={cn('h-2 w-2 rounded-full', statusConfig.color)} />
+                <span className="text-sm">{statusConfig.label}</span>
+                {status?.pid !== null && status?.pid !== undefined && (
+                  <span className="text-xs text-muted-foreground">PID {status.pid}</span>
+                )}
+              </div>
+            )}
 
             {/* Action buttons */}
-            {isTransitioning || isMutating ? (
+            {isStaticSite ? null : isTransitioning || isMutating ? (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             ) : (
               <>

@@ -273,44 +273,50 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <label htmlFor="arguments" className="text-sm font-medium">
-              Arguments
-            </label>
-            <Input
-              id="arguments"
-              name="arguments"
-              value={form.arguments}
-              onChange={handleInputChange}
-              placeholder="--urls http://localhost:5000"
-            />
-          </div>
+          {!isStaticSite && (
+            <div className="space-y-1.5">
+              <label htmlFor="arguments" className="text-sm font-medium">
+                Arguments
+              </label>
+              <Input
+                id="arguments"
+                name="arguments"
+                value={form.arguments}
+                onChange={handleInputChange}
+                placeholder="--urls http://localhost:5000"
+              />
+            </div>
+          )}
 
-          <div className="space-y-1.5">
-            <label htmlFor="workingDirectory" className="text-sm font-medium">
-              Working Directory
-            </label>
-            <Input
-              id="workingDirectory"
-              name="workingDirectory"
-              value={form.workingDirectory}
-              onChange={handleInputChange}
-              placeholder="Leave empty to use install directory"
-            />
-          </div>
+          {!isStaticSite && (
+            <div className="space-y-1.5">
+              <label htmlFor="workingDirectory" className="text-sm font-medium">
+                Working Directory
+              </label>
+              <Input
+                id="workingDirectory"
+                name="workingDirectory"
+                value={form.workingDirectory}
+                onChange={handleInputChange}
+                placeholder="Leave empty to use install directory"
+              />
+            </div>
+          )}
 
-          <div className="space-y-1.5">
-            <label htmlFor="healthEndpoint" className="text-sm font-medium">
-              Health Endpoint
-            </label>
-            <Input
-              id="healthEndpoint"
-              name="healthEndpoint"
-              value={form.healthEndpoint}
-              onChange={handleInputChange}
-              placeholder="/health"
-            />
-          </div>
+          {!isStaticSite && (
+            <div className="space-y-1.5">
+              <label htmlFor="healthEndpoint" className="text-sm font-medium">
+                Health Endpoint
+              </label>
+              <Input
+                id="healthEndpoint"
+                name="healthEndpoint"
+                value={form.healthEndpoint}
+                onChange={handleInputChange}
+                placeholder="/health"
+              />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <label htmlFor="updateCommand" className="text-sm font-medium">
