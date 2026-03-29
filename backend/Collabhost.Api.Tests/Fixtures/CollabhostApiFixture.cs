@@ -28,7 +28,8 @@ public class CollabhostApiFixture : WebApplicationFactory<Program>
                 (
                     new Dictionary<string, string?>(StringComparer.Ordinal)
                     {
-                        ["Auth:AdminKey"] = TestAdminKey
+                        ["Auth:AdminKey"] = TestAdminKey,
+                        ["Proxy:BinaryPath"] = "nonexistent-test-binary"
                     }
                 );
             }

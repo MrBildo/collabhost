@@ -51,6 +51,7 @@ public static class InfrastructureServiceExtensions
             services.AddSingleton<ProxyConfigGenerator>();
             services.AddSingleton<ProxyConfigManager>();
             services.AddHostedService(sp => sp.GetRequiredService<ProxyConfigManager>());
+            services.AddScoped<IProxyAppSeeder, ProxyAppSeeder>();
 
             return services;
         }

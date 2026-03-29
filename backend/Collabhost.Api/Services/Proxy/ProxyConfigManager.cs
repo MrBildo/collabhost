@@ -1,10 +1,13 @@
+using Collabhost.Api.Domain.Catalogs;
+
 namespace Collabhost.Api.Services.Proxy;
 
-public class ProxyConfigManager
+public sealed class ProxyConfigManager
 (
     IProxyConfigClient proxyClient,
     ProxyConfigGenerator generator,
     IServiceScopeFactory scopeFactory,
+    IProcessStateEventBus processStateEventBus,
     ProxySettings settings,
     ILogger<ProxyConfigManager> logger
 ) : IHostedService
@@ -12,39 +15,63 @@ public class ProxyConfigManager
     private readonly IProxyConfigClient _proxyClient = proxyClient ?? throw new ArgumentNullException(nameof(proxyClient));
     private readonly ProxyConfigGenerator _generator = generator ?? throw new ArgumentNullException(nameof(generator));
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+    private readonly IProcessStateEventBus _processStateEventBus = processStateEventBus ?? throw new ArgumentNullException(nameof(processStateEventBus));
     private readonly ProxySettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     private readonly ILogger<ProxyConfigManager> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private CancellationTokenSource? _startupCancellation;
-    private Task? _startupTask;
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    private Guid? _proxyAppId;
+    private IDisposable? _subscription;
+    private bool _disabled;
+
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
-        _startupCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _startupTask = Task.Run(() => StartupPollAsync(_startupCancellation.Token), _startupCancellation.Token);
-        return Task.CompletedTask;
+        var proxyServiceTypeId = IdentifierCatalog.AppTypes.ProxyService;
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
+
+        var proxyApp = await db.Database
+            .SqlQuery<ProxyAppLookup>(
+                $"""
+                SELECT
+                    A.[Id]
+                FROM
+                    [App] A
+                WHERE
+                    A.[AppTypeId] = {proxyServiceTypeId}
+                """)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (proxyApp is null)
+        {
+            _logger.LogWarning
+            (
+                "No proxy app registered — proxy route sync is disabled. " +
+                "Ensure the proxy binary is available and restart Collabhost"
+            );
+            _disabled = true;
+            return;
+        }
+
+        _proxyAppId = proxyApp.Id;
+
+        _subscription = _processStateEventBus.Subscribe(OnProcessStateChanged);
+
+        _logger.LogInformation
+        (
+            "Proxy config manager started — listening for proxy app state changes (AppId: {AppId})",
+            _proxyAppId
+        );
     }
 
-    public async Task StopAsync(CancellationToken cancellationToken)
+    public Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_startupCancellation is not null)
-        {
-            await _startupCancellation.CancelAsync();
-            _startupCancellation.Dispose();
-        }
+        _subscription?.Dispose();
+        _subscription = null;
 
-        if (_startupTask is not null)
-        {
-            try
-            {
-#pragma warning disable VSTHRD003 // Avoid awaiting foreign Tasks — IHostedService pattern: StartAsync fires, StopAsync drains. No sync context in ASP.NET Core.
-                await _startupTask;
-#pragma warning restore VSTHRD003
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected during shutdown
-            }
-        }
+        _logger.LogInformation("Proxy config manager stopped");
+
+        return Task.CompletedTask;
     }
 
     public async Task SyncRoutesAsync(CancellationToken ct = default)
@@ -74,30 +101,61 @@ public class ProxyConfigManager
         }
     }
 
-    private async Task StartupPollAsync(CancellationToken ct)
+    private void OnProcessStateChanged(ProcessStateChangedEvent processEvent)
     {
-        _logger.LogInformation("Proxy config manager waiting for proxy admin API at {Url}", _settings.AdminApiUrl);
-
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-
-        while (!ct.IsCancellationRequested && DateTime.UtcNow < deadline)
+        if (_disabled || _proxyAppId is null)
         {
-            if (await _proxyClient.IsReadyAsync(ct))
-            {
-                _logger.LogInformation("Proxy admin API is ready — syncing routes");
-                await SyncRoutesAsync(ct);
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            return;
         }
 
-        if (!ct.IsCancellationRequested)
+        if (processEvent.AppId != _proxyAppId)
         {
-            _logger.LogWarning
-            (
-                "Proxy admin API did not become ready within 30 seconds — skipping initial sync"
-            );
+            return;
+        }
+
+        if (processEvent.NewStateId == IdentifierCatalog.ProcessStates.Running)
+        {
+            _ = Task.Run(async () => await HandleProxyRunningAsync());
+        }
+        else if (processEvent.NewStateId == IdentifierCatalog.ProcessStates.Crashed)
+        {
+            _logger.LogWarning("Proxy process crashed — admin API is unavailable");
+        }
+        else if (processEvent.NewStateId == IdentifierCatalog.ProcessStates.Stopped)
+        {
+            _logger.LogInformation("Proxy process stopped — admin API is unavailable");
+        }
+    }
+
+    private async Task HandleProxyRunningAsync()
+    {
+        _logger.LogInformation
+        (
+            "Proxy process is running — waiting for admin API at {Url}",
+            _settings.AdminApiUrl
+        );
+
+        // Wait for admin API to be ready
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        try
+        {
+            await SyncRoutesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "First route sync attempt failed — retrying after delay");
+
+            await Task.Delay(TimeSpan.FromSeconds(2));
+
+            try
+            {
+                await SyncRoutesAsync();
+            }
+            catch (Exception retryEx)
+            {
+                _logger.LogError(retryEx, "Retry route sync also failed — routes may be stale");
+            }
         }
     }
 
@@ -125,4 +183,6 @@ public class ProxyConfigManager
             .. allApps.Where(a => AppTypeBehavior.IsRoutable(a.AppTypeId))
         ];
     }
+
+    private sealed record ProxyAppLookup(Guid Id);
 }

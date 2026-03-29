@@ -59,6 +59,16 @@ if (app.Environment.IsDevelopment())
     await db.Database.EnsureCreatedAsync();
 }
 
+// Seed proxy app from configuration (idempotent)
+await SeedProxyAppAsync(app);
+
+static async Task SeedProxyAppAsync(WebApplication application)
+{
+    await using var scope = application.Services.CreateAsyncScope();
+    var seeder = scope.ServiceProvider.GetRequiredService<IProxyAppSeeder>();
+    await seeder.SeedAsync(CancellationToken.None);
+}
+
 // Development middleware
 if (app.Environment.IsDevelopment())
 {
