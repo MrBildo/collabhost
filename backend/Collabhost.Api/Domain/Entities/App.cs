@@ -139,8 +139,5 @@ public class EnvironmentVariable : Entity
         Value = value;
     }
 
-    internal void UpdateValue(string value)
-    {
-        Value = value;
-    }
+    internal void UpdateValue(string value) => Value = value;
 }

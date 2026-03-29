@@ -130,9 +130,6 @@ public class WindowsProcessRunner : IManagedProcessRunner
             }
         }
 
-        public void Dispose()
-        {
-            _process.Dispose();
-        }
+        public void Dispose() => _process.Dispose();
     }
 }

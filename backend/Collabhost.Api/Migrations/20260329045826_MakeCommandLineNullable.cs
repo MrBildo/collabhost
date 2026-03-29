@@ -8,9 +8,7 @@ namespace Collabhost.Api.Migrations;
 public partial class MakeCommandLineNullable : Migration
 {
     /// <inheritdoc />
-    protected override void Up(MigrationBuilder migrationBuilder)
-    {
-        migrationBuilder.AlterColumn<string>(
+    protected override void Up(MigrationBuilder migrationBuilder) => migrationBuilder.AlterColumn<string>(
             name: "CommandLine",
             table: "App",
             type: "TEXT",
@@ -19,12 +17,9 @@ public partial class MakeCommandLineNullable : Migration
             oldClrType: typeof(string),
             oldType: "TEXT",
             oldMaxLength: 500);
-    }
 
     /// <inheritdoc />
-    protected override void Down(MigrationBuilder migrationBuilder)
-    {
-        migrationBuilder.AlterColumn<string>(
+    protected override void Down(MigrationBuilder migrationBuilder) => migrationBuilder.AlterColumn<string>(
             name: "CommandLine",
             table: "App",
             type: "TEXT",
@@ -35,5 +30,4 @@ public partial class MakeCommandLineNullable : Migration
             oldType: "TEXT",
             oldMaxLength: 500,
             oldNullable: true);
-    }
 }
