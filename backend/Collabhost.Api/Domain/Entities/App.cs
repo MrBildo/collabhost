@@ -8,7 +8,7 @@ public class App : AggregateRoot
     public string DisplayName { get; private set; } = default!;
     public Guid AppTypeId { get; private set; }
     public string InstallDirectory { get; private set; } = default!;
-    public string CommandLine { get; private set; } = default!;
+    public string? CommandLine { get; private set; }
     public string? Arguments { get; private set; }
     public string? WorkingDirectory { get; private set; }
     public Guid RestartPolicyId { get; private set; }
@@ -30,7 +30,7 @@ public class App : AggregateRoot
         string displayName,
         Guid appTypeId,
         string installDirectory,
-        string commandLine,
+        string? commandLine,
         string? arguments,
         string? workingDirectory,
         Guid restartPolicyId,
@@ -43,7 +43,6 @@ public class App : AggregateRoot
         ArgumentNullException.ThrowIfNull(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
         ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
-        ArgumentException.ThrowIfNullOrWhiteSpace(commandLine);
 
         return new App
         {
@@ -70,7 +69,7 @@ public class App : AggregateRoot
     (
         string displayName,
         string installDirectory,
-        string commandLine,
+        string? commandLine,
         string? arguments,
         string? workingDirectory,
         Guid restartPolicyId,
@@ -82,7 +81,6 @@ public class App : AggregateRoot
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
         ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
-        ArgumentException.ThrowIfNullOrWhiteSpace(commandLine);
 
         DisplayName = displayName.Trim();
         InstallDirectory = installDirectory;

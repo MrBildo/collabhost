@@ -187,6 +187,16 @@ public class ProcessSupervisor
             throw new InvalidOperationException("App not found.");
         }
 
+        if (!AppTypeBehavior.HasProcess(app.AppTypeId))
+        {
+            throw new InvalidOperationException("Static sites do not have a managed process.");
+        }
+
+        if (string.IsNullOrWhiteSpace(app.CommandLine))
+        {
+            throw new InvalidOperationException("App has no command line configured.");
+        }
+
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var variable in app.EnvironmentVariables)
         {
