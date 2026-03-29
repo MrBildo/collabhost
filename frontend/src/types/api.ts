@@ -48,3 +48,67 @@ export type SystemStatus = {
   version: string;
   timestamp: string;
 };
+
+export type EnvironmentVariable = {
+  name: string;
+  value: string;
+};
+
+export type AppDetail = {
+  externalId: string;
+  name: string;
+  displayName: string;
+  appTypeName: 'Executable' | 'NpmPackage' | 'StaticSite';
+  installDirectory: string;
+  commandLine: string;
+  arguments: string | null;
+  workingDirectory: string | null;
+  restartPolicyName: string;
+  port: number | null;
+  healthEndpoint: string | null;
+  updateCommand: string | null;
+  updateTimeoutSeconds: number | null;
+  autoStart: boolean;
+  registeredAt: string;
+  environmentVariables: EnvironmentVariable[];
+};
+
+export type LogEntry = {
+  timestamp: string;
+  stream: 'stdout' | 'stderr';
+  content: string;
+};
+
+export type LogsResponse = {
+  entries: LogEntry[];
+  totalBuffered: number;
+};
+
+export type UpdateAppRequest = {
+  displayName: string;
+  installDirectory: string;
+  commandLine: string;
+  arguments: string | null;
+  workingDirectory: string | null;
+  restartPolicyId: string;
+  healthEndpoint: string | null;
+  updateCommand: string | null;
+  updateTimeoutSeconds: number | null;
+  autoStart: boolean;
+};
+
+export type UpdateSseStatusEvent = {
+  phase: 'stopping' | 'updating' | 'starting' | 'complete' | 'failed';
+};
+
+export type UpdateSseLogEvent = {
+  stream: 'stdout' | 'stderr';
+  line: string;
+};
+
+export type UpdateSseResultEvent = {
+  success: boolean;
+  exitCode: number;
+  timedOut: boolean;
+  processStatus: ProcessStatus | null;
+};
