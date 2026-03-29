@@ -28,3 +28,23 @@ export type ProcessStatus = {
   restartCount: number;
   lastRestartAt: string | null;
 };
+
+export type RouteEntry = {
+  appExternalId: string;
+  appName: string;
+  domain: string;
+  target: string;
+  proxyMode: string;
+  https: boolean;
+};
+
+export type RouteListResponse = {
+  routes: RouteEntry[];
+  baseDomain: string;
+};
+
+export type SystemStatus = {
+  status: string;
+  version: string;
+  timestamp: string;
+};
