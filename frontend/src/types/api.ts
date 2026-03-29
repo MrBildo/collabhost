@@ -2,7 +2,7 @@ export type AppListItem = {
   externalId: string;
   name: string;
   displayName: string;
-  appTypeName: 'Executable' | 'NpmPackage' | 'StaticSite';
+  appTypeName: string;
   port: number | null;
   updateCommand: string | null;
   updateTimeoutSeconds: number | null;
@@ -58,7 +58,7 @@ export type AppDetail = {
   externalId: string;
   name: string;
   displayName: string;
-  appTypeName: 'Executable' | 'NpmPackage' | 'StaticSite';
+  appTypeName: string;
   installDirectory: string;
   commandLine: string;
   arguments: string | null;

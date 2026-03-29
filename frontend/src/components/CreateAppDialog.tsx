@@ -54,12 +54,12 @@ type FormState = {
 const INITIAL_FORM_STATE: FormState = {
   displayName: '',
   name: '',
-  appTypeId: APP_TYPES[0].name,
+  appTypeId: APP_TYPES[0].displayName,
   installDirectory: '',
   commandLine: '',
   arguments: '',
   workingDirectory: '',
-  restartPolicyId: RESTART_POLICIES[0].name,
+  restartPolicyId: RESTART_POLICIES[0].displayName,
   healthEndpoint: '',
   updateCommand: '',
   updateTimeoutSeconds: '',
@@ -72,7 +72,7 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const isStaticSite = form.appTypeId === 'StaticSite';
+  const isStaticSite = form.appTypeId === 'Static Site';
 
   const handleReset = React.useCallback(() => {
     setForm(INITIAL_FORM_STATE);
@@ -117,8 +117,8 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
     event.preventDefault();
     setError(null);
 
-    const appTypeGuid = APP_TYPES.find((t) => t.name === form.appTypeId)?.id ?? '';
-    const policyGuid = RESTART_POLICIES.find((p) => p.name === form.restartPolicyId)?.id ?? '';
+    const appTypeGuid = APP_TYPES.find((t) => t.displayName === form.appTypeId)?.id ?? '';
+    const policyGuid = RESTART_POLICIES.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
 
     const request: CreateAppRequest = {
       name: form.name,
@@ -206,8 +206,8 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
                 </SelectTrigger>
                 <SelectContent>
                   {APP_TYPES.map((type) => (
-                    <SelectItem key={type.id} value={type.name}>
-                      {type.name}
+                    <SelectItem key={type.id} value={type.displayName}>
+                      {type.displayName}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -231,8 +231,8 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
                 </SelectTrigger>
                 <SelectContent>
                   {RESTART_POLICIES.map((policy) => (
-                    <SelectItem key={policy.id} value={policy.name}>
-                      {policy.name}
+                    <SelectItem key={policy.id} value={policy.displayName}>
+                      {policy.displayName}
                     </SelectItem>
                   ))}
                 </SelectContent>

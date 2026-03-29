@@ -409,7 +409,7 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
 
   function handleSave() {
     const policyGuid =
-      RESTART_POLICIES.find((p) => p.name === form.restartPolicyId)?.id ?? '';
+      RESTART_POLICIES.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
 
     const request: UpdateAppRequest = {
       displayName: form.displayName,
@@ -553,8 +553,8 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
                       </SelectTrigger>
                       <SelectContent>
                         {field.selectOptions.map((option) => (
-                          <SelectItem key={option.id} value={option.name}>
-                            {option.name}
+                          <SelectItem key={option.id} value={option.displayName}>
+                            {option.displayName}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -796,19 +796,17 @@ type ConfigField = {
   isBoolean?: boolean;
   booleanValue?: boolean;
   isSelect?: boolean;
-  selectOptions?: readonly { id: string; name: string }[];
+  selectOptions?: readonly { id: string; name: string; displayName: string }[];
 };
 
 function buildFormState(app: AppDetail): ConfigFormState {
-  const policyMatch = RESTART_POLICIES.find((policy) => policy.name === app.restartPolicyName);
-
   return {
     displayName: app.displayName,
     installDirectory: app.installDirectory,
     commandLine: app.commandLine,
     arguments: app.arguments ?? '',
     workingDirectory: app.workingDirectory ?? '',
-    restartPolicyId: policyMatch?.name ?? RESTART_POLICIES[0].name,
+    restartPolicyId: app.restartPolicyName,
     healthEndpoint: app.healthEndpoint ?? '',
     updateCommand: app.updateCommand ?? '',
     updateTimeoutSeconds: app.updateTimeoutSeconds?.toString() ?? '',
