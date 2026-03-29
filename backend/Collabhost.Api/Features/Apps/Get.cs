@@ -1,8 +1,10 @@
+using Collabhost.Api.Domain;
+
 namespace Collabhost.Api.Features.Apps;
 
 public static class Get
 {
-    public record Response
+    internal sealed record Row
     (
         string ExternalId,
         string Name,
@@ -18,7 +20,8 @@ public static class Get
         string? UpdateCommand,
         int? UpdateTimeoutSeconds,
         bool AutoStart,
-        DateTime RegisteredAt
+        DateTime RegisteredAt,
+        Guid AppTypeId
     );
 
     public record EnvironmentVariableResponse(string Name, string Value);
@@ -40,6 +43,7 @@ public static class Get
         int? UpdateTimeoutSeconds,
         bool AutoStart,
         DateTime RegisteredAt,
+        bool IsProtected,
         IReadOnlyList<EnvironmentVariableResponse> EnvironmentVariables
     );
 
@@ -60,15 +64,15 @@ public static class Get
 
 public record GetAppCommand(string ExternalId) : ICommand<Get.DetailResponse>;
 
-public class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandler<GetAppCommand, Get.DetailResponse>
+public sealed class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandler<GetAppCommand, Get.DetailResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
 
 #pragma warning disable MA0051 // Long method justified — multi-query SQL projection
     public async Task<CommandResult<Get.DetailResponse>> HandleAsync(GetAppCommand command, CancellationToken ct = default)
     {
-        var result = await _db.Database
-            .SqlQuery<Get.Response>(
+        var row = await _db.Database
+            .SqlQuery<Get.Row>(
                 $"""
                 SELECT
                     A.[ExternalId]
@@ -86,6 +90,7 @@ public class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandler<GetA
                     ,A.[UpdateTimeoutSeconds]
                     ,A.[AutoStart]
                     ,A.[RegisteredAt]
+                    ,A.[AppTypeId]
                 FROM
                     [App] A
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
@@ -95,7 +100,7 @@ public class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandler<GetA
                 """)
             .SingleOrDefaultAsync(ct);
 
-        if (result is null)
+        if (row is null)
         {
             return CommandResult<Get.DetailResponse>.Fail("NOT_FOUND", "App not found");
         }
@@ -118,21 +123,22 @@ public class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandler<GetA
 
         var detail = new Get.DetailResponse
         (
-            result.ExternalId,
-            result.Name,
-            result.DisplayName,
-            result.AppTypeName,
-            result.InstallDirectory,
-            result.CommandLine,
-            result.Arguments,
-            result.WorkingDirectory,
-            result.RestartPolicyName,
-            result.Port,
-            result.HealthEndpoint,
-            result.UpdateCommand,
-            result.UpdateTimeoutSeconds,
-            result.AutoStart,
-            result.RegisteredAt,
+            row.ExternalId,
+            row.Name,
+            row.DisplayName,
+            row.AppTypeName,
+            row.InstallDirectory,
+            row.CommandLine,
+            row.Arguments,
+            row.WorkingDirectory,
+            row.RestartPolicyName,
+            row.Port,
+            row.HealthEndpoint,
+            row.UpdateCommand,
+            row.UpdateTimeoutSeconds,
+            row.AutoStart,
+            row.RegisteredAt,
+            AppTypeBehavior.IsProtected(row.AppTypeId),
             environmentVariables
         );
 

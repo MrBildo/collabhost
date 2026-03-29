@@ -13,6 +13,7 @@ export type AppListItem = {
   updateCommand: string | null;
   updateTimeoutSeconds: number | null;
   autoStart: boolean;
+  isProtected: boolean;
 };
 
 export type ProcessState =
@@ -76,6 +77,7 @@ export type AppDetail = {
   updateTimeoutSeconds: number | null;
   autoStart: boolean;
   registeredAt: string;
+  isProtected: boolean;
   environmentVariables: EnvironmentVariable[];
 };
 

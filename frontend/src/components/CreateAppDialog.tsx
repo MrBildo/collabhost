@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useCreateApp } from '@/hooks/useApps';
+import { BASE_DOMAIN } from '@/lib/constants';
 import { useAppTypes, useRestartPolicies } from '@/hooks/useLookups';
 import type { CreateAppRequest } from '@/types/api';
 
@@ -200,7 +201,7 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
               required
             />
             <p className="text-xs text-muted-foreground">
-              Used in the domain: {form.name || 'my-app'}.collab.internal
+              Used in the domain: {form.name || 'my-app'}.{BASE_DOMAIN}
             </p>
           </div>
 

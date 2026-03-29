@@ -6,26 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAppStatus, useStartApp, useStopApp, useRestartApp } from '@/hooks/useApps';
+import { APP_TYPE_NAMES, BASE_DOMAIN, STATUS_MAP } from '@/lib/constants';
 import { formatUptime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AppListItem, ProcessState } from '@/types/api';
-
-const BASE_DOMAIN = 'collab.internal';
-
-type StatusConfig = {
-  color: string;
-  label: string;
-};
-
-const STATUS_MAP: Record<ProcessState, StatusConfig> = {
-  Running: { color: 'bg-green-500', label: 'Running' },
-  Stopped: { color: 'bg-gray-400', label: 'Stopped' },
-  Crashed: { color: 'bg-red-500', label: 'Crashed' },
-  Starting: { color: 'bg-amber-400', label: 'Starting' },
-  Stopping: { color: 'bg-amber-400', label: 'Stopping' },
-  Restarting: { color: 'bg-amber-400', label: 'Restarting' },
-  Unknown: { color: 'bg-gray-400', label: 'Unknown' },
-};
 
 type AppCardProps = {
   app: AppListItem;
@@ -38,7 +22,7 @@ export function AppCard({ app }: AppCardProps) {
   const stopApp = useStopApp();
   const restartApp = useRestartApp();
 
-  const isStaticSite = app.appTypeName === 'Static Site';
+  const isStaticSite = app.appTypeName === APP_TYPE_NAMES.STATIC_SITE;
   const processState: ProcessState = status?.processState ?? 'Stopped';
   const statusConfig = STATUS_MAP[processState];
   const isTransitioning =

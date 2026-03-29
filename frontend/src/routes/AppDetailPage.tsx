@@ -44,26 +44,10 @@ import { useAppDetail, useAppLogs, useUpdateAppConfig, useDeleteApp } from '@/ho
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import type { UpdateEvent } from '@/hooks/useAppUpdate';
 import { useRestartPolicies } from '@/hooks/useLookups';
+import { APP_TYPE_NAMES, BASE_DOMAIN, STATUS_MAP } from '@/lib/constants';
 import { formatDateTime, formatUptime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AppDetail, ProcessState, UpdateAppRequest } from '@/types/api';
-
-const BASE_DOMAIN = 'collab.internal';
-
-type StatusConfig = {
-  color: string;
-  label: string;
-};
-
-const STATUS_MAP: Record<ProcessState, StatusConfig> = {
-  Running: { color: 'bg-green-500', label: 'Running' },
-  Stopped: { color: 'bg-gray-400', label: 'Stopped' },
-  Crashed: { color: 'bg-red-500', label: 'Crashed' },
-  Starting: { color: 'bg-amber-400', label: 'Starting' },
-  Stopping: { color: 'bg-amber-400', label: 'Stopping' },
-  Restarting: { color: 'bg-amber-400', label: 'Restarting' },
-  Unknown: { color: 'bg-gray-400', label: 'Unknown' },
-};
 
 export function AppDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -92,8 +76,8 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
   const appUpdate = useAppUpdate(appId);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
 
-  const isStaticSite = app?.appTypeName === 'Static Site';
-  const isProtected = app?.appTypeName === 'Proxy Service';
+  const isStaticSite = app?.appTypeName === APP_TYPE_NAMES.STATIC_SITE;
+  const isProtected = app?.isProtected ?? false;
   const processState: ProcessState = status?.processState ?? 'Stopped';
   const statusConfig = STATUS_MAP[processState];
   const isTransitioning =
