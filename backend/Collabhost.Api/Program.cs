@@ -86,6 +86,3 @@ app.MapFallbackToFile("index.html");
 app.MapDefaultEndpoints();
 
 await app.RunAsync();
-
-// Make Program class accessible for WebApplicationFactory in tests
-public partial class Program { }

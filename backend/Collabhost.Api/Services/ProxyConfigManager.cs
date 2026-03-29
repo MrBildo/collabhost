@@ -47,13 +47,13 @@ public class ProxyConfigManager
         }
     }
 
-    public async Task SyncRoutesAsync()
+    public async Task SyncRoutesAsync(CancellationToken ct = default)
     {
         try
         {
-            var apps = await LoadRoutableAppsAsync();
+            var apps = await LoadRoutableAppsAsync(ct);
             var config = _generator.Generate(apps);
-            var success = await _proxyClient.LoadConfigAsync(config);
+            var success = await _proxyClient.LoadConfigAsync(config, ct);
 
             if (success)
             {
@@ -85,7 +85,7 @@ public class ProxyConfigManager
             if (await _proxyClient.IsReadyAsync(ct))
             {
                 _logger.LogInformation("Proxy admin API is ready — syncing routes");
-                await SyncRoutesAsync();
+                await SyncRoutesAsync(ct);
                 return;
             }
 
@@ -101,7 +101,7 @@ public class ProxyConfigManager
         }
     }
 
-    private async Task<List<AppRouteInfo>> LoadRoutableAppsAsync()
+    private async Task<List<AppRouteInfo>> LoadRoutableAppsAsync(CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
@@ -118,7 +118,7 @@ public class ProxyConfigManager
                 FROM
                     [App] A
                 """)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return
         [

@@ -114,7 +114,7 @@ public class LogRetrievalTests(CollabhostApiFixture fixture) : IClassFixture<Col
         var runner = _fixture.Services.GetRequiredService<IManagedProcessRunner>() as FakeProcessRunner;
         for (var i = 1; i <= 5; i++)
         {
-            runner!.LastHandle!.EmitOutput($"line {i}", LogStream.StdOut);
+            runner!.LastHandle!.EmitOutput(string.Create(CultureInfo.InvariantCulture, $"line {i}"), LogStream.StdOut);
         }
 
         // Act

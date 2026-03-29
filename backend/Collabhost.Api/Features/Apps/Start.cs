@@ -53,7 +53,7 @@ public class StartCommandHandler
             var managed = await _supervisor.StartAppAsync(app.Id, ct);
             return CommandResult<ProcessStatusResponse>.Success(ProcessStatusMapper.Map(managed));
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already running"))
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already running", StringComparison.Ordinal))
         {
             return CommandResult<ProcessStatusResponse>.Fail("ALREADY_RUNNING", ex.Message);
         }

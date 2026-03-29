@@ -49,7 +49,7 @@ public class ApiKeyAuthorizationMiddleware
             context.Response.ContentType = "application/json";
 
             var body = new { error = "Forbidden", message = "Invalid or missing API key." };
-            await context.Response.WriteAsync(JsonSerializer.Serialize(body, _jsonOptions));
+            await context.Response.WriteAsync(JsonSerializer.Serialize(body, _jsonOptions), context.RequestAborted);
             return;
         }
 

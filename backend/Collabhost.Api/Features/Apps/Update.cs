@@ -122,7 +122,7 @@ public class UpdateAppCommandHandler
 
         await _db.SaveChangesAsync(ct);
 
-        _ = _proxyConfigManager.SyncRoutesAsync();
+        _ = _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<Empty>.Success(Empty.Value);
     }

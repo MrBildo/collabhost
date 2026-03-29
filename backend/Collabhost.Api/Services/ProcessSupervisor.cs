@@ -317,7 +317,8 @@ public class ProcessSupervisor
                 {
                     _logger.LogError(ex, "Failed to restart app {AppId}", appId);
                 }
-            }
+            },
+            cancellation.Token
         );
     }
 

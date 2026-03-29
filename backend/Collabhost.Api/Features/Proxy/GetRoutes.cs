@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Collabhost.Api.Features.Proxy;
 
 public static class GetRoutes
@@ -65,7 +67,7 @@ public class GetRoutesCommandHandler
                     var proxyMode = AppTypeBehavior.ProxyMode(r.AppTypeId);
                     var domain = $"{r.Name}.{_settings.BaseDomain}";
                     var target = proxyMode == "reverse_proxy"
-                        ? $"localhost:{r.Port}"
+                        ? $"localhost:{r.Port?.ToString(CultureInfo.InvariantCulture)}"
                         : r.InstallDirectory ?? "";
 
                     return new RouteEntry

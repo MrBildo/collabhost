@@ -194,7 +194,7 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         var routeArray = routes.EnumerateArray().ToList();
         var matchingRoute = routeArray.FirstOrDefault
         (
-            r => r.GetProperty("domain").GetString()?.Contains("proxy-routes-test") == true
+            r => r.GetProperty("domain").GetString()?.Contains("proxy-routes-test", StringComparison.Ordinal) == true
         );
 
         matchingRoute.ValueKind.ShouldNotBe(JsonValueKind.Undefined);

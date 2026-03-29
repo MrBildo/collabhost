@@ -152,7 +152,7 @@ public class CreateCommandHandler
 
         if (AppTypeBehavior.IsRoutable(command.AppTypeId))
         {
-            _ = _proxyConfigManager.SyncRoutesAsync();
+            _ = _proxyConfigManager.SyncRoutesAsync(ct);
         }
 
         return CommandResult<string>.Success(app.ExternalId);

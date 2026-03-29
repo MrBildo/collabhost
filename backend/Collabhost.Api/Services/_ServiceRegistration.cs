@@ -13,7 +13,7 @@ public static class InfrastructureServiceExtensions
             var connectionString = configuration.GetConnectionString("Host")
                 ?? "Data Source=./db/collabhost.db";
 
-            var databasePath = connectionString.Replace("Data Source=", "");
+            var databasePath = connectionString.Replace("Data Source=", "", StringComparison.Ordinal);
             var databaseDirectory = Path.GetDirectoryName(Path.GetFullPath(databasePath));
             if (databaseDirectory is not null)
             {
