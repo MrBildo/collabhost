@@ -30,7 +30,7 @@ public class AppMapping : IEntityTypeConfiguration<App>
 
         // File system paths — 500 covers typical Windows MAX_PATH (260) with headroom
         builder.Property(e => e.InstallDirectory).HasMaxLength(500).IsRequired();
-        builder.Property(e => e.CommandLine).HasMaxLength(500).IsRequired();
+        builder.Property(e => e.CommandLine).HasMaxLength(500);
 
         // Arguments can be longer than a single path (multiple flags, quoted strings)
         builder.Property(e => e.Arguments).HasMaxLength(1000);
