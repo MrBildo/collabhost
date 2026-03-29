@@ -211,7 +211,8 @@ Each domain folder has a `_Module.cs` implementing `IFeatureModule` to map route
 - Interfaces: `IPascalCase`
 - Guard clauses: `ArgumentNullException.ThrowIfNull()`
 - Collection expressions: `[]`
-- Expression-bodied members for one-liners
+- Expression-bodied members for one-liners (IDE0022 promoted to error)
+- **Multi-line parenthesis formatting** — when a parameter list wraps, `(` goes on its own line, indented, with `)` on its own line. Applies to records, method declarations, method calls, and constructor base calls. `dotnet format` does NOT enforce this — agents must follow manually.
 - `SingleAsync` (not `FirstAsync`) for single-result entity lookups by ID
 - `.editorconfig` enforced
 - **Verbose naming** — full words, no abbreviations (`Authorization` not `Auth`, `EnvironmentVariables` not `EnvVars`, `Configuration` not `Config`)
@@ -299,6 +300,8 @@ When dispatching coding or evaluation sub-agents via the Agent tool:
 
 - **Model:** Always use `model: "opus"` (Opus High)
 - **Skills:** Instruct sub-agents to use skills appropriate to the task — e.g., dotnet-dev for C# tasks, typescript-dev for TypeScript. A research agent doesn't need coding skills.
+- **No frontend hacks for backend concerns:** If a frontend agent encounters a problem that should be fixed on the backend (wrong datetime format, missing API endpoint, hardcoded lookup data), they must report the gap — NOT implement a workaround. No translation layers, hardcoded constants, or data fixups that belong on the server side.
+- **Backend verification:** Every backend agent must run `dotnet build`, `dotnet format --verify-no-changes`, and `dotnet test` before reporting done.
 - **Report format:** Every sub-agent must return a standardized report. Include this template in the prompt:
 
     ```
