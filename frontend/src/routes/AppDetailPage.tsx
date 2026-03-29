@@ -44,7 +44,7 @@ import { useAppDetail, useAppLogs, useUpdateAppConfig, useDeleteApp } from '@/ho
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import type { UpdateEvent } from '@/hooks/useAppUpdate';
 import { RESTART_POLICIES } from '@/lib/constants';
-import { formatUptime } from '@/lib/format';
+import { formatDateTime, formatUptime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AppDetail, ProcessState, UpdateAppRequest } from '@/types/api';
 
@@ -490,7 +490,7 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
       isBoolean: true,
       booleanValue: form.autoStart,
     },
-    { label: 'Registered At', value: formatDate(app.registeredAt), readOnly: true },
+    { label: 'Registered At', value: formatDateTime(app.registeredAt), readOnly: true },
   ];
 
   return (
@@ -815,10 +815,3 @@ function buildFormState(app: AppDetail): ConfigFormState {
   };
 }
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}

@@ -2,15 +2,8 @@ import { Boxes, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { clearAdminKey, getAdminKey } from '@/lib/api';
+import { formatDateTime } from '@/lib/format';
 import { useAppList, useSystemStatus } from '@/hooks/useSystem';
-
-function formatTimestamp(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
 
 function maskKey(key: string): string {
   if (key.length <= 8) return key;
@@ -81,7 +74,7 @@ function StatusCard({ status, version, timestamp, isLoading }: StatusCardProps) 
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Last checked</span>
-            <span className="text-sm">{timestamp ? formatTimestamp(timestamp) : '-'}</span>
+            <span className="text-sm">{timestamp ? formatDateTime(timestamp) : '-'}</span>
           </div>
         </div>
       )}

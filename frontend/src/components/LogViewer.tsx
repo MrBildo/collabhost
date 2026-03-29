@@ -125,7 +125,8 @@ function LogLine({ entry }: LogLineProps) {
 
 function formatTimestamp(iso: string): string {
   try {
-    const date = new Date(iso);
+    const utc = iso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + 'Z';
+    const date = new Date(utc);
     return date.toLocaleTimeString('en-US', {
       hour12: false,
       hour: '2-digit',

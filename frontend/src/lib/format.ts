@@ -1,3 +1,25 @@
+/** Ensure a datetime string from the API is treated as UTC */
+function ensureUtc(iso: string): string {
+  if (iso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(iso)) return iso;
+  return iso + 'Z';
+}
+
+export function formatDateTime(iso: string): string {
+  try {
+    return new Date(ensureUtc(iso)).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+export function formatTime(iso: string): string {
+  try {
+    return new Date(ensureUtc(iso)).toLocaleTimeString();
+  } catch {
+    return iso;
+  }
+}
+
 export function formatUptime(seconds: number): string {
   if (seconds < 60) {
     return `${Math.floor(seconds)}s`;
