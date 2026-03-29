@@ -13,7 +13,8 @@ public class CollabhostDbContext(DbContextOptions<CollabhostDbContext> options) 
             .HaveConversion<UtcDateTimeConverter>();
 }
 
-public sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>(
+public sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>
+(
     v => v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime(),
     v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
 );
