@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Loader2, RefreshCw, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -33,8 +34,14 @@ export function RoutesPage() {
 
   function handleReload() {
     reloadCaddy.mutate(undefined, {
-      onSuccess: () => setReloadFeedback('success'),
-      onError: () => setReloadFeedback('error'),
+      onSuccess: () => {
+        setReloadFeedback('success');
+        toast.success('Caddy configuration reloaded');
+      },
+      onError: () => {
+        setReloadFeedback('error');
+        toast.error('Failed to reload Caddy');
+      },
     });
   }
 

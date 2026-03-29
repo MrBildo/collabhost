@@ -1,5 +1,9 @@
+import * as React from 'react';
+import { Plus } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { AppCard } from '@/components/AppCard';
+import { CreateAppDialog } from '@/components/CreateAppDialog';
 import { useApps } from '@/hooks/useApps';
 
 function AppCardSkeleton() {
@@ -25,10 +29,17 @@ function AppCardSkeleton() {
 
 export function AppListPage() {
   const { data: apps, isLoading, error } = useApps();
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = React.useState(false);
 
   return (
     <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold tracking-tight">Apps</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold tracking-tight">Apps</h1>
+        <Button variant="outline" onClick={() => setIsCreateDialogOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Add App
+        </Button>
+      </div>
 
       {isLoading && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -48,8 +59,12 @@ export function AppListPage() {
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <p className="text-lg font-medium">No apps registered yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Register an app via the API to get started
+            Add your first application to get started.
           </p>
+          <Button className="mt-4" size="lg" onClick={() => setIsCreateDialogOpen(true)}>
+            <Plus className="h-5 w-5" />
+            Add App
+          </Button>
         </div>
       )}
 
@@ -60,6 +75,8 @@ export function AppListPage() {
           ))}
         </div>
       )}
+
+      <CreateAppDialog isOpen={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
     </div>
   );
 }

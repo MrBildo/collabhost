@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { AppListItem, ProcessStatus } from '@/types/api';
+import type { AppListItem, CreateAppRequest, CreateAppResponse, ProcessStatus } from '@/types/api';
 
 export function useApps() {
   return useQuery<AppListItem[]>({
@@ -58,6 +58,18 @@ export function useRestartApp() {
   return useMutation<ProcessStatus, Error, string>({
     mutationFn: (id) =>
       api.post<ProcessStatus>(`/apps/${id}/restart`).then((response) => response.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+    },
+  });
+}
+
+export function useCreateApp() {
+  const queryClient = useQueryClient();
+
+  return useMutation<CreateAppResponse, Error, CreateAppRequest>({
+    mutationFn: (request) =>
+      api.post<CreateAppResponse>('/apps', request).then((response) => response.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
     },

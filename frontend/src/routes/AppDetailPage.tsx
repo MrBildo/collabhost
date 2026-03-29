@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   ExternalLink,
@@ -27,6 +28,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -35,6 +43,7 @@ import { useAppStatus, useStartApp, useStopApp, useRestartApp } from '@/hooks/us
 import { useAppDetail, useAppLogs, useUpdateAppConfig, useDeleteApp } from '@/hooks/useAppDetail';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import type { UpdateEvent } from '@/hooks/useAppUpdate';
+import { RESTART_POLICIES } from '@/lib/constants';
 import { formatUptime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AppDetail, ProcessState, UpdateAppRequest } from '@/types/api';
@@ -169,7 +178,12 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => startApp.mutate(appId)}
+                          onClick={() =>
+                            startApp.mutate(appId, {
+                              onSuccess: () => toast.success('App started'),
+                              onError: () => toast.error('Failed to start app'),
+                            })
+                          }
                           disabled={isDisabled}
                         >
                           <Play className="mr-1 h-4 w-4" />
@@ -188,7 +202,12 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => stopApp.mutate(appId)}
+                          onClick={() =>
+                            stopApp.mutate(appId, {
+                              onSuccess: () => toast.success('App stopped'),
+                              onError: () => toast.error('Failed to stop app'),
+                            })
+                          }
                           disabled={isDisabled}
                         >
                           <Square className="mr-1 h-4 w-4" />
@@ -207,7 +226,12 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => restartApp.mutate(appId)}
+                          onClick={() =>
+                            restartApp.mutate(appId, {
+                              onSuccess: () => toast.success('App restarted'),
+                              onError: () => toast.error('Failed to restart app'),
+                            })
+                          }
                           disabled={isDisabled}
                         >
                           <RefreshCw className="mr-1 h-4 w-4" />
@@ -398,7 +422,11 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
     };
 
     updateConfig.mutate(request, {
-      onSuccess: () => setIsEditing(false),
+      onSuccess: () => {
+        setIsEditing(false);
+        toast.success('Configuration saved');
+      },
+      onError: () => toast.error('Failed to save configuration'),
     });
   }
 
@@ -445,7 +473,15 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
       value: form.updateTimeoutSeconds,
       field: 'updateTimeoutSeconds',
     },
-    { label: 'Restart Policy', value: form.restartPolicyId, field: 'restartPolicyId' },
+    {
+      label: 'Restart Policy',
+      value:
+        RESTART_POLICIES.find((policy) => policy.id === form.restartPolicyId)?.name ??
+        form.restartPolicyId,
+      field: 'restartPolicyId',
+      isSelect: true,
+      selectOptions: RESTART_POLICIES,
+    },
     {
       label: 'Auto Start',
       value: form.autoStart ? 'Yes' : 'No',
@@ -502,6 +538,26 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
                       />
                       <span className="text-sm">{field.booleanValue ? 'Yes' : 'No'}</span>
                     </label>
+                  ) : field.isSelect && field.selectOptions ? (
+                    <Select
+                      value={form[field.field!] as string}
+                      onValueChange={(value) => {
+                        if (value !== null) {
+                          updateField(field.field!, value);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {field.selectOptions.map((option) => (
+                          <SelectItem key={option.id} value={option.id}>
+                            {option.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   ) : (
                     <Input
                       value={field.value}
@@ -601,7 +657,12 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
               <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
               <Button
                 variant="destructive"
-                onClick={() => deleteApp.mutate(appId)}
+                onClick={() =>
+                  deleteApp.mutate(appId, {
+                    onSuccess: () => toast.success('App deleted'),
+                    onError: () => toast.error('Failed to delete app'),
+                  })
+                }
                 disabled={deleteApp.isPending}
               >
                 {deleteApp.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
@@ -733,16 +794,20 @@ type ConfigField = {
   readOnly?: boolean;
   isBoolean?: boolean;
   booleanValue?: boolean;
+  isSelect?: boolean;
+  selectOptions?: readonly { id: string; name: string }[];
 };
 
 function buildFormState(app: AppDetail): ConfigFormState {
+  const policyMatch = RESTART_POLICIES.find((policy) => policy.name === app.restartPolicyName);
+
   return {
     displayName: app.displayName,
     installDirectory: app.installDirectory,
     commandLine: app.commandLine,
     arguments: app.arguments ?? '',
     workingDirectory: app.workingDirectory ?? '',
-    restartPolicyId: app.restartPolicyName,
+    restartPolicyId: policyMatch?.id ?? RESTART_POLICIES[0].id,
     healthEndpoint: app.healthEndpoint ?? '',
     updateCommand: app.updateCommand ?? '',
     updateTimeoutSeconds: app.updateTimeoutSeconds?.toString() ?? '',

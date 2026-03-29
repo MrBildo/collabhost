@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Play, RefreshCw, Square } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,17 +51,26 @@ export function AppCard({ app }: AppCardProps) {
 
   const handleStart = (event: React.MouseEvent) => {
     event.stopPropagation();
-    startApp.mutate(app.externalId);
+    startApp.mutate(app.externalId, {
+      onSuccess: () => toast.success('App started'),
+      onError: () => toast.error('Failed to start app'),
+    });
   };
 
   const handleStop = (event: React.MouseEvent) => {
     event.stopPropagation();
-    stopApp.mutate(app.externalId);
+    stopApp.mutate(app.externalId, {
+      onSuccess: () => toast.success('App stopped'),
+      onError: () => toast.error('Failed to stop app'),
+    });
   };
 
   const handleRestart = (event: React.MouseEvent) => {
     event.stopPropagation();
-    restartApp.mutate(app.externalId);
+    restartApp.mutate(app.externalId, {
+      onSuccess: () => toast.success('App restarted'),
+      onError: () => toast.error('Failed to restart app'),
+    });
   };
 
   return (

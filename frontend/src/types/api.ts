@@ -112,3 +112,22 @@ export type UpdateSseResultEvent = {
   timedOut: boolean;
   processStatus: ProcessStatus | null;
 };
+
+export type CreateAppRequest = {
+  name: string;
+  displayName: string;
+  appTypeId: string;
+  installDirectory: string;
+  commandLine: string;
+  arguments: string | null;
+  workingDirectory: string | null;
+  restartPolicyId: string;
+  healthEndpoint: string | null;
+  updateCommand: string | null;
+  updateTimeoutSeconds: number | null;
+  autoStart: boolean;
+};
+
+export type CreateAppResponse = {
+  externalId: string;
+};

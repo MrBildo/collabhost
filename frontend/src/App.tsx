@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { Toaster } from '@/components/ui/sonner';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { AuthGate } from '@/components/AuthGate';
@@ -23,6 +24,7 @@ export function App() {
             </Routes>
           </SidebarInset>
         </SidebarProvider>
+        <Toaster />
       </TooltipProvider>
     </AuthGate>
   );
