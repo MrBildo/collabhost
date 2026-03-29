@@ -14,8 +14,8 @@ public class CollabhostDbContext(DbContextOptions<CollabhostDbContext> options) 
 }
 
 public sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>(
-    convertToProviderExpression: v => v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime(),
-    convertFromProviderExpression: v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
+    v => v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime(),
+    v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
 );
 
 public record AppLookup(Guid Id, string ExternalId, string DisplayName, Guid AppTypeId, string? UpdateCommand);
