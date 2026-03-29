@@ -8,6 +8,7 @@ public sealed class ProxyConfigManager
     ProxyConfigGenerator generator,
     IServiceScopeFactory scopeFactory,
     IProcessStateEventBus processStateEventBus,
+    ProcessSupervisor processSupervisor,
     ProxySettings settings,
     ILogger<ProxyConfigManager> logger
 ) : IHostedService
@@ -16,6 +17,7 @@ public sealed class ProxyConfigManager
     private readonly ProxyConfigGenerator _generator = generator ?? throw new ArgumentNullException(nameof(generator));
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
     private readonly IProcessStateEventBus _processStateEventBus = processStateEventBus ?? throw new ArgumentNullException(nameof(processStateEventBus));
+    private readonly ProcessSupervisor _processSupervisor = processSupervisor ?? throw new ArgumentNullException(nameof(processSupervisor));
     private readonly ProxySettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     private readonly ILogger<ProxyConfigManager> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -62,6 +64,15 @@ public sealed class ProxyConfigManager
             "Proxy config manager started — listening for proxy app state changes (AppId: {AppId})",
             _proxyAppId
         );
+
+        // Check if the proxy process is already running (race condition: ProcessSupervisor
+        // may have auto-started and published the Running event before we subscribed)
+        var managed = _processSupervisor.GetStatus(_proxyAppId.Value);
+        if (managed is not null && managed.IsRunning)
+        {
+            _logger.LogInformation("Proxy process already running — triggering initial route sync");
+            _ = Task.Run(async () => await HandleProxyRunningAsync(), CancellationToken.None);
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
