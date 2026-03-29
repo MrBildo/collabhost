@@ -18,7 +18,7 @@ using Xunit;
 
 namespace Collabhost.Api.Tests;
 
-public class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture) : IClassFixture<CollabhostApiFixture>, IDisposable
+public sealed class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture) : IClassFixture<CollabhostApiFixture>, IDisposable
 {
     private readonly CollabhostApiFixture _fixture = fixture;
     private readonly List<IDisposable> _subscriptions = [];

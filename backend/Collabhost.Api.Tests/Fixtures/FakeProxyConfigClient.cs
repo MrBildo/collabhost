@@ -4,7 +4,7 @@ using Collabhost.Api.Services.Proxy;
 
 namespace Collabhost.Api.Tests.Fixtures;
 
-public class FakeProxyConfigClient : IProxyConfigClient
+public sealed class FakeProxyConfigClient : IProxyConfigClient
 {
     public JsonObject? LastPushedConfig { get; private set; }
     public int LoadCallCount { get; private set; }

@@ -19,3 +19,8 @@ public record AppRouteInfo
     string? InstallDirectory,
     string? HealthEndpoint
 );
+
+public interface IProxyAppSeeder
+{
+    Task SeedAsync(CancellationToken cancellationToken);
+}

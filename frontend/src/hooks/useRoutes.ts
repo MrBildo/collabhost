@@ -18,7 +18,7 @@ export function useReloadProxy() {
 
   return useMutation({
     mutationFn: async () => {
-      await api.post('/caddy/reload');
+      await api.post('/proxy/reload');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['routes'] });

@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Collabhost.Api.Services.Proxy;
 
-public class CaddyProxyConfigClient
+public sealed class CaddyProxyConfigClient
 (
     HttpClient httpClient,
     ProxySettings settings,

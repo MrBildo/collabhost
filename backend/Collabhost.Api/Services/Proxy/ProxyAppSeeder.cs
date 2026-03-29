@@ -6,11 +6,6 @@ using Collabhost.Api.Domain.Values;
 
 namespace Collabhost.Api.Services.Proxy;
 
-public interface IProxyAppSeeder
-{
-    Task SeedAsync(CancellationToken cancellationToken);
-}
-
 public sealed class ProxyAppSeeder
 (
     CollabhostDbContext db,

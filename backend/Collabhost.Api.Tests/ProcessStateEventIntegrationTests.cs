@@ -15,7 +15,7 @@ using Xunit;
 
 namespace Collabhost.Api.Tests;
 
-public class ProcessStateEventIntegrationTests(CollabhostApiFixture fixture) : IClassFixture<CollabhostApiFixture>, IDisposable
+public sealed class ProcessStateEventIntegrationTests(CollabhostApiFixture fixture) : IClassFixture<CollabhostApiFixture>, IDisposable
 {
     private readonly CollabhostApiFixture _fixture = fixture;
     private readonly List<IDisposable> _subscriptions = [];

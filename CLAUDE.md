@@ -197,7 +197,7 @@ REST API under `/api/v1/`:
 /api/v1/apps/{id}/logs      # Log retrieval (ring buffer)
 /api/v1/apps/{id}/update    # Run update script (SSE-streamed)
 /api/v1/routes              # Proxy route listing
-/api/v1/caddy/reload        # Force Caddy config regeneration
+/api/v1/proxy/reload        # Force proxy config regeneration
 /api/v1/status              # System status
 /health                     # Health check
 ```
