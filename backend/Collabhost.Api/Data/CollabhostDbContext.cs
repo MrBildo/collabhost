@@ -1,4 +1,5 @@
 using Collabhost.Api.Domain.Entities;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Collabhost.Api.Data;
 
@@ -10,7 +11,18 @@ public class CollabhostDbContext(DbContextOptions<CollabhostDbContext> options) 
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CollabhostDbContext).Assembly);
     }
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<DateTime>()
+            .HaveConversion<UtcDateTimeConverter>();
+    }
 }
+
+public sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>(
+    convertToProviderExpression: v => v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime(),
+    convertFromProviderExpression: v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
+);
 
 public record AppLookup(Guid Id, string ExternalId, string DisplayName, Guid AppTypeId, string? UpdateCommand);
 

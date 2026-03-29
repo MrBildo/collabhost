@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useCreateApp } from '@/hooks/useApps';
-import { APP_TYPES, RESTART_POLICIES } from '@/lib/constants';
+import { useAppTypes, useRestartPolicies } from '@/hooks/useLookups';
 import type { CreateAppRequest } from '@/types/api';
 
 type CreateAppDialogProps = {
@@ -51,34 +51,46 @@ type FormState = {
   autoStart: boolean;
 };
 
-const INITIAL_FORM_STATE: FormState = {
-  displayName: '',
-  name: '',
-  appTypeId: APP_TYPES[0].displayName,
-  installDirectory: '',
-  commandLine: '',
-  arguments: '',
-  workingDirectory: '',
-  restartPolicyId: RESTART_POLICIES[0].displayName,
-  healthEndpoint: '',
-  updateCommand: '',
-  updateTimeoutSeconds: '',
-  autoStart: false,
-};
+function buildInitialFormState(
+  appTypes: { displayName: string }[],
+  restartPolicies: { displayName: string }[],
+): FormState {
+  return {
+    displayName: '',
+    name: '',
+    appTypeId: appTypes[0]?.displayName ?? '',
+    installDirectory: '',
+    commandLine: '',
+    arguments: '',
+    workingDirectory: '',
+    restartPolicyId: restartPolicies[0]?.displayName ?? '',
+    healthEndpoint: '',
+    updateCommand: '',
+    updateTimeoutSeconds: '',
+    autoStart: false,
+  };
+}
 
 export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) {
   const createApp = useCreateApp();
-  const [form, setForm] = React.useState(INITIAL_FORM_STATE);
+  const { data: appTypes, isLoading: isAppTypesLoading } = useAppTypes();
+  const { data: restartPolicies, isLoading: isRestartPoliciesLoading } = useRestartPolicies();
+  const isLookupsLoading = isAppTypesLoading || isRestartPoliciesLoading;
+
+  const [form, setForm] = React.useState<FormState>(() =>
+    buildInitialFormState(appTypes ?? [], restartPolicies ?? []),
+  );
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const isStaticSite = form.appTypeId === 'Static Site';
+  const selectedAppType = appTypes?.find((t) => t.displayName === form.appTypeId);
+  const isStaticSite = selectedAppType?.name === 'StaticSite';
 
   const handleReset = React.useCallback(() => {
-    setForm(INITIAL_FORM_STATE);
+    setForm(buildInitialFormState(appTypes ?? [], restartPolicies ?? []));
     setIsSlugManuallyEdited(false);
     setError(null);
-  }, []);
+  }, [appTypes, restartPolicies]);
 
   const handleOpenChange = React.useCallback(
     (open: boolean) => {
@@ -117,9 +129,9 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
     event.preventDefault();
     setError(null);
 
-    const appTypeGuid = APP_TYPES.find((t) => t.displayName === form.appTypeId)?.id ?? '';
+    const appTypeGuid = appTypes?.find((t) => t.displayName === form.appTypeId)?.id ?? '';
     const policyGuid =
-      RESTART_POLICIES.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
+      restartPolicies?.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
 
     const request: CreateAppRequest = {
       name: form.name,
@@ -209,7 +221,7 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {APP_TYPES.map((type) => (
+                  {(appTypes ?? []).map((type) => (
                     <SelectItem key={type.id} value={type.displayName}>
                       {type.displayName}
                     </SelectItem>
@@ -234,7 +246,7 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {RESTART_POLICIES.map((policy) => (
+                  {(restartPolicies ?? []).map((policy) => (
                     <SelectItem key={policy.id} value={policy.displayName}>
                       {policy.displayName}
                     </SelectItem>
@@ -375,8 +387,10 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={createApp.isPending}>
-              {createApp.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            <Button type="submit" disabled={createApp.isPending || isLookupsLoading}>
+              {(createApp.isPending || isLookupsLoading) && (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
               Create
             </Button>
           </DialogFooter>

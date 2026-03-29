@@ -43,7 +43,7 @@ import { useAppStatus, useStartApp, useStopApp, useRestartApp } from '@/hooks/us
 import { useAppDetail, useAppLogs, useUpdateAppConfig, useDeleteApp } from '@/hooks/useAppDetail';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import type { UpdateEvent } from '@/hooks/useAppUpdate';
-import { RESTART_POLICIES } from '@/lib/constants';
+import { useRestartPolicies } from '@/hooks/useLookups';
 import { formatDateTime, formatUptime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AppDetail, ProcessState, UpdateAppRequest } from '@/types/api';
@@ -399,6 +399,7 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
   const [isEditing, setIsEditing] = useState(false);
   const updateConfig = useUpdateAppConfig(appId);
   const deleteApp = useDeleteApp();
+  const { data: restartPolicies } = useRestartPolicies();
 
   const [form, setForm] = useState(() => buildFormState(app));
 
@@ -414,7 +415,7 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
 
   function handleSave() {
     const policyGuid =
-      RESTART_POLICIES.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
+      restartPolicies?.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
 
     const request: UpdateAppRequest = {
       displayName: form.displayName,
@@ -486,7 +487,7 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
       value: form.restartPolicyId,
       field: 'restartPolicyId',
       isSelect: true,
-      selectOptions: RESTART_POLICIES,
+      selectOptions: restartPolicies ?? [],
     },
     {
       label: 'Auto Start',
@@ -801,7 +802,7 @@ type ConfigField = {
   isBoolean?: boolean;
   booleanValue?: boolean;
   isSelect?: boolean;
-  selectOptions?: readonly { id: string; name: string; displayName: string }[];
+  selectOptions?: { id: string; name: string; displayName: string }[];
 };
 
 function buildFormState(app: AppDetail): ConfigFormState {

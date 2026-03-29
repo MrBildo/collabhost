@@ -1,3 +1,9 @@
+export type LookupItem = {
+  id: string;
+  name: string;
+  displayName: string;
+};
+
 export type AppListItem = {
   externalId: string;
   name: string;
