@@ -223,6 +223,20 @@ Each domain folder has a `_Module.cs` implementing `IFeatureModule` to map route
 
 The backend uses four Roslyn analyzers enforced across all projects: .NET Analyzers (latest-Recommended), Meziantou, VS.Threading, and SonarAnalyzer. Rules are configured via `.editorconfig`. `Directory.Build.props` sets shared properties, analyzer packages, and project-wide suppressions. `Directory.Build.targets` adds test-specific suppressions (e.g., CA1707 for test method naming).
 
+### Promoted to error (curated — each reviewed individually)
+MA0001 (StringComparison), MA0029 (combine LINQ), MA0036 (make class static), MA0040 (pass CancellationToken), MA0042 (async disposal), MA0053 (seal classes), MA0076 (explicit culture ToString), MA0190 (frozen collections/partial properties), ASP0027 (route param mismatch), IDE0270 (simplify null check)
+
+### Suppressed (with rationale)
+- **CA1708, MA0038, MA0041** — false positives on C# 14 extension blocks
+- **CA1822** — suppressed (MA0038 was the Meziantou equivalent, both suppressed due to extension block conflicts)
+- **MA0003** — enum descriptions (only one internal enum, not user-facing)
+- **MA0007** — trailing commas (style preference: not enforced)
+- **MA0018** — static on generic types (false positive on `CommandResult<T>.Success()` factory)
+- **MA0176** — optimize Guid creation (false positive on catalog constants and EF migrations)
+
+### Philosophy
+If a rule is worth enforcing, make it `error`. Warnings only for gentle nudges (MA0026 TODO, MA0051 method length). Suggestions are consumed via IDE only — MSBuild doesn't surface them.
+
 ## SSE Endpoint Pattern
 
 For long-running operations (update, future log streaming):
