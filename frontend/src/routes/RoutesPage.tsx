@@ -13,13 +13,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useReloadCaddy, useRoutes } from '@/hooks/useRoutes';
+import { useReloadProxy, useRoutes } from '@/hooks/useRoutes';
 
 type ReloadFeedback = 'success' | 'error' | null;
 
 export function RoutesPage() {
   const { data, isLoading } = useRoutes();
-  const reloadCaddy = useReloadCaddy();
+  const reloadProxy = useReloadProxy();
   const [reloadFeedback, setReloadFeedback] = useState<ReloadFeedback>(null);
 
   useEffect(() => {
@@ -33,14 +33,14 @@ export function RoutesPage() {
   }, [reloadFeedback]);
 
   function handleReload() {
-    reloadCaddy.mutate(undefined, {
+    reloadProxy.mutate(undefined, {
       onSuccess: () => {
         setReloadFeedback('success');
-        toast.success('Caddy configuration reloaded');
+        toast.success('Proxy configuration reloaded');
       },
       onError: () => {
         setReloadFeedback('error');
-        toast.error('Failed to reload Caddy');
+        toast.error('Failed to reload proxy');
       },
     });
   }
@@ -51,7 +51,7 @@ export function RoutesPage() {
         <h1 className="text-2xl font-bold tracking-tight">Routes</h1>
         <div className="flex items-center gap-2">
           {reloadFeedback === 'success' && (
-            <span className="text-sm text-green-600 dark:text-green-400">Caddy reloaded</span>
+            <span className="text-sm text-green-600 dark:text-green-400">Proxy reloaded</span>
           )}
           {reloadFeedback === 'error' && (
             <span className="text-sm text-destructive">Reload failed</span>
@@ -60,14 +60,14 @@ export function RoutesPage() {
             variant="outline"
             size="sm"
             onClick={handleReload}
-            disabled={reloadCaddy.isPending}
+            disabled={reloadProxy.isPending}
           >
-            {reloadCaddy.isPending ? (
+            {reloadProxy.isPending ? (
               <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="mr-1.5 h-4 w-4" />
             )}
-            Reload Caddy
+            Reload Proxy
           </Button>
         </div>
       </div>

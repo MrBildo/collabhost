@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-using Collabhost.Api.Services;
+using Collabhost.Api.Services.Proxy;
 
 namespace Collabhost.Api.Tests.Fixtures;
 

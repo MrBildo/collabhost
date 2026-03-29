@@ -13,7 +13,7 @@ export function useRoutes() {
   });
 }
 
-export function useReloadCaddy() {
+export function useReloadProxy() {
   const queryClient = useQueryClient();
 
   return useMutation({

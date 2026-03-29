@@ -93,6 +93,7 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
 
   const isStaticSite = app?.appTypeName === 'Static Site';
+  const isProtected = app?.appTypeName === 'Proxy Service';
   const processState: ProcessState = status?.processState ?? 'Stopped';
   const statusConfig = STATUS_MAP[processState];
   const isTransitioning =
@@ -160,7 +161,7 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
           <div className="flex items-center gap-2">
             {/* Status indicator */}
             {isStaticSite ? (
-              <span className="mr-2 text-sm text-muted-foreground">Served by Caddy</span>
+              <span className="mr-2 text-sm text-muted-foreground">Served by proxy</span>
             ) : (
               <div className="flex items-center gap-2 mr-2">
                 <div className={cn('h-2 w-2 rounded-full', statusConfig.color)} />
@@ -276,7 +277,7 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
         </TabsContent>
 
         <TabsContent value="configuration" className="pt-4">
-          <ConfigurationTab appId={appId} app={app} />
+          <ConfigurationTab appId={appId} app={app} isProtected={isProtected} />
         </TabsContent>
       </Tabs>
 
@@ -393,9 +394,10 @@ function StatCard({ label, value }: StatCardProps) {
 type ConfigurationTabProps = {
   appId: string;
   app: AppDetail;
+  isProtected: boolean;
 };
 
-function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
+function ConfigurationTab({ appId, app, isProtected }: ConfigurationTabProps) {
   const [isEditing, setIsEditing] = useState(false);
   const updateConfig = useUpdateAppConfig(appId);
   const deleteApp = useDeleteApp();
@@ -641,44 +643,46 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
         )}
       </div>
 
-      {/* Delete */}
-      <div className="border-t pt-6">
-        <Dialog>
-          <DialogTrigger
-            render={
-              <Button variant="destructive" size="sm">
-                <Trash2 className="mr-1 h-4 w-4" />
-                Delete App
-              </Button>
-            }
-          />
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete App</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to delete <strong>{app.displayName}</strong>? This action
-                cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-              <Button
-                variant="destructive"
-                onClick={() =>
-                  deleteApp.mutate(appId, {
-                    onSuccess: () => toast.success('App deleted'),
-                    onError: () => toast.error('Failed to delete app'),
-                  })
-                }
-                disabled={deleteApp.isPending}
-              >
-                {deleteApp.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-                Delete
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+      {/* Delete — hidden for protected app types (e.g. ProxyService) */}
+      {!isProtected && (
+        <div className="border-t pt-6">
+          <Dialog>
+            <DialogTrigger
+              render={
+                <Button variant="destructive" size="sm">
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  Delete App
+                </Button>
+              }
+            />
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete App</DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to delete <strong>{app.displayName}</strong>? This action
+                  cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+                <Button
+                  variant="destructive"
+                  onClick={() =>
+                    deleteApp.mutate(appId, {
+                      onSuccess: () => toast.success('App deleted'),
+                      onError: () => toast.error('Failed to delete app'),
+                    })
+                  }
+                  disabled={deleteApp.isPending}
+                >
+                  {deleteApp.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                  Delete
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
     </div>
   );
 }

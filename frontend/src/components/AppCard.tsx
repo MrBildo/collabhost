@@ -122,7 +122,7 @@ export function AppCard({ app }: AppCardProps) {
 
       <CardFooter className="gap-1">
         {isStaticSite ? (
-          <span className="text-xs text-muted-foreground">Served by Caddy</span>
+          <span className="text-xs text-muted-foreground">Served by proxy</span>
         ) : isTransitioning || isMutating ? (
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         ) : (

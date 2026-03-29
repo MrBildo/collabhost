@@ -49,6 +49,9 @@ frontend/src/**/*.js
 # Playwright MCP
 .playwright-mcp/
 
+# Local tools (downloaded binaries)
+tools/
+
 # OS files
 Thumbs.db
 Desktop.ini

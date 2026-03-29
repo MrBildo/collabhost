@@ -1,4 +1,4 @@
-namespace Collabhost.Api.Services;
+namespace Collabhost.Api.Services.Proxy;
 
 public class ProxyConfigManager
 (

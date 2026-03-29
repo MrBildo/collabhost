@@ -1,16 +1,7 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 
-namespace Collabhost.Api.Services;
-
-public record AppRouteInfo
-(
-    string Slug,
-    Guid AppTypeId,
-    int? Port,
-    string? InstallDirectory,
-    string? HealthEndpoint
-);
+namespace Collabhost.Api.Services.Proxy;
 
 public class ProxyConfigGenerator(ProxySettings settings)
 {

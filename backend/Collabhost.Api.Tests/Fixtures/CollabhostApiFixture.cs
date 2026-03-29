@@ -1,5 +1,6 @@
 using Collabhost.Api.Data;
 using Collabhost.Api.Services;
+using Collabhost.Api.Services.Proxy;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
