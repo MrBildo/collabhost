@@ -53,3 +53,5 @@ frontend/src/**/*.js
 Thumbs.db
 Desktop.ini
 .DS_Store
+*.sarif
+*.timestamp-*

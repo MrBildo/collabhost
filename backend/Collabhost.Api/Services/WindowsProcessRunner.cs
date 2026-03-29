@@ -44,12 +44,12 @@ public class WindowsProcessRunner : IManagedProcessRunner
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(timeout);
+        using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCancellation.CancelAfter(timeout);
 
         try
         {
-            await process.WaitForExitAsync(timeoutCts.Token);
+            await process.WaitForExitAsync(timeoutCancellation.Token);
             return new ProcessRunResult(process.ExitCode, false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -115,8 +115,11 @@ public class WindowsProcessRunner : IManagedProcessRunner
         }
 
         public int Pid => _process.Id;
+
         public bool HasExited => _process.HasExited;
+
         public int? ExitCode => _process.HasExited ? _process.ExitCode : null;
+
         public event Action<int>? Exited;
 
         public void Kill()

@@ -1,8 +1,4 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
 using Collabhost.Api.Domain.Catalogs;
-using Collabhost.Api.Services;
 
 namespace Collabhost.Api.Features.Proxy;
 
@@ -14,11 +10,11 @@ public static class GetProxyStatus
 
     public static async Task<Results<Ok<ProxyStatusResponse>, ProblemHttpResult>> HandleAsync
     (
-        GetProxyStatusQueryHandler handler,
+        CommandDispatcher dispatcher,
         CancellationToken ct
     )
     {
-        var result = await handler.HandleAsync(ct);
+        var result = await dispatcher.DispatchAsync(new GetProxyStatusCommand(), ct);
 
         return result.IsSuccess
             ? TypedResults.Ok(result.Value)
@@ -26,13 +22,15 @@ public static class GetProxyStatus
     }
 }
 
-public class GetProxyStatusQueryHandler
+public record GetProxyStatusCommand : ICommand<ProxyStatusResponse>;
+
+public class GetProxyStatusCommandHandler
 (
     CollabhostDbContext db,
     ProcessSupervisor supervisor,
     IProxyConfigClient proxyClient,
     ProxySettings settings
-)
+) : ICommandHandler<GetProxyStatusCommand, ProxyStatusResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
@@ -40,7 +38,7 @@ public class GetProxyStatusQueryHandler
     private readonly ProxySettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
 
 #pragma warning disable MA0051 // Long method justified — multi-step proxy status aggregation
-    public async Task<QueryResult<ProxyStatusResponse>> HandleAsync(CancellationToken ct = default)
+    public async Task<CommandResult<ProxyStatusResponse>> HandleAsync(GetProxyStatusCommand command, CancellationToken ct = default)
     {
         // Find the proxy service app
         var proxyServiceTypeId = IdentifierCatalog.AppTypes.ProxyService;
@@ -98,7 +96,7 @@ public class GetProxyStatusQueryHandler
 
         var routeCount = allApps.Count(a => AppTypeBehavior.IsRoutable(a.AppTypeId));
 
-        return QueryResult<ProxyStatusResponse>.Success
+        return CommandResult<ProxyStatusResponse>.Success
         (
             new ProxyStatusResponse
             (

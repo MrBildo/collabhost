@@ -1,12 +1,6 @@
 using System.Reflection;
 
 using Collabhost.Api.Auth;
-using Collabhost.Api.Data;
-using Collabhost.Api.Data.Interceptors;
-using Collabhost.Api.Features;
-using Collabhost.Api.Services;
-
-using Microsoft.Extensions.Options;
 
 // --version flag
 if (args.Contains("--version"))
@@ -27,22 +21,7 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 builder.AddServiceDefaults();
 
 // Database
-var connectionString = builder.Configuration.GetConnectionString("Host")
-    ?? "Data Source=./db/collabhost.db";
-
-var dbPath = connectionString.Replace("Data Source=", "");
-var dbDir = Path.GetDirectoryName(Path.GetFullPath(dbPath));
-if (dbDir is not null)
-{
-    Directory.CreateDirectory(dbDir);
-}
-
-builder.Services.AddDbContext<CollabhostDbContext>
-(
-    options => options
-        .UseSqlite(connectionString)
-        .AddInterceptors(new AuditInterceptor())
-);
+builder.Services.AddCollabhostDatabase(builder.Configuration);
 
 // Auth
 using var earlyLoggerFactory = LoggerFactory.Create(b => b.AddConsole());
@@ -56,20 +35,10 @@ builder.Services.AddFeatureModules(Assembly.GetExecutingAssembly());
 builder.Services.AddCommandDispatcher();
 
 // Infrastructure services
-builder.Services.AddScoped<PortAllocator>();
-builder.Services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();
-builder.Services.AddSingleton<ProcessSupervisor>();
-builder.Services.AddHostedService<ProcessSupervisor>(sp => sp.GetRequiredService<ProcessSupervisor>());
-builder.Services.AddSingleton<UpdateCoordinator>();
+builder.Services.AddInfrastructureServices();
 
 // Proxy services
-builder.Services.Configure<ProxySettings>(builder.Configuration.GetSection("Proxy"));
-builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<ProxySettings>>().Value);
-builder.Services.AddHttpClient<CaddyProxyConfigClient>();
-builder.Services.AddSingleton<IProxyConfigClient>(sp => sp.GetRequiredService<CaddyProxyConfigClient>());
-builder.Services.AddSingleton<ProxyConfigGenerator>();
-builder.Services.AddSingleton<ProxyConfigManager>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<ProxyConfigManager>());
+builder.Services.AddProxyServices(builder.Configuration);
 
 // OpenAPI
 builder.Services.AddOpenApi();
@@ -85,7 +54,7 @@ var app = builder.Build();
 // Ensure database is created (dev only -- use migrations in prod)
 if (app.Environment.IsDevelopment())
 {
-    using var scope = app.Services.CreateScope();
+    await using var scope = app.Services.CreateAsyncScope();
     var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
     await db.Database.EnsureCreatedAsync();
 }
@@ -116,7 +85,4 @@ app.MapFallbackToFile("index.html");
 // Default health/alive endpoints (from ServiceDefaults)
 app.MapDefaultEndpoints();
 
-app.Run();
-
-// Make Program class accessible for WebApplicationFactory in tests
-public partial class Program { }
+await app.RunAsync();

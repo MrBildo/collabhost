@@ -1,8 +1,3 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
-using Collabhost.Api.Services;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class Start
@@ -58,7 +53,7 @@ public class StartCommandHandler
             var managed = await _supervisor.StartAppAsync(app.Id, ct);
             return CommandResult<ProcessStatusResponse>.Success(ProcessStatusMapper.Map(managed));
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already running"))
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already running", StringComparison.Ordinal))
         {
             return CommandResult<ProcessStatusResponse>.Fail("ALREADY_RUNNING", ex.Message);
         }

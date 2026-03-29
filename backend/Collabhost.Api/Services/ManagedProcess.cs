@@ -16,7 +16,7 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
     private IProcessHandle? _handle;
     private int _consecutiveFailures;
     private DateTime? _lastHealthyAt;
-    private CancellationTokenSource? _restartDelayCts;
+    private CancellationTokenSource? _restartDelayCancellation;
 
     public RingBuffer<LogEntry> LogBuffer { get; } = new(1000);
 
@@ -95,16 +95,16 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
     public bool HasMaxRestartsExceeded(int maxRestarts = 10) =>
         _consecutiveFailures >= maxRestarts;
 
-    public void SetRestartDelayCts(CancellationTokenSource cts)
+    public void SetRestartDelayCancellation(CancellationTokenSource cancellation)
     {
-        _restartDelayCts = cts;
+        _restartDelayCancellation = cancellation;
     }
 
     public void CancelPendingRestart()
     {
-        _restartDelayCts?.Cancel();
-        _restartDelayCts?.Dispose();
-        _restartDelayCts = null;
+        _restartDelayCancellation?.Cancel();
+        _restartDelayCancellation?.Dispose();
+        _restartDelayCancellation = null;
     }
 
     public void KillProcess()

@@ -1,8 +1,3 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
-using Collabhost.Api.Services;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class Stop
@@ -58,7 +53,7 @@ public class StopCommandHandler
             var managed = await _supervisor.StopAppAsync(app.Id, ct);
             return CommandResult<ProcessStatusResponse>.Success(ProcessStatusMapper.Map(managed));
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already stopped"))
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already stopped", StringComparison.Ordinal))
         {
             return CommandResult<ProcessStatusResponse>.Fail("ALREADY_STOPPED", ex.Message);
         }

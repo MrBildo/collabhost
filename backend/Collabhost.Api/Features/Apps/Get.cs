@@ -1,12 +1,7 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class Get
 {
-    public record Query(string ExternalId);
-
     public record Response
     (
         string ExternalId,
@@ -51,11 +46,11 @@ public static class Get
     public static async Task<Results<Ok<DetailResponse>, NotFound>> HandleAsync
     (
         string externalId,
-        GetQueryHandler handler,
+        CommandDispatcher dispatcher,
         CancellationToken ct
     )
     {
-        var result = await handler.HandleAsync(new Query(externalId), ct);
+        var result = await dispatcher.DispatchAsync(new GetAppCommand(externalId), ct);
 
         return result.IsSuccess
             ? TypedResults.Ok(result.Value)
@@ -63,12 +58,14 @@ public static class Get
     }
 }
 
-public class GetQueryHandler(CollabhostDbContext db)
+public record GetAppCommand(string ExternalId) : ICommand<Get.DetailResponse>;
+
+public class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandler<GetAppCommand, Get.DetailResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
 
 #pragma warning disable MA0051 // Long method justified — multi-query SQL projection
-    public async Task<QueryResult<Get.DetailResponse>> HandleAsync(Get.Query query, CancellationToken ct = default)
+    public async Task<CommandResult<Get.DetailResponse>> HandleAsync(GetAppCommand command, CancellationToken ct = default)
     {
         var result = await _db.Database
             .SqlQuery<Get.Response>(
@@ -94,16 +91,16 @@ public class GetQueryHandler(CollabhostDbContext db)
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
                     INNER JOIN [RestartPolicy] RP ON RP.[Id] = A.[RestartPolicyId]
                 WHERE
-                    A.[ExternalId] = {query.ExternalId}
+                    A.[ExternalId] = {command.ExternalId}
                 """)
             .SingleOrDefaultAsync(ct);
 
         if (result is null)
         {
-            return QueryResult<Get.DetailResponse>.Fail("App not found");
+            return CommandResult<Get.DetailResponse>.Fail("NOT_FOUND", "App not found");
         }
 
-        var envVars = await _db.Database
+        var environmentVariables = await _db.Database
             .SqlQuery<Get.EnvironmentVariableResponse>(
                 $"""
                 SELECT
@@ -113,7 +110,7 @@ public class GetQueryHandler(CollabhostDbContext db)
                     [EnvironmentVariable] EV
                     INNER JOIN [App] A ON A.[Id] = EV.[AppId]
                 WHERE
-                    A.[ExternalId] = {query.ExternalId}
+                    A.[ExternalId] = {command.ExternalId}
                 ORDER BY
                     EV.[Name]
                 """)
@@ -136,10 +133,10 @@ public class GetQueryHandler(CollabhostDbContext db)
             result.UpdateTimeoutSeconds,
             result.AutoStart,
             result.RegisteredAt,
-            envVars
+            environmentVariables
         );
 
-        return QueryResult<Get.DetailResponse>.Success(detail);
+        return CommandResult<Get.DetailResponse>.Success(detail);
     }
 #pragma warning restore MA0051
 }

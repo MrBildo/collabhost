@@ -287,6 +287,7 @@ dotnet_diagnostic.CA1000.severity = none
 dotnet_diagnostic.CA1711.severity = none
 dotnet_diagnostic.CA1716.severity = none
 dotnet_diagnostic.CA1510.severity = error
+dotnet_diagnostic.CA1708.severity = none
 dotnet_diagnostic.CA1822.severity = none
 dotnet_diagnostic.CA1829.severity = error
 dotnet_diagnostic.CA1841.severity = error
@@ -295,7 +296,12 @@ dotnet_diagnostic.CA2017.severity = error
 
 # IDE — additional
 dotnet_diagnostic.IDE0002.severity = error
+dotnet_diagnostic.IDE0022.severity = none
 dotnet_diagnostic.IDE0079.severity = none
+dotnet_diagnostic.IDE0270.severity = error
+
+# ASP.NET
+dotnet_diagnostic.ASP0027.severity = error
 
 # SonarAnalyzer
 dotnet_diagnostic.S1066.severity = none
@@ -311,10 +317,24 @@ dotnet_diagnostic.S3358.severity = none
 dotnet_diagnostic.S4487.severity = error
 
 # Meziantou
+dotnet_diagnostic.MA0001.severity = error
 dotnet_diagnostic.MA0004.severity = none
 dotnet_diagnostic.MA0006.severity = none
+dotnet_diagnostic.MA0003.severity = none
+dotnet_diagnostic.MA0007.severity = none
+dotnet_diagnostic.MA0041.severity = none
+dotnet_diagnostic.MA0042.severity = error
 dotnet_diagnostic.MA0046.severity = none
+dotnet_diagnostic.MA0018.severity = none
+dotnet_diagnostic.MA0029.severity = error
+dotnet_diagnostic.MA0036.severity = error
+dotnet_diagnostic.MA0038.severity = none
+dotnet_diagnostic.MA0040.severity = error
 dotnet_diagnostic.MA0048.severity = none
+dotnet_diagnostic.MA0053.severity = error
+dotnet_diagnostic.MA0076.severity = error
+dotnet_diagnostic.MA0176.severity = none
+dotnet_diagnostic.MA0190.severity = error
 
 [**/Migrations/*.cs]
 dotnet_diagnostic.MA0051.severity = none

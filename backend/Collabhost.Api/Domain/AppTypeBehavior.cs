@@ -8,7 +8,7 @@ public static class AppTypeBehavior
     public static bool HasProcess(Guid appTypeId) =>
         appTypeId != IdentifierCatalog.AppTypes.StaticSite;
 
-    public static bool SupportsEnvVars(Guid appTypeId) =>
+    public static bool SupportsEnvironmentVariables(Guid appTypeId) =>
         appTypeId != IdentifierCatalog.AppTypes.StaticSite;
 
     public static bool SupportsHealthCheck(Guid appTypeId) =>

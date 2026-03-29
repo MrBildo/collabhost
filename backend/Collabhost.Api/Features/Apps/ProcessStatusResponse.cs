@@ -1,5 +1,4 @@
 using Collabhost.Api.Domain.Catalogs;
-using Collabhost.Api.Services;
 
 namespace Collabhost.Api.Features.Apps;
 

@@ -1,10 +1,6 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
 using Collabhost.Api.Domain.Entities;
 using Collabhost.Api.Domain.Lookups;
 using Collabhost.Api.Domain.Values;
-using Collabhost.Api.Services;
 
 namespace Collabhost.Api.Features.Apps;
 
@@ -156,7 +152,7 @@ public class CreateCommandHandler
 
         if (AppTypeBehavior.IsRoutable(command.AppTypeId))
         {
-            _ = _proxyConfigManager.SyncRoutesAsync();
+            _ = _proxyConfigManager.SyncRoutesAsync(ct);
         }
 
         return CommandResult<string>.Success(app.ExternalId);

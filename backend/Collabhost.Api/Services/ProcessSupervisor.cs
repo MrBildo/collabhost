@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
 using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Domain.Entities;
 
@@ -74,9 +72,10 @@ public class ProcessSupervisor
     {
         _logger.LogInformation("Process supervisor stopping — killing all managed processes");
 
-#pragma warning disable VSTHRD103 // Timer.Dispose() is lightweight and Timer doesn't implement IAsyncDisposable
-        _graceTimer?.Dispose();
-#pragma warning restore VSTHRD103
+        if (_graceTimer is not null)
+        {
+            await _graceTimer.DisposeAsync();
+        }
 
         await _lock.WaitAsync(cancellationToken);
         try
@@ -188,15 +187,15 @@ public class ProcessSupervisor
             throw new InvalidOperationException("App not found.");
         }
 
-        var envVars = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var ev in app.EnvironmentVariables)
+        var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var variable in app.EnvironmentVariables)
         {
-            envVars[ev.Name] = ev.Value;
+            environmentVariables[variable.Name] = variable.Value;
         }
 
         if (app.Port.HasValue)
         {
-            envVars["PORT"] = app.Port.Value.ToString(CultureInfo.InvariantCulture);
+            environmentVariables["PORT"] = app.Port.Value.ToString(CultureInfo.InvariantCulture);
         }
 
         var managed = new ManagedProcess(app.Id, app.ExternalId, app.DisplayName);
@@ -207,7 +206,7 @@ public class ProcessSupervisor
             app.CommandLine,
             app.Arguments,
             app.WorkingDirectory ?? app.InstallDirectory,
-            envVars,
+            environmentVariables,
             (line, stream) => managed.LogBuffer.Add(new LogEntry(DateTime.UtcNow, stream, line))
         );
 
@@ -282,11 +281,11 @@ public class ProcessSupervisor
 
     private void ScheduleRestart(Guid appId, TimeSpan delay)
     {
-        var cts = new CancellationTokenSource();
+        var cancellation = new CancellationTokenSource();
 
         if (_processes.TryGetValue(appId, out var process))
         {
-            process.SetRestartDelayCts(cts);
+            process.SetRestartDelayCancellation(cancellation);
         }
 
         _ = Task.Run
@@ -295,14 +294,14 @@ public class ProcessSupervisor
             {
                 try
                 {
-                    await Task.Delay(delay, cts.Token);
+                    await Task.Delay(delay, cancellation.Token);
 
-                    await _lock.WaitAsync(cts.Token);
+                    await _lock.WaitAsync(cancellation.Token);
                     try
                     {
                         if (_processes.TryGetValue(appId, out var p) && p.IsRestarting)
                         {
-                            await StartAppInternalAsync(appId, cts.Token);
+                            await StartAppInternalAsync(appId, cancellation.Token);
                         }
                     }
                     finally
@@ -318,7 +317,8 @@ public class ProcessSupervisor
                 {
                     _logger.LogError(ex, "Failed to restart app {AppId}", appId);
                 }
-            }
+            },
+            cancellation.Token
         );
     }
 

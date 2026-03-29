@@ -1,8 +1,3 @@
-using Collabhost.Api.Common;
-using Collabhost.Api.Data;
-using Collabhost.Api.Domain;
-using Collabhost.Api.Services;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class Delete
@@ -58,7 +53,7 @@ public class DeleteCommandHandler
         _db.Apps.Remove(app);
         await _db.SaveChangesAsync(ct);
 
-        _ = _proxyConfigManager.SyncRoutesAsync();
+        _ = _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<Empty>.Success(Empty.Value);
     }

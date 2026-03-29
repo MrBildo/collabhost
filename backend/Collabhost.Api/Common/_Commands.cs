@@ -1,7 +1,5 @@
 using System.Reflection;
 
-using Collabhost.Api.Common;
-
 namespace Collabhost.Api.Common
 {
 #pragma warning disable S2326 // Phantom type parameter used for handler constraint resolution
@@ -16,6 +14,22 @@ namespace Collabhost.Api.Common
     public readonly struct Empty
     {
         public static readonly Empty Value;
+    }
+
+    public record CommandResult(bool IsSuccess, string? ErrorCode = null, string? ErrorMessage = null)
+    {
+        public static CommandResult Success() => new(true);
+
+        public static CommandResult Fail(string? errorCode = null, string? errorMessage = null) =>
+            new(false, errorCode, errorMessage);
+    }
+
+    public record CommandResult<T>(bool IsSuccess, T? Value = default, string? ErrorCode = null, string? ErrorMessage = null)
+    {
+        public static CommandResult<T> Success(T value) => new(true, value);
+
+        public static CommandResult<T> Fail(string? errorCode = null, string? errorMessage = null) =>
+            new(false, default, errorCode, errorMessage);
     }
 
     public sealed class CommandDispatcher(IServiceProvider serviceProvider)
@@ -39,10 +53,7 @@ namespace Collabhost.Api.Common
         }
 
         public async Task<CommandResult<Empty>> DispatchAsync<TCommand>(TCommand command, CancellationToken ct = default)
-            where TCommand : ICommand<Empty>
-        {
-            return await DispatchAsync<TCommand, Empty>(command, ct);
-        }
+            where TCommand : ICommand<Empty> => await DispatchAsync<TCommand, Empty>(command, ct);
     }
 }
 

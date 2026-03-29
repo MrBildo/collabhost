@@ -1,4 +1,3 @@
-using Collabhost.Api.Domain;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Collabhost.Api.Data.Mapping;

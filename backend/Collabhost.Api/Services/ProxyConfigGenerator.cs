@@ -1,6 +1,5 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
-
-using Collabhost.Api.Domain;
 
 namespace Collabhost.Api.Services;
 
@@ -102,7 +101,7 @@ public class ProxyConfigGenerator(ProxySettings settings)
                     {
                         new JsonObject
                         {
-                            ["dial"] = $"localhost:{_settings.SelfPort}"
+                            ["dial"] = $"localhost:{_settings.SelfPort.ToString(CultureInfo.InvariantCulture)}"
                         }
                     }
                 }
@@ -130,7 +129,7 @@ public class ProxyConfigGenerator(ProxySettings settings)
                     {
                         new JsonObject
                         {
-                            ["dial"] = $"localhost:{app.Port}"
+                            ["dial"] = $"localhost:{app.Port?.ToString(CultureInfo.InvariantCulture)}"
                         }
                     }
                 }
