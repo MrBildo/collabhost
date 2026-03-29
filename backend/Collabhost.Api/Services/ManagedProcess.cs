@@ -29,10 +29,7 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
         ? (DateTime.UtcNow - StartedAt.Value).TotalSeconds
         : null;
 
-    public void MarkStarting()
-    {
-        ProcessStateId = IdentifierCatalog.ProcessStates.Starting;
-    }
+    public void MarkStarting() => ProcessStateId = IdentifierCatalog.ProcessStates.Starting;
 
     public void MarkRunning(IProcessHandle handle)
     {
@@ -79,12 +76,9 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
         return TimeSpan.FromSeconds(delay);
     }
 
-    public bool ShouldResetRestartCount()
-    {
-        return _lastHealthyAt.HasValue
+    public bool ShouldResetRestartCount() => _lastHealthyAt.HasValue
             && IsRunning
             && (DateTime.UtcNow - _lastHealthyAt.Value).TotalSeconds >= 300;
-    }
 
     public void ResetRestartCount()
     {
@@ -95,10 +89,7 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
     public bool HasMaxRestartsExceeded(int maxRestarts = 10) =>
         _consecutiveFailures >= maxRestarts;
 
-    public void SetRestartDelayCancellation(CancellationTokenSource cancellation)
-    {
-        _restartDelayCancellation = cancellation;
-    }
+    public void SetRestartDelayCancellation(CancellationTokenSource cancellation) => _restartDelayCancellation = cancellation;
 
     public void CancelPendingRestart()
     {
@@ -107,10 +98,7 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
         _restartDelayCancellation = null;
     }
 
-    public void KillProcess()
-    {
-        _handle?.Kill();
-    }
+    public void KillProcess() => _handle?.Kill();
 
     public void Dispose()
     {

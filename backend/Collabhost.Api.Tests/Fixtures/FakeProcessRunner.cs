@@ -40,10 +40,7 @@ public class FakeProcessHandle(Action<string, LogStream>? onOutput = null) : IPr
     public event Action<int>? Exited;
 #pragma warning restore CS0067
 
-    public void EmitOutput(string line, LogStream stream = LogStream.StdOut)
-    {
-        _onOutput?.Invoke(line, stream);
-    }
+    public void EmitOutput(string line, LogStream stream = LogStream.StdOut) => _onOutput?.Invoke(line, stream);
 
     public void Kill()
     {
@@ -54,8 +51,5 @@ public class FakeProcessHandle(Action<string, LogStream>? onOutput = null) : IPr
         }
     }
 
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
-    }
+    public void Dispose() => GC.SuppressFinalize(this);
 }

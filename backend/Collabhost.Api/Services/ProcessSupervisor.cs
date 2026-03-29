@@ -180,11 +180,15 @@ public class ProcessSupervisor
 
         var app = await db.Apps
             .Include(a => a.EnvironmentVariables)
-            .FirstOrDefaultAsync(a => a.Id == appId, ct);
-
-        if (app is null)
+            .SingleOrDefaultAsync(a => a.Id == appId, ct) ?? throw new InvalidOperationException("App not found.");
+        if (!AppTypeBehavior.HasProcess(app.AppTypeId))
         {
-            throw new InvalidOperationException("App not found.");
+            throw new InvalidOperationException("Static sites do not have a managed process.");
+        }
+
+        if (string.IsNullOrWhiteSpace(app.CommandLine))
+        {
+            throw new InvalidOperationException("App has no command line configured.");
         }
 
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);

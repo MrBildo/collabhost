@@ -101,16 +101,17 @@ public class CreateCommandHandler
             return CommandResult<string>.Fail("INVALID_INSTALL_DIRECTORY", "Install directory is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(command.CommandLine))
-        {
-            return CommandResult<string>.Fail("INVALID_COMMAND_LINE", "CreateCommand line is required.");
-        }
-
         // Validate lookup references exist
         var appTypeExists = await _db.Set<AppType>().AnyAsync(t => t.Id == command.AppTypeId, ct);
         if (!appTypeExists)
         {
             return CommandResult<string>.Fail("INVALID_APP_TYPE", "The specified AppTypeId does not exist.");
+        }
+
+        var isStaticSite = command.AppTypeId == Domain.Catalogs.IdentifierCatalog.AppTypes.StaticSite;
+        if (!isStaticSite && string.IsNullOrWhiteSpace(command.CommandLine))
+        {
+            return CommandResult<string>.Fail("INVALID_COMMAND_LINE", "Command line is required for non-static-site app types.");
         }
 
         var restartPolicyExists = await _db.Set<RestartPolicy>().AnyAsync(p => p.Id == command.RestartPolicyId, ct);

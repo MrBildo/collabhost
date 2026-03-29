@@ -1,4 +1,5 @@
 using Collabhost.Api.Domain.Entities;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Collabhost.Api.Data;
 
@@ -6,11 +7,17 @@ public class CollabhostDbContext(DbContextOptions<CollabhostDbContext> options) 
 {
     public DbSet<App> Apps => Set<App>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(CollabhostDbContext).Assembly);
-    }
+    protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(CollabhostDbContext).Assembly);
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) => configurationBuilder.Properties<DateTime>()
+            .HaveConversion<UtcDateTimeConverter>();
 }
+
+public sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>
+(
+    v => v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime(),
+    v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
+);
 
 public record AppLookup(Guid Id, string ExternalId, string DisplayName, Guid AppTypeId, string? UpdateCommand);
 
@@ -22,9 +29,7 @@ public static class CollabhostDbContextExtensions
         (
             string externalId,
             CancellationToken ct = default
-        )
-        {
-            return await db.Database
+        ) => await db.Database
                 .SqlQuery<AppLookup>(
                     $"""
                     SELECT
@@ -39,6 +44,5 @@ public static class CollabhostDbContextExtensions
                         A.[ExternalId] = {externalId}
                     """)
                 .SingleOrDefaultAsync(ct);
-        }
     }
 }

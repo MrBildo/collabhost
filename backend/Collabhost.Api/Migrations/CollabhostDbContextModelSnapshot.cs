@@ -33,7 +33,6 @@ namespace Collabhost.Api.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("CommandLine")
-                        .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
