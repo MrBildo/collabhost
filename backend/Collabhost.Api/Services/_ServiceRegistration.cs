@@ -34,6 +34,7 @@ public static class InfrastructureServiceExtensions
         {
             services.AddScoped<PortAllocator>();
             services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();
+            services.AddSingleton<IProcessStateEventBus, ProcessStateEventBus>();
             services.AddSingleton<ProcessSupervisor>();
             services.AddHostedService<ProcessSupervisor>(sp => sp.GetRequiredService<ProcessSupervisor>());
             services.AddSingleton<UpdateCoordinator>();

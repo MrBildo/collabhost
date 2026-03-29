@@ -10,11 +10,13 @@ public class ProcessSupervisor
 (
     IManagedProcessRunner runner,
     IServiceScopeFactory scopeFactory,
+    IProcessStateEventBus processStateEventBus,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
 {
     private readonly IManagedProcessRunner _runner = runner ?? throw new ArgumentNullException(nameof(runner));
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+    private readonly IProcessStateEventBus _processStateEventBus = processStateEventBus ?? throw new ArgumentNullException(nameof(processStateEventBus));
     private readonly ILogger<ProcessSupervisor> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly ConcurrentDictionary<Guid, ManagedProcess> _processes = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -84,9 +86,16 @@ public class ProcessSupervisor
             {
                 if (process.IsRunning)
                 {
+                    var previousStateId = process.ProcessStateId;
                     process.MarkStopping();
+                    PublishStateChanged(process, previousStateId);
+
                     process.KillProcess();
+
+                    previousStateId = process.ProcessStateId;
                     process.MarkStopped();
+                    PublishStateChanged(process, previousStateId);
+
                     _logger.LogInformation("Stopped app '{AppName}' (PID {Pid})", process.AppName, process.Pid);
                 }
 
@@ -126,9 +135,15 @@ public class ProcessSupervisor
                 throw new InvalidOperationException("App is already stopped.");
             }
 
+            var previousStateId = process.ProcessStateId;
             process.MarkStopping();
+            PublishStateChanged(process, previousStateId);
+
             process.KillProcess();
+
+            previousStateId = process.ProcessStateId;
             process.MarkStopped();
+            PublishStateChanged(process, previousStateId);
 
             _logger.LogInformation("Stopped app '{AppName}'", process.AppName);
 
@@ -147,9 +162,16 @@ public class ProcessSupervisor
         {
             if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
             {
+                var previousStateId = existing.ProcessStateId;
                 existing.MarkStopping();
+                PublishStateChanged(existing, previousStateId);
+
                 existing.KillProcess();
+
+                previousStateId = existing.ProcessStateId;
                 existing.MarkStopped();
+                PublishStateChanged(existing, previousStateId);
+
                 existing.Dispose();
                 _processes.TryRemove(appId, out _);
             }
@@ -203,7 +225,10 @@ public class ProcessSupervisor
         }
 
         var managed = new ManagedProcess(app.Id, app.ExternalId, app.DisplayName);
+
+        var previousStateId = managed.ProcessStateId;
         managed.MarkStarting();
+        PublishStateChanged(managed, previousStateId);
 
         var config = new ProcessStartConfig
         (
@@ -215,7 +240,10 @@ public class ProcessSupervisor
         );
 
         var handle = _runner.Start(config);
+
+        previousStateId = managed.ProcessStateId;
         managed.MarkRunning(handle);
+        PublishStateChanged(managed, previousStateId);
 
         handle.Exited += exitCode => OnProcessExited(appId, app.RestartPolicyId, exitCode);
 
@@ -251,7 +279,10 @@ public class ProcessSupervisor
         var shouldRestart = restartPolicyId == IdentifierCatalog.RestartPolicies.Always
             || (restartPolicyId == IdentifierCatalog.RestartPolicies.OnCrash && exitCode != 0);
 
+        var previousStateId = process.ProcessStateId;
         process.MarkCrashed();
+        PublishStateChanged(process, previousStateId);
+
         _logger.LogWarning
         (
             "App '{AppName}' exited with code {ExitCode}",
@@ -261,7 +292,9 @@ public class ProcessSupervisor
 
         if (shouldRestart && !process.HasMaxRestartsExceeded())
         {
+            previousStateId = process.ProcessStateId;
             process.MarkRestarting();
+            PublishStateChanged(process, previousStateId);
             var delay = process.GetBackoffDelay();
             _logger.LogInformation
             (
@@ -341,6 +374,18 @@ public class ProcessSupervisor
             }
         }
     }
+
+    private void PublishStateChanged(ManagedProcess process, Guid previousStateId) =>
+        _processStateEventBus.Publish
+        (
+            new ProcessStateChangedEvent
+            (
+                process.AppId,
+                process.AppExternalId,
+                previousStateId,
+                process.ProcessStateId
+            )
+        );
 
     private sealed record AutoStartApp(Guid Id, string ExternalId, string Name, Guid AppTypeId);
 
