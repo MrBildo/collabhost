@@ -22,3 +22,8 @@ export const APP_TYPE_NAMES = {
   STATIC_SITE: 'Static Site',
   PROXY_SERVICE: 'Proxy Service',
 } as const;
+
+/** Restart policy machine names returned by the API */
+export const RESTART_POLICY_NAMES = {
+  NEVER: 'Never',
+} as const;

@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useCreateApp } from '@/hooks/useApps';
-import { BASE_DOMAIN } from '@/lib/constants';
+import { BASE_DOMAIN, RESTART_POLICY_NAMES } from '@/lib/constants';
 import { useAppTypes, useRestartPolicies } from '@/hooks/useLookups';
 import type { CreateAppRequest } from '@/types/api';
 
@@ -131,22 +131,25 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
     setError(null);
 
     const appTypeGuid = appTypes?.find((t) => t.displayName === form.appTypeId)?.id ?? '';
-    const policyGuid =
-      restartPolicies?.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
+    const neverPolicyId =
+      restartPolicies?.find((p) => p.name === RESTART_POLICY_NAMES.NEVER)?.id ?? null;
+    const policyGuid = isStaticSite
+      ? neverPolicyId
+      : (restartPolicies?.find((p) => p.displayName === form.restartPolicyId)?.id ?? '');
 
     const request: CreateAppRequest = {
       name: form.name,
       displayName: form.displayName,
       appTypeId: appTypeGuid,
       installDirectory: form.installDirectory,
-      commandLine: form.commandLine,
+      commandLine: isStaticSite ? '' : form.commandLine,
       arguments: form.arguments || null,
       workingDirectory: form.workingDirectory || null,
       restartPolicyId: policyGuid,
       healthEndpoint: form.healthEndpoint || null,
       updateCommand: form.updateCommand || null,
       updateTimeoutSeconds: form.updateTimeoutSeconds ? Number(form.updateTimeoutSeconds) : null,
-      autoStart: form.autoStart,
+      autoStart: isStaticSite ? false : form.autoStart,
     };
 
     try {

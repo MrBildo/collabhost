@@ -131,7 +131,7 @@ export type CreateAppRequest = {
   commandLine: string;
   arguments: string | null;
   workingDirectory: string | null;
-  restartPolicyId: string;
+  restartPolicyId: string | null;
   healthEndpoint: string | null;
   updateCommand: string | null;
   updateTimeoutSeconds: number | null;
