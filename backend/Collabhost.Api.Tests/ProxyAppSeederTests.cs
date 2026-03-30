@@ -1,6 +1,4 @@
 using Collabhost.Api.Data;
-using Collabhost.Api.Domain.Catalogs;
-using Collabhost.Api.Domain.Entities;
 using Collabhost.Api.Services.Proxy;
 using Collabhost.Api.Tests.Fixtures;
 
@@ -35,17 +33,12 @@ public class ProxyAppSeederTests(CollabhostApiFixture fixture) : IClassFixture<C
 
         // Assert
         var proxyApp = await db.Apps
-            .SingleOrDefaultAsync(a => a.AppTypeId == IdentifierCatalog.AppTypes.ProxyService);
+            .SingleOrDefaultAsync(a => a.Name == Domain.Values.AppSlugValue.Create("proxy"));
 
         proxyApp.ShouldNotBeNull();
         proxyApp.Name.Value.ShouldBe("proxy");
         proxyApp.DisplayName.ShouldBe("Proxy");
-        proxyApp.AppTypeId.ShouldBe(IdentifierCatalog.AppTypes.ProxyService);
-        proxyApp.Arguments.ShouldBe("run --resume");
-        proxyApp.RestartPolicyId.ShouldBe(IdentifierCatalog.RestartPolicies.Always);
-        proxyApp.AutoStart.ShouldBeTrue();
         proxyApp.Port.ShouldBeNull();
-        proxyApp.HealthEndpoint.ShouldBeNull();
     }
 
     [Fact]
@@ -66,7 +59,7 @@ public class ProxyAppSeederTests(CollabhostApiFixture fixture) : IClassFixture<C
 
         // Assert
         var count = await db.Apps
-            .CountAsync(a => a.AppTypeId == IdentifierCatalog.AppTypes.ProxyService);
+            .CountAsync(a => a.Name == Domain.Values.AppSlugValue.Create("proxy"));
 
         count.ShouldBe(1);
     }
@@ -88,7 +81,7 @@ public class ProxyAppSeederTests(CollabhostApiFixture fixture) : IClassFixture<C
 
         // Assert — no proxy app should be created
         var count = await db.Apps
-            .CountAsync(a => a.AppTypeId == IdentifierCatalog.AppTypes.ProxyService);
+            .CountAsync(a => a.Name == Domain.Values.AppSlugValue.Create("proxy"));
 
         count.ShouldBe(0);
     }
@@ -111,12 +104,10 @@ public class ProxyAppSeederTests(CollabhostApiFixture fixture) : IClassFixture<C
 
         // Assert
         var proxyApp = await db.Apps
-            .SingleOrDefaultAsync(a => a.AppTypeId == IdentifierCatalog.AppTypes.ProxyService);
+            .SingleOrDefaultAsync(a => a.Name == Domain.Values.AppSlugValue.Create("proxy"));
 
         proxyApp.ShouldNotBeNull();
         proxyApp.InstallDirectory.ShouldBe(Path.GetDirectoryName(binaryPath));
-        proxyApp.CommandLine.ShouldNotBeNull();
-        File.Exists(proxyApp.CommandLine).ShouldBeTrue();
     }
 
     private static ProxySettings CreateSettings(string binaryPath) =>
@@ -133,7 +124,7 @@ public class ProxyAppSeederTests(CollabhostApiFixture fixture) : IClassFixture<C
     private static async Task RemoveExistingProxyAppsAsync(CollabhostDbContext db)
     {
         var existing = await db.Apps
-            .Where(a => a.AppTypeId == IdentifierCatalog.AppTypes.ProxyService)
+            .Where(a => a.Name == Domain.Values.AppSlugValue.Create("proxy"))
             .ToListAsync();
 
         db.Apps.RemoveRange(existing);

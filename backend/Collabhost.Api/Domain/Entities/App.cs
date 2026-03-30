@@ -5,22 +5,18 @@ namespace Collabhost.Api.Domain.Entities;
 public class App : AggregateRoot
 {
     public AppSlugValue Name { get; private set; } = default!;
-    public string DisplayName { get; private set; } = default!;
-    public Guid AppTypeId { get; private set; }
-    public string InstallDirectory { get; private set; } = default!;
-    public string? CommandLine { get; private set; }
-    public string? Arguments { get; private set; }
-    public string? WorkingDirectory { get; private set; }
-    public Guid RestartPolicyId { get; private set; }
-    public int? Port { get; private set; }
-    public string? HealthEndpoint { get; private set; }
-    public string? UpdateCommand { get; private set; }
-    public int? UpdateTimeoutSeconds { get; private set; }
-    public bool AutoStart { get; private set; }
-    public DateTime RegisteredAt { get; private init; }
 
-    private readonly List<EnvironmentVariable> _environmentVariables = [];
-    public IReadOnlyCollection<EnvironmentVariable> EnvironmentVariables => [.. _environmentVariables];
+    public string DisplayName { get; private set; } = default!;
+
+    public Guid AppTypeId { get; private set; }
+
+    public string InstallDirectory { get; private set; } = default!;
+
+    public int? Port { get; private set; }
+
+    public bool IsStopped { get; private set; }
+
+    public DateTime RegisteredAt { get; private init; }
 
     protected App() { } // EF Core
 
@@ -29,15 +25,7 @@ public class App : AggregateRoot
         AppSlugValue name,
         string displayName,
         Guid appTypeId,
-        string installDirectory,
-        string? commandLine,
-        string? arguments,
-        string? workingDirectory,
-        Guid restartPolicyId,
-        string? healthEndpoint,
-        string? updateCommand,
-        int? updateTimeoutSeconds,
-        bool autoStart
+        string installDirectory
     )
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -50,33 +38,15 @@ public class App : AggregateRoot
             DisplayName = displayName.Trim(),
             AppTypeId = appTypeId,
             InstallDirectory = installDirectory,
-            CommandLine = commandLine,
-            Arguments = arguments,
-            WorkingDirectory = workingDirectory,
-            RestartPolicyId = restartPolicyId,
-            HealthEndpoint = healthEndpoint,
-            UpdateCommand = updateCommand,
-            UpdateTimeoutSeconds = updateTimeoutSeconds,
-            AutoStart = autoStart,
+            IsStopped = false,
             RegisteredAt = DateTime.UtcNow
         };
     }
 
-    // TODO: Consider refactoring UpdateConfiguration — bulk-setter is an encapsulation cheat.
-    // Evaluate granular mutation methods (e.g. UpdateDisplayName, ChangeRestartPolicy) once
-    // domain behavior is clearer.
-    public void UpdateConfiguration
+    public void UpdateDetails
     (
         string displayName,
-        string installDirectory,
-        string? commandLine,
-        string? arguments,
-        string? workingDirectory,
-        Guid restartPolicyId,
-        string? healthEndpoint,
-        string? updateCommand,
-        int? updateTimeoutSeconds,
-        bool autoStart
+        string installDirectory
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
@@ -84,14 +54,6 @@ public class App : AggregateRoot
 
         DisplayName = displayName.Trim();
         InstallDirectory = installDirectory;
-        CommandLine = commandLine;
-        Arguments = arguments;
-        WorkingDirectory = workingDirectory;
-        RestartPolicyId = restartPolicyId;
-        HealthEndpoint = healthEndpoint;
-        UpdateCommand = updateCommand;
-        UpdateTimeoutSeconds = updateTimeoutSeconds;
-        AutoStart = autoStart;
     }
 
     public void AssignPort(int port)
@@ -100,44 +62,7 @@ public class App : AggregateRoot
         Port = port;
     }
 
-    public void AddEnvironmentVariable(string name, string value)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+    public void MarkStopped() => IsStopped = true;
 
-        var existing = _environmentVariables.FirstOrDefault(e => e.Name == name);
-        if (existing is not null)
-        {
-            existing.UpdateValue(value);
-            return;
-        }
-
-        _environmentVariables.Add(new EnvironmentVariable(Id, name, value));
-    }
-
-    public void RemoveEnvironmentVariable(string name)
-    {
-        var existing = _environmentVariables.FirstOrDefault(e => e.Name == name);
-        if (existing is not null)
-        {
-            _environmentVariables.Remove(existing);
-        }
-    }
-}
-
-public class EnvironmentVariable : Entity
-{
-    public Guid AppId { get; private init; }
-    public string Name { get; private set; } = default!;
-    public string Value { get; private set; } = default!;
-
-    protected EnvironmentVariable() { } // EF Core
-
-    internal EnvironmentVariable(Guid appId, string name, string value)
-    {
-        AppId = appId;
-        Name = name;
-        Value = value;
-    }
-
-    internal void UpdateValue(string value) => Value = value;
+    public void MarkStarted() => IsStopped = false;
 }

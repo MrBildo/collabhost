@@ -10,7 +10,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
     public JsonObject Generate(IReadOnlyList<AppRouteInfo> apps)
     {
         var routableApps = apps
-            .Where(a => AppTypeBehavior.IsRoutable(a.AppTypeId))
+            .Where(a => a.ServeMode is not null)
             .ToList();
 
         var subjects = BuildSubjectList(routableApps);
@@ -55,11 +55,10 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
 
         foreach (var app in routableApps)
         {
-            var proxyMode = AppTypeBehavior.ProxyMode(app.AppTypeId);
-            var route = proxyMode switch
+            var route = app.ServeMode switch
             {
-                "reverse_proxy" => BuildReverseProxyRoute(app),
-                "file_server" => BuildFileServerRoute(app),
+                "reverseProxy" => BuildReverseProxyRoute(app),
+                "fileServer" => BuildFileServerRoute(app),
                 _ => null
             };
 

@@ -4,17 +4,25 @@ public static class IdentifierCatalog
 {
     public static class AppTypes
     {
-        public static readonly Guid Executable = new("acdb6994-2c22-42f5-bf89-68c42c9f980c");
-        public static readonly Guid NpmPackage = new("d71d5599-bad3-4b28-8920-1aae916bd3cb");
-        public static readonly Guid StaticSite = new("7dc8cc9f-1600-447a-85f4-cbc0fc44e6fc");
-        public static readonly Guid ProxyService = new("76a3e5b7-d751-4eba-aac2-b1c26c1f9ca3");
+        public static readonly Guid DotNetApp = new("b1a2c3d4-e5f6-7890-abcd-ef0123456001");
+        public static readonly Guid NodeApp = new("b1a2c3d4-e5f6-7890-abcd-ef0123456002");
+        public static readonly Guid Executable = new("b1a2c3d4-e5f6-7890-abcd-ef0123456003");
+        public static readonly Guid ReactApp = new("b1a2c3d4-e5f6-7890-abcd-ef0123456004");
+        public static readonly Guid StaticSite = new("b1a2c3d4-e5f6-7890-abcd-ef0123456005");
     }
 
-    public static class RestartPolicies
+    public static class Capabilities
     {
-        public static readonly Guid Never = new("2f2f6115-b6ef-4db4-b3c7-200a4dbb3408");
-        public static readonly Guid OnCrash = new("a5806eba-9dcd-4145-acc3-7bcabd699829");
-        public static readonly Guid Always = new("3902811f-674d-483a-9d6b-8b8917d83c0f");
+        public static readonly Guid Process = new("c2b3a4d5-f6e7-8901-bcde-f01234560001");
+        public static readonly Guid PortInjection = new("c2b3a4d5-f6e7-8901-bcde-f01234560002");
+        public static readonly Guid Routing = new("c2b3a4d5-f6e7-8901-bcde-f01234560003");
+        public static readonly Guid HealthCheck = new("c2b3a4d5-f6e7-8901-bcde-f01234560004");
+        public static readonly Guid EnvironmentDefaults = new("c2b3a4d5-f6e7-8901-bcde-f01234560005");
+        public static readonly Guid Restart = new("c2b3a4d5-f6e7-8901-bcde-f01234560006");
+        public static readonly Guid AutoStart = new("c2b3a4d5-f6e7-8901-bcde-f01234560007");
+        public static readonly Guid AspNetRuntime = new("c2b3a4d5-f6e7-8901-bcde-f01234560008");
+        public static readonly Guid NodeRuntime = new("c2b3a4d5-f6e7-8901-bcde-f01234560009");
+        public static readonly Guid ReactRuntime = new("c2b3a4d5-f6e7-8901-bcde-f01234560010");
     }
 
     public static class ProcessStates
@@ -35,17 +43,25 @@ public static class StringCatalog
 {
     public static class AppTypes
     {
-        public const string Executable = "Executable";
-        public const string NpmPackage = "NpmPackage";
-        public const string StaticSite = "StaticSite";
-        public const string ProxyService = "ProxyService";
+        public const string DotNetApp = "dotnet-app";
+        public const string NodeApp = "node-app";
+        public const string Executable = "executable";
+        public const string ReactApp = "react-app";
+        public const string StaticSite = "static-site";
     }
 
-    public static class RestartPolicies
+    public static class Capabilities
     {
-        public const string Never = "Never";
-        public const string OnCrash = "OnCrash";
-        public const string Always = "Always";
+        public const string Process = "process";
+        public const string PortInjection = "port-injection";
+        public const string Routing = "routing";
+        public const string HealthCheck = "health-check";
+        public const string EnvironmentDefaults = "environment-defaults";
+        public const string Restart = "restart";
+        public const string AutoStart = "auto-start";
+        public const string AspNetRuntime = "aspnet-runtime";
+        public const string NodeRuntime = "node-runtime";
+        public const string ReactRuntime = "react-runtime";
     }
 
     public static class ProcessStates

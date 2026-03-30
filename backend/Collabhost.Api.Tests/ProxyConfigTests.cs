@@ -72,28 +72,6 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
     }
 
     [Fact]
-    public async Task Config_ExcludesNonRoutableApps()
-    {
-        // Arrange
-        var client = _fixture.CreateAuthenticatedClient();
-        await CreateAppAsync(client, "proxy-svc-test", proxyService: true);
-
-        // Act
-        await client.PostAsync("/api/v1/proxy/reload", null);
-
-        // Assert
-        var fake = _fixture.Services.GetRequiredService<IProxyConfigClient>() as FakeProxyConfigClient;
-        fake.ShouldNotBeNull();
-        fake.LastPushedConfig.ShouldNotBeNull();
-
-        var routes = GetRoutes(fake.LastPushedConfig);
-        routes.ShouldNotBeNull();
-
-        var proxyServiceRoute = FindRouteById(routes, "route_proxy-svc-test");
-        proxyServiceRoute.ShouldBeNull("ProxyService apps should not appear in routes");
-    }
-
-    [Fact]
     public async Task Config_IncludesSelfRoute()
     {
         // Arrange
@@ -198,7 +176,6 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         );
 
         matchingRoute.ValueKind.ShouldNotBe(JsonValueKind.Undefined);
-        matchingRoute.GetProperty("proxyMode").GetString().ShouldBe("reverse_proxy");
         matchingRoute.GetProperty("https").GetBoolean().ShouldBeTrue();
     }
 
@@ -268,27 +245,18 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         return string.Join(" ", words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
     }
 
-    private static object CreateValidRequest(string name, bool staticSite = false, bool proxyService = false)
+    private static object CreateValidRequest(string name, bool staticSite = false)
     {
-        var appTypeId = proxyService
-            ? IdentifierCatalog.AppTypes.ProxyService
-            : staticSite
-                ? IdentifierCatalog.AppTypes.StaticSite
-                : IdentifierCatalog.AppTypes.Executable;
+        var appTypeId = staticSite
+            ? IdentifierCatalog.AppTypes.StaticSite
+            : IdentifierCatalog.AppTypes.Executable;
 
         return new
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
             AppTypeId = appTypeId,
-            InstallDirectory = $"C:\\apps\\{name}",
-            CommandLine = $"{name}.exe",
-            Arguments = (string?)null,
-            WorkingDirectory = (string?)null,
-            RestartPolicyId = IdentifierCatalog.RestartPolicies.Never,
-            HealthEndpoint = (string?)null,
-            UpdateCommand = (string?)null,
-            AutoStart = false
+            InstallDirectory = $"C:\\apps\\{name}"
         };
     }
 
@@ -296,11 +264,10 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
     (
         HttpClient client,
         string name,
-        bool staticSite = false,
-        bool proxyService = false
+        bool staticSite = false
     )
     {
-        var request = CreateValidRequest(name, staticSite, proxyService);
+        var request = CreateValidRequest(name, staticSite);
         var response = await client.PostAsJsonAsync("/api/v1/apps", request);
         response.EnsureSuccessStatusCode();
 

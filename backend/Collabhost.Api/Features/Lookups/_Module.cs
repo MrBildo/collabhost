@@ -9,7 +9,6 @@ public sealed class LookupsModule : IFeatureModule
             .WithTags("Lookups");
 
         group.MapGet("/app-types", GetAppTypes.HandleAsync);
-        group.MapGet("/restart-policies", GetRestartPolicies.HandleAsync);
 
         return endpoints;
     }

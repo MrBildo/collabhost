@@ -1,5 +1,3 @@
-using Collabhost.Api.Domain;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class GetAll
@@ -11,11 +9,7 @@ public static class GetAll
         string DisplayName,
         string AppTypeName,
         int? Port,
-        string? UpdateCommand,
-        int? UpdateTimeoutSeconds,
-        bool AutoStart,
-        bool IsProtected,
-        bool IsRoutable
+        bool IsStopped
     );
 
     internal sealed record Row
@@ -25,10 +19,7 @@ public static class GetAll
         string DisplayName,
         string AppTypeName,
         int? Port,
-        string? UpdateCommand,
-        int? UpdateTimeoutSeconds,
-        bool AutoStart,
-        Guid AppTypeId
+        bool IsStopped
     );
 
     public static async Task<Results<Ok<List<Response>>, ProblemHttpResult>> HandleAsync
@@ -62,10 +53,7 @@ public sealed class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandH
                     ,A.[DisplayName]
                     ,AT.[DisplayName] AS [AppTypeName]
                     ,A.[Port]
-                    ,A.[UpdateCommand]
-                    ,A.[UpdateTimeoutSeconds]
-                    ,A.[AutoStart]
-                    ,A.[AppTypeId]
+                    ,A.[IsStopped]
                 FROM
                     [App] A
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
@@ -83,11 +71,7 @@ public sealed class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandH
                     row.DisplayName,
                     row.AppTypeName,
                     row.Port,
-                    row.UpdateCommand,
-                    row.UpdateTimeoutSeconds,
-                    row.AutoStart,
-                    AppTypeBehavior.IsProtected(row.AppTypeId),
-                    AppTypeBehavior.IsRoutable(row.AppTypeId)
+                    row.IsStopped
                 ))
             .ToList();
 

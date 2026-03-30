@@ -14,10 +14,9 @@ public interface IProxyConfigClient
 public record AppRouteInfo
 (
     string Slug,
-    Guid AppTypeId,
     int? Port,
     string? InstallDirectory,
-    string? HealthEndpoint
+    string? ServeMode
 );
 
 public interface IProxyAppSeeder

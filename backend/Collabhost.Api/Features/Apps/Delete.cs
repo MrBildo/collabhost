@@ -1,3 +1,5 @@
+using Collabhost.Api.Domain.Entities;
+
 namespace Collabhost.Api.Features.Apps;
 
 public static class Delete
@@ -15,7 +17,6 @@ public static class Delete
         {
             { IsSuccess: true } => TypedResults.NoContent(),
             { ErrorCode: "NOT_FOUND" } => TypedResults.NotFound(),
-            { ErrorCode: "PROTECTED" } => TypedResults.Problem(result.ErrorMessage, statusCode: 403),
             _ => TypedResults.Problem(result.ErrorMessage, statusCode: 400)
         };
 
@@ -37,17 +38,11 @@ public class DeleteCommandHandler
     public async Task<CommandResult<Empty>> HandleAsync(DeleteCommand command, CancellationToken ct = default)
     {
         var app = await _db.Apps
-            .Include(a => a.EnvironmentVariables)
             .SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
 
         if (app is null)
         {
             return CommandResult<Empty>.Fail("NOT_FOUND", "App not found.");
-        }
-
-        if (!AppTypeBehavior.IsDeletable(app.AppTypeId))
-        {
-            return CommandResult<Empty>.Fail("PROTECTED", "This app type cannot be deleted.");
         }
 
         _db.Apps.Remove(app);

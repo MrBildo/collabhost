@@ -28,46 +28,8 @@ public class ProcessSupervisor
 
         _graceTimer = new Timer(CheckGracePeriods, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
 
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
-
-        var autoStartApps = await db.Database
-            .SqlQuery<AutoStartApp>(
-                $"""
-                SELECT
-                    A.[Id]
-                    ,A.[ExternalId]
-                    ,A.[Name]
-                    ,A.[AppTypeId]
-                FROM
-                    [App] A
-                WHERE
-                    A.[AutoStart] = 1
-                """)
-            .ToListAsync(cancellationToken);
-
-        var sortedApps = autoStartApps.OrderBy(a => AppTypeBehavior.StartupPriority(a.AppTypeId)).ToList();
-
-        foreach (var app in sortedApps)
-        {
-            if (!AppTypeBehavior.HasProcess(app.AppTypeId))
-            {
-                _logger.LogDebug("Skipping auto-start for '{AppName}' — app type has no process", app.Name);
-                continue;
-            }
-
-            try
-            {
-                await StartAppInternalAsync(app.Id, cancellationToken);
-                _logger.LogInformation("Auto-started app '{AppName}'", app.Name);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to auto-start app '{AppName}'", app.Name);
-            }
-        }
-
-        _logger.LogInformation("Process supervisor started");
+        // TODO: Card #39 — auto-start via capability resolver instead of App.AutoStart column
+        _logger.LogInformation("Process supervisor started — auto-start deferred to Card #39");
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -201,23 +163,19 @@ public class ProcessSupervisor
         var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
 
         var app = await db.Apps
-            .Include(a => a.EnvironmentVariables)
             .SingleOrDefaultAsync(a => a.Id == appId, ct) ?? throw new InvalidOperationException("App not found.");
-        if (!AppTypeBehavior.HasProcess(app.AppTypeId))
-        {
-            throw new InvalidOperationException("Static sites do not have a managed process.");
-        }
 
-        if (string.IsNullOrWhiteSpace(app.CommandLine))
+        // TODO: Card #39 — use capability resolver for process discovery, env vars, port injection
+        // For now, use a minimal stub that will allow process start for testing
+        var hasProcess = await db.Set<AppTypeCapability>()
+            .AnyAsync(atc => atc.AppTypeId == app.AppTypeId && atc.CapabilityId == IdentifierCatalog.Capabilities.Process, ct);
+
+        if (!hasProcess)
         {
-            throw new InvalidOperationException("App has no command line configured.");
+            throw new InvalidOperationException("This app type does not have a process capability.");
         }
 
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var variable in app.EnvironmentVariables)
-        {
-            environmentVariables[variable.Name] = variable.Value;
-        }
 
         if (app.Port.HasValue)
         {
@@ -230,11 +188,12 @@ public class ProcessSupervisor
         managed.MarkStarting();
         PublishStateChanged(managed, previousStateId);
 
+        // TODO: Card #39 — resolve command from process capability discovery strategy
         var config = new ProcessStartConfig
         (
-            app.CommandLine,
-            app.Arguments,
-            app.WorkingDirectory ?? app.InstallDirectory,
+            "stub-command",
+            null,
+            app.InstallDirectory,
             environmentVariables,
             (line, stream) => managed.LogBuffer.Add(new LogEntry(DateTime.UtcNow, stream, line))
         );
@@ -245,7 +204,8 @@ public class ProcessSupervisor
         managed.MarkRunning(handle);
         PublishStateChanged(managed, previousStateId);
 
-        handle.Exited += exitCode => OnProcessExited(appId, app.RestartPolicyId, exitCode);
+        // TODO: Card #39 — resolve restart policy from capability
+        handle.Exited += exitCode => OnProcessExited(appId, exitCode);
 
         _processes.TryRemove(appId, out var old);
         old?.Dispose();
@@ -263,7 +223,7 @@ public class ProcessSupervisor
         return managed;
     }
 
-    private void OnProcessExited(Guid appId, Guid restartPolicyId, int exitCode)
+    private void OnProcessExited(Guid appId, int exitCode)
     {
         if (!_processes.TryGetValue(appId, out var process))
         {
@@ -276,9 +236,7 @@ public class ProcessSupervisor
             return;
         }
 
-        var shouldRestart = restartPolicyId == IdentifierCatalog.RestartPolicies.Always
-            || (restartPolicyId == IdentifierCatalog.RestartPolicies.OnCrash && exitCode != 0);
-
+        // TODO: Card #39 — resolve restart policy from capability resolver
         var previousStateId = process.ProcessStateId;
         process.MarkCrashed();
         PublishStateChanged(process, previousStateId);
@@ -288,74 +246,6 @@ public class ProcessSupervisor
             "App '{AppName}' exited with code {ExitCode}",
             process.AppName,
             exitCode
-        );
-
-        if (shouldRestart && !process.HasMaxRestartsExceeded())
-        {
-            previousStateId = process.ProcessStateId;
-            process.MarkRestarting();
-            PublishStateChanged(process, previousStateId);
-            var delay = process.GetBackoffDelay();
-            _logger.LogInformation
-            (
-                "Scheduling restart for '{AppName}' in {Delay}s (attempt {Attempt})",
-                process.AppName,
-                delay.TotalSeconds,
-                process.RestartCount + 1
-            );
-
-            ScheduleRestart(appId, delay);
-        }
-        else if (process.HasMaxRestartsExceeded())
-        {
-            _logger.LogError
-            (
-                "App '{AppName}' exceeded max restart attempts — staying crashed",
-                process.AppName
-            );
-        }
-    }
-
-    private void ScheduleRestart(Guid appId, TimeSpan delay)
-    {
-        var cancellation = new CancellationTokenSource();
-
-        if (_processes.TryGetValue(appId, out var process))
-        {
-            process.SetRestartDelayCancellation(cancellation);
-        }
-
-        _ = Task.Run
-        (
-            async () =>
-            {
-                try
-                {
-                    await Task.Delay(delay, cancellation.Token);
-
-                    await _lock.WaitAsync(cancellation.Token);
-                    try
-                    {
-                        if (_processes.TryGetValue(appId, out var p) && p.IsRestarting)
-                        {
-                            await StartAppInternalAsync(appId, cancellation.Token);
-                        }
-                    }
-                    finally
-                    {
-                        _lock.Release();
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    // Restart was cancelled (app was manually stopped)
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to restart app {AppId}", appId);
-                }
-            },
-            cancellation.Token
         );
     }
 
@@ -386,8 +276,6 @@ public class ProcessSupervisor
                 process.ProcessStateId
             )
         );
-
-    private sealed record AutoStartApp(Guid Id, string ExternalId, string Name, Guid AppTypeId);
 
     public void Dispose()
     {

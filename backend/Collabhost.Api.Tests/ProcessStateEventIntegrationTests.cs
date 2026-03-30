@@ -140,14 +140,7 @@ public sealed class ProcessStateEventIntegrationTests(CollabhostApiFixture fixtu
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
             AppTypeId = IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = $"C:\\apps\\{name}",
-            CommandLine = $"{name}.exe",
-            Arguments = (string?)null,
-            WorkingDirectory = (string?)null,
-            RestartPolicyId = IdentifierCatalog.RestartPolicies.Never,
-            HealthEndpoint = (string?)null,
-            UpdateCommand = (string?)null,
-            AutoStart = false
+            InstallDirectory = $"C:\\apps\\{name}"
         };
 
         var response = await client.PostAsJsonAsync("/api/v1/apps", request);

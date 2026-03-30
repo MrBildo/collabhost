@@ -1,12 +1,8 @@
-using Collabhost.Api.Domain.Catalogs;
-
 namespace Collabhost.Api.Features.Proxy;
 
 public static class GetProxyStatus
 {
     public record ProxyAppRow(Guid Id, string ExternalId);
-
-    public record RoutableAppRow(Guid AppTypeId);
 
     public static async Task<Results<Ok<ProxyStatusResponse>, ProblemHttpResult>> HandleAsync
     (
@@ -40,8 +36,7 @@ public class GetProxyStatusCommandHandler
 #pragma warning disable MA0051 // Long method justified — multi-step proxy status aggregation
     public async Task<CommandResult<ProxyStatusResponse>> HandleAsync(GetProxyStatusCommand command, CancellationToken ct = default)
     {
-        // Find the proxy service app
-        var proxyServiceTypeId = IdentifierCatalog.AppTypes.ProxyService;
+        // Find the proxy app by name
         var proxyApp = await _db.Database
             .SqlQuery<GetProxyStatus.ProxyAppRow>(
                 $"""
@@ -51,7 +46,7 @@ public class GetProxyStatusCommandHandler
                 FROM
                     [App] A
                 WHERE
-                    A.[AppTypeId] = {proxyServiceTypeId}
+                    A.[Name] = 'proxy'
                 """)
             .SingleOrDefaultAsync(ct);
 
@@ -83,18 +78,20 @@ public class GetProxyStatusCommandHandler
         // Check admin API readiness
         var adminApiReady = await _proxyClient.IsReadyAsync(ct);
 
-        // Count routable apps
-        var allApps = await _db.Database
-            .SqlQuery<GetProxyStatus.RoutableAppRow>(
+        // Count routable apps (apps with the routing capability)
+        var routeCount = await _db.Database
+            .SqlQuery<int>(
                 $"""
                 SELECT
-                    A.[AppTypeId]
+                    COUNT(*) AS [Value]
                 FROM
                     [App] A
+                    INNER JOIN [AppTypeCapability] ATC ON ATC.[AppTypeId] = A.[AppTypeId]
+                    INNER JOIN [Capability] C ON C.[Id] = ATC.[CapabilityId]
+                WHERE
+                    C.[Slug] = 'routing'
                 """)
-            .ToListAsync(ct);
-
-        var routeCount = allApps.Count(a => AppTypeBehavior.IsRoutable(a.AppTypeId));
+            .SingleAsync(ct);
 
         return CommandResult<ProxyStatusResponse>.Success
         (

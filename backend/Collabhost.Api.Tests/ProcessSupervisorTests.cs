@@ -175,14 +175,7 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
             AppTypeId = staticSite
                 ? IdentifierCatalog.AppTypes.StaticSite
                 : IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = $"C:\\apps\\{name}",
-            CommandLine = $"{name}.exe",
-            Arguments = (string?)null,
-            WorkingDirectory = (string?)null,
-            RestartPolicyId = IdentifierCatalog.RestartPolicies.Never,
-            HealthEndpoint = (string?)null,
-            UpdateCommand = (string?)null,
-            AutoStart = false
+            InstallDirectory = $"C:\\apps\\{name}"
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name, bool staticSite = false)

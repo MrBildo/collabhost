@@ -17,20 +17,6 @@ public class DeleteProtectionTests(CollabhostApiFixture fixture) : IClassFixture
     private readonly CollabhostApiFixture _fixture = fixture;
 
     [Fact]
-    public async Task Delete_RejectsProtectedAppType()
-    {
-        // Arrange
-        var client = _fixture.CreateAuthenticatedClient();
-        var externalId = await CreateAppAsync(client, "delete-protected", proxyService: true);
-
-        // Act
-        var response = await client.DeleteAsync($"/api/v1/apps/{externalId}");
-
-        // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
-    }
-
-    [Fact]
     public async Task Delete_AllowsRegularAppType()
     {
         // Arrange
@@ -54,31 +40,18 @@ public class DeleteProtectionTests(CollabhostApiFixture fixture) : IClassFixture
         return string.Join(" ", words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
     }
 
-    private static object CreateValidRequest(string name, bool proxyService = false)
-    {
-        var appTypeId = proxyService
-            ? IdentifierCatalog.AppTypes.ProxyService
-            : IdentifierCatalog.AppTypes.Executable;
-
-        return new
+    private static object CreateValidRequest(string name) =>
+        new
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = appTypeId,
-            InstallDirectory = $"C:\\apps\\{name}",
-            CommandLine = $"{name}.exe",
-            Arguments = (string?)null,
-            WorkingDirectory = (string?)null,
-            RestartPolicyId = IdentifierCatalog.RestartPolicies.Never,
-            HealthEndpoint = (string?)null,
-            UpdateCommand = (string?)null,
-            AutoStart = false
+            AppTypeId = IdentifierCatalog.AppTypes.Executable,
+            InstallDirectory = $"C:\\apps\\{name}"
         };
-    }
 
-    private static async Task<string> CreateAppAsync(HttpClient client, string name, bool proxyService = false)
+    private static async Task<string> CreateAppAsync(HttpClient client, string name)
     {
-        var request = CreateValidRequest(name, proxyService);
+        var request = CreateValidRequest(name);
         var response = await client.PostAsJsonAsync("/api/v1/apps", request);
         response.EnsureSuccessStatusCode();
 

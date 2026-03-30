@@ -1,4 +1,4 @@
-using Collabhost.Api.Domain.Lookups;
+using Collabhost.Api.Domain.Entities;
 
 namespace Collabhost.Api.Features.Lookups;
 
@@ -37,11 +37,10 @@ public sealed class GetAppTypesCommandHandler(CollabhostDbContext db)
     )
     {
         var results = await _db.Set<AppType>()
-            .Where(t => t.IsActive)
-            .OrderBy(t => t.Ordinal)
+            .OrderBy(t => t.Name)
             .Select(t => new GetAppTypes.Response
             (
-                t.Id.ToString(),
+                t.ExternalId,
                 t.Name,
                 t.DisplayName
             ))

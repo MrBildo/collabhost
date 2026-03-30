@@ -1,4 +1,5 @@
 using Collabhost.Api.Domain.Catalogs;
+using Collabhost.Api.Domain.Entities;
 
 namespace Collabhost.Api.Services.Proxy;
 
@@ -25,13 +26,15 @@ public sealed class ProxyConfigManager
     private IDisposable? _subscription;
     private bool _disabled;
 
+#pragma warning disable MA0051 // Long method justified — startup with proxy app lookup and event subscription
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var proxyServiceTypeId = IdentifierCatalog.AppTypes.ProxyService;
-
+        // TODO: Card #39 — proxy app seeding needs capability-aware approach
+        // For now, look for any app with the routing capability and a process
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
 
+        // Try to find a proxy-like app by checking for apps that were seeded as the proxy
         var proxyApp = await db.Database
             .SqlQuery<ProxyAppLookup>(
                 $"""
@@ -40,7 +43,7 @@ public sealed class ProxyConfigManager
                 FROM
                     [App] A
                 WHERE
-                    A.[AppTypeId] = {proxyServiceTypeId}
+                    A.[Name] = 'proxy'
                 """)
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -74,6 +77,7 @@ public sealed class ProxyConfigManager
             _ = Task.Run(async () => await HandleProxyRunningAsync(), CancellationToken.None);
         }
     }
+#pragma warning restore MA0051
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
@@ -175,25 +179,54 @@ public sealed class ProxyConfigManager
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
 
-        var allApps = await db.Database
-            .SqlQuery<AppRouteInfo>(
+        // Load apps that have a routing capability and resolve their serve mode
+        var apps = await db.Database
+            .SqlQuery<AppRouteInfoRow>(
                 $"""
                 SELECT
                     A.[Name] AS [Slug]
-                    ,A.[AppTypeId]
                     ,A.[Port]
                     ,A.[InstallDirectory]
-                    ,A.[HealthEndpoint]
+                    ,ATC.[Configuration] AS [RoutingConfiguration]
                 FROM
                     [App] A
+                    INNER JOIN [AppTypeCapability] ATC ON ATC.[AppTypeId] = A.[AppTypeId]
+                    INNER JOIN [Capability] C ON C.[Id] = ATC.[CapabilityId]
+                WHERE
+                    C.[Slug] = 'routing'
                 """)
             .ToListAsync(ct);
 
         return
         [
-            .. allApps.Where(a => AppTypeBehavior.IsRoutable(a.AppTypeId))
+            .. apps.Select(a => new AppRouteInfo(a.Slug, a.Port, a.InstallDirectory, ExtractServeMode(a.RoutingConfiguration)))
         ];
     }
 
+    private static string? ExtractServeMode(string? routingConfiguration)
+    {
+        if (string.IsNullOrWhiteSpace(routingConfiguration))
+        {
+            return null;
+        }
+
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(routingConfiguration);
+            if (doc.RootElement.TryGetProperty("serveMode", out var serveModeElement))
+            {
+                return serveModeElement.GetString();
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Invalid JSON — skip
+        }
+
+        return null;
+    }
+
     private sealed record ProxyAppLookup(Guid Id);
+
+    private sealed record AppRouteInfoRow(string Slug, int? Port, string? InstallDirectory, string? RoutingConfiguration);
 }
