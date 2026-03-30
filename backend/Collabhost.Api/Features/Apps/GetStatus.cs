@@ -37,7 +37,7 @@ public class GetStatusCommandHandler
             return CommandResult<ProcessStatusResponse>.Fail("NOT_FOUND", "App not found.");
         }
 
-        var managed = _supervisor.GetStatus(app.Id);
+        var managed = _supervisor.GetProcess(app.Id);
 
         var response = managed is not null
             ? ProcessStatusMapper.Map(managed)

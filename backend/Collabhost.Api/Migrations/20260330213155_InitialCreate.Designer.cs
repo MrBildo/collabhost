@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Collabhost.Api.Migrations
 {
     [DbContext(typeof(CollabhostDbContext))]
-    [Migration("20260330203039_InitialCreate")]
+    [Migration("20260330213155_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -47,11 +47,6 @@ namespace Collabhost.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsStopped")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(false);
 
                     b.Property<string>("Name")
                         .IsRequired()

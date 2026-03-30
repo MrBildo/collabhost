@@ -10,7 +10,6 @@ public static class Get
         string AppTypeName,
         string InstallDirectory,
         int? Port,
-        bool IsStopped,
         DateTime RegisteredAt,
         Guid AppTypeId
     );
@@ -23,7 +22,6 @@ public static class Get
         string AppTypeName,
         string InstallDirectory,
         int? Port,
-        bool IsStopped,
         DateTime RegisteredAt
     );
 
@@ -60,7 +58,6 @@ public sealed class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandl
                     ,AT.[DisplayName] AS [AppTypeName]
                     ,A.[InstallDirectory]
                     ,A.[Port]
-                    ,A.[IsStopped]
                     ,A.[RegisteredAt]
                     ,A.[AppTypeId]
                 FROM
@@ -84,7 +81,6 @@ public sealed class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandl
             row.AppTypeName,
             row.InstallDirectory,
             row.Port,
-            row.IsStopped,
             row.RegisteredAt
         );
 

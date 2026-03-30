@@ -24,7 +24,6 @@ namespace Collabhost.Api.Migrations
                     AppTypeId = table.Column<Guid>(type: "TEXT", nullable: false),
                     InstallDirectory = table.Column<string>(type: "TEXT", maxLength: 500, nullable: false),
                     Port = table.Column<int>(type: "INTEGER", nullable: true),
-                    IsStopped = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: false),
                     RegisteredAt = table.Column<DateTime>(type: "TEXT", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "datetime('now')"),
                     UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "datetime('now')"),

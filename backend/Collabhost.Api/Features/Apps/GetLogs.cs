@@ -59,7 +59,7 @@ public class GetLogsCommandHandler
             return CommandResult<GetLogs.Response>.Fail("NOT_FOUND", "App not found.");
         }
 
-        var managed = _supervisor.GetStatus(app.Id);
+        var managed = _supervisor.GetProcess(app.Id);
 
         if (managed is null)
         {

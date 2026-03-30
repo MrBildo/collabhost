@@ -70,7 +70,7 @@ public sealed class ProxyConfigManager
 
         // Check if the proxy process is already running (race condition: ProcessSupervisor
         // may have auto-started and published the Running event before we subscribed)
-        var managed = _processSupervisor.GetStatus(_proxyAppId.Value);
+        var managed = _processSupervisor.GetProcess(_proxyAppId.Value);
         if (managed is not null && managed.IsRunning)
         {
             _logger.LogInformation("Proxy process already running — triggering initial route sync");

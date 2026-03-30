@@ -14,8 +14,6 @@ public class App : AggregateRoot
 
     public int? Port { get; private set; }
 
-    public bool IsStopped { get; private set; }
-
     public DateTime RegisteredAt { get; private init; }
 
     protected App() { } // EF Core
@@ -38,7 +36,6 @@ public class App : AggregateRoot
             DisplayName = displayName.Trim(),
             AppTypeId = appTypeId,
             InstallDirectory = installDirectory,
-            IsStopped = false,
             RegisteredAt = DateTime.UtcNow
         };
     }
@@ -61,8 +58,4 @@ public class App : AggregateRoot
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(port);
         Port = port;
     }
-
-    public void MarkStopped() => IsStopped = true;
-
-    public void MarkStarted() => IsStopped = false;
 }

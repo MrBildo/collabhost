@@ -8,8 +8,7 @@ public static class GetAll
         string Name,
         string DisplayName,
         string AppTypeName,
-        int? Port,
-        bool IsStopped
+        int? Port
     );
 
     internal sealed record Row
@@ -18,8 +17,7 @@ public static class GetAll
         string Name,
         string DisplayName,
         string AppTypeName,
-        int? Port,
-        bool IsStopped
+        int? Port
     );
 
     public static async Task<Results<Ok<List<Response>>, ProblemHttpResult>> HandleAsync
@@ -53,7 +51,6 @@ public sealed class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandH
                     ,A.[DisplayName]
                     ,AT.[DisplayName] AS [AppTypeName]
                     ,A.[Port]
-                    ,A.[IsStopped]
                 FROM
                     [App] A
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
@@ -70,8 +67,7 @@ public sealed class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandH
                     row.Name,
                     row.DisplayName,
                     row.AppTypeName,
-                    row.Port,
-                    row.IsStopped
+                    row.Port
                 ))
             .ToList();
 

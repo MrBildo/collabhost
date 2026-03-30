@@ -146,7 +146,7 @@ public class ProcessSupervisor
         }
     }
 
-    public ManagedProcess? GetStatus(Guid appId)
+    public ManagedProcess? GetProcess(Guid appId)
     {
         _processes.TryGetValue(appId, out var process);
         return process;

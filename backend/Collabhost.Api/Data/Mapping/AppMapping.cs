@@ -31,7 +31,6 @@ public class AppMapping : IEntityTypeConfiguration<App>
         // File system paths — 500 covers typical Windows MAX_PATH (260) with headroom
         builder.Property(e => e.InstallDirectory).HasMaxLength(500).IsRequired();
         builder.Property(e => e.Port);
-        builder.Property(e => e.IsStopped).HasDefaultValue(false);
         builder.Property(e => e.RegisteredAt);
 
         // Shadow audit properties

@@ -56,7 +56,7 @@ public class GetProxyStatusCommandHandler
 
         if (proxyApp is not null)
         {
-            var managed = _supervisor.GetStatus(proxyApp.Id);
+            var managed = _supervisor.GetProcess(proxyApp.Id);
             if (managed is not null)
             {
                 state = managed.IsRunning ? "Running"
