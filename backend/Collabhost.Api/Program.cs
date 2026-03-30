@@ -40,6 +40,12 @@ builder.Services.AddInfrastructureServices();
 // Proxy services
 builder.Services.AddProxyServices(builder.Configuration);
 
+// JSON serialization (UTC DateTime normalization)
+builder.Services.ConfigureHttpJsonOptions
+(
+    options => options.SerializerOptions.Converters.Add(new UtcDateTimeJsonConverter())
+);
+
 // OpenAPI
 builder.Services.AddOpenApi();
 
