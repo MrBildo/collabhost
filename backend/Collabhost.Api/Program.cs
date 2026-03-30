@@ -40,6 +40,12 @@ builder.Services.AddInfrastructureServices();
 // Proxy services
 builder.Services.AddProxyServices(builder.Configuration);
 
+// JSON serialization (UTC DateTime normalization)
+builder.Services.ConfigureHttpJsonOptions
+(
+    options => options.SerializerOptions.Converters.Add(new UtcDateTimeJsonConverter())
+);
+
 // OpenAPI
 builder.Services.AddOpenApi();
 
@@ -57,6 +63,16 @@ if (app.Environment.IsDevelopment())
     await using var scope = app.Services.CreateAsyncScope();
     var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
     await db.Database.EnsureCreatedAsync();
+}
+
+// Seed proxy app from configuration (idempotent)
+await SeedProxyAppAsync(app);
+
+static async Task SeedProxyAppAsync(WebApplication application)
+{
+    await using var scope = application.Services.CreateAsyncScope();
+    var seeder = scope.ServiceProvider.GetRequiredService<IProxyAppSeeder>();
+    await seeder.SeedAsync(CancellationToken.None);
 }
 
 // Development middleware

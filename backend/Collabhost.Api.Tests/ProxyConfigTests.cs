@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using Collabhost.Api.Domain.Catalogs;
-using Collabhost.Api.Services;
+using Collabhost.Api.Services.Proxy;
 using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Extensions.DependencyInjection;

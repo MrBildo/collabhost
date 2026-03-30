@@ -44,26 +44,10 @@ import { useAppDetail, useAppLogs, useUpdateAppConfig, useDeleteApp } from '@/ho
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import type { UpdateEvent } from '@/hooks/useAppUpdate';
 import { useRestartPolicies } from '@/hooks/useLookups';
+import { APP_TYPE_NAMES, BASE_DOMAIN, STATUS_MAP } from '@/lib/constants';
 import { formatDateTime, formatUptime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AppDetail, ProcessState, UpdateAppRequest } from '@/types/api';
-
-const BASE_DOMAIN = 'collab.internal';
-
-type StatusConfig = {
-  color: string;
-  label: string;
-};
-
-const STATUS_MAP: Record<ProcessState, StatusConfig> = {
-  Running: { color: 'bg-green-500', label: 'Running' },
-  Stopped: { color: 'bg-gray-400', label: 'Stopped' },
-  Crashed: { color: 'bg-red-500', label: 'Crashed' },
-  Starting: { color: 'bg-amber-400', label: 'Starting' },
-  Stopping: { color: 'bg-amber-400', label: 'Stopping' },
-  Restarting: { color: 'bg-amber-400', label: 'Restarting' },
-  Unknown: { color: 'bg-gray-400', label: 'Unknown' },
-};
 
 export function AppDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -92,7 +76,8 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
   const appUpdate = useAppUpdate(appId);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
 
-  const isStaticSite = app?.appTypeName === 'Static Site';
+  const isStaticSite = app?.appTypeName === APP_TYPE_NAMES.STATIC_SITE;
+  const isProtected = app?.isProtected ?? false;
   const processState: ProcessState = status?.processState ?? 'Stopped';
   const statusConfig = STATUS_MAP[processState];
   const isTransitioning =
@@ -160,7 +145,7 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
           <div className="flex items-center gap-2">
             {/* Status indicator */}
             {isStaticSite ? (
-              <span className="mr-2 text-sm text-muted-foreground">Served by Caddy</span>
+              <span className="mr-2 text-sm text-muted-foreground">Served by proxy</span>
             ) : (
               <div className="flex items-center gap-2 mr-2">
                 <div className={cn('h-2 w-2 rounded-full', statusConfig.color)} />
@@ -276,7 +261,7 @@ function AppDetailContent({ appId }: AppDetailContentProps) {
         </TabsContent>
 
         <TabsContent value="configuration" className="pt-4">
-          <ConfigurationTab appId={appId} app={app} />
+          <ConfigurationTab appId={appId} app={app} isProtected={isProtected} />
         </TabsContent>
       </Tabs>
 
@@ -338,20 +323,22 @@ function OverviewTab({ appId, app, processState }: OverviewTabProps) {
         />
         <StatCard label="Restarts" value={status?.restartCount?.toString() ?? '0'} />
         <StatCard label="Port" value={app.port?.toString() ?? '--'} />
-        <Card className="flex items-center justify-center p-3">
-          <div className="text-center">
-            <p className="text-xs text-muted-foreground">Domain</p>
-            <a
-              href={`https://${app.name}.${BASE_DOMAIN}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-            >
-              {app.name}.{BASE_DOMAIN}
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          </div>
-        </Card>
+        {app.isRoutable && (
+          <Card className="flex items-center justify-center p-3">
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">Domain</p>
+              <a
+                href={`https://${app.name}.${BASE_DOMAIN}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              >
+                {app.name}.{BASE_DOMAIN}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Log viewer */}
@@ -393,13 +380,15 @@ function StatCard({ label, value }: StatCardProps) {
 type ConfigurationTabProps = {
   appId: string;
   app: AppDetail;
+  isProtected: boolean;
 };
 
-function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
+function ConfigurationTab({ appId, app, isProtected }: ConfigurationTabProps) {
   const [isEditing, setIsEditing] = useState(false);
   const updateConfig = useUpdateAppConfig(appId);
   const deleteApp = useDeleteApp();
   const { data: restartPolicies } = useRestartPolicies();
+  const isStaticSite = app.appTypeName === APP_TYPE_NAMES.STATIC_SITE;
 
   const [form, setForm] = useState(() => buildFormState(app));
 
@@ -482,20 +471,24 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
       value: form.updateTimeoutSeconds,
       field: 'updateTimeoutSeconds',
     },
-    {
-      label: 'Restart Policy',
-      value: form.restartPolicyId,
-      field: 'restartPolicyId',
-      isSelect: true,
-      selectOptions: restartPolicies ?? [],
-    },
-    {
-      label: 'Auto Start',
-      value: form.autoStart ? 'Yes' : 'No',
-      field: 'autoStart',
-      isBoolean: true,
-      booleanValue: form.autoStart,
-    },
+    ...(isStaticSite
+      ? []
+      : [
+          {
+            label: 'Restart Policy',
+            value: form.restartPolicyId,
+            field: 'restartPolicyId' as const,
+            isSelect: true,
+            selectOptions: restartPolicies ?? [],
+          },
+          {
+            label: 'Auto Start',
+            value: form.autoStart ? 'Yes' : 'No',
+            field: 'autoStart' as const,
+            isBoolean: true,
+            booleanValue: form.autoStart,
+          },
+        ]),
     { label: 'Registered At', value: formatDateTime(app.registeredAt), readOnly: true },
   ];
 
@@ -641,44 +634,46 @@ function ConfigurationTab({ appId, app }: ConfigurationTabProps) {
         )}
       </div>
 
-      {/* Delete */}
-      <div className="border-t pt-6">
-        <Dialog>
-          <DialogTrigger
-            render={
-              <Button variant="destructive" size="sm">
-                <Trash2 className="mr-1 h-4 w-4" />
-                Delete App
-              </Button>
-            }
-          />
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete App</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to delete <strong>{app.displayName}</strong>? This action
-                cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-              <Button
-                variant="destructive"
-                onClick={() =>
-                  deleteApp.mutate(appId, {
-                    onSuccess: () => toast.success('App deleted'),
-                    onError: () => toast.error('Failed to delete app'),
-                  })
-                }
-                disabled={deleteApp.isPending}
-              >
-                {deleteApp.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-                Delete
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+      {/* Delete — hidden for protected app types (e.g. ProxyService) */}
+      {!isProtected && (
+        <div className="border-t pt-6">
+          <Dialog>
+            <DialogTrigger
+              render={
+                <Button variant="destructive" size="sm">
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  Delete App
+                </Button>
+              }
+            />
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete App</DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to delete <strong>{app.displayName}</strong>? This action
+                  cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+                <Button
+                  variant="destructive"
+                  onClick={() =>
+                    deleteApp.mutate(appId, {
+                      onSuccess: () => toast.success('App deleted'),
+                      onError: () => toast.error('Failed to delete app'),
+                    })
+                  }
+                  disabled={deleteApp.isPending}
+                >
+                  {deleteApp.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                  Delete
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
     </div>
   );
 }

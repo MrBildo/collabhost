@@ -13,12 +13,12 @@ export function useRoutes() {
   });
 }
 
-export function useReloadCaddy() {
+export function useReloadProxy() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async () => {
-      await api.post('/caddy/reload');
+      await api.post('/proxy/reload');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['routes'] });

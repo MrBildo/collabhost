@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useCreateApp } from '@/hooks/useApps';
+import { BASE_DOMAIN, RESTART_POLICY_NAMES } from '@/lib/constants';
 import { useAppTypes, useRestartPolicies } from '@/hooks/useLookups';
 import type { CreateAppRequest } from '@/types/api';
 
@@ -130,22 +131,25 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
     setError(null);
 
     const appTypeGuid = appTypes?.find((t) => t.displayName === form.appTypeId)?.id ?? '';
-    const policyGuid =
-      restartPolicies?.find((p) => p.displayName === form.restartPolicyId)?.id ?? '';
+    const neverPolicyId =
+      restartPolicies?.find((p) => p.name === RESTART_POLICY_NAMES.NEVER)?.id ?? null;
+    const policyGuid = isStaticSite
+      ? neverPolicyId
+      : (restartPolicies?.find((p) => p.displayName === form.restartPolicyId)?.id ?? '');
 
     const request: CreateAppRequest = {
       name: form.name,
       displayName: form.displayName,
       appTypeId: appTypeGuid,
       installDirectory: form.installDirectory,
-      commandLine: form.commandLine,
+      commandLine: isStaticSite ? '' : form.commandLine,
       arguments: form.arguments || null,
       workingDirectory: form.workingDirectory || null,
       restartPolicyId: policyGuid,
       healthEndpoint: form.healthEndpoint || null,
       updateCommand: form.updateCommand || null,
       updateTimeoutSeconds: form.updateTimeoutSeconds ? Number(form.updateTimeoutSeconds) : null,
-      autoStart: form.autoStart,
+      autoStart: isStaticSite ? false : form.autoStart,
     };
 
     try {
@@ -200,11 +204,11 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
               required
             />
             <p className="text-xs text-muted-foreground">
-              Used in the domain: {form.name || 'my-app'}.collab.internal
+              Used in the domain: {form.name || 'my-app'}.{BASE_DOMAIN}
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className={isStaticSite ? '' : 'grid grid-cols-2 gap-4'}>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">
                 Type <span className="text-destructive">*</span>
@@ -230,30 +234,32 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
               </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">
-                Restart Policy <span className="text-destructive">*</span>
-              </label>
-              <Select
-                value={form.restartPolicyId}
-                onValueChange={(value) => {
-                  if (value !== null) {
-                    setForm((previous) => ({ ...previous, restartPolicyId: value }));
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(restartPolicies ?? []).map((policy) => (
-                    <SelectItem key={policy.id} value={policy.displayName}>
-                      {policy.displayName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!isStaticSite && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">
+                  Restart Policy <span className="text-destructive">*</span>
+                </label>
+                <Select
+                  value={form.restartPolicyId}
+                  onValueChange={(value) => {
+                    if (value !== null) {
+                      setForm((previous) => ({ ...previous, restartPolicyId: value }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(restartPolicies ?? []).map((policy) => (
+                      <SelectItem key={policy.id} value={policy.displayName}>
+                        {policy.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -359,18 +365,20 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="autoStart"
-              type="checkbox"
-              checked={form.autoStart}
-              onChange={handleCheckboxChange}
-              className="h-4 w-4 rounded border-input accent-primary"
-            />
-            <label htmlFor="autoStart" className="text-sm font-medium">
-              Auto Start
-            </label>
-          </div>
+          {!isStaticSite && (
+            <div className="flex items-center gap-2">
+              <input
+                id="autoStart"
+                type="checkbox"
+                checked={form.autoStart}
+                onChange={handleCheckboxChange}
+                className="h-4 w-4 rounded border-input accent-primary"
+              />
+              <label htmlFor="autoStart" className="text-sm font-medium">
+                Auto Start
+              </label>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

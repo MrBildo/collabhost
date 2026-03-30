@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace Collabhost.Api.Services;
+namespace Collabhost.Api.Services.Proxy;
 
 public interface IProxyConfigClient
 {
@@ -9,4 +9,18 @@ public interface IProxyConfigClient
     Task<bool> LoadConfigAsync(JsonObject config, CancellationToken ct = default);
 
     Task<JsonObject?> GetConfigAsync(CancellationToken ct = default);
+}
+
+public record AppRouteInfo
+(
+    string Slug,
+    Guid AppTypeId,
+    int? Port,
+    string? InstallDirectory,
+    string? HealthEndpoint
+);
+
+public interface IProxyAppSeeder
+{
+    Task SeedAsync(CancellationToken cancellationToken);
 }

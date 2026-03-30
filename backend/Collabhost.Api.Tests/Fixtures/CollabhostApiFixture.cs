@@ -1,5 +1,6 @@
 using Collabhost.Api.Data;
 using Collabhost.Api.Services;
+using Collabhost.Api.Services.Proxy;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -27,7 +28,8 @@ public class CollabhostApiFixture : WebApplicationFactory<Program>
                 (
                     new Dictionary<string, string?>(StringComparer.Ordinal)
                     {
-                        ["Auth:AdminKey"] = TestAdminKey
+                        ["Auth:AdminKey"] = TestAdminKey,
+                        ["Proxy:BinaryPath"] = "nonexistent-test-binary"
                     }
                 );
             }

@@ -13,6 +13,8 @@ export type AppListItem = {
   updateCommand: string | null;
   updateTimeoutSeconds: number | null;
   autoStart: boolean;
+  isProtected: boolean;
+  isRoutable: boolean;
 };
 
 export type ProcessState =
@@ -76,6 +78,8 @@ export type AppDetail = {
   updateTimeoutSeconds: number | null;
   autoStart: boolean;
   registeredAt: string;
+  isProtected: boolean;
+  isRoutable: boolean;
   environmentVariables: EnvironmentVariable[];
 };
 
@@ -127,7 +131,7 @@ export type CreateAppRequest = {
   commandLine: string;
   arguments: string | null;
   workingDirectory: string | null;
-  restartPolicyId: string;
+  restartPolicyId: string | null;
   healthEndpoint: string | null;
   updateCommand: string | null;
   updateTimeoutSeconds: number | null;

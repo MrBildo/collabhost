@@ -15,7 +15,7 @@ public static class Create
         string CommandLine,
         string? Arguments,
         string? WorkingDirectory,
-        Guid RestartPolicyId,
+        Guid? RestartPolicyId,
         string? HealthEndpoint,
         string? UpdateCommand,
         int? UpdateTimeoutSeconds,
@@ -64,7 +64,7 @@ public record CreateCommand
     string CommandLine,
     string? Arguments,
     string? WorkingDirectory,
-    Guid RestartPolicyId,
+    Guid? RestartPolicyId,
     string? HealthEndpoint,
     string? UpdateCommand,
     int? UpdateTimeoutSeconds,
@@ -114,7 +114,13 @@ public class CreateCommandHandler
             return CommandResult<string>.Fail("INVALID_COMMAND_LINE", "Command line is required for non-static-site app types.");
         }
 
-        var restartPolicyExists = await _db.Set<RestartPolicy>().AnyAsync(p => p.Id == command.RestartPolicyId, ct);
+        // Static sites have no process — force "Never" restart policy and disable auto-start
+        var restartPolicyId = isStaticSite
+            ? Domain.Catalogs.IdentifierCatalog.RestartPolicies.Never
+            : command.RestartPolicyId ?? Domain.Catalogs.IdentifierCatalog.RestartPolicies.Never;
+        var autoStart = isStaticSite ? false : command.AutoStart;
+
+        var restartPolicyExists = await _db.Set<RestartPolicy>().AnyAsync(p => p.Id == restartPolicyId, ct);
         if (!restartPolicyExists)
         {
             return CommandResult<string>.Fail("INVALID_RESTART_POLICY", "The specified RestartPolicyId does not exist.");
@@ -137,11 +143,11 @@ public class CreateCommandHandler
             command.CommandLine,
             command.Arguments,
             command.WorkingDirectory,
-            command.RestartPolicyId,
+            restartPolicyId,
             command.HealthEndpoint,
             command.UpdateCommand,
             command.UpdateTimeoutSeconds,
-            command.AutoStart
+            autoStart
         );
 
         // Auto-assign port

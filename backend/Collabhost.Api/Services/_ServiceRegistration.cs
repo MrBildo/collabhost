@@ -34,6 +34,7 @@ public static class InfrastructureServiceExtensions
         {
             services.AddScoped<PortAllocator>();
             services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();
+            services.AddSingleton<IProcessStateEventBus, ProcessStateEventBus>();
             services.AddSingleton<ProcessSupervisor>();
             services.AddHostedService<ProcessSupervisor>(sp => sp.GetRequiredService<ProcessSupervisor>());
             services.AddSingleton<UpdateCoordinator>();
@@ -50,6 +51,7 @@ public static class InfrastructureServiceExtensions
             services.AddSingleton<ProxyConfigGenerator>();
             services.AddSingleton<ProxyConfigManager>();
             services.AddHostedService(sp => sp.GetRequiredService<ProxyConfigManager>());
+            services.AddScoped<IProxyAppSeeder, ProxyAppSeeder>();
 
             return services;
         }
