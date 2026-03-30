@@ -102,7 +102,14 @@ export function RoutesPage() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <span className="font-mono text-sm text-primary">{route.domain}</span>
+                    <a
+                      href={`https://${route.domain}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-sm text-primary hover:underline"
+                    >
+                      {route.domain}
+                    </a>
                   </TableCell>
                   <TableCell>
                     <span className="font-mono text-sm text-muted-foreground">{route.target}</span>

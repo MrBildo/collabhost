@@ -44,6 +44,7 @@ public static class Get
         bool AutoStart,
         DateTime RegisteredAt,
         bool IsProtected,
+        bool IsRoutable,
         IReadOnlyList<EnvironmentVariableResponse> EnvironmentVariables
     );
 
@@ -139,6 +140,7 @@ public sealed class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandl
             row.AutoStart,
             row.RegisteredAt,
             AppTypeBehavior.IsProtected(row.AppTypeId),
+            AppTypeBehavior.IsRoutable(row.AppTypeId),
             environmentVariables
         );
 

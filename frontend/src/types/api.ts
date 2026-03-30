@@ -14,6 +14,7 @@ export type AppListItem = {
   updateTimeoutSeconds: number | null;
   autoStart: boolean;
   isProtected: boolean;
+  isRoutable: boolean;
 };
 
 export type ProcessState =
@@ -78,6 +79,7 @@ export type AppDetail = {
   autoStart: boolean;
   registeredAt: string;
   isProtected: boolean;
+  isRoutable: boolean;
   environmentVariables: EnvironmentVariable[];
 };
 

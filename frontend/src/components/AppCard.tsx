@@ -81,82 +81,96 @@ export function AppCard({ app }: AppCardProps) {
       </CardHeader>
 
       <CardContent className="space-y-2">
-        <div className="flex items-center gap-2">
-          {isStatusLoading ? (
-            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-          ) : (
-            <div className={cn('h-2 w-2 rounded-full', statusConfig.color)} />
-          )}
-          <span className="text-sm">{statusConfig.label}</span>
-        </div>
+        {!isStaticSite && (
+          <div className="flex items-center gap-2">
+            {isStatusLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            ) : (
+              <div className={cn('h-2 w-2 rounded-full', statusConfig.color)} />
+            )}
+            <span className="text-sm">{statusConfig.label}</span>
+          </div>
+        )}
 
         <div className="text-sm text-primary">
           {app.name}.{BASE_DOMAIN}
         </div>
 
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          {app.port !== null && <span>Port: {app.port}</span>}
-          {processState === 'Running' &&
-            status?.uptimeSeconds !== null &&
-            status?.uptimeSeconds !== undefined && (
-              <span>Uptime: {formatUptime(status.uptimeSeconds)}</span>
-            )}
-        </div>
+        {!isStaticSite && (
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            {app.port !== null && <span>Port: {app.port}</span>}
+            {processState === 'Running' &&
+              status?.uptimeSeconds !== null &&
+              status?.uptimeSeconds !== undefined && (
+                <span>Uptime: {formatUptime(status.uptimeSeconds)}</span>
+              )}
+          </div>
+        )}
       </CardContent>
 
-      <CardFooter className="gap-1">
-        {isStaticSite ? (
-          <span className="text-xs text-muted-foreground">Served by proxy</span>
-        ) : isTransitioning || isMutating ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        ) : (
-          <>
-            {(processState === 'Stopped' || processState === 'Crashed') && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button variant="ghost" size="icon" onClick={handleStart} disabled={isDisabled}>
-                      <Play className="h-4 w-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>Start</TooltipContent>
-              </Tooltip>
-            )}
+      {!isStaticSite && (
+        <CardFooter className="gap-1">
+          {isTransitioning || isMutating ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : (
+            <>
+              {(processState === 'Stopped' || processState === 'Crashed') && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleStart}
+                        disabled={isDisabled}
+                      >
+                        <Play className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>Start</TooltipContent>
+                </Tooltip>
+              )}
 
-            {processState === 'Running' && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button variant="ghost" size="icon" onClick={handleStop} disabled={isDisabled}>
-                      <Square className="h-4 w-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>Stop</TooltipContent>
-              </Tooltip>
-            )}
+              {processState === 'Running' && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleStop}
+                        disabled={isDisabled}
+                      >
+                        <Square className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>Stop</TooltipContent>
+                </Tooltip>
+              )}
 
-            {(processState === 'Running' || processState === 'Crashed') && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleRestart}
-                      disabled={isDisabled}
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>Restart</TooltipContent>
-              </Tooltip>
-            )}
-          </>
-        )}
-      </CardFooter>
+              {(processState === 'Running' || processState === 'Crashed') && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleRestart}
+                        disabled={isDisabled}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>Restart</TooltipContent>
+                </Tooltip>
+              )}
+            </>
+          )}
+        </CardFooter>
+      )}
     </Card>
   );
 }

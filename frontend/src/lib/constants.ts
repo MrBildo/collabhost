@@ -20,4 +20,5 @@ export const STATUS_MAP: Record<ProcessState, StatusConfig> = {
 /** App type display names returned by the API */
 export const APP_TYPE_NAMES = {
   STATIC_SITE: 'Static Site',
+  PROXY_SERVICE: 'Proxy Service',
 } as const;

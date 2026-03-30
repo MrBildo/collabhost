@@ -205,7 +205,7 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className={isStaticSite ? '' : 'grid grid-cols-2 gap-4'}>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">
                 Type <span className="text-destructive">*</span>
@@ -231,30 +231,32 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
               </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">
-                Restart Policy <span className="text-destructive">*</span>
-              </label>
-              <Select
-                value={form.restartPolicyId}
-                onValueChange={(value) => {
-                  if (value !== null) {
-                    setForm((previous) => ({ ...previous, restartPolicyId: value }));
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(restartPolicies ?? []).map((policy) => (
-                    <SelectItem key={policy.id} value={policy.displayName}>
-                      {policy.displayName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!isStaticSite && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">
+                  Restart Policy <span className="text-destructive">*</span>
+                </label>
+                <Select
+                  value={form.restartPolicyId}
+                  onValueChange={(value) => {
+                    if (value !== null) {
+                      setForm((previous) => ({ ...previous, restartPolicyId: value }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(restartPolicies ?? []).map((policy) => (
+                      <SelectItem key={policy.id} value={policy.displayName}>
+                        {policy.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -360,18 +362,20 @@ export function CreateAppDialog({ isOpen, onOpenChange }: CreateAppDialogProps) 
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="autoStart"
-              type="checkbox"
-              checked={form.autoStart}
-              onChange={handleCheckboxChange}
-              className="h-4 w-4 rounded border-input accent-primary"
-            />
-            <label htmlFor="autoStart" className="text-sm font-medium">
-              Auto Start
-            </label>
-          </div>
+          {!isStaticSite && (
+            <div className="flex items-center gap-2">
+              <input
+                id="autoStart"
+                type="checkbox"
+                checked={form.autoStart}
+                onChange={handleCheckboxChange}
+                className="h-4 w-4 rounded border-input accent-primary"
+              />
+              <label htmlFor="autoStart" className="text-sm font-medium">
+                Auto Start
+              </label>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

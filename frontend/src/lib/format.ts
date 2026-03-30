@@ -1,6 +1,17 @@
+/**
+ * Parse a date string as UTC. Backend DateTimes are stored as UTC but serialized
+ * without a 'Z' suffix (SQLite + EF Core DateTime.Kind = Unspecified). Appending
+ * 'Z' when missing ensures JavaScript treats the value as UTC before converting
+ * to the user's local timezone.
+ */
+function parseUtc(iso: string): Date {
+  const normalized = iso.endsWith('Z') ? iso : `${iso}Z`;
+  return new Date(normalized);
+}
+
 export function formatDateTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleString();
+    return parseUtc(iso).toLocaleString();
   } catch {
     return iso;
   }
@@ -8,7 +19,7 @@ export function formatDateTime(iso: string): string {
 
 export function formatTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleTimeString();
+    return parseUtc(iso).toLocaleTimeString();
   } catch {
     return iso;
   }

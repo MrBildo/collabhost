@@ -14,7 +14,8 @@ public static class GetAll
         string? UpdateCommand,
         int? UpdateTimeoutSeconds,
         bool AutoStart,
-        bool IsProtected
+        bool IsProtected,
+        bool IsRoutable
     );
 
     internal sealed record Row
@@ -85,7 +86,8 @@ public sealed class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandH
                     row.UpdateCommand,
                     row.UpdateTimeoutSeconds,
                     row.AutoStart,
-                    AppTypeBehavior.IsProtected(row.AppTypeId)
+                    AppTypeBehavior.IsProtected(row.AppTypeId),
+                    AppTypeBehavior.IsRoutable(row.AppTypeId)
                 ))
             .ToList();
 

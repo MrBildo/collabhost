@@ -323,20 +323,22 @@ function OverviewTab({ appId, app, processState }: OverviewTabProps) {
         />
         <StatCard label="Restarts" value={status?.restartCount?.toString() ?? '0'} />
         <StatCard label="Port" value={app.port?.toString() ?? '--'} />
-        <Card className="flex items-center justify-center p-3">
-          <div className="text-center">
-            <p className="text-xs text-muted-foreground">Domain</p>
-            <a
-              href={`https://${app.name}.${BASE_DOMAIN}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-            >
-              {app.name}.{BASE_DOMAIN}
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          </div>
-        </Card>
+        {app.isRoutable && (
+          <Card className="flex items-center justify-center p-3">
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">Domain</p>
+              <a
+                href={`https://${app.name}.${BASE_DOMAIN}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              >
+                {app.name}.{BASE_DOMAIN}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Log viewer */}
@@ -386,6 +388,7 @@ function ConfigurationTab({ appId, app, isProtected }: ConfigurationTabProps) {
   const updateConfig = useUpdateAppConfig(appId);
   const deleteApp = useDeleteApp();
   const { data: restartPolicies } = useRestartPolicies();
+  const isStaticSite = app.appTypeName === APP_TYPE_NAMES.STATIC_SITE;
 
   const [form, setForm] = useState(() => buildFormState(app));
 
@@ -468,20 +471,24 @@ function ConfigurationTab({ appId, app, isProtected }: ConfigurationTabProps) {
       value: form.updateTimeoutSeconds,
       field: 'updateTimeoutSeconds',
     },
-    {
-      label: 'Restart Policy',
-      value: form.restartPolicyId,
-      field: 'restartPolicyId',
-      isSelect: true,
-      selectOptions: restartPolicies ?? [],
-    },
-    {
-      label: 'Auto Start',
-      value: form.autoStart ? 'Yes' : 'No',
-      field: 'autoStart',
-      isBoolean: true,
-      booleanValue: form.autoStart,
-    },
+    ...(isStaticSite
+      ? []
+      : [
+          {
+            label: 'Restart Policy',
+            value: form.restartPolicyId,
+            field: 'restartPolicyId' as const,
+            isSelect: true,
+            selectOptions: restartPolicies ?? [],
+          },
+          {
+            label: 'Auto Start',
+            value: form.autoStart ? 'Yes' : 'No',
+            field: 'autoStart' as const,
+            isBoolean: true,
+            booleanValue: form.autoStart,
+          },
+        ]),
     { label: 'Registered At', value: formatDateTime(app.registeredAt), readOnly: true },
   ];
 
