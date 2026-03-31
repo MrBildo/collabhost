@@ -141,3 +141,55 @@ export type CreateAppRequest = {
 export type CreateAppResponse = {
   externalId: string;
 };
+
+// -- App Types --
+
+export type AppTypeCapabilityResponse = {
+  category: string;
+  displayName: string;
+  defaults: Record<string, unknown>;
+};
+
+export type AppTypeListItem = {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string | null;
+  isBuiltIn: boolean;
+  capabilities: Record<string, AppTypeCapabilityResponse>;
+};
+
+export type AppTypeDetail = {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string | null;
+  isBuiltIn: boolean;
+  capabilities: Record<string, AppTypeCapabilityResponse>;
+};
+
+export type CreateAppTypeRequest = {
+  name: string;
+  displayName: string;
+  description: string | null;
+  capabilities: Record<string, Record<string, unknown>> | null;
+};
+
+export type CreateAppTypeResponse = {
+  externalId: string;
+};
+
+export type UpdateAppTypeRequest = {
+  displayName: string;
+  description: string | null;
+  capabilities: Record<string, Record<string, unknown> | null> | null;
+};
+
+// -- Capabilities --
+
+export type CapabilityCatalogItem = {
+  slug: string;
+  displayName: string;
+  description: string | null;
+  category: string;
+};
