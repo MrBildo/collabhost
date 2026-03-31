@@ -7,8 +7,8 @@ import type { CapabilityWidgetProps } from '../types';
 
 function HealthCheckWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) {
   const endpoint = String(resolved['endpoint'] ?? '');
-  const intervalSeconds = Number(resolved['intervalSeconds'] ?? 30);
-  const timeoutSeconds = Number(resolved['timeoutSeconds'] ?? 5);
+  const intervalSeconds = Number(resolved['intervalSeconds']);
+  const timeoutSeconds = Number(resolved['timeoutSeconds']);
   const retries = resolved['retries'] != null ? Number(resolved['retries']) : null;
 
   const isFieldOverridden = useCallback(

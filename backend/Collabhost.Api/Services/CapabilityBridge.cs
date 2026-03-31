@@ -13,6 +13,7 @@ public sealed record ResolvedCapabilityData
     string DisplayName,
     string Category,
     string ResolvedConfiguration,
+    string DefaultConfiguration,
     bool HasOverrides
 );
 
@@ -124,6 +125,7 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
                 typeCapability.DisplayName,
                 typeCapability.Category,
                 resolvedJson,
+                typeCapability.DefaultConfiguration,
                 hasOverride
             ));
         }

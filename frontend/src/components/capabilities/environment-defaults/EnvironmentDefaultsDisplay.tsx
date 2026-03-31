@@ -33,13 +33,18 @@ function getKeySource(
   return 'inherited';
 }
 
-function EnvironmentDefaultsDisplay({ resolved, defaults, hasOverrides }: CapabilityWidgetProps) {
+function EnvironmentDefaultsDisplay({
+  displayName,
+  resolved,
+  defaults,
+  hasOverrides,
+}: CapabilityWidgetProps) {
   const entries = getEnvVarEntries(resolved);
 
   return (
     <GlassCard size="sm">
       <GlassCardHeader>
-        <GlassCardTitle>Environment Variables</GlassCardTitle>
+        <GlassCardTitle>{displayName}</GlassCardTitle>
       </GlassCardHeader>
       <GlassCardContent>
         {entries.length === 0 ? (

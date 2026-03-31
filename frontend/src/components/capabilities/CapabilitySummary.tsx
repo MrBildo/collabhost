@@ -25,6 +25,7 @@ function CapabilitySummary({ capabilities }: CapabilitySummaryProps) {
         return (
           <SummaryComponent
             key={capability.slug}
+            displayName={capability.displayName}
             resolved={capability.resolved}
             defaults={capability.defaults}
             hasOverrides={capability.hasOverrides}

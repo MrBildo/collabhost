@@ -29,6 +29,7 @@ function renderCapabilityDisplay(capability: CapabilityEntry) {
   return (
     <family.Display
       key={capability.slug}
+      displayName={capability.displayName}
       resolved={capability.resolved}
       defaults={capability.defaults}
       hasOverrides={capability.hasOverrides}

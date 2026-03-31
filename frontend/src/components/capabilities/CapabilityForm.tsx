@@ -65,6 +65,7 @@ function CapabilityForm({ capabilities, onOverridesChange }: CapabilityFormProps
         <div key={capability.slug} className="space-y-2">
           <h4 className="text-sm font-semibold">{capability.displayName}</h4>
           <family.Widget
+            displayName={capability.displayName}
             resolved={mergedResolved}
             defaults={capability.defaults}
             hasOverrides={capability.hasOverrides || capability.slug in overrides}

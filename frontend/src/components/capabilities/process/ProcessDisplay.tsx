@@ -22,7 +22,7 @@ function getFieldSource(
   return resolved[fieldName] !== defaults[fieldName] ? 'overridden' : 'inherited';
 }
 
-function ProcessDisplay({ resolved, defaults, hasOverrides }: CapabilityWidgetProps) {
+function ProcessDisplay({ displayName, resolved, defaults, hasOverrides }: CapabilityWidgetProps) {
   const discoveryStrategy = String(resolved['discoveryStrategy'] ?? '');
   const gracefulShutdown = Boolean(resolved['gracefulShutdown']);
   const shutdownTimeoutSeconds = Number(resolved['shutdownTimeoutSeconds'] ?? 0);
@@ -30,7 +30,7 @@ function ProcessDisplay({ resolved, defaults, hasOverrides }: CapabilityWidgetPr
   return (
     <GlassCard size="sm">
       <GlassCardHeader>
-        <GlassCardTitle>Process Management</GlassCardTitle>
+        <GlassCardTitle>{displayName}</GlassCardTitle>
       </GlassCardHeader>
       <GlassCardContent>
         <div className="space-y-3">

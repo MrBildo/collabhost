@@ -16,7 +16,12 @@ function getFieldSource(
   return resolved[fieldName] !== defaults[fieldName] ? 'overridden' : 'inherited';
 }
 
-function HealthCheckDisplay({ resolved, defaults, hasOverrides }: CapabilityWidgetProps) {
+function HealthCheckDisplay({
+  displayName,
+  resolved,
+  defaults,
+  hasOverrides,
+}: CapabilityWidgetProps) {
   const endpoint = String(resolved['endpoint'] ?? '');
   const intervalSeconds = Number(resolved['intervalSeconds'] ?? 0);
   const timeoutSeconds = Number(resolved['timeoutSeconds'] ?? 0);
@@ -25,7 +30,7 @@ function HealthCheckDisplay({ resolved, defaults, hasOverrides }: CapabilityWidg
   return (
     <GlassCard size="sm">
       <GlassCardHeader>
-        <GlassCardTitle>Health Check</GlassCardTitle>
+        <GlassCardTitle>{displayName}</GlassCardTitle>
       </GlassCardHeader>
       <GlassCardContent>
         <div className="space-y-3">

@@ -20,7 +20,7 @@ const DISCOVERY_STRATEGIES = [
 function ProcessWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) {
   const discoveryStrategy = String(resolved['discoveryStrategy'] ?? 'manual');
   const gracefulShutdown = Boolean(resolved['gracefulShutdown']);
-  const shutdownTimeoutSeconds = Number(resolved['shutdownTimeoutSeconds'] ?? 30);
+  const shutdownTimeoutSeconds = Number(resolved['shutdownTimeoutSeconds']);
   const command = String(resolved['command'] ?? '');
   const args = String(resolved['args'] ?? '');
 

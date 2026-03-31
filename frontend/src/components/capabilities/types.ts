@@ -2,6 +2,8 @@ import type React from 'react';
 
 /** Props passed to every capability widget (edit, display, summary). */
 export type CapabilityWidgetProps = {
+  /** Display name for the capability, sourced from the API. */
+  displayName: string;
   /** Fully merged configuration from API (type defaults + operator overrides). */
   resolved: Record<string, unknown>;
   /** Type-level default configuration (before any overrides). */
