@@ -6,6 +6,7 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { AuthGate } from '@/components/AuthGate';
 import { AppListPage } from '@/routes/AppListPage';
 import { AppDetailPage } from '@/routes/AppDetailPage';
+import AppCreatePage from '@/routes/AppCreatePage';
 import AppTypesListPage from '@/routes/AppTypesListPage';
 import AppTypeDetailPage from '@/routes/AppTypeDetailPage';
 import AppTypeCreatePage from '@/routes/AppTypeCreatePage';
@@ -22,6 +23,8 @@ export function App() {
           <SidebarInset>
             <Routes>
               <Route path="/" element={<AppListPage />} />
+              <Route path="/apps" element={<AppListPage />} />
+              <Route path="/apps/new" element={<AppCreatePage />} />
               <Route path="/apps/:id" element={<AppDetailPage />} />
               <Route path="/app-types" element={<AppTypesListPage />} />
               <Route path="/app-types/new" element={<AppTypeCreatePage />} />

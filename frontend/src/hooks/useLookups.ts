@@ -9,12 +9,3 @@ export function useAppTypes() {
     staleTime: Infinity,
   });
 }
-
-export function useRestartPolicies() {
-  return useQuery<LookupItem[]>({
-    queryKey: ['lookups', 'restart-policies'],
-    queryFn: () =>
-      api.get<LookupItem[]>('/lookups/restart-policies').then((response) => response.data),
-    staleTime: Infinity,
-  });
-}
