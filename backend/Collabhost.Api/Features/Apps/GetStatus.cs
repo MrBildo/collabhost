@@ -19,14 +19,16 @@ public static class GetStatus
 
 public record GetStatusCommand(string ExternalId) : ICommand<ProcessStatusResponse>;
 
-public class GetStatusCommandHandler
+public sealed class GetStatusCommandHandler
 (
     CollabhostDbContext db,
-    ProcessSupervisor supervisor
+    ProcessSupervisor supervisor,
+    IProcessStateNameResolver stateNameResolver
 ) : ICommandHandler<GetStatusCommand, ProcessStatusResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
+    private readonly IProcessStateNameResolver _stateNameResolver = stateNameResolver ?? throw new ArgumentNullException(nameof(stateNameResolver));
 
     public async Task<CommandResult<ProcessStatusResponse>> HandleAsync(GetStatusCommand command, CancellationToken ct = default)
     {
@@ -40,8 +42,8 @@ public class GetStatusCommandHandler
         var managed = _supervisor.GetProcess(app.Id);
 
         var response = managed is not null
-            ? ProcessStatusMapper.Map(managed)
-            : ProcessStatusMapper.Stopped(app.ExternalId, app.DisplayName);
+            ? await ProcessStatusMapper.MapAsync(managed, _stateNameResolver, ct)
+            : await ProcessStatusMapper.StoppedAsync(app.ExternalId, app.DisplayName, _stateNameResolver, ct);
 
         return CommandResult<ProcessStatusResponse>.Success(response);
     }

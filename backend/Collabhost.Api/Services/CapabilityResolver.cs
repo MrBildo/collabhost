@@ -29,7 +29,6 @@ public sealed class CapabilityResolver(CollabhostDbContext db) : ICapabilityReso
             .Where(a => a.Id == appId)
             .Select(a => new { a.AppTypeId })
             .SingleOrDefaultAsync(ct);
-
         if (app is null)
         {
             return null;
@@ -38,7 +37,11 @@ public sealed class CapabilityResolver(CollabhostDbContext db) : ICapabilityReso
         // Find the AppTypeCapability for this (AppType, Capability) pair
         var typeCapability = await _db.Set<AppTypeCapability>()
             .AsNoTracking()
-            .Where(atc => atc.AppTypeId == app.AppTypeId && atc.CapabilityId == capabilityId)
+            .Where
+            (
+                atc => atc.AppTypeId == app.AppTypeId
+                    && atc.CapabilityId == capabilityId
+            )
             .SingleOrDefaultAsync(ct);
 
         if (typeCapability is null)
@@ -49,7 +52,11 @@ public sealed class CapabilityResolver(CollabhostDbContext db) : ICapabilityReso
         // Check for per-app override
         var instanceOverride = await _db.Set<CapabilityConfiguration>()
             .AsNoTracking()
-            .Where(cc => cc.AppId == appId && cc.AppTypeCapabilityId == typeCapability.Id)
+            .Where
+            (
+                cc => cc.AppId == appId
+                    && cc.AppTypeCapabilityId == typeCapability.Id
+            )
             .SingleOrDefaultAsync(ct);
 
         if (instanceOverride is null)
@@ -65,19 +72,25 @@ public sealed class CapabilityResolver(CollabhostDbContext db) : ICapabilityReso
 
     private static T DeserializeOrThrow<T>(string json, Guid capabilityId) where T : class =>
         JsonSerializer.Deserialize<T>(json, _jsonOptions)
-            ?? throw new InvalidOperationException(
+            ?? throw new InvalidOperationException
+            (
                 $"Failed to deserialize capability configuration for capability {capabilityId}. " +
-                $"JSON: {json}");
+                $"JSON: {json}"
+            );
 
     internal static string MergeJson(string defaultsJson, string overrideJson, Guid capabilityId)
     {
         var defaults = JsonNode.Parse(defaultsJson)?.AsObject()
-            ?? throw new InvalidOperationException(
-                $"Invalid type-level configuration JSON for capability {capabilityId}");
+            ?? throw new InvalidOperationException
+            (
+                $"Invalid type-level configuration JSON for capability {capabilityId}"
+            );
 
         var overrides = JsonNode.Parse(overrideJson)?.AsObject()
-            ?? throw new InvalidOperationException(
-                $"Invalid override configuration JSON for capability {capabilityId}");
+            ?? throw new InvalidOperationException
+            (
+                $"Invalid override configuration JSON for capability {capabilityId}"
+            );
 
         var isEnvironmentDefaults = capabilityId == IdentifierCatalog.Capabilities.EnvironmentDefaults;
 

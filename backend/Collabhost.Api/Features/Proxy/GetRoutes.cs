@@ -41,7 +41,8 @@ public class GetRoutesCommandHandler
     public async Task<CommandResult<RouteListResponse>> HandleAsync(GetRoutesCommand command, CancellationToken ct = default)
     {
         var rows = await _db.Database
-            .SqlQuery<GetRoutes.RouteQueryRow>(
+            .SqlQuery<GetRoutes.RouteQueryRow>
+            (
                 $"""
                 SELECT
                     A.[ExternalId]
@@ -56,7 +57,8 @@ public class GetRoutesCommandHandler
                     C.[Slug] = 'routing'
                 ORDER BY
                     A.[Name]
-                """)
+                """
+            )
             .ToListAsync(ct);
 
         var routes = rows

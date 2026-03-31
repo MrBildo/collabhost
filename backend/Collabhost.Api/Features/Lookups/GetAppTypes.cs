@@ -38,12 +38,15 @@ public sealed class GetAppTypesCommandHandler(CollabhostDbContext db)
     {
         var results = await _db.Set<AppType>()
             .OrderBy(t => t.Name)
-            .Select(t => new GetAppTypes.Response
+            .Select
             (
-                t.ExternalId,
-                t.Name,
-                t.DisplayName
-            ))
+                t => new GetAppTypes.Response
+                (
+                    t.ExternalId,
+                    t.Name,
+                    t.DisplayName
+                )
+            )
             .ToListAsync(ct);
 
         return CommandResult<List<GetAppTypes.Response>>.Success(results);

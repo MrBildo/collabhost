@@ -40,6 +40,8 @@ public static class InfrastructureServiceExtensions
             services.AddHostedService<ProcessSupervisor>(sp => sp.GetRequiredService<ProcessSupervisor>());
             services.AddSingleton<UpdateCoordinator>();
             services.AddScoped<ICapabilityResolver, CapabilityResolver>();
+            services.AddScoped<ICapabilityBridge, CapabilityBridge>();
+            services.AddScoped<IProcessStateNameResolver, ProcessStateNameResolver>();
 
             return services;
         }

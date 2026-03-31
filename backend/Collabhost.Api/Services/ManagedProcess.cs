@@ -86,7 +86,8 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
         return TimeSpan.FromSeconds(delay);
     }
 
-    public bool ShouldResetRestartCount() => _lastHealthyAt.HasValue
+    public bool ShouldResetRestartCount() =>
+        _lastHealthyAt.HasValue
             && IsRunning
             && (DateTime.UtcNow - _lastHealthyAt.Value).TotalSeconds >= 300;
 

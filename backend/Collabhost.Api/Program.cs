@@ -5,9 +5,10 @@ using Collabhost.Api.Auth;
 // --version flag
 if (args.Contains("--version"))
 {
-    var version = Assembly.GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? "0.1.0";
+    var version = Assembly
+        .GetExecutingAssembly()
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+        ?.InformationalVersion ?? "0.1.0";
     Console.WriteLine($"Collabhost {version}");
     return;
 }

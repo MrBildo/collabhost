@@ -29,23 +29,28 @@ public sealed class DotNetRuntimeConfigDiscoveryStrategy : IDiscoveryStrategy
 
         if (string.IsNullOrWhiteSpace(workingDirectory))
         {
-            throw new InvalidOperationException(
+            throw new InvalidOperationException
+            (
                 "Cannot use dotnet-runtimeconfig discovery strategy: " +
                 "WorkingDirectory is not configured on the process capability. " +
-                "This will be resolved when the artifact capability is implemented.");
+                "This will be resolved when the artifact capability is implemented."
+            );
         }
 
         var runtimeConfigFiles = Directory.GetFiles(workingDirectory, "*.runtimeconfig.json");
 
         if (runtimeConfigFiles.Length == 0)
         {
-            throw new InvalidOperationException(
+            throw new InvalidOperationException
+            (
                 $"No *.runtimeconfig.json file found in '{workingDirectory}'. " +
-                "Ensure the application has been published or built.");
+                "Ensure the application has been published or built."
+            );
         }
 
         var runtimeConfigPath = runtimeConfigFiles[0];
-        var dllName = Path.GetFileNameWithoutExtension(runtimeConfigPath)
+        var dllName = Path
+            .GetFileNameWithoutExtension(runtimeConfigPath)
             .Replace(".runtimeconfig", "", StringComparison.OrdinalIgnoreCase) + ".dll";
 
         return new DiscoveredProcess("dotnet", dllName, workingDirectory);
@@ -62,18 +67,22 @@ public sealed class PackageJsonDiscoveryStrategy : IDiscoveryStrategy
 
         if (string.IsNullOrWhiteSpace(workingDirectory))
         {
-            throw new InvalidOperationException(
+            throw new InvalidOperationException
+            (
                 "Cannot use package-json discovery strategy: " +
                 "WorkingDirectory is not configured on the process capability. " +
-                "This will be resolved when the artifact capability is implemented.");
+                "This will be resolved when the artifact capability is implemented."
+            );
         }
 
         var packageJsonPath = Path.Combine(workingDirectory, "package.json");
 
         if (!File.Exists(packageJsonPath))
         {
-            throw new InvalidOperationException(
-                $"No package.json found at '{packageJsonPath}'.");
+            throw new InvalidOperationException
+            (
+                $"No package.json found at '{packageJsonPath}'."
+            );
         }
 
         // Validate that the package.json has a start script
@@ -83,8 +92,10 @@ public sealed class PackageJsonDiscoveryStrategy : IDiscoveryStrategy
         return document.RootElement.TryGetProperty("scripts", out var scripts)
             && scripts.TryGetProperty("start", out _)
             ? new DiscoveredProcess("npm", "start", workingDirectory)
-            : throw new InvalidOperationException(
-                $"package.json at '{packageJsonPath}' does not have a 'scripts.start' entry.");
+            : throw new InvalidOperationException
+            (
+                $"package.json at '{packageJsonPath}' does not have a 'scripts.start' entry."
+            );
     }
 }
 
@@ -94,13 +105,17 @@ public sealed class ManualDiscoveryStrategy : IDiscoveryStrategy
 
     public DiscoveredProcess Discover(ProcessConfiguration processConfiguration) =>
         string.IsNullOrWhiteSpace(processConfiguration.Command)
-            ? throw new InvalidOperationException(
+            ? throw new InvalidOperationException
+            (
                 "Cannot use manual discovery strategy: " +
-                "Command is not configured on the process capability.")
-            : new DiscoveredProcess(
+                "Command is not configured on the process capability."
+            )
+            : new DiscoveredProcess
+            (
                 processConfiguration.Command,
                 processConfiguration.Arguments,
-                processConfiguration.WorkingDirectory);
+                processConfiguration.WorkingDirectory
+            );
 }
 
 public sealed class DiscoveryStrategyFactory
@@ -119,8 +134,10 @@ public sealed class DiscoveryStrategyFactory
 
         return _strategies.TryGetValue(strategyName, out var strategy)
             ? strategy
-            : throw new InvalidOperationException(
+            : throw new InvalidOperationException
+            (
                 $"Unknown discovery strategy '{strategyName}'. " +
-                $"Supported strategies: {string.Join(", ", _strategies.Keys)}");
+                $"Supported strategies: {string.Join(", ", _strategies.Keys)}"
+            );
     }
 }

@@ -2,7 +2,7 @@ using Collabhost.Api.Domain.Catalogs;
 
 namespace Collabhost.Api.Features.Apps;
 
-public static class Stop
+public static class Kill
 {
     public static async Task<Results<Ok<AppDetailResponse>, NotFound, ProblemHttpResult>> HandleAsync
     (
@@ -11,13 +11,12 @@ public static class Stop
         CancellationToken ct
     )
     {
-        var result = await dispatcher.DispatchAsync(new StopCommand(externalId), ct);
+        var result = await dispatcher.DispatchAsync(new KillCommand(externalId), ct);
 
         Results<Ok<AppDetailResponse>, NotFound, ProblemHttpResult> response = result switch
         {
             { IsSuccess: true } => TypedResults.Ok(result.Value),
             { ErrorCode: "NOT_FOUND" } => TypedResults.NotFound(),
-            { ErrorCode: "ALREADY_STOPPED" } => TypedResults.Problem(result.ErrorMessage, statusCode: 409),
             _ => TypedResults.Problem(result.ErrorMessage, statusCode: 400)
         };
 
@@ -25,17 +24,17 @@ public static class Stop
     }
 }
 
-public record StopCommand(string ExternalId) : ICommand<AppDetailResponse>;
+public record KillCommand(string ExternalId) : ICommand<AppDetailResponse>;
 
-#pragma warning disable MA0051 // Long method justified — bridge orchestration across process and proxy systems
-public sealed class StopCommandHandler
+#pragma warning disable MA0051 // Long method justified — bridge kill with full response
+public sealed class KillCommandHandler
 (
     CollabhostDbContext db,
     ProcessSupervisor supervisor,
     ProxyConfigManager proxyConfigManager,
     ICapabilityBridge capabilityBridge,
     IProcessStateNameResolver stateNameResolver
-) : ICommandHandler<StopCommand, AppDetailResponse>
+) : ICommandHandler<KillCommand, AppDetailResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
@@ -43,7 +42,7 @@ public sealed class StopCommandHandler
     private readonly ICapabilityBridge _capabilityBridge = capabilityBridge ?? throw new ArgumentNullException(nameof(capabilityBridge));
     private readonly IProcessStateNameResolver _stateNameResolver = stateNameResolver ?? throw new ArgumentNullException(nameof(stateNameResolver));
 
-    public async Task<CommandResult<AppDetailResponse>> HandleAsync(StopCommand command, CancellationToken ct = default)
+    public async Task<CommandResult<AppDetailResponse>> HandleAsync(KillCommand command, CancellationToken ct = default)
     {
         var app = await _db.FindAppByExternalIdAsync(command.ExternalId, ct);
 
@@ -52,39 +51,32 @@ public sealed class StopCommandHandler
             return CommandResult<AppDetailResponse>.Fail("NOT_FOUND", "App not found.");
         }
 
+        var hasProcess = await _db.HasCapabilityAsync(app.AppTypeId, IdentifierCatalog.Capabilities.Process, ct);
+
+        if (!hasProcess)
+        {
+            return CommandResult<AppDetailResponse>.Fail("NO_PROCESS", "This app type has no process to manage.");
+        }
+
+        var managedProcess = _supervisor.GetProcess(app.Id);
+
+        if (managedProcess is null || !managedProcess.IsRunning)
+        {
+            return CommandResult<AppDetailResponse>.Fail("NOT_RUNNING", "No running process to kill.");
+        }
+
+        managedProcess.KillProcess();
+
+        // Build the bridge response
         var resolvedCapabilities = await _capabilityBridge.ResolveAllCapabilitiesAsync
         (
             app.Id, app.AppTypeId, ct
         );
 
-        var hasProcess = resolvedCapabilities.HasCapability(StringCatalog.Capabilities.Process);
-        var hasRouting = resolvedCapabilities.HasCapability(StringCatalog.Capabilities.Routing);
-
-        // Bridge orchestration: stop process first, then disable route
-        ManagedProcess? managedProcess = null;
-
-        if (hasProcess)
-        {
-            try
-            {
-                managedProcess = await _supervisor.StopAppAsync(app.Id, ct);
-            }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("already stopped", StringComparison.Ordinal))
-            {
-                return CommandResult<AppDetailResponse>.Fail("ALREADY_STOPPED", ex.Message);
-            }
-        }
-
-        if (hasRouting)
-        {
-            _proxyConfigManager.DisableRoute(app.Name);
-            await _proxyConfigManager.SyncRoutesAsync(ct);
-        }
-
-        // Build the bridge response
         var routingConfiguration = _capabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
 
-        managedProcess ??= hasProcess ? _supervisor.GetProcess(app.Id) : null;
+        // Re-read the process state after kill
+        managedProcess = _supervisor.GetProcess(app.Id);
 
         var appRow = await _db.Database
             .SqlQuery<AppWithTypeRow>
@@ -111,9 +103,7 @@ public sealed class StopCommandHandler
 
         var runtime = new RuntimeState
         (
-            hasProcess
-                ? await RuntimeStateBuilder.BuildProcessStateAsync(managedProcess, _stateNameResolver, ct)
-                : null,
+            await RuntimeStateBuilder.BuildProcessStateAsync(managedProcess, _stateNameResolver, ct),
             RuntimeStateBuilder.BuildRouteState(appRow.Name, routingConfiguration, _proxyConfigManager)
         );
 

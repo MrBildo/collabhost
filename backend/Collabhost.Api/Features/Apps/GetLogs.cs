@@ -74,10 +74,16 @@ public class GetLogsCommandHandler
                 .GetAll()
                 .Where(e => e.Stream == command.StreamFilter.Value)
                 .TakeLast(count)
-                .Select(e => new GetLogs.LogEntryResponse(e.Timestamp, e.Stream.ToString(), e.Content))]
+                .Select
+                (
+                    e => new GetLogs.LogEntryResponse(e.Timestamp, e.Stream.ToString(), e.Content)
+                )]
             : (IReadOnlyList<GetLogs.LogEntryResponse>)[.. managed.LogBuffer
                 .GetLast(count)
-                .Select(e => new GetLogs.LogEntryResponse(e.Timestamp, e.Stream.ToString(), e.Content))];
+                .Select
+                (
+                    e => new GetLogs.LogEntryResponse(e.Timestamp, e.Stream.ToString(), e.Content)
+                )];
 
         return CommandResult<GetLogs.Response>.Success(new GetLogs.Response(entries, totalBuffered));
     }

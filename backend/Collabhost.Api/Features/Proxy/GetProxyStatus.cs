@@ -38,7 +38,8 @@ public class GetProxyStatusCommandHandler
     {
         // Find the proxy app by name
         var proxyApp = await _db.Database
-            .SqlQuery<GetProxyStatus.ProxyAppRow>(
+            .SqlQuery<GetProxyStatus.ProxyAppRow>
+            (
                 $"""
                 SELECT
                     A.[Id]
@@ -47,7 +48,8 @@ public class GetProxyStatusCommandHandler
                     [App] A
                 WHERE
                     A.[Name] = 'proxy'
-                """)
+                """
+            )
             .SingleOrDefaultAsync(ct);
 
         // Determine process state
@@ -80,7 +82,8 @@ public class GetProxyStatusCommandHandler
 
         // Count routable apps (apps with the routing capability)
         var routeCount = await _db.Database
-            .SqlQuery<int>(
+            .SqlQuery<int>
+            (
                 $"""
                 SELECT
                     COUNT(*) AS [Value]
@@ -90,7 +93,8 @@ public class GetProxyStatusCommandHandler
                     INNER JOIN [Capability] C ON C.[Id] = ATC.[CapabilityId]
                 WHERE
                     C.[Slug] = 'routing'
-                """)
+                """
+            )
             .SingleAsync(ct);
 
         return CommandResult<ProxyStatusResponse>.Success

@@ -21,7 +21,8 @@ public sealed class ProxyAppSeeder
     {
         // Check if proxy app already exists by name
         var existingCount = await _db.Database
-            .SqlQuery<int>(
+            .SqlQuery<int>
+            (
                 $"""
                 SELECT
                     COUNT(*) AS [Value]
@@ -29,7 +30,8 @@ public sealed class ProxyAppSeeder
                     [App] A
                 WHERE
                     A.[Name] = 'proxy'
-                """)
+                """
+            )
             .SingleAsync(cancellationToken);
 
         if (existingCount > 0)

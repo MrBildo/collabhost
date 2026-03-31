@@ -3,7 +3,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Tests.Fixtures;
 
 using Shouldly;
@@ -31,11 +30,12 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
-        json.RootElement.GetProperty("externalId").GetString().ShouldBe(externalId);
-        json.RootElement.GetProperty("processState").GetString().ShouldBe("Running");
-        json.RootElement.GetProperty("pid").GetInt32().ShouldBeGreaterThan(0);
-        json.RootElement.GetProperty("startedAt").GetString().ShouldNotBeNullOrWhiteSpace();
-        json.RootElement.GetProperty("restartCount").GetInt32().ShouldBe(0);
+        json.RootElement.GetProperty("id").GetString().ShouldBe(externalId);
+
+        var processRuntime = json.RootElement.GetProperty("runtime").GetProperty("process");
+        processRuntime.GetProperty("state").GetString().ShouldBe("Running");
+        processRuntime.GetProperty("pid").GetInt32().ShouldBeGreaterThan(0);
+        processRuntime.GetProperty("restartCount").GetInt32().ShouldBe(0);
     }
 
     [Fact]
@@ -54,9 +54,11 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
-        json.RootElement.GetProperty("externalId").GetString().ShouldBe(externalId);
-        json.RootElement.GetProperty("processState").GetString().ShouldBe("Stopped");
-        json.RootElement.GetProperty("pid").ValueKind.ShouldBe(JsonValueKind.Null);
+        json.RootElement.GetProperty("id").GetString().ShouldBe(externalId);
+
+        var processRuntime = json.RootElement.GetProperty("runtime").GetProperty("process");
+        processRuntime.GetProperty("state").GetString().ShouldBe("Stopped");
+        processRuntime.GetProperty("pid").ValueKind.ShouldBe(JsonValueKind.Null);
     }
 
     [Fact]
@@ -75,10 +77,12 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
-        json.RootElement.GetProperty("externalId").GetString().ShouldBe(externalId);
-        json.RootElement.GetProperty("processState").GetString().ShouldBe("Running");
-        json.RootElement.GetProperty("pid").GetInt32().ShouldBeGreaterThan(0);
-        json.RootElement.GetProperty("restartCount").GetInt32().ShouldBe(0);
+        json.RootElement.GetProperty("id").GetString().ShouldBe(externalId);
+
+        var processRuntime = json.RootElement.GetProperty("runtime").GetProperty("process");
+        processRuntime.GetProperty("state").GetString().ShouldBe("Running");
+        processRuntime.GetProperty("pid").GetInt32().ShouldBeGreaterThan(0);
+        processRuntime.GetProperty("restartCount").GetInt32().ShouldBe(0);
     }
 
     [Fact]
@@ -135,17 +139,22 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
     }
 
     [Fact]
-    public async Task StartApp_StaticSite_Returns400()
+    public async Task StartApp_StaticSite_ReturnsOkWithRouteOnly()
     {
-        // Arrange
+        // Arrange — static sites have no process, but Start enables route
         var client = _fixture.CreateAuthenticatedClient();
         var externalId = await CreateAppAsync(client, "start-static-site", staticSite: true);
 
         // Act
         var response = await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
 
-        // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        // Assert — should succeed (route is enabled)
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("runtime").GetProperty("process").ValueKind.ShouldBe(JsonValueKind.Null);
+        json.RootElement.GetProperty("runtime").GetProperty("route").GetProperty("state").GetString().ShouldBe("active");
     }
 
     [Fact]
@@ -173,8 +182,8 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
             AppTypeId = staticSite
-                ? IdentifierCatalog.AppTypes.StaticSite
-                : IdentifierCatalog.AppTypes.Executable
+                ? TestCatalogConstants.AppTypes.StaticSiteExternalId
+                : TestCatalogConstants.AppTypes.ExecutableExternalId
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name, bool staticSite = false)

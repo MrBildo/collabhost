@@ -31,7 +31,7 @@ public sealed class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture
     }
 
     [Fact]
-    public async Task SyncRoutes_DoesNotFire_ForNonProxyAppStateChanges()
+    public async Task SyncRoutes_FiresOnce_ForNonProxyAppStart()
     {
         // Arrange
         var client = _fixture.CreateAuthenticatedClient();
@@ -41,14 +41,15 @@ public sealed class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture
         fake.ShouldNotBeNull();
         var countBefore = fake.LoadCallCount;
 
-        // Act — start a non-proxy app (triggers state change events)
+        // Act — start a non-proxy app (bridge enables route + starts process)
         await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
 
         // Small delay to allow any async handlers to fire
         await Task.Delay(500);
 
-        // Assert — load count should NOT have increased from the app state change
-        fake.LoadCallCount.ShouldBe(countBefore);
+        // Assert — bridge calls SyncRoutes once (for route enablement).
+        // Non-proxy app state changes should not trigger additional syncs.
+        fake.LoadCallCount.ShouldBe(countBefore + 1);
     }
 
     [Fact]
@@ -128,7 +129,7 @@ public sealed class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable
+            AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId
         };
 
         var response = await client.PostAsJsonAsync("/api/v1/apps", request);

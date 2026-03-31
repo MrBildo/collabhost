@@ -39,10 +39,11 @@ public class CollabhostApiFixture : WebApplicationFactory<Program>
         (
             services =>
             {
-                var descriptor = services.SingleOrDefault
-                (
-                    d => d.ServiceType == typeof(DbContextOptions<CollabhostDbContext>)
-                );
+                var descriptor = services
+                    .SingleOrDefault
+                    (
+                        d => d.ServiceType == typeof(DbContextOptions<CollabhostDbContext>)
+                    );
 
                 if (descriptor is not null)
                 {
@@ -58,10 +59,11 @@ public class CollabhostApiFixture : WebApplicationFactory<Program>
                 );
 
                 // Replace process runner with fake for tests
-                var runnerDescriptor = services.SingleOrDefault
-                (
-                    d => d.ServiceType == typeof(IManagedProcessRunner)
-                );
+                var runnerDescriptor = services
+                    .SingleOrDefault
+                    (
+                        d => d.ServiceType == typeof(IManagedProcessRunner)
+                    );
 
                 if (runnerDescriptor is not null)
                 {
@@ -71,10 +73,11 @@ public class CollabhostApiFixture : WebApplicationFactory<Program>
                 services.AddSingleton<IManagedProcessRunner, FakeProcessRunner>();
 
                 // Replace proxy config client with fake for tests
-                var proxyDescriptor = services.SingleOrDefault
-                (
-                    d => d.ServiceType == typeof(IProxyConfigClient)
-                );
+                var proxyDescriptor = services
+                    .SingleOrDefault
+                    (
+                        d => d.ServiceType == typeof(IProxyConfigClient)
+                    );
 
                 if (proxyDescriptor is not null)
                 {

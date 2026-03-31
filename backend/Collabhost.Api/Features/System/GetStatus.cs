@@ -8,9 +8,10 @@ public static class GetStatus
 
     public static Ok<Response> Handle()
     {
-        var fullVersion = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-            ?? "0.1.0";
+        var fullVersion = Assembly
+            .GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "0.1.0";
 
         var version = fullVersion.Split('+')[0];
 
