@@ -175,7 +175,9 @@ export default function AppCreatePage() {
               ) : (
                 <Select value={selectedTypeId} onValueChange={handleTypeChange}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select an app type" />
+                    <SelectValue placeholder="Select an app type">
+                      {selectedAppType?.displayName}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {(appTypes ?? []).map((type) => (
