@@ -38,7 +38,6 @@ public class ProxyAppSeederTests(CollabhostApiFixture fixture) : IClassFixture<C
         proxyApp.ShouldNotBeNull();
         proxyApp.Name.Value.ShouldBe("proxy");
         proxyApp.DisplayName.ShouldBe("Proxy");
-        proxyApp.Port.ShouldBeNull();
     }
 
     [Fact]
@@ -84,30 +83,6 @@ public class ProxyAppSeederTests(CollabhostApiFixture fixture) : IClassFixture<C
             .CountAsync(a => a.Name == Domain.Values.AppSlugValue.Create("proxy"));
 
         count.ShouldBe(0);
-    }
-
-    [Fact]
-    public async Task SeedAsync_SetsCorrectInstallDirectory()
-    {
-        // Arrange
-        await using var scope = _fixture.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
-        var binaryPath = GetKnownExistingBinary();
-        var settings = CreateSettings(binaryPath);
-        var logger = NullLogger<ProxyAppSeeder>.Instance;
-        var seeder = new ProxyAppSeeder(db, settings, logger);
-
-        await RemoveExistingProxyAppsAsync(db);
-
-        // Act
-        await seeder.SeedAsync(CancellationToken.None);
-
-        // Assert
-        var proxyApp = await db.Apps
-            .SingleOrDefaultAsync(a => a.Name == Domain.Values.AppSlugValue.Create("proxy"));
-
-        proxyApp.ShouldNotBeNull();
-        proxyApp.InstallDirectory.ShouldBe(Path.GetDirectoryName(binaryPath));
     }
 
     private static ProxySettings CreateSettings(string binaryPath) =>

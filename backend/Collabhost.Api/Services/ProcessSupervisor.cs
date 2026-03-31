@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Globalization;
 
 using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Domain.Entities;
@@ -15,6 +14,10 @@ public class ProcessSupervisor
 ) : IHostedService, IDisposable
 {
     private readonly IManagedProcessRunner _runner = runner ?? throw new ArgumentNullException(nameof(runner));
+
+    // ProcessSupervisor is a Singleton (holds in-memory process state across requests).
+    // Singletons cannot inject Scoped services like DbContext directly,
+    // so we use IServiceScopeFactory to create short-lived scopes when DB access is needed.
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
     private readonly IProcessStateEventBus _processStateEventBus = processStateEventBus ?? throw new ArgumentNullException(nameof(processStateEventBus));
     private readonly ILogger<ProcessSupervisor> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -167,20 +170,15 @@ public class ProcessSupervisor
 
         // TODO: Card #39 — use capability resolver for process discovery, env vars, port injection
         // For now, use a minimal stub that will allow process start for testing
-        var hasProcess = await db.Set<AppTypeCapability>()
-            .AnyAsync(atc => atc.AppTypeId == app.AppTypeId && atc.CapabilityId == IdentifierCatalog.Capabilities.Process, ct);
+        var hasProcess = await db.HasCapabilityAsync(app.AppTypeId, IdentifierCatalog.Capabilities.Process, ct);
 
         if (!hasProcess)
         {
             throw new InvalidOperationException("This app type does not have a process capability.");
         }
 
+        // TODO: Card #39 — resolve env vars and port from capability resolver
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        if (app.Port.HasValue)
-        {
-            environmentVariables["PORT"] = app.Port.Value.ToString(CultureInfo.InvariantCulture);
-        }
 
         var managed = new ManagedProcess(app.Id, app.ExternalId, app.DisplayName);
 
@@ -188,12 +186,12 @@ public class ProcessSupervisor
         managed.MarkStarting();
         PublishStateChanged(managed, previousStateId);
 
-        // TODO: Card #39 — resolve command from process capability discovery strategy
+        // TODO: Card #39 — resolve command and working directory from process capability discovery strategy
         var config = new ProcessStartConfig
         (
             "stub-command",
             null,
-            app.InstallDirectory,
+            null,
             environmentVariables,
             (line, stream) => managed.LogBuffer.Add(new LogEntry(DateTime.UtcNow, stream, line))
         );
@@ -214,10 +212,9 @@ public class ProcessSupervisor
 
         _logger.LogInformation
         (
-            "Started app '{AppName}' (PID {Pid}, Port {Port})",
+            "Started app '{AppName}' (PID {Pid})",
             app.Name,
-            handle.Pid,
-            app.Port
+            handle.Pid
         );
 
         return managed;

@@ -13,7 +13,7 @@ public class SmokeTests(AppHostFixture fixture)
 {
     private readonly HttpClient _client = fixture.ApiClient;
 
-    private static readonly Guid _executableAppTypeId = new("b1a2c3d4-e5f6-7890-abcd-ef0123456003");
+    private static readonly Guid _executableAppTypeId = new("bf5105c8-6a99-414c-96b6-c74aab5471f7");
 
     [Fact]
     public async Task HealthCheck_ReturnsOk()
@@ -67,7 +67,6 @@ public class SmokeTests(AppHostFixture fixture)
         var getJson = JsonDocument.Parse(getContent);
         getJson.RootElement.GetProperty("name").GetString().ShouldBe(slug);
         getJson.RootElement.GetProperty("appTypeName").GetString().ShouldBe("Executable");
-        getJson.RootElement.GetProperty("port").GetInt32().ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -174,8 +173,7 @@ public class SmokeTests(AppHostFixture fixture)
         {
             Name = slug,
             DisplayName = $"Smoke {slug}",
-            AppTypeId = _executableAppTypeId,
-            InstallDirectory = "C:/temp"
+            AppTypeId = _executableAppTypeId
         };
 
     private async Task<string> CreateAppAsync(string slug)

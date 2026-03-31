@@ -14,8 +14,6 @@ public interface IProxyConfigClient
 public record AppRouteInfo
 (
     string Slug,
-    int? Port,
-    string? InstallDirectory,
     string? ServeMode
 );
 

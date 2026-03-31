@@ -35,11 +35,11 @@ public class AppTypeMapping : IEntityTypeConfiguration<AppType>
 
         builder.HasData
         (
-            AppType.CreateSeeded(IdentifierCatalog.AppTypes.DotNetApp, "01JSEED00000DOTNETAPP0001", StringCatalog.AppTypes.DotNetApp, "ASP.NET Core", ".NET web application hosted via Kestrel", true),
-            AppType.CreateSeeded(IdentifierCatalog.AppTypes.NodeApp, "01JSEED00000NODEAPP00001", StringCatalog.AppTypes.NodeApp, "Node.js", "Node.js application", true),
-            AppType.CreateSeeded(IdentifierCatalog.AppTypes.Executable, "01JSEED00000EXECUTABLE01", StringCatalog.AppTypes.Executable, "Executable", "Generic executable process", true),
-            AppType.CreateSeeded(IdentifierCatalog.AppTypes.ReactApp, "01JSEED00000REACTAPP0001", StringCatalog.AppTypes.ReactApp, "React App", "React single-page application served as static files", true),
-            AppType.CreateSeeded(IdentifierCatalog.AppTypes.StaticSite, "01JSEED00000STATICSITE01", StringCatalog.AppTypes.StaticSite, "Static Site", "Static files served directly by the reverse proxy", true)
+            AppType.CreateSeeded(IdentifierCatalog.AppTypes.DotNetApp, "01KN0P7JYNYACWC35R77C1KTV2", StringCatalog.AppTypes.DotNetApp, "ASP.NET Core", ".NET web application hosted via Kestrel", true),
+            AppType.CreateSeeded(IdentifierCatalog.AppTypes.NodeApp, "01KN0P7JYNRBD8DC9DMKEDJX2M", StringCatalog.AppTypes.NodeApp, "Node.js", "Node.js application", true),
+            AppType.CreateSeeded(IdentifierCatalog.AppTypes.Executable, "01KN0P7JYNJRAHGC01N17NFTWW", StringCatalog.AppTypes.Executable, "Executable", "Generic executable process", true),
+            AppType.CreateSeeded(IdentifierCatalog.AppTypes.ReactApp, "01KN0P7JYNM6PJP07XTAXK77GR", StringCatalog.AppTypes.ReactApp, "React App", "React single-page application served as static files", true),
+            AppType.CreateSeeded(IdentifierCatalog.AppTypes.StaticSite, "01KN0P7JYN9TDB3SPPS25Z493F", StringCatalog.AppTypes.StaticSite, "Static Site", "Static files served directly by the reverse proxy", true)
         );
     }
 }

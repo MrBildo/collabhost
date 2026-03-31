@@ -38,7 +38,7 @@ public static class InfrastructureServiceExtensions
             services.AddSingleton<ProcessSupervisor>();
             services.AddHostedService<ProcessSupervisor>(sp => sp.GetRequiredService<ProcessSupervisor>());
             services.AddSingleton<UpdateCoordinator>();
-            services.AddSingleton<ICapabilityResolver, CapabilityResolver>();
+            services.AddScoped<ICapabilityResolver, CapabilityResolver>();
 
             return services;
         }

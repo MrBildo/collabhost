@@ -2,11 +2,7 @@ namespace Collabhost.Api.Features.Apps;
 
 public static class Update
 {
-    public record Request
-    (
-        string DisplayName,
-        string InstallDirectory
-    );
+    public record Request(string DisplayName);
 
     public static async Task<Results<NoContent, NotFound, ProblemHttpResult>> HandleAsync
     (
@@ -19,8 +15,7 @@ public static class Update
         var command = new UpdateAppCommand
         (
             externalId,
-            request.DisplayName,
-            request.InstallDirectory
+            request.DisplayName
         );
 
         var result = await dispatcher.DispatchAsync(command, ct);
@@ -36,8 +31,7 @@ public static class Update
 public record UpdateAppCommand
 (
     string ExternalId,
-    string DisplayName,
-    string InstallDirectory
+    string DisplayName
 ) : ICommand<Empty>;
 
 public class UpdateAppCommandHandler
@@ -57,26 +51,17 @@ public class UpdateAppCommandHandler
             return CommandResult<Empty>.Fail("INVALID_DISPLAY_NAME", "Display name is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(command.InstallDirectory))
-        {
-            return CommandResult<Empty>.Fail("INVALID_INSTALL_DIRECTORY", "Install directory is required.");
-        }
-
         var app = await _db.Apps.SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
         if (app is null)
         {
             return CommandResult<Empty>.Fail("NOT_FOUND", "App not found.");
         }
 
-        app.UpdateDetails
-        (
-            command.DisplayName,
-            command.InstallDirectory
-        );
+        app.UpdateDetails(command.DisplayName);
 
         await _db.SaveChangesAsync(ct);
 
-        _ = _proxyConfigManager.SyncRoutesAsync(ct);
+        await _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<Empty>.Success(Empty.Value);
     }

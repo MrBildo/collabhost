@@ -48,7 +48,7 @@ public class DeleteCommandHandler
         _db.Apps.Remove(app);
         await _db.SaveChangesAsync(ct);
 
-        _ = _proxyConfigManager.SyncRoutesAsync(ct);
+        await _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<Empty>.Success(Empty.Value);
     }

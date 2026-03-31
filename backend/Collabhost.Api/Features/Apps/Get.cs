@@ -8,8 +8,6 @@ public static class Get
         string Name,
         string DisplayName,
         string AppTypeName,
-        string InstallDirectory,
-        int? Port,
         DateTime RegisteredAt,
         Guid AppTypeId
     );
@@ -20,8 +18,6 @@ public static class Get
         string Name,
         string DisplayName,
         string AppTypeName,
-        string InstallDirectory,
-        int? Port,
         DateTime RegisteredAt
     );
 
@@ -56,8 +52,6 @@ public sealed class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandl
                     ,A.[Name]
                     ,A.[DisplayName]
                     ,AT.[DisplayName] AS [AppTypeName]
-                    ,A.[InstallDirectory]
-                    ,A.[Port]
                     ,A.[RegisteredAt]
                     ,A.[AppTypeId]
                 FROM
@@ -79,8 +73,6 @@ public sealed class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandl
             row.Name,
             row.DisplayName,
             row.AppTypeName,
-            row.InstallDirectory,
-            row.Port,
             row.RegisteredAt
         );
 

@@ -1,4 +1,4 @@
-using System.Globalization;
+using System.Text.Json;
 
 namespace Collabhost.Api.Features.Proxy;
 
@@ -9,8 +9,6 @@ public static class GetRoutes
         string ExternalId,
         string Name,
         string DisplayName,
-        int? Port,
-        string? InstallDirectory,
         string? ServeMode
     );
 
@@ -49,8 +47,6 @@ public class GetRoutesCommandHandler
                     A.[ExternalId]
                     ,A.[Name]
                     ,A.[DisplayName]
-                    ,A.[Port]
-                    ,A.[InstallDirectory]
                     ,ATC.[Configuration] AS [ServeMode]
                 FROM
                     [App] A
@@ -70,16 +66,13 @@ public class GetRoutesCommandHandler
                 {
                     var serveMode = ExtractServeMode(r.ServeMode);
                     var domain = $"{r.Name}.{_settings.BaseDomain}";
-                    var target = serveMode == "reverseProxy"
-                        ? $"localhost:{r.Port?.ToString(CultureInfo.InvariantCulture)}"
-                        : r.InstallDirectory ?? "";
 
                     return new RouteEntry
                     (
                         r.ExternalId,
                         r.DisplayName,
                         domain,
-                        target,
+                        serveMode ?? "unknown",
                         serveMode ?? "unknown",
                         Https: true
                     );
@@ -103,13 +96,13 @@ public class GetRoutesCommandHandler
 
         try
         {
-            var doc = global::System.Text.Json.JsonDocument.Parse(routingConfiguration);
+            var doc = JsonDocument.Parse(routingConfiguration);
             if (doc.RootElement.TryGetProperty("serveMode", out var serveModeElement))
             {
                 return serveModeElement.GetString();
             }
         }
-        catch (global::System.Text.Json.JsonException)
+        catch (JsonException)
         {
             // Invalid JSON
         }

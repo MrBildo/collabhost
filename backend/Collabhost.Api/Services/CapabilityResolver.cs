@@ -11,7 +11,7 @@ public interface ICapabilityResolver
     Task<T?> ResolveAsync<T>(Guid appId, Guid capabilityId, CancellationToken ct = default) where T : class;
 }
 
-public sealed class CapabilityResolver(IServiceScopeFactory scopeFactory) : ICapabilityResolver
+public sealed class CapabilityResolver(CollabhostDbContext db) : ICapabilityResolver
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -19,15 +19,12 @@ public sealed class CapabilityResolver(IServiceScopeFactory scopeFactory) : ICap
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly IServiceScopeFactory _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+    private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
 
     public async Task<T?> ResolveAsync<T>(Guid appId, Guid capabilityId, CancellationToken ct = default) where T : class
     {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
-
         // Get the app's type
-        var app = await db.Apps
+        var app = await _db.Apps
             .AsNoTracking()
             .Where(a => a.Id == appId)
             .Select(a => new { a.AppTypeId })
@@ -39,7 +36,7 @@ public sealed class CapabilityResolver(IServiceScopeFactory scopeFactory) : ICap
         }
 
         // Find the AppTypeCapability for this (AppType, Capability) pair
-        var typeCapability = await db.Set<AppTypeCapability>()
+        var typeCapability = await _db.Set<AppTypeCapability>()
             .AsNoTracking()
             .Where(atc => atc.AppTypeId == app.AppTypeId && atc.CapabilityId == capabilityId)
             .SingleOrDefaultAsync(ct);
@@ -50,7 +47,7 @@ public sealed class CapabilityResolver(IServiceScopeFactory scopeFactory) : ICap
         }
 
         // Check for per-app override
-        var instanceOverride = await db.Set<CapabilityConfiguration>()
+        var instanceOverride = await _db.Set<CapabilityConfiguration>()
             .AsNoTracking()
             .Where(cc => cc.AppId == appId && cc.AppTypeCapabilityId == typeCapability.Id)
             .SingleOrDefaultAsync(ct);

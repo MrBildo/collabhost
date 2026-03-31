@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 #nullable disable
 
 #pragma warning disable CA1814 // Prefer jagged arrays over multidimensional
-#pragma warning disable IDE0300 // Collection initialization can be simplified — generated code
 
 namespace Collabhost.Api.Migrations
 {
@@ -22,8 +21,6 @@ namespace Collabhost.Api.Migrations
                     Name = table.Column<string>(type: "TEXT", maxLength: 50, nullable: false),
                     DisplayName = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false),
                     AppTypeId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    InstallDirectory = table.Column<string>(type: "TEXT", maxLength: 500, nullable: false),
-                    Port = table.Column<int>(type: "INTEGER", nullable: true),
                     RegisteredAt = table.Column<DateTime>(type: "TEXT", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "datetime('now')"),
                     UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "datetime('now')"),
@@ -145,75 +142,75 @@ namespace Collabhost.Api.Migrations
 
             migrationBuilder.InsertData(
                 table: "AppType",
-                columns: new[] { "Id", "Description", "DisplayName", "ExternalId", "IsBuiltIn", "Name" },
+                columns: ["Id", "Description", "DisplayName", "ExternalId", "IsBuiltIn", "Name"],
                 values: new object[,]
                 {
-                    { new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"), ".NET web application hosted via Kestrel", "ASP.NET Core", "01JSEED00000DOTNETAPP0001", true, "dotnet-app" },
-                    { new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"), "Node.js application", "Node.js", "01JSEED00000NODEAPP00001", true, "node-app" },
-                    { new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"), "Generic executable process", "Executable", "01JSEED00000EXECUTABLE01", true, "executable" },
-                    { new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456004"), "React single-page application served as static files", "React App", "01JSEED00000REACTAPP0001", true, "react-app" },
-                    { new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456005"), "Static files served directly by the reverse proxy", "Static Site", "01JSEED00000STATICSITE01", true, "static-site" }
+                    { new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"), "Node.js application", "Node.js", "01KN0P7JYNRBD8DC9DMKEDJX2M", true, "node-app" },
+                    { new Guid("606cdf1f-f41e-42d2-bb13-04b598de0f63"), "Static files served directly by the reverse proxy", "Static Site", "01KN0P7JYN9TDB3SPPS25Z493F", true, "static-site" },
+                    { new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"), "React single-page application served as static files", "React App", "01KN0P7JYNM6PJP07XTAXK77GR", true, "react-app" },
+                    { new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"), "Generic executable process", "Executable", "01KN0P7JYNJRAHGC01N17NFTWW", true, "executable" },
+                    { new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"), ".NET web application hosted via Kestrel", "ASP.NET Core", "01KN0P7JYNYACWC35R77C1KTV2", true, "dotnet-app" }
                 });
 
             migrationBuilder.InsertData(
                 table: "Capability",
-                columns: new[] { "Id", "Category", "Description", "DisplayName", "Slug" },
+                columns: ["Id", "Category", "Description", "DisplayName", "Slug"],
                 values: new object[,]
                 {
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560001"), "behavioral", "How the app's process is discovered, started, and stopped", "Process Management", "process" },
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560002"), "behavioral", "How the platform communicates the assigned port to the app process", "Port Injection", "port-injection" },
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"), "behavioral", "How traffic reaches the app through the reverse proxy", "Routing", "routing" },
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560004"), "behavioral", "HTTP endpoint polled to determine app health", "Health Check", "health-check" },
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560005"), "behavioral", "Environment variables injected when the app process starts", "Environment Variables", "environment-defaults" },
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560006"), "behavioral", "How the platform responds when the app process exits unexpectedly", "Restart Policy", "restart" },
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560007"), "behavioral", "Whether the app starts automatically when Collabhost starts", "Auto Start", "auto-start" },
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560008"), "informational", ".NET runtime and framework version information", "ASP.NET Runtime", "aspnet-runtime" },
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560009"), "informational", "Node.js version and package manager information", "Node.js Runtime", "node-runtime" },
-                    { new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560010"), "informational", "React framework and tooling information", "React", "react-runtime" }
+                    { new Guid("0ba21247-bf12-4487-b2ad-e4c84a784d75"), "informational", "Node.js version and package manager information", "Node.js Runtime", "node-runtime" },
+                    { new Guid("0c66bd0a-d6b1-419d-83c2-9186d773cc52"), "behavioral", "How the platform communicates the assigned port to the app process", "Port Injection", "port-injection" },
+                    { new Guid("1f642072-7975-4fa0-8109-4d9be5ffa909"), "informational", ".NET runtime and framework version information", "ASP.NET Runtime", "aspnet-runtime" },
+                    { new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"), "behavioral", "How the platform responds when the app process exits unexpectedly", "Restart Policy", "restart" },
+                    { new Guid("2bc51a48-5e56-4c27-958a-615009fea233"), "informational", "React framework and tooling information", "React", "react-runtime" },
+                    { new Guid("30e21343-9124-4bec-b247-f780a5be12df"), "behavioral", "Whether the app starts automatically when Collabhost starts", "Auto Start", "auto-start" },
+                    { new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"), "behavioral", "How traffic reaches the app through the reverse proxy", "Routing", "routing" },
+                    { new Guid("76e18bcb-2ee9-4c9c-9d11-fb10c8f20ee0"), "behavioral", "HTTP endpoint polled to determine app health", "Health Check", "health-check" },
+                    { new Guid("8460d864-4df5-423d-bb46-c351594b6667"), "behavioral", "How the app's process is discovered, started, and stopped", "Process Management", "process" },
+                    { new Guid("b4fdd637-4e1f-46fb-a5fe-83bccf14a30e"), "behavioral", "Environment variables injected when the app process starts", "Environment Variables", "environment-defaults" }
                 });
 
             migrationBuilder.InsertData(
                 table: "ProcessState",
-                columns: new[] { "Id", "Description", "DisplayName", "IsActive", "Name", "Ordinal" },
+                columns: ["Id", "Description", "DisplayName", "IsActive", "Name", "Ordinal"],
                 values: new object[,]
                 {
-                    { new Guid("05f6e7d8-394a-1234-f012-345678901234"), null, "Restarting", true, "Restarting", 5 },
-                    { new Guid("b0a1c2d3-e4f5-6789-abcd-ef0123456789"), null, "Stopped", true, "Stopped", 0 },
-                    { new Guid("c1b2a3d4-f5e6-7890-bcde-f01234567890"), null, "Starting", true, "Starting", 1 },
-                    { new Guid("d2c3b4a5-0617-8901-cdef-012345678901"), null, "Running", true, "Running", 2 },
-                    { new Guid("e3d4c5b6-1728-9012-def0-123456789012"), null, "Stopping", true, "Stopping", 3 },
-                    { new Guid("f4e5d6c7-2839-0123-ef01-234567890123"), null, "Crashed", true, "Crashed", 4 }
+                    { new Guid("0d98c241-6630-4f0f-a16e-bad8a013eb31"), null, "Stopping", true, "Stopping", 3 },
+                    { new Guid("2cd5e4ed-ac0e-40eb-abad-3b56819f97a4"), null, "Running", true, "Running", 2 },
+                    { new Guid("517b2fb1-e5f9-4fdd-98de-10cedec5bcc3"), null, "Restarting", true, "Restarting", 5 },
+                    { new Guid("55331f23-8eae-4e56-811d-8bbdeaca03ca"), null, "Crashed", true, "Crashed", 4 },
+                    { new Guid("b9057b8a-7fe7-407c-84e2-dcdc41caeee1"), null, "Starting", true, "Starting", 1 },
+                    { new Guid("d413f4ed-d764-4277-ab4c-190822d22789"), null, "Stopped", true, "Stopped", 0 }
                 });
 
             migrationBuilder.InsertData(
                 table: "AppTypeCapability",
-                columns: new[] { "Id", "AppTypeId", "CapabilityId", "Configuration" },
+                columns: ["Id", "AppTypeId", "CapabilityId", "Configuration"],
                 values: new object[,]
                 {
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000001"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560001"), "{\"discoveryStrategy\":\"dotnet-runtimeconfig\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":30}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000002"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560002"), "{\"envVar\":\"ASPNETCORE_URLS\",\"format\":\"http://localhost:{port}\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000003"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000004"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560004"), "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5,\"retries\":3}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000005"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560005"), "{\"defaults\":{\"ASPNETCORE_ENVIRONMENT\":\"Production\"}}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000006"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560006"), "{\"policy\":\"always\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000007"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560007"), "{\"enabled\":true}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000008"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560008"), "{\"targetFramework\":\"net10.0\",\"runtimeVersion\":\"10.0.x\",\"selfContained\":false}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000009"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560001"), "{\"discoveryStrategy\":\"package-json\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":30}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-00000000000a"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560002"), "{\"envVar\":\"PORT\",\"format\":\"{port}\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-00000000000b"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-00000000000c"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560004"), "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5,\"retries\":3}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-00000000000d"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560006"), "{\"policy\":\"always\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-00000000000e"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560007"), "{\"enabled\":true}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-00000000000f"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560009"), "{\"nodeVersion\":\"22.x\",\"packageManager\":\"npm\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000010"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560001"), "{\"discoveryStrategy\":\"manual\",\"gracefulShutdown\":false,\"shutdownTimeoutSeconds\":10}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000011"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560002"), "{\"envVar\":\"PORT\",\"format\":\"{port}\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000012"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000013"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560006"), "{\"policy\":\"onCrash\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000014"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560007"), "{\"enabled\":false}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000015"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456004"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"fileServer\",\"spaFallback\":true}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000016"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456004"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560009"), "{\"nodeVersion\":\"22.x\",\"packageManager\":\"npm\",\"buildCommand\":\"npm run build\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000017"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456004"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560010"), "{\"version\":\"18.x\",\"router\":\"react-router\",\"bundler\":\"vite\"}" },
-                    { new Guid("d0d0d0d0-aeed-4000-a000-000000000018"), new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456005"), new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"fileServer\",\"spaFallback\":false}" }
+                    { new Guid("088e99f8-dd64-4d14-bed2-e0e2027ac1b4"), new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"), new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"), "{\"policy\":\"always\"}" },
+                    { new Guid("097ade9a-ab92-4a0f-ac1e-51d58e1d37cc"), new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"), new Guid("1f642072-7975-4fa0-8109-4d9be5ffa909"), "{\"targetFramework\":\"net10.0\",\"runtimeVersion\":\"10.0.x\",\"selfContained\":false}" },
+                    { new Guid("14cb559d-7675-43bb-acdd-f1f15671c570"), new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"), new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"), "{\"policy\":\"onCrash\"}" },
+                    { new Guid("254d4414-246f-44e5-82d0-0075b3f994c0"), new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"), new Guid("0c66bd0a-d6b1-419d-83c2-9186d773cc52"), "{\"environmentVariableName\":\"PORT\",\"portFormat\":\"{port}\"}" },
+                    { new Guid("3cf3ba43-bb6a-4823-ac18-2747c57c802f"), new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"), new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"), "{\"policy\":\"always\"}" },
+                    { new Guid("408ae72c-0771-4817-a5ed-950419ee5771"), new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"), new Guid("30e21343-9124-4bec-b247-f780a5be12df"), "{\"enabled\":false}" },
+                    { new Guid("41b486b0-037f-44e8-9a96-028c490fa48c"), new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"), new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}" },
+                    { new Guid("61e355eb-1998-41ad-bfdc-069b643173c1"), new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"), new Guid("8460d864-4df5-423d-bb46-c351594b6667"), "{\"discoveryStrategy\":\"dotnet-runtimeconfig\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":30}" },
+                    { new Guid("6d0d10bb-0764-477d-a113-b3c1f380f598"), new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"), new Guid("0c66bd0a-d6b1-419d-83c2-9186d773cc52"), "{\"environmentVariableName\":\"ASPNETCORE_URLS\",\"portFormat\":\"http://localhost:{port}\"}" },
+                    { new Guid("74137008-620c-46cc-ba2c-e1e1896d25c1"), new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"), new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}" },
+                    { new Guid("74ff801f-58f8-4fc6-8faf-bdddecd4673e"), new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"), new Guid("0c66bd0a-d6b1-419d-83c2-9186d773cc52"), "{\"environmentVariableName\":\"PORT\",\"portFormat\":\"{port}\"}" },
+                    { new Guid("7eb34403-7641-49aa-8a0c-7f30a39d2355"), new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"), new Guid("b4fdd637-4e1f-46fb-a5fe-83bccf14a30e"), "{\"defaults\":{\"ASPNETCORE_ENVIRONMENT\":\"Production\"}}" },
+                    { new Guid("84810cdc-4299-42f1-903d-8fff82ed4e92"), new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"), new Guid("0ba21247-bf12-4487-b2ad-e4c84a784d75"), "{\"nodeVersion\":\"22.x\",\"packageManager\":\"npm\"}" },
+                    { new Guid("909f7e6d-451c-4bff-b8d5-bfb04f3b5116"), new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"), new Guid("30e21343-9124-4bec-b247-f780a5be12df"), "{\"enabled\":true}" },
+                    { new Guid("a4cbac96-a44d-4823-9924-e4a530ee96b2"), new Guid("606cdf1f-f41e-42d2-bb13-04b598de0f63"), new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"fileServer\",\"spaFallback\":false}" },
+                    { new Guid("a5792083-b9e7-4ef7-8f3f-b9835d908362"), new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"), new Guid("76e18bcb-2ee9-4c9c-9d11-fb10c8f20ee0"), "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5,\"retries\":3}" },
+                    { new Guid("b256a4b1-86fe-46db-ab50-0061e7854996"), new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"), new Guid("2bc51a48-5e56-4c27-958a-615009fea233"), "{\"version\":\"18.x\",\"router\":\"react-router\",\"bundler\":\"vite\"}" },
+                    { new Guid("d9c3ac3e-052c-4992-ac36-bd3079499663"), new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"), new Guid("0ba21247-bf12-4487-b2ad-e4c84a784d75"), "{\"nodeVersion\":\"22.x\",\"packageManager\":\"npm\",\"buildCommand\":\"npm run build\"}" },
+                    { new Guid("e708632b-d307-4045-9778-679d979b1578"), new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"), new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"fileServer\",\"spaFallback\":true}" },
+                    { new Guid("ecb72690-91c9-43ae-9039-92ada963271c"), new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"), new Guid("8460d864-4df5-423d-bb46-c351594b6667"), "{\"discoveryStrategy\":\"manual\",\"gracefulShutdown\":false,\"shutdownTimeoutSeconds\":10}" },
+                    { new Guid("f51fc05c-924b-4f6d-b0e0-8193b676a6f5"), new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"), new Guid("8460d864-4df5-423d-bb46-c351594b6667"), "{\"discoveryStrategy\":\"package-json\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":30}" },
+                    { new Guid("f82da976-2c10-428c-a192-6ebee06107ab"), new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"), new Guid("76e18bcb-2ee9-4c9c-9d11-fb10c8f20ee0"), "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5,\"retries\":3}" },
+                    { new Guid("fa660eb9-810a-47c1-8010-799481c4dca5"), new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"), new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"), "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}" },
+                    { new Guid("fcd84bc2-a09c-4e1b-a1e8-2a660a0d3113"), new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"), new Guid("30e21343-9124-4bec-b247-f780a5be12df"), "{\"enabled\":true}" }
                 });
 
             migrationBuilder.CreateIndex(
@@ -243,7 +240,7 @@ namespace Collabhost.Api.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_AppTypeCapability_AppTypeId_CapabilityId",
                 table: "AppTypeCapability",
-                columns: new[] { "AppTypeId", "CapabilityId" },
+                columns: ["AppTypeId", "CapabilityId"],
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -260,7 +257,7 @@ namespace Collabhost.Api.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_CapabilityConfiguration_AppId_AppTypeCapabilityId",
                 table: "CapabilityConfiguration",
-                columns: new[] { "AppId", "AppTypeCapabilityId" },
+                columns: ["AppId", "AppTypeCapabilityId"],
                 unique: true);
 
             migrationBuilder.CreateIndex(

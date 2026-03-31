@@ -128,8 +128,7 @@ public sealed class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = $"C:\\apps\\{name}"
+            AppTypeId = IdentifierCatalog.AppTypes.Executable
         };
 
         var response = await client.PostAsJsonAsync("/api/v1/apps", request);

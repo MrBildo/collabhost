@@ -10,16 +10,16 @@ public sealed class ProcessConfiguration
 
     public string? Command { get; set; }
 
-    public string? Args { get; set; }
+    public string? Arguments { get; set; }
 
     public string? WorkingDirectory { get; set; }
 }
 
 public sealed class PortInjectionConfiguration
 {
-    public string EnvVar { get; set; } = default!;
+    public string EnvironmentVariableName { get; set; } = default!;
 
-    public string Format { get; set; } = default!;
+    public string PortFormat { get; set; } = default!;
 }
 
 public sealed class RoutingConfiguration
@@ -44,7 +44,7 @@ public sealed class HealthCheckConfiguration
 
 public sealed class EnvironmentDefaultsConfiguration
 {
-    public Dictionary<string, string> Defaults { get; set; } = new(StringComparer.Ordinal);
+    public IDictionary<string, string> Defaults { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 public sealed class RestartConfiguration

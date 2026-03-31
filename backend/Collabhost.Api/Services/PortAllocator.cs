@@ -3,26 +3,12 @@ using System.Net.Sockets;
 
 namespace Collabhost.Api.Services;
 
-public class PortAllocator(CollabhostDbContext db)
+public class PortAllocator
 {
-    private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
-
-    public async Task<int> AllocateAsync(CancellationToken ct = default)
+    public Task<int> AllocateAsync(CancellationToken ct = default)
     {
-        const int maxAttempts = 10;
-
-        for (var attempt = 0; attempt < maxAttempts; attempt++)
-        {
-            var port = FindFreePort();
-            var isInUse = await _db.Apps.AnyAsync(a => a.Port == port, ct);
-
-            if (!isInUse)
-            {
-                return port;
-            }
-        }
-
-        throw new InvalidOperationException("Unable to allocate a free port after multiple attempts.");
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(FindFreePort());
     }
 
     private static int FindFreePort()

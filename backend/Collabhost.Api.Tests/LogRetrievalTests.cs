@@ -172,8 +172,7 @@ public class LogRetrievalTests(CollabhostApiFixture fixture) : IClassFixture<Col
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = $"C:\\apps\\{name}"
+            AppTypeId = IdentifierCatalog.AppTypes.Executable
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name)

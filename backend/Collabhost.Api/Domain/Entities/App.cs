@@ -10,10 +10,6 @@ public class App : AggregateRoot
 
     public Guid AppTypeId { get; private set; }
 
-    public string InstallDirectory { get; private set; } = default!;
-
-    public int? Port { get; private set; }
-
     public DateTime RegisteredAt { get; private init; }
 
     protected App() { } // EF Core
@@ -22,40 +18,24 @@ public class App : AggregateRoot
     (
         AppSlugValue name,
         string displayName,
-        Guid appTypeId,
-        string installDirectory
+        Guid appTypeId
     )
     {
         ArgumentNullException.ThrowIfNull(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
 
         return new App
         {
             Name = name,
             DisplayName = displayName.Trim(),
             AppTypeId = appTypeId,
-            InstallDirectory = installDirectory,
             RegisteredAt = DateTime.UtcNow
         };
     }
 
-    public void UpdateDetails
-    (
-        string displayName,
-        string installDirectory
-    )
+    public void UpdateDetails(string displayName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
-
         DisplayName = displayName.Trim();
-        InstallDirectory = installDirectory;
-    }
-
-    public void AssignPort(int port)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(port);
-        Port = port;
     }
 }

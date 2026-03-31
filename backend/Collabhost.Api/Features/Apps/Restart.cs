@@ -46,8 +46,7 @@ public class RestartCommandHandler
         }
 
         // Check if app type has process capability
-        var hasProcess = await _db.Set<AppTypeCapability>()
-            .AnyAsync(atc => atc.AppTypeId == app.AppTypeId && atc.CapabilityId == IdentifierCatalog.Capabilities.Process, ct);
+        var hasProcess = await _db.HasCapabilityAsync(app.AppTypeId, IdentifierCatalog.Capabilities.Process, ct);
 
         if (!hasProcess)
         {

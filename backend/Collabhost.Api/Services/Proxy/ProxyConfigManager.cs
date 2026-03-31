@@ -185,8 +185,6 @@ public sealed class ProxyConfigManager
                 $"""
                 SELECT
                     A.[Name] AS [Slug]
-                    ,A.[Port]
-                    ,A.[InstallDirectory]
                     ,ATC.[Configuration] AS [RoutingConfiguration]
                 FROM
                     [App] A
@@ -199,7 +197,7 @@ public sealed class ProxyConfigManager
 
         return
         [
-            .. apps.Select(a => new AppRouteInfo(a.Slug, a.Port, a.InstallDirectory, ExtractServeMode(a.RoutingConfiguration)))
+            .. apps.Select(a => new AppRouteInfo(a.Slug, ExtractServeMode(a.RoutingConfiguration)))
         ];
     }
 
@@ -228,5 +226,5 @@ public sealed class ProxyConfigManager
 
     private sealed record ProxyAppLookup(Guid Id);
 
-    private sealed record AppRouteInfoRow(string Slug, int? Port, string? InstallDirectory, string? RoutingConfiguration);
+    private sealed record AppRouteInfoRow(string Slug, string? RoutingConfiguration);
 }

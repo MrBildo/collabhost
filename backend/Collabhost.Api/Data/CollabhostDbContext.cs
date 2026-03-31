@@ -43,5 +43,13 @@ public static class CollabhostDbContextExtensions
                         A.[ExternalId] = {externalId}
                     """)
                 .SingleOrDefaultAsync(ct);
+
+        public Task<bool> HasCapabilityAsync
+        (
+            Guid appTypeId,
+            Guid capabilityId,
+            CancellationToken ct = default
+        ) => db.Set<AppTypeCapability>()
+                .AnyAsync(atc => atc.AppTypeId == appTypeId && atc.CapabilityId == capabilityId, ct);
     }
 }

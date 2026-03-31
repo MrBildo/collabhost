@@ -255,8 +255,7 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = appTypeId,
-            InstallDirectory = $"C:\\apps\\{name}"
+            AppTypeId = appTypeId
         };
     }
 

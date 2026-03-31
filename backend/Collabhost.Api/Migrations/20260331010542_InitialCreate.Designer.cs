@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Collabhost.Api.Migrations
 {
     [DbContext(typeof(CollabhostDbContext))]
-    [Migration("20260330213155_InitialCreate")]
+    [Migration("20260331010542_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -43,18 +43,10 @@ namespace Collabhost.Api.Migrations
                         .HasMaxLength(26)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("InstallDirectory")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
-
-                    b.Property<int?>("Port")
-                        .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("RegisteredAt")
                         .HasColumnType("TEXT");
@@ -127,46 +119,46 @@ namespace Collabhost.Api.Migrations
                     b.HasData(
                         new
                         {
-                            Id = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"),
+                            Id = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
                             Description = ".NET web application hosted via Kestrel",
                             DisplayName = "ASP.NET Core",
-                            ExternalId = "01JSEED00000DOTNETAPP0001",
+                            ExternalId = "01KN0P7JYNYACWC35R77C1KTV2",
                             IsBuiltIn = true,
                             Name = "dotnet-app"
                         },
                         new
                         {
-                            Id = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"),
+                            Id = new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"),
                             Description = "Node.js application",
                             DisplayName = "Node.js",
-                            ExternalId = "01JSEED00000NODEAPP00001",
+                            ExternalId = "01KN0P7JYNRBD8DC9DMKEDJX2M",
                             IsBuiltIn = true,
                             Name = "node-app"
                         },
                         new
                         {
-                            Id = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"),
+                            Id = new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"),
                             Description = "Generic executable process",
                             DisplayName = "Executable",
-                            ExternalId = "01JSEED00000EXECUTABLE01",
+                            ExternalId = "01KN0P7JYNJRAHGC01N17NFTWW",
                             IsBuiltIn = true,
                             Name = "executable"
                         },
                         new
                         {
-                            Id = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456004"),
+                            Id = new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"),
                             Description = "React single-page application served as static files",
                             DisplayName = "React App",
-                            ExternalId = "01JSEED00000REACTAPP0001",
+                            ExternalId = "01KN0P7JYNM6PJP07XTAXK77GR",
                             IsBuiltIn = true,
                             Name = "react-app"
                         },
                         new
                         {
-                            Id = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456005"),
+                            Id = new Guid("606cdf1f-f41e-42d2-bb13-04b598de0f63"),
                             Description = "Static files served directly by the reverse proxy",
                             DisplayName = "Static Site",
-                            ExternalId = "01JSEED00000STATICSITE01",
+                            ExternalId = "01KN0P7JYN9TDB3SPPS25Z493F",
                             IsBuiltIn = true,
                             Name = "static-site"
                         });
@@ -209,170 +201,170 @@ namespace Collabhost.Api.Migrations
                     b.HasData(
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000001"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560001"),
+                            Id = new Guid("61e355eb-1998-41ad-bfdc-069b643173c1"),
+                            AppTypeId = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
+                            CapabilityId = new Guid("8460d864-4df5-423d-bb46-c351594b6667"),
                             Configuration = "{\"discoveryStrategy\":\"dotnet-runtimeconfig\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":30}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000002"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560002"),
-                            Configuration = "{\"envVar\":\"ASPNETCORE_URLS\",\"format\":\"http://localhost:{port}\"}"
+                            Id = new Guid("6d0d10bb-0764-477d-a113-b3c1f380f598"),
+                            AppTypeId = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
+                            CapabilityId = new Guid("0c66bd0a-d6b1-419d-83c2-9186d773cc52"),
+                            Configuration = "{\"environmentVariableName\":\"ASPNETCORE_URLS\",\"portFormat\":\"http://localhost:{port}\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000003"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"),
+                            Id = new Guid("41b486b0-037f-44e8-9a96-028c490fa48c"),
+                            AppTypeId = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
+                            CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
                             Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000004"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560004"),
+                            Id = new Guid("f82da976-2c10-428c-a192-6ebee06107ab"),
+                            AppTypeId = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
+                            CapabilityId = new Guid("76e18bcb-2ee9-4c9c-9d11-fb10c8f20ee0"),
                             Configuration = "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5,\"retries\":3}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000005"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560005"),
+                            Id = new Guid("7eb34403-7641-49aa-8a0c-7f30a39d2355"),
+                            AppTypeId = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
+                            CapabilityId = new Guid("b4fdd637-4e1f-46fb-a5fe-83bccf14a30e"),
                             Configuration = "{\"defaults\":{\"ASPNETCORE_ENVIRONMENT\":\"Production\"}}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000006"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560006"),
+                            Id = new Guid("3cf3ba43-bb6a-4823-ac18-2747c57c802f"),
+                            AppTypeId = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
+                            CapabilityId = new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"),
                             Configuration = "{\"policy\":\"always\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000007"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560007"),
+                            Id = new Guid("fcd84bc2-a09c-4e1b-a1e8-2a660a0d3113"),
+                            AppTypeId = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
+                            CapabilityId = new Guid("30e21343-9124-4bec-b247-f780a5be12df"),
                             Configuration = "{\"enabled\":true}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000008"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456001"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560008"),
+                            Id = new Guid("097ade9a-ab92-4a0f-ac1e-51d58e1d37cc"),
+                            AppTypeId = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
+                            CapabilityId = new Guid("1f642072-7975-4fa0-8109-4d9be5ffa909"),
                             Configuration = "{\"targetFramework\":\"net10.0\",\"runtimeVersion\":\"10.0.x\",\"selfContained\":false}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000009"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560001"),
+                            Id = new Guid("f51fc05c-924b-4f6d-b0e0-8193b676a6f5"),
+                            AppTypeId = new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"),
+                            CapabilityId = new Guid("8460d864-4df5-423d-bb46-c351594b6667"),
                             Configuration = "{\"discoveryStrategy\":\"package-json\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":30}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-00000000000a"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560002"),
-                            Configuration = "{\"envVar\":\"PORT\",\"format\":\"{port}\"}"
+                            Id = new Guid("74ff801f-58f8-4fc6-8faf-bdddecd4673e"),
+                            AppTypeId = new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"),
+                            CapabilityId = new Guid("0c66bd0a-d6b1-419d-83c2-9186d773cc52"),
+                            Configuration = "{\"environmentVariableName\":\"PORT\",\"portFormat\":\"{port}\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-00000000000b"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"),
+                            Id = new Guid("74137008-620c-46cc-ba2c-e1e1896d25c1"),
+                            AppTypeId = new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"),
+                            CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
                             Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-00000000000c"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560004"),
+                            Id = new Guid("a5792083-b9e7-4ef7-8f3f-b9835d908362"),
+                            AppTypeId = new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"),
+                            CapabilityId = new Guid("76e18bcb-2ee9-4c9c-9d11-fb10c8f20ee0"),
                             Configuration = "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5,\"retries\":3}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-00000000000d"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560006"),
+                            Id = new Guid("088e99f8-dd64-4d14-bed2-e0e2027ac1b4"),
+                            AppTypeId = new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"),
+                            CapabilityId = new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"),
                             Configuration = "{\"policy\":\"always\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-00000000000e"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560007"),
+                            Id = new Guid("909f7e6d-451c-4bff-b8d5-bfb04f3b5116"),
+                            AppTypeId = new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"),
+                            CapabilityId = new Guid("30e21343-9124-4bec-b247-f780a5be12df"),
                             Configuration = "{\"enabled\":true}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-00000000000f"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456002"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560009"),
+                            Id = new Guid("84810cdc-4299-42f1-903d-8fff82ed4e92"),
+                            AppTypeId = new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"),
+                            CapabilityId = new Guid("0ba21247-bf12-4487-b2ad-e4c84a784d75"),
                             Configuration = "{\"nodeVersion\":\"22.x\",\"packageManager\":\"npm\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000010"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560001"),
+                            Id = new Guid("ecb72690-91c9-43ae-9039-92ada963271c"),
+                            AppTypeId = new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"),
+                            CapabilityId = new Guid("8460d864-4df5-423d-bb46-c351594b6667"),
                             Configuration = "{\"discoveryStrategy\":\"manual\",\"gracefulShutdown\":false,\"shutdownTimeoutSeconds\":10}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000011"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560002"),
-                            Configuration = "{\"envVar\":\"PORT\",\"format\":\"{port}\"}"
+                            Id = new Guid("254d4414-246f-44e5-82d0-0075b3f994c0"),
+                            AppTypeId = new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"),
+                            CapabilityId = new Guid("0c66bd0a-d6b1-419d-83c2-9186d773cc52"),
+                            Configuration = "{\"environmentVariableName\":\"PORT\",\"portFormat\":\"{port}\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000012"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"),
+                            Id = new Guid("fa660eb9-810a-47c1-8010-799481c4dca5"),
+                            AppTypeId = new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"),
+                            CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
                             Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000013"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560006"),
+                            Id = new Guid("14cb559d-7675-43bb-acdd-f1f15671c570"),
+                            AppTypeId = new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"),
+                            CapabilityId = new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"),
                             Configuration = "{\"policy\":\"onCrash\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000014"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456003"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560007"),
+                            Id = new Guid("408ae72c-0771-4817-a5ed-950419ee5771"),
+                            AppTypeId = new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"),
+                            CapabilityId = new Guid("30e21343-9124-4bec-b247-f780a5be12df"),
                             Configuration = "{\"enabled\":false}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000015"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456004"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"),
+                            Id = new Guid("e708632b-d307-4045-9778-679d979b1578"),
+                            AppTypeId = new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"),
+                            CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
                             Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"fileServer\",\"spaFallback\":true}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000016"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456004"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560009"),
+                            Id = new Guid("d9c3ac3e-052c-4992-ac36-bd3079499663"),
+                            AppTypeId = new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"),
+                            CapabilityId = new Guid("0ba21247-bf12-4487-b2ad-e4c84a784d75"),
                             Configuration = "{\"nodeVersion\":\"22.x\",\"packageManager\":\"npm\",\"buildCommand\":\"npm run build\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000017"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456004"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560010"),
+                            Id = new Guid("b256a4b1-86fe-46db-ab50-0061e7854996"),
+                            AppTypeId = new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"),
+                            CapabilityId = new Guid("2bc51a48-5e56-4c27-958a-615009fea233"),
                             Configuration = "{\"version\":\"18.x\",\"router\":\"react-router\",\"bundler\":\"vite\"}"
                         },
                         new
                         {
-                            Id = new Guid("d0d0d0d0-aeed-4000-a000-000000000018"),
-                            AppTypeId = new Guid("b1a2c3d4-e5f6-7890-abcd-ef0123456005"),
-                            CapabilityId = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"),
+                            Id = new Guid("a4cbac96-a44d-4823-9924-e4a530ee96b2"),
+                            AppTypeId = new Guid("606cdf1f-f41e-42d2-bb13-04b598de0f63"),
+                            CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
                             Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"fileServer\",\"spaFallback\":false}"
                         });
                 });
@@ -421,7 +413,7 @@ namespace Collabhost.Api.Migrations
                     b.HasData(
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560001"),
+                            Id = new Guid("8460d864-4df5-423d-bb46-c351594b6667"),
                             Category = "behavioral",
                             Description = "How the app's process is discovered, started, and stopped",
                             DisplayName = "Process Management",
@@ -429,7 +421,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560002"),
+                            Id = new Guid("0c66bd0a-d6b1-419d-83c2-9186d773cc52"),
                             Category = "behavioral",
                             Description = "How the platform communicates the assigned port to the app process",
                             DisplayName = "Port Injection",
@@ -437,7 +429,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560003"),
+                            Id = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
                             Category = "behavioral",
                             Description = "How traffic reaches the app through the reverse proxy",
                             DisplayName = "Routing",
@@ -445,7 +437,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560004"),
+                            Id = new Guid("76e18bcb-2ee9-4c9c-9d11-fb10c8f20ee0"),
                             Category = "behavioral",
                             Description = "HTTP endpoint polled to determine app health",
                             DisplayName = "Health Check",
@@ -453,7 +445,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560005"),
+                            Id = new Guid("b4fdd637-4e1f-46fb-a5fe-83bccf14a30e"),
                             Category = "behavioral",
                             Description = "Environment variables injected when the app process starts",
                             DisplayName = "Environment Variables",
@@ -461,7 +453,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560006"),
+                            Id = new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"),
                             Category = "behavioral",
                             Description = "How the platform responds when the app process exits unexpectedly",
                             DisplayName = "Restart Policy",
@@ -469,7 +461,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560007"),
+                            Id = new Guid("30e21343-9124-4bec-b247-f780a5be12df"),
                             Category = "behavioral",
                             Description = "Whether the app starts automatically when Collabhost starts",
                             DisplayName = "Auto Start",
@@ -477,7 +469,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560008"),
+                            Id = new Guid("1f642072-7975-4fa0-8109-4d9be5ffa909"),
                             Category = "informational",
                             Description = ".NET runtime and framework version information",
                             DisplayName = "ASP.NET Runtime",
@@ -485,7 +477,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560009"),
+                            Id = new Guid("0ba21247-bf12-4487-b2ad-e4c84a784d75"),
                             Category = "informational",
                             Description = "Node.js version and package manager information",
                             DisplayName = "Node.js Runtime",
@@ -493,7 +485,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c2b3a4d5-f6e7-8901-bcde-f01234560010"),
+                            Id = new Guid("2bc51a48-5e56-4c27-958a-615009fea233"),
                             Category = "informational",
                             Description = "React framework and tooling information",
                             DisplayName = "React",
@@ -578,7 +570,7 @@ namespace Collabhost.Api.Migrations
                     b.HasData(
                         new
                         {
-                            Id = new Guid("b0a1c2d3-e4f5-6789-abcd-ef0123456789"),
+                            Id = new Guid("d413f4ed-d764-4277-ab4c-190822d22789"),
                             DisplayName = "Stopped",
                             IsActive = true,
                             Name = "Stopped",
@@ -586,7 +578,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c1b2a3d4-f5e6-7890-bcde-f01234567890"),
+                            Id = new Guid("b9057b8a-7fe7-407c-84e2-dcdc41caeee1"),
                             DisplayName = "Starting",
                             IsActive = true,
                             Name = "Starting",
@@ -594,7 +586,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("d2c3b4a5-0617-8901-cdef-012345678901"),
+                            Id = new Guid("2cd5e4ed-ac0e-40eb-abad-3b56819f97a4"),
                             DisplayName = "Running",
                             IsActive = true,
                             Name = "Running",
@@ -602,7 +594,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("e3d4c5b6-1728-9012-def0-123456789012"),
+                            Id = new Guid("0d98c241-6630-4f0f-a16e-bad8a013eb31"),
                             DisplayName = "Stopping",
                             IsActive = true,
                             Name = "Stopping",
@@ -610,7 +602,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("f4e5d6c7-2839-0123-ef01-234567890123"),
+                            Id = new Guid("55331f23-8eae-4e56-811d-8bbdeaca03ca"),
                             DisplayName = "Crashed",
                             IsActive = true,
                             Name = "Crashed",
@@ -618,7 +610,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("05f6e7d8-394a-1234-f012-345678901234"),
+                            Id = new Guid("517b2fb1-e5f9-4fdd-98de-10cedec5bcc3"),
                             DisplayName = "Restarting",
                             IsActive = true,
                             Name = "Restarting",

@@ -54,15 +54,12 @@ public sealed class ProxyAppSeeder
             return;
         }
 
-        var installDirectory = Path.GetDirectoryName(resolvedPath) ?? resolvedPath;
-
         // Use Executable type for the proxy app
         var app = App.Register
         (
             AppSlugValue.Create("proxy"),
             "Proxy",
-            IdentifierCatalog.AppTypes.Executable,
-            installDirectory
+            IdentifierCatalog.AppTypes.Executable
         );
 
         _db.Apps.Add(app);

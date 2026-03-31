@@ -99,6 +99,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
             ["terminal"] = true
         };
 
+    // TODO: Card #39 — resolve port from runtime process state via ProcessSupervisor
     private JsonObject BuildReverseProxyRoute(AppRouteInfo app) =>
         new()
         {
@@ -119,7 +120,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
                     {
                         new JsonObject
                         {
-                            ["dial"] = $"localhost:{app.Port?.ToString(CultureInfo.InvariantCulture)}"
+                            ["dial"] = "localhost:0"
                         }
                     }
                 }
@@ -127,6 +128,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
             ["terminal"] = true
         };
 
+    // TODO: Card #39 — resolve install directory from artifact capability
     private JsonObject BuildFileServerRoute(AppRouteInfo app) =>
         new()
         {
@@ -152,7 +154,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
                                 new JsonObject
                                 {
                                     ["handler"] = "vars",
-                                    ["root"] = app.InstallDirectory
+                                    ["root"] = ""
                                 }
                             }
                         },

@@ -45,8 +45,7 @@ public class DeleteProtectionTests(CollabhostApiFixture fixture) : IClassFixture
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = $"C:\\apps\\{name}"
+            AppTypeId = IdentifierCatalog.AppTypes.Executable
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name)

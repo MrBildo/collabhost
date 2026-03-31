@@ -1,4 +1,3 @@
-using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Domain.Entities;
 using Collabhost.Api.Domain.Values;
 
@@ -10,8 +9,7 @@ public static class Create
     (
         string Name,
         string DisplayName,
-        Guid AppTypeId,
-        string InstallDirectory
+        Guid AppTypeId
     );
 
     public record Response(string ExternalId);
@@ -27,8 +25,7 @@ public static class Create
         (
             request.Name,
             request.DisplayName,
-            request.AppTypeId,
-            request.InstallDirectory
+            request.AppTypeId
         );
 
         var result = await dispatcher.DispatchAsync(command, ct);
@@ -43,19 +40,16 @@ public record CreateCommand
 (
     string Name,
     string DisplayName,
-    Guid AppTypeId,
-    string InstallDirectory
+    Guid AppTypeId
 ) : ICommand<string>;
 
 public class CreateCommandHandler
 (
     CollabhostDbContext db,
-    PortAllocator portAllocator,
     ProxyConfigManager proxyConfigManager
 ) : ICommandHandler<CreateCommand, string>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
-    private readonly PortAllocator _portAllocator = portAllocator ?? throw new ArgumentNullException(nameof(portAllocator));
     private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
 
     public async Task<CommandResult<string>> HandleAsync(CreateCommand command, CancellationToken ct = default)
@@ -70,11 +64,6 @@ public class CreateCommandHandler
         if (string.IsNullOrWhiteSpace(command.DisplayName))
         {
             return CommandResult<string>.Fail("INVALID_DISPLAY_NAME", "Display name is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(command.InstallDirectory))
-        {
-            return CommandResult<string>.Fail("INVALID_INSTALL_DIRECTORY", "Install directory is required.");
         }
 
         // Validate app type exists
@@ -96,24 +85,13 @@ public class CreateCommandHandler
         (
             slug,
             command.DisplayName,
-            command.AppTypeId,
-            command.InstallDirectory
+            command.AppTypeId
         );
-
-        // Auto-assign port if the app type has port-injection capability
-        var hasPortInjection = await _db.Set<AppTypeCapability>()
-            .AnyAsync(atc => atc.AppTypeId == command.AppTypeId && atc.CapabilityId == IdentifierCatalog.Capabilities.PortInjection, ct);
-
-        if (hasPortInjection)
-        {
-            var port = await _portAllocator.AllocateAsync(ct);
-            app.AssignPort(port);
-        }
 
         _db.Apps.Add(app);
         await _db.SaveChangesAsync(ct);
 
-        _ = _proxyConfigManager.SyncRoutesAsync(ct);
+        await _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<string>.Success(app.ExternalId);
     }

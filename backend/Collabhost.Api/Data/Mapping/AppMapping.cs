@@ -27,10 +27,6 @@ public class AppMapping : IEntityTypeConfiguration<App>
         // Human-readable label shown in dashboard — 100 per spec
         builder.Property(e => e.DisplayName).HasMaxLength(100).IsRequired();
         builder.Property(e => e.AppTypeId).IsRequired();
-
-        // File system paths — 500 covers typical Windows MAX_PATH (260) with headroom
-        builder.Property(e => e.InstallDirectory).HasMaxLength(500).IsRequired();
-        builder.Property(e => e.Port);
         builder.Property(e => e.RegisteredAt);
 
         // Shadow audit properties

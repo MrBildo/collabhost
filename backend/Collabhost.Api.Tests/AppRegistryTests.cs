@@ -54,7 +54,6 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         json.RootElement.GetProperty("name").GetString().ShouldBe("get-test");
         json.RootElement.GetProperty("displayName").GetString().ShouldBe("Get Test App");
         json.RootElement.GetProperty("appTypeName").GetString().ShouldBe("Executable");
-        json.RootElement.GetProperty("port").GetInt32().ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -85,8 +84,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
 
         var updateRequest = new
         {
-            DisplayName = "Updated Display Name",
-            InstallDirectory = "C:\\updated"
+            DisplayName = "Updated Display Name"
         };
 
         // Act
@@ -140,8 +138,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = "",
             DisplayName = "",
-            AppTypeId = Guid.Empty,
-            InstallDirectory = ""
+            AppTypeId = Guid.Empty
         };
 
         // Act
@@ -160,8 +157,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = "",
             DisplayName = "Some Display Name",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = "C:\\apps\\test"
+            AppTypeId = IdentifierCatalog.AppTypes.Executable
         };
 
         // Act
@@ -180,8 +176,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = "valid-slug",
             DisplayName = "",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = "C:\\apps\\test"
+            AppTypeId = IdentifierCatalog.AppTypes.Executable
         };
 
         // Act
@@ -200,8 +195,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = "My App!",
             DisplayName = "My App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = "C:\\apps\\test"
+            AppTypeId = IdentifierCatalog.AppTypes.Executable
         };
 
         // Act
@@ -266,8 +260,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = $"C:\\apps\\{name}"
+            AppTypeId = IdentifierCatalog.AppTypes.Executable
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name)
