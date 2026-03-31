@@ -69,7 +69,7 @@ public class AppTypeCapabilityMapping : IEntityTypeConfiguration<AppTypeCapabili
         // --- Executable ---
         builder.HasData
         (
-            AppTypeCapability.CreateSeeded(new Guid("ecb72690-91c9-43ae-9039-92ada963271c"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.Process, """{"discoveryStrategy":"manual","gracefulShutdown":false,"shutdownTimeoutSeconds":10}"""),
+            AppTypeCapability.CreateSeeded(new Guid("ecb72690-91c9-43ae-9039-92ada963271c"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.Process, """{"discoveryStrategy":"manual","gracefulShutdown":false,"shutdownTimeoutSeconds":10,"command":"echo","arguments":"no command configured"}"""),
             AppTypeCapability.CreateSeeded(new Guid("254d4414-246f-44e5-82d0-0075b3f994c0"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.PortInjection, """{"environmentVariableName":"PORT","portFormat":"{port}"}"""),
             AppTypeCapability.CreateSeeded(new Guid("fa660eb9-810a-47c1-8010-799481c4dca5"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.Routing, """{"domainPattern":"{slug}.collab.internal","serveMode":"reverseProxy"}"""),
             AppTypeCapability.CreateSeeded(new Guid("14cb559d-7675-43bb-acdd-f1f15671c570"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.Restart, """{"policy":"onCrash"}"""),

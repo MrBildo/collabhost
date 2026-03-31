@@ -9,9 +9,11 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
     public string AppName { get; } = appName;
     public Guid ProcessStateId { get; private set; } = IdentifierCatalog.ProcessStates.Stopped;
     public int? Pid { get; private set; }
+    public int? Port { get; private set; }
     public DateTime? StartedAt { get; private set; }
     public int RestartCount { get; private set; }
     public DateTime? LastRestartAt { get; private set; }
+    public bool StoppedByOperator { get; private set; }
 
     private IProcessHandle? _handle;
     private int _consecutiveFailures;
@@ -28,6 +30,12 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
     public double? UptimeSeconds => StartedAt.HasValue && IsRunning
         ? (DateTime.UtcNow - StartedAt.Value).TotalSeconds
         : null;
+
+    public void AssignPort(int port) => Port = port;
+
+    public void MarkStoppedByOperator() => StoppedByOperator = true;
+
+    public void ClearStoppedByOperator() => StoppedByOperator = false;
 
     public void MarkStarting() => ProcessStateId = IdentifierCatalog.ProcessStates.Starting;
 
@@ -50,6 +58,7 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
     {
         ProcessStateId = IdentifierCatalog.ProcessStates.Stopped;
         Pid = null;
+        Port = null;
         StartedAt = null;
         _consecutiveFailures = 0;
         CancelPendingRestart();
@@ -60,6 +69,7 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
         ProcessStateId = IdentifierCatalog.ProcessStates.Crashed;
         _consecutiveFailures++;
         Pid = null;
+        Port = null;
         StartedAt = null;
     }
 

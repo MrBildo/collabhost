@@ -1,3 +1,7 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+
+using Collabhost.Api.Domain.Capabilities;
 using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Domain.Entities;
 
@@ -21,6 +25,7 @@ public sealed class ProxyConfigManager
     private readonly ProcessSupervisor _processSupervisor = processSupervisor ?? throw new ArgumentNullException(nameof(processSupervisor));
     private readonly ProxySettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     private readonly ILogger<ProxyConfigManager> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ConcurrentDictionary<string, bool> _routeEnabledStates = new(StringComparer.Ordinal);
 
     private Guid? _proxyAppId;
     private IDisposable? _subscription;
@@ -29,12 +34,9 @@ public sealed class ProxyConfigManager
 #pragma warning disable MA0051 // Long method justified — startup with proxy app lookup and event subscription
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // TODO: Card #39 — proxy app seeding needs capability-aware approach
-        // For now, look for any app with the routing capability and a process
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
 
-        // Try to find a proxy-like app by checking for apps that were seeded as the proxy
         var proxyApp = await db.Database
             .SqlQuery<ProxyAppLookup>(
                 $"""
@@ -74,7 +76,12 @@ public sealed class ProxyConfigManager
         if (managed is not null && managed.IsRunning)
         {
             _logger.LogInformation("Proxy process already running — triggering initial route sync");
-            _ = Task.Run(async () => await HandleProxyRunningAsync(), CancellationToken.None);
+
+            // Background route sync is intentional — StartAsync should not block on HTTP calls to Caddy.
+            // The task is self-contained with full error handling inside HandleProxyRunningAsync.
+#pragma warning disable CS4014, VSTHRD110, MA0134 // Intentional fire-and-forget from IHostedService.StartAsync
+            Task.Run(async () => await HandleProxyRunningAsync(), CancellationToken.None);
+#pragma warning restore CS4014, VSTHRD110, MA0134
         }
     }
 #pragma warning restore MA0051
@@ -116,6 +123,30 @@ public sealed class ProxyConfigManager
         }
     }
 
+    public void EnableRoute(string slug)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(slug);
+
+        _routeEnabledStates[slug] = true;
+        _logger.LogInformation("Route enabled for '{Slug}'", slug);
+    }
+
+    public void DisableRoute(string slug)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(slug);
+
+        _routeEnabledStates[slug] = false;
+        _logger.LogInformation("Route disabled for '{Slug}'", slug);
+    }
+
+    public bool IsRouteEnabled(string slug)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(slug);
+
+        // Routes are enabled by default
+        return !_routeEnabledStates.TryGetValue(slug, out var enabled) || enabled;
+    }
+
     private void OnProcessStateChanged(ProcessStateChangedEvent processEvent)
     {
         if (_disabled || _proxyAppId is null)
@@ -130,7 +161,11 @@ public sealed class ProxyConfigManager
 
         if (processEvent.NewStateId == IdentifierCatalog.ProcessStates.Running)
         {
-            _ = Task.Run(async () => await HandleProxyRunningAsync());
+            // Background route sync is intentional — OnProcessStateChanged is a synchronous
+            // event callback and cannot await. The task is self-contained with full error handling.
+#pragma warning disable VSTHRD110, MA0134 // Intentional fire-and-forget from synchronous event callback
+            Task.Run(async () => await HandleProxyRunningAsync());
+#pragma warning restore VSTHRD110, MA0134
         }
         else if (processEvent.NewStateId == IdentifierCatalog.ProcessStates.Crashed)
         {
@@ -174,18 +209,20 @@ public sealed class ProxyConfigManager
         }
     }
 
+#pragma warning disable MA0051 // Long method justified — loading routable apps with capability resolution
     private async Task<List<AppRouteInfo>> LoadRoutableAppsAsync(CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
+        var capabilityResolver = scope.ServiceProvider.GetRequiredService<ICapabilityResolver>();
 
-        // Load apps that have a routing capability and resolve their serve mode
-        var apps = await db.Database
-            .SqlQuery<AppRouteInfoRow>(
+        // Load apps that have a routing capability
+        var appIds = await db.Database
+            .SqlQuery<RoutableAppRow>(
                 $"""
                 SELECT
-                    A.[Name] AS [Slug]
-                    ,ATC.[Configuration] AS [RoutingConfiguration]
+                    A.[Id]
+                    ,A.[Name] AS [Slug]
                 FROM
                     [App] A
                     INNER JOIN [AppTypeCapability] ATC ON ATC.[AppTypeId] = A.[AppTypeId]
@@ -195,36 +232,43 @@ public sealed class ProxyConfigManager
                 """)
             .ToListAsync(ct);
 
-        return
-        [
-            .. apps.Select(a => new AppRouteInfo(a.Slug, ExtractServeMode(a.RoutingConfiguration)))
-        ];
-    }
+        var result = new List<AppRouteInfo>();
 
-    private static string? ExtractServeMode(string? routingConfiguration)
-    {
-        if (string.IsNullOrWhiteSpace(routingConfiguration))
+        foreach (var row in appIds)
         {
-            return null;
-        }
+            var routingConfiguration = await capabilityResolver.ResolveAsync<RoutingConfiguration>(
+                row.Id, IdentifierCatalog.Capabilities.Routing, ct);
 
-        try
-        {
-            var doc = System.Text.Json.JsonDocument.Parse(routingConfiguration);
-            if (doc.RootElement.TryGetProperty("serveMode", out var serveModeElement))
+            if (routingConfiguration is null)
             {
-                return serveModeElement.GetString();
+                continue;
             }
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            // Invalid JSON — skip
+
+            // Resolve port from in-memory process state for reverse proxy routes
+            int? port = null;
+            if (string.Equals(routingConfiguration.ServeMode, "reverseProxy", StringComparison.OrdinalIgnoreCase))
+            {
+                var managedProcess = _processSupervisor.GetProcess(row.Id);
+                port = managedProcess?.Port;
+            }
+
+            var spaFallback = routingConfiguration.SpaFallback ?? false;
+
+            // Check if route is disabled
+            if (!IsRouteEnabled(row.Slug))
+            {
+                result.Add(new AppRouteInfo(row.Slug, "disabled", port, spaFallback));
+                continue;
+            }
+
+            result.Add(new AppRouteInfo(row.Slug, routingConfiguration.ServeMode, port, spaFallback));
         }
 
-        return null;
+        return result;
     }
+#pragma warning restore MA0051
 
     private sealed record ProxyAppLookup(Guid Id);
 
-    private sealed record AppRouteInfoRow(string Slug, string? RoutingConfiguration);
+    private sealed record RoutableAppRow(Guid Id, string Slug);
 }

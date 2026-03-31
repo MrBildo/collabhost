@@ -57,6 +57,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
         {
             var route = app.ServeMode switch
             {
+                "disabled" => BuildDisabledRoute(app),
                 "reverseProxy" => BuildReverseProxyRoute(app),
                 "fileServer" => BuildFileServerRoute(app),
                 _ => null
@@ -99,9 +100,38 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
             ["terminal"] = true
         };
 
-    // TODO: Card #39 — resolve port from runtime process state via ProcessSupervisor
-    private JsonObject BuildReverseProxyRoute(AppRouteInfo app) =>
+    private JsonObject BuildDisabledRoute(AppRouteInfo app) =>
         new()
+        {
+            ["@id"] = $"route_{app.Slug}",
+            ["match"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["host"] = new JsonArray { $"{app.Slug}.{_settings.BaseDomain}" }
+                }
+            },
+            ["handle"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["handler"] = "static_response",
+                    ["status_code"] = "503",
+                    ["headers"] = new JsonObject
+                    {
+                        ["Content-Type"] = new JsonArray { "text/plain" }
+                    },
+                    ["body"] = "Service Unavailable"
+                }
+            },
+            ["terminal"] = true
+        };
+
+    private JsonObject BuildReverseProxyRoute(AppRouteInfo app)
+    {
+        var dialPort = app.Port?.ToString(CultureInfo.InvariantCulture) ?? "0";
+
+        return new JsonObject
         {
             ["@id"] = $"route_{app.Slug}",
             ["match"] = new JsonArray
@@ -120,17 +150,77 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
                     {
                         new JsonObject
                         {
-                            ["dial"] = "localhost:0"
+                            ["dial"] = $"localhost:{dialPort}"
                         }
                     }
                 }
             },
             ["terminal"] = true
         };
+    }
 
-    // TODO: Card #39 — resolve install directory from artifact capability
-    private JsonObject BuildFileServerRoute(AppRouteInfo app) =>
-        new()
+    // GAP: InstallDirectory is not on the App entity — file_server root path cannot be resolved.
+    // The artifact capability (future card) will provide this. For now, root is empty string.
+    private JsonObject BuildFileServerRoute(AppRouteInfo app)
+    {
+        var subrouteHandlers = new JsonArray();
+
+        // Root vars handler
+        subrouteHandlers.Add(new JsonObject
+        {
+            ["handle"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["handler"] = "vars",
+                    ["root"] = ""
+                }
+            }
+        });
+
+        // SPA fallback: try_files + rewrite when SpaFallback is true
+        if (app.SpaFallback)
+        {
+            subrouteHandlers.Add(new JsonObject
+            {
+                ["match"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["file"] = new JsonObject
+                        {
+                            ["try_files"] = new JsonArray
+                            {
+                                "{http.request.uri.path}",
+                                "/index.html"
+                            }
+                        }
+                    }
+                },
+                ["handle"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["handler"] = "rewrite",
+                        ["uri"] = "{http.matchers.file.relative}"
+                    }
+                }
+            });
+        }
+
+        // File server handler
+        subrouteHandlers.Add(new JsonObject
+        {
+            ["handle"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["handler"] = "file_server"
+                }
+            }
+        });
+
+        return new JsonObject
         {
             ["@id"] = $"route_{app.Slug}",
             ["match"] = new JsonArray
@@ -145,59 +235,12 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
                 new JsonObject
                 {
                     ["handler"] = "subroute",
-                    ["routes"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["handle"] = new JsonArray
-                            {
-                                new JsonObject
-                                {
-                                    ["handler"] = "vars",
-                                    ["root"] = ""
-                                }
-                            }
-                        },
-                        new JsonObject
-                        {
-                            ["match"] = new JsonArray
-                            {
-                                new JsonObject
-                                {
-                                    ["file"] = new JsonObject
-                                    {
-                                        ["try_files"] = new JsonArray
-                                        {
-                                            "{http.request.uri.path}",
-                                            "/index.html"
-                                        }
-                                    }
-                                }
-                            },
-                            ["handle"] = new JsonArray
-                            {
-                                new JsonObject
-                                {
-                                    ["handler"] = "rewrite",
-                                    ["uri"] = "{http.matchers.file.relative}"
-                                }
-                            }
-                        },
-                        new JsonObject
-                        {
-                            ["handle"] = new JsonArray
-                            {
-                                new JsonObject
-                                {
-                                    ["handler"] = "file_server"
-                                }
-                            }
-                        }
-                    }
+                    ["routes"] = subrouteHandlers
                 }
             },
             ["terminal"] = true
         };
+    }
 
     private JsonObject BuildPkiConfig() =>
         new()

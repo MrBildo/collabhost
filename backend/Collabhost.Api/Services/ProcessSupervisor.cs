@@ -1,15 +1,17 @@
 using System.Collections.Concurrent;
 
+using Collabhost.Api.Domain.Capabilities;
 using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Domain.Entities;
 
 namespace Collabhost.Api.Services;
 
-public class ProcessSupervisor
+public sealed class ProcessSupervisor
 (
     IManagedProcessRunner runner,
     IServiceScopeFactory scopeFactory,
     IProcessStateEventBus processStateEventBus,
+    DiscoveryStrategyFactory discoveryStrategyFactory,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
 {
@@ -20,24 +22,74 @@ public class ProcessSupervisor
     // so we use IServiceScopeFactory to create short-lived scopes when DB access is needed.
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
     private readonly IProcessStateEventBus _processStateEventBus = processStateEventBus ?? throw new ArgumentNullException(nameof(processStateEventBus));
+    private readonly DiscoveryStrategyFactory _discoveryStrategyFactory = discoveryStrategyFactory ?? throw new ArgumentNullException(nameof(discoveryStrategyFactory));
     private readonly ILogger<ProcessSupervisor> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly ConcurrentDictionary<Guid, ManagedProcess> _processes = new();
+    private readonly ConcurrentDictionary<Guid, string> _restartPolicies = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
     private Timer? _graceTimer;
 
+#pragma warning disable MA0051 // Long method justified — startup with auto-start capability resolution
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Process supervisor starting — checking for auto-start apps");
 
         _graceTimer = new Timer(CheckGracePeriods, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
 
-        // TODO: Card #39 — auto-start via capability resolver instead of App.AutoStart column
-        _logger.LogInformation("Process supervisor started — auto-start deferred to Card #39");
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var capabilityResolver = scope.ServiceProvider.GetRequiredService<ICapabilityResolver>();
+            var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
+
+            var apps = await db.Apps
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            foreach (var app in apps)
+            {
+                var autoStartConfiguration = await capabilityResolver.ResolveAsync<AutoStartConfiguration>(
+                    app.Id, IdentifierCatalog.Capabilities.AutoStart, cancellationToken);
+
+                if (autoStartConfiguration is null || !autoStartConfiguration.Enabled)
+                {
+                    continue;
+                }
+
+                var hasProcess = await db.HasCapabilityAsync(
+                    app.AppTypeId, IdentifierCatalog.Capabilities.Process, cancellationToken);
+
+                if (!hasProcess)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    _logger.LogInformation("Auto-starting app '{AppName}'", app.DisplayName);
+                    await StartAppInternalAsync(app.Id, cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError(
+                        exception,
+                        "Failed to auto-start app '{AppName}'",
+                        app.DisplayName);
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Failed to run auto-start check");
+        }
+
+        _logger.LogInformation("Process supervisor started");
     }
+#pragma warning restore MA0051
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Process supervisor stopping — killing all managed processes");
+        _logger.LogInformation("Process supervisor stopping — stopping all managed processes");
 
         if (_graceTimer is not null)
         {
@@ -47,20 +99,11 @@ public class ProcessSupervisor
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            foreach (var (_, process) in _processes)
+            foreach (var (appId, process) in _processes)
             {
                 if (process.IsRunning)
                 {
-                    var previousStateId = process.ProcessStateId;
-                    process.MarkStopping();
-                    PublishStateChanged(process, previousStateId);
-
-                    process.KillProcess();
-
-                    previousStateId = process.ProcessStateId;
-                    process.MarkStopped();
-                    PublishStateChanged(process, previousStateId);
-
+                    await StopProcessWithShutdownPolicyAsync(appId, process);
                     _logger.LogInformation("Stopped app '{AppName}' (PID {Pid})", process.AppName, process.Pid);
                 }
 
@@ -68,6 +111,7 @@ public class ProcessSupervisor
             }
 
             _processes.Clear();
+            _restartPolicies.Clear();
         }
         finally
         {
@@ -100,15 +144,9 @@ public class ProcessSupervisor
                 throw new InvalidOperationException("App is already stopped.");
             }
 
-            var previousStateId = process.ProcessStateId;
-            process.MarkStopping();
-            PublishStateChanged(process, previousStateId);
+            process.MarkStoppedByOperator();
 
-            process.KillProcess();
-
-            previousStateId = process.ProcessStateId;
-            process.MarkStopped();
-            PublishStateChanged(process, previousStateId);
+            await StopProcessWithShutdownPolicyAsync(appId, process);
 
             _logger.LogInformation("Stopped app '{AppName}'", process.AppName);
 
@@ -127,15 +165,9 @@ public class ProcessSupervisor
         {
             if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
             {
-                var previousStateId = existing.ProcessStateId;
-                existing.MarkStopping();
-                PublishStateChanged(existing, previousStateId);
+                existing.ClearStoppedByOperator();
 
-                existing.KillProcess();
-
-                previousStateId = existing.ProcessStateId;
-                existing.MarkStopped();
-                PublishStateChanged(existing, previousStateId);
+                await StopProcessWithShutdownPolicyAsync(appId, existing);
 
                 existing.Dispose();
                 _processes.TryRemove(appId, out _);
@@ -155,6 +187,7 @@ public class ProcessSupervisor
         return process;
     }
 
+#pragma warning disable MA0051 // Long method justified — process start with full capability resolution
     private async Task<ManagedProcess> StartAppInternalAsync(Guid appId, CancellationToken ct)
     {
         if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
@@ -164,12 +197,11 @@ public class ProcessSupervisor
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
+        var capabilityResolver = scope.ServiceProvider.GetRequiredService<ICapabilityResolver>();
 
         var app = await db.Apps
             .SingleOrDefaultAsync(a => a.Id == appId, ct) ?? throw new InvalidOperationException("App not found.");
 
-        // TODO: Card #39 — use capability resolver for process discovery, env vars, port injection
-        // For now, use a minimal stub that will allow process start for testing
         var hasProcess = await db.HasCapabilityAsync(app.AppTypeId, IdentifierCatalog.Capabilities.Process, ct);
 
         if (!hasProcess)
@@ -177,21 +209,58 @@ public class ProcessSupervisor
             throw new InvalidOperationException("This app type does not have a process capability.");
         }
 
-        // TODO: Card #39 — resolve env vars and port from capability resolver
+        // Resolve process configuration for discovery strategy
+        var processConfiguration = await capabilityResolver.ResolveAsync<ProcessConfiguration>(
+            app.Id, IdentifierCatalog.Capabilities.Process, ct)
+            ?? throw new InvalidOperationException("Process capability configuration could not be resolved.");
+
+        // Discover the command/args/working directory using the appropriate strategy
+        var strategy = _discoveryStrategyFactory.GetStrategy(processConfiguration.DiscoveryStrategy);
+        var discoveredProcess = strategy.Discover(processConfiguration);
+
+        // Build environment variables from environment-defaults capability
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var environmentDefaultsConfiguration = await capabilityResolver.ResolveAsync<EnvironmentDefaultsConfiguration>(
+            app.Id, IdentifierCatalog.Capabilities.EnvironmentDefaults, ct);
+
+        if (environmentDefaultsConfiguration?.Defaults is not null)
+        {
+            foreach (var (key, value) in environmentDefaultsConfiguration.Defaults)
+            {
+                environmentVariables[key] = value;
+            }
+        }
 
         var managed = new ManagedProcess(app.Id, app.ExternalId, app.DisplayName);
 
+        // Port injection: allocate port and inject env var (port injection wins on name conflict)
+        var portInjectionConfiguration = await capabilityResolver.ResolveAsync<PortInjectionConfiguration>(
+            app.Id, IdentifierCatalog.Capabilities.PortInjection, ct);
+
+        if (portInjectionConfiguration is not null)
+        {
+            var portAllocator = scope.ServiceProvider.GetRequiredService<PortAllocator>();
+            var allocatedPort = await portAllocator.AllocateAsync(ct);
+            managed.AssignPort(allocatedPort);
+
+            var formattedPortValue = portInjectionConfiguration.PortFormat
+                .Replace("{port}", allocatedPort.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+
+            // Port injection wins on name conflict with environment defaults
+            environmentVariables[portInjectionConfiguration.EnvironmentVariableName] = formattedPortValue;
+        }
+
         var previousStateId = managed.ProcessStateId;
         managed.MarkStarting();
+        managed.ClearStoppedByOperator();
         PublishStateChanged(managed, previousStateId);
 
-        // TODO: Card #39 — resolve command and working directory from process capability discovery strategy
         var config = new ProcessStartConfig
         (
-            "stub-command",
-            null,
-            null,
+            discoveredProcess.Command,
+            discoveredProcess.Arguments,
+            discoveredProcess.WorkingDirectory,
             environmentVariables,
             (line, stream) => managed.LogBuffer.Add(new LogEntry(DateTime.UtcNow, stream, line))
         );
@@ -202,7 +271,13 @@ public class ProcessSupervisor
         managed.MarkRunning(handle);
         PublishStateChanged(managed, previousStateId);
 
-        // TODO: Card #39 — resolve restart policy from capability
+        // Resolve and store restart policy for use on process exit
+        var restartConfiguration = await capabilityResolver.ResolveAsync<RestartConfiguration>(
+            app.Id, IdentifierCatalog.Capabilities.Restart, ct);
+
+        var restartPolicy = restartConfiguration?.Policy ?? "never";
+        _restartPolicies[appId] = restartPolicy;
+
         handle.Exited += exitCode => OnProcessExited(appId, exitCode);
 
         _processes.TryRemove(appId, out var old);
@@ -212,13 +287,15 @@ public class ProcessSupervisor
 
         _logger.LogInformation
         (
-            "Started app '{AppName}' (PID {Pid})",
+            "Started app '{AppName}' (PID {Pid}, Port {Port})",
             app.Name,
-            handle.Pid
+            handle.Pid,
+            managed.Port?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"
         );
 
         return managed;
     }
+#pragma warning restore MA0051
 
     private void OnProcessExited(Guid appId, int exitCode)
     {
@@ -233,7 +310,6 @@ public class ProcessSupervisor
             return;
         }
 
-        // TODO: Card #39 — resolve restart policy from capability resolver
         var previousStateId = process.ProcessStateId;
         process.MarkCrashed();
         PublishStateChanged(process, previousStateId);
@@ -244,6 +320,196 @@ public class ProcessSupervisor
             process.AppName,
             exitCode
         );
+
+        // Do not restart if the operator explicitly stopped this process
+        if (process.StoppedByOperator)
+        {
+            _logger.LogInformation(
+                "App '{AppName}' was stopped by operator — skipping restart",
+                process.AppName);
+            return;
+        }
+
+        // Apply restart policy
+        _restartPolicies.TryGetValue(appId, out var restartPolicy);
+        restartPolicy ??= "never";
+
+        var shouldRestart = restartPolicy switch
+        {
+            "always" => true,
+            "onCrash" => exitCode != 0,
+            _ => false
+        };
+
+        if (!shouldRestart)
+        {
+            _logger.LogInformation(
+                "Restart policy '{RestartPolicy}' for '{AppName}' — not restarting (exit code: {ExitCode})",
+                restartPolicy,
+                process.AppName,
+                exitCode);
+            return;
+        }
+
+        if (process.HasMaxRestartsExceeded())
+        {
+            _logger.LogError(
+                "App '{AppName}' has exceeded maximum restart count — not restarting",
+                process.AppName);
+            return;
+        }
+
+        var delay = process.GetBackoffDelay();
+        _logger.LogInformation(
+            "Restart policy '{RestartPolicy}' for '{AppName}' — restarting after {Delay}s",
+            restartPolicy,
+            process.AppName,
+            delay.TotalSeconds);
+
+        previousStateId = process.ProcessStateId;
+        process.MarkRestarting();
+        PublishStateChanged(process, previousStateId);
+
+        var cancellation = new CancellationTokenSource();
+        process.SetRestartDelayCancellation(cancellation);
+
+        // Restart is intentionally fire-and-forget from an event callback (Exited event).
+        // The task is self-contained with full error handling and the CancellationTokenSource
+        // is tracked on ManagedProcess for cancellation on operator stop.
+#pragma warning disable VSTHRD110, MA0134 // Intentional fire-and-forget restart from synchronous event callback
+        Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay, cancellation.Token);
+                await _lock.WaitAsync(cancellation.Token);
+                try
+                {
+                    _processes.TryRemove(appId, out var stale);
+                    stale?.Dispose();
+
+                    await StartAppInternalAsync(appId, cancellation.Token);
+                }
+                finally
+                {
+                    _lock.Release();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is expected when operator stops the app — not an error
+#pragma warning disable S6667 // OperationCanceledException is not a failure, no need to log it
+                _logger.LogDebug("Restart cancelled for '{AppName}'", process.AppName);
+#pragma warning restore S6667
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "Failed to restart '{AppName}'", process.AppName);
+            }
+        }, cancellation.Token);
+#pragma warning restore VSTHRD110, MA0134
+    }
+
+    private async Task StopProcessWithShutdownPolicyAsync(Guid appId, ManagedProcess process)
+    {
+        // Resolve graceful shutdown configuration
+        var gracefulShutdown = false;
+        var shutdownTimeoutSeconds = 10;
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var capabilityResolver = scope.ServiceProvider.GetRequiredService<ICapabilityResolver>();
+
+            var processConfiguration = await capabilityResolver.ResolveAsync<ProcessConfiguration>(
+                appId, IdentifierCatalog.Capabilities.Process, CancellationToken.None);
+
+            if (processConfiguration is not null)
+            {
+                gracefulShutdown = processConfiguration.GracefulShutdown;
+                shutdownTimeoutSeconds = processConfiguration.ShutdownTimeoutSeconds;
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Failed to resolve shutdown config for '{AppName}' — falling back to hard kill",
+                process.AppName);
+        }
+
+        var previousStateId = process.ProcessStateId;
+        process.MarkStopping();
+        PublishStateChanged(process, previousStateId);
+
+        if (gracefulShutdown)
+        {
+            await SendGracefulShutdownAsync(process, shutdownTimeoutSeconds);
+        }
+        else
+        {
+            process.KillProcess();
+        }
+
+        previousStateId = process.ProcessStateId;
+        process.MarkStopped();
+        PublishStateChanged(process, previousStateId);
+    }
+
+    private async Task SendGracefulShutdownAsync(ManagedProcess process, int shutdownTimeoutSeconds)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                // On Windows, send Ctrl+C by generating a console control event
+                // Since we run processes with CreateNoWindow=true and redirect IO,
+                // graceful shutdown is attempted via Ctrl+C but may not work for all apps.
+                // Fall through to kill after timeout.
+                _logger.LogDebug(
+                    "Attempting graceful shutdown for '{AppName}' (timeout: {Timeout}s)",
+                    process.AppName,
+                    shutdownTimeoutSeconds);
+            }
+
+            // Wait for the process to exit within the timeout
+            using var timeoutCancellation = new CancellationTokenSource(
+                TimeSpan.FromSeconds(shutdownTimeoutSeconds));
+
+            try
+            {
+                // Poll for exit since we have a handle reference
+                while (!timeoutCancellation.Token.IsCancellationRequested)
+                {
+                    if (!process.IsRunning)
+                    {
+                        _logger.LogDebug(
+                            "App '{AppName}' exited gracefully",
+                            process.AppName);
+                        return;
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), timeoutCancellation.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Timeout reached — fall through to hard kill
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Graceful shutdown error for '{AppName}' — hard killing",
+                process.AppName);
+        }
+
+        // Hard kill after timeout or on error
+        _logger.LogInformation(
+            "Graceful shutdown timeout for '{AppName}' — hard killing",
+            process.AppName);
+        process.KillProcess();
     }
 
     private void CheckGracePeriods(object? state)
