@@ -40,7 +40,8 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
     )
     {
         var typeCapabilities = await _db.Database
-            .SqlQuery<TypeCapabilityRow>(
+            .SqlQuery<TypeCapabilityRow>
+            (
                 $"""
                 SELECT
                     ATC.[Id] AS [AppTypeCapabilityId]
@@ -55,13 +56,15 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
                     ATC.[AppTypeId] = {appTypeId}
                 ORDER BY
                     C.[Category], C.[Slug]
-                """)
+                """
+            )
             .ToListAsync(ct);
 
         var overrides = await _db.Set<CapabilityConfiguration>()
             .AsNoTracking()
             .Where(cc => cc.AppId == appId)
             .ToListAsync(ct);
+
 
         var overrideLookup = overrides.ToDictionary(o => o.AppTypeCapabilityId);
 
@@ -82,10 +85,12 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
                     .Select(atc => atc.CapabilityId)
                     .SingleAsync(ct);
 
-                resolvedJson = CapabilityResolver.MergeJson(
+                resolvedJson = CapabilityResolver.MergeJson
+                (
                     typeCapability.DefaultConfiguration,
                     overrideRow.Configuration,
-                    capabilityId);
+                    capabilityId
+                );
             }
             else
             {
@@ -111,7 +116,10 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
     )
     {
         var routingData = resolvedCapabilities
-            .SingleOrDefault(c => string.Equals(c.Slug, StringCatalog.Capabilities.Routing, StringComparison.Ordinal));
+            .SingleOrDefault
+            (
+                c => string.Equals(c.Slug, StringCatalog.Capabilities.Routing, StringComparison.Ordinal)
+            );
 
         if (routingData is null)
         {

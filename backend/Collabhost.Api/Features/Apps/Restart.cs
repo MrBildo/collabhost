@@ -67,7 +67,8 @@ public sealed class RestartCommandHandler
         var routingConfiguration = _capabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
 
         var appRow = await _db.Database
-            .SqlQuery<AppWithTypeRow>(
+            .SqlQuery<AppWithTypeRow>
+            (
                 $"""
                 SELECT
                     A.[Id]
@@ -84,7 +85,8 @@ public sealed class RestartCommandHandler
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
                 WHERE
                     A.[ExternalId] = {command.ExternalId}
-                """)
+                """
+            )
             .SingleAsync(ct);
 
         var runtime = new RuntimeState

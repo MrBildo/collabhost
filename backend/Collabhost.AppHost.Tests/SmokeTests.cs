@@ -142,8 +142,13 @@ public class SmokeTests(AppHostFixture fixture)
         var routes = json.RootElement.GetProperty("routes");
         routes.GetArrayLength().ShouldBeGreaterThan(0);
 
-        var matchingRoute = routes.EnumerateArray()
-            .FirstOrDefault(r => r.GetProperty("domain").GetString()!.StartsWith(slug, StringComparison.Ordinal));
+        var matchingRoute = routes
+            .EnumerateArray()
+            .FirstOrDefault
+            (
+                r => r.GetProperty("domain").GetString()!
+                    .StartsWith(slug, StringComparison.Ordinal)
+            );
         matchingRoute.ValueKind.ShouldNotBe(JsonValueKind.Undefined);
     }
 

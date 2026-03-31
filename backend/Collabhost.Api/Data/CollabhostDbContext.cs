@@ -9,7 +9,9 @@ public class CollabhostDbContext(DbContextOptions<CollabhostDbContext> options) 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(CollabhostDbContext).Assembly);
 
-    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) => configurationBuilder.Properties<DateTime>()
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
+        configurationBuilder
+            .Properties<DateTime>()
             .HaveConversion<UtcDateTimeConverter>();
 }
 
@@ -30,7 +32,8 @@ public static class CollabhostDbContextExtensions
             string externalId,
             CancellationToken ct = default
         ) => await db.Database
-                .SqlQuery<AppLookup>(
+                .SqlQuery<AppLookup>
+                (
                     $"""
                     SELECT
                         A.[Id]
@@ -42,7 +45,8 @@ public static class CollabhostDbContextExtensions
                         [App] A
                     WHERE
                         A.[ExternalId] = {externalId}
-                    """)
+                    """
+                )
                 .SingleOrDefaultAsync(ct);
 
         public Task<bool> HasCapabilityAsync
@@ -51,6 +55,9 @@ public static class CollabhostDbContextExtensions
             Guid capabilityId,
             CancellationToken ct = default
         ) => db.Set<AppTypeCapability>()
-                .AnyAsync(atc => atc.AppTypeId == appTypeId && atc.CapabilityId == capabilityId, ct);
+                .AnyAsync
+                (
+                    atc => atc.AppTypeId == appTypeId && atc.CapabilityId == capabilityId, ct
+                );
     }
 }

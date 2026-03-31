@@ -57,7 +57,8 @@ public sealed class UpdateAppCommandHandler
 
     public async Task<CommandResult<Empty>> HandleAsync(UpdateAppCommand command, CancellationToken ct = default)
     {
-        var app = await _db.Apps.SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
+        var app = await _db.Apps
+            .SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
         if (app is null)
         {
             return CommandResult<Empty>.Fail("NOT_FOUND", "App not found.");
@@ -151,6 +152,5 @@ public sealed class UpdateAppCommandHandler
 
         return CommandResult<Empty>.Success(Empty.Value);
     }
-
 }
 #pragma warning restore MA0051

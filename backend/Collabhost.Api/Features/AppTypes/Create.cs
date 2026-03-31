@@ -72,7 +72,10 @@ public sealed class CreateAppTypeCommandHandler(CollabhostDbContext db)
         var normalizedName = command.Name.Trim().ToLowerInvariant();
 
         var nameExists = await _db.Set<AppType>()
-            .AnyAsync(t => t.Name == normalizedName, ct);
+            .AnyAsync
+            (
+                t => t.Name == normalizedName, ct
+            );
 
         if (nameExists)
         {
@@ -114,7 +117,10 @@ public sealed class CreateAppTypeCommandHandler(CollabhostDbContext db)
         {
             var capability = await _db.Set<Capability>()
                 .AsNoTracking()
-                .SingleOrDefaultAsync(c => c.Slug == slug, ct);
+                .SingleOrDefaultAsync
+                (
+                    c => c.Slug == slug, ct
+                );
 
             if (capability is null)
             {

@@ -47,7 +47,8 @@ public sealed class GetAllAppTypesCommandHandler(CollabhostDbContext db)
             .ToListAsync(ct);
 
         var allCapabilities = await _db.Database
-            .SqlQuery<AppTypeCapabilityRow>(
+            .SqlQuery<AppTypeCapabilityRow>
+            (
                 $"""
                 SELECT
                     ATC.[AppTypeId]
@@ -60,12 +61,14 @@ public sealed class GetAllAppTypesCommandHandler(CollabhostDbContext db)
                     INNER JOIN [Capability] C ON C.[Id] = ATC.[CapabilityId]
                 ORDER BY
                     C.[Category], C.[Slug]
-                """)
+                """
+            )
             .ToListAsync(ct);
 
         // Group capabilities by AppTypeId — need to include it in the query
         var capabilitiesByType = await _db.Database
-            .SqlQuery<AppTypeCapabilityWithTypeRow>(
+            .SqlQuery<AppTypeCapabilityWithTypeRow>
+            (
                 $"""
                 SELECT
                     ATC.[AppTypeId]
@@ -78,7 +81,8 @@ public sealed class GetAllAppTypesCommandHandler(CollabhostDbContext db)
                     INNER JOIN [Capability] C ON C.[Id] = ATC.[CapabilityId]
                 ORDER BY
                     C.[Category], C.[Slug]
-                """)
+                """
+            )
             .ToListAsync(ct);
 
         var grouped = capabilitiesByType

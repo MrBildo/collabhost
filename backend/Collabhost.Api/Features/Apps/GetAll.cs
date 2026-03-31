@@ -36,7 +36,8 @@ public sealed class GetAllAppsCommandHandler
     public async Task<CommandResult<List<AppDetailResponse>>> HandleAsync(GetAllAppsCommand command, CancellationToken ct = default)
     {
         var appRows = await _db.Database
-            .SqlQuery<AppWithTypeRow>(
+            .SqlQuery<AppWithTypeRow>
+            (
                 $"""
                 SELECT
                     A.[Id]
@@ -53,7 +54,8 @@ public sealed class GetAllAppsCommandHandler
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
                 ORDER BY
                     A.[Name]
-                """)
+                """
+            )
             .ToListAsync(ct);
 
         var results = new List<AppDetailResponse>();

@@ -48,16 +48,20 @@ public sealed class ProcessSupervisor
 
             foreach (var app in apps)
             {
-                var autoStartConfiguration = await capabilityResolver.ResolveAsync<AutoStartConfiguration>(
-                    app.Id, IdentifierCatalog.Capabilities.AutoStart, cancellationToken);
+                var autoStartConfiguration = await capabilityResolver.ResolveAsync<AutoStartConfiguration>
+                (
+                    app.Id, IdentifierCatalog.Capabilities.AutoStart, cancellationToken
+                );
 
                 if (autoStartConfiguration is null || !autoStartConfiguration.Enabled)
                 {
                     continue;
                 }
 
-                var hasProcess = await db.HasCapabilityAsync(
-                    app.AppTypeId, IdentifierCatalog.Capabilities.Process, cancellationToken);
+                var hasProcess = await db.HasCapabilityAsync
+                (
+                    app.AppTypeId, IdentifierCatalog.Capabilities.Process, cancellationToken
+                );
 
                 if (!hasProcess)
                 {
@@ -71,10 +75,12 @@ public sealed class ProcessSupervisor
                 }
                 catch (Exception exception)
                 {
-                    _logger.LogError(
+                    _logger.LogError
+                    (
                         exception,
                         "Failed to auto-start app '{AppName}'",
-                        app.DisplayName);
+                        app.DisplayName
+                    );
                 }
             }
         }
@@ -200,9 +206,13 @@ public sealed class ProcessSupervisor
         var capabilityResolver = scope.ServiceProvider.GetRequiredService<ICapabilityResolver>();
 
         var app = await db.Apps
-            .SingleOrDefaultAsync(a => a.Id == appId, ct) ?? throw new InvalidOperationException("App not found.");
+            .SingleOrDefaultAsync(a => a.Id == appId, ct)
+            ?? throw new InvalidOperationException("App not found.");
 
-        var hasProcess = await db.HasCapabilityAsync(app.AppTypeId, IdentifierCatalog.Capabilities.Process, ct);
+        var hasProcess = await db.HasCapabilityAsync
+        (
+            app.AppTypeId, IdentifierCatalog.Capabilities.Process, ct
+        );
 
         if (!hasProcess)
         {
@@ -210,8 +220,10 @@ public sealed class ProcessSupervisor
         }
 
         // Resolve process configuration for discovery strategy
-        var processConfiguration = await capabilityResolver.ResolveAsync<ProcessConfiguration>(
-            app.Id, IdentifierCatalog.Capabilities.Process, ct)
+        var processConfiguration = await capabilityResolver.ResolveAsync<ProcessConfiguration>
+        (
+            app.Id, IdentifierCatalog.Capabilities.Process, ct
+        )
             ?? throw new InvalidOperationException("Process capability configuration could not be resolved.");
 
         // Discover the command/args/working directory using the appropriate strategy
@@ -221,8 +233,10 @@ public sealed class ProcessSupervisor
         // Build environment variables from environment-defaults capability
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        var environmentDefaultsConfiguration = await capabilityResolver.ResolveAsync<EnvironmentDefaultsConfiguration>(
-            app.Id, IdentifierCatalog.Capabilities.EnvironmentDefaults, ct);
+        var environmentDefaultsConfiguration = await capabilityResolver.ResolveAsync<EnvironmentDefaultsConfiguration>
+        (
+            app.Id, IdentifierCatalog.Capabilities.EnvironmentDefaults, ct
+        );
 
         if (environmentDefaultsConfiguration?.Defaults is not null)
         {
@@ -235,8 +249,10 @@ public sealed class ProcessSupervisor
         var managed = new ManagedProcess(app.Id, app.ExternalId, app.DisplayName);
 
         // Port injection: allocate port and inject env var (port injection wins on name conflict)
-        var portInjectionConfiguration = await capabilityResolver.ResolveAsync<PortInjectionConfiguration>(
-            app.Id, IdentifierCatalog.Capabilities.PortInjection, ct);
+        var portInjectionConfiguration = await capabilityResolver.ResolveAsync<PortInjectionConfiguration>
+        (
+            app.Id, IdentifierCatalog.Capabilities.PortInjection, ct
+        );
 
         if (portInjectionConfiguration is not null)
         {
@@ -245,7 +261,12 @@ public sealed class ProcessSupervisor
             managed.AssignPort(allocatedPort);
 
             var formattedPortValue = portInjectionConfiguration.PortFormat
-                .Replace("{port}", allocatedPort.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+                .Replace
+                (
+                    "{port}",
+                    allocatedPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    StringComparison.OrdinalIgnoreCase
+                );
 
             // Port injection wins on name conflict with environment defaults
             environmentVariables[portInjectionConfiguration.EnvironmentVariableName] = formattedPortValue;
@@ -272,8 +293,10 @@ public sealed class ProcessSupervisor
         PublishStateChanged(managed, previousStateId);
 
         // Resolve and store restart policy for use on process exit
-        var restartConfiguration = await capabilityResolver.ResolveAsync<RestartConfiguration>(
-            app.Id, IdentifierCatalog.Capabilities.Restart, ct);
+        var restartConfiguration = await capabilityResolver.ResolveAsync<RestartConfiguration>
+        (
+            app.Id, IdentifierCatalog.Capabilities.Restart, ct
+        );
 
         var restartPolicy = restartConfiguration?.Policy ?? "never";
         _restartPolicies[appId] = restartPolicy;
@@ -324,9 +347,11 @@ public sealed class ProcessSupervisor
         // Do not restart if the operator explicitly stopped this process
         if (process.StoppedByOperator)
         {
-            _logger.LogInformation(
+            _logger.LogInformation
+            (
                 "App '{AppName}' was stopped by operator — skipping restart",
-                process.AppName);
+                process.AppName
+            );
             return;
         }
 
@@ -343,28 +368,34 @@ public sealed class ProcessSupervisor
 
         if (!shouldRestart)
         {
-            _logger.LogInformation(
+            _logger.LogInformation
+            (
                 "Restart policy '{RestartPolicy}' for '{AppName}' — not restarting (exit code: {ExitCode})",
                 restartPolicy,
                 process.AppName,
-                exitCode);
+                exitCode
+            );
             return;
         }
 
         if (process.HasMaxRestartsExceeded())
         {
-            _logger.LogError(
+            _logger.LogError
+            (
                 "App '{AppName}' has exceeded maximum restart count — not restarting",
-                process.AppName);
+                process.AppName
+            );
             return;
         }
 
         var delay = process.GetBackoffDelay();
-        _logger.LogInformation(
+        _logger.LogInformation
+        (
             "Restart policy '{RestartPolicy}' for '{AppName}' — restarting after {Delay}s",
             restartPolicy,
             process.AppName,
-            delay.TotalSeconds);
+            delay.TotalSeconds
+        );
 
         previousStateId = process.ProcessStateId;
         process.MarkRestarting();
@@ -421,8 +452,10 @@ public sealed class ProcessSupervisor
             using var scope = _scopeFactory.CreateScope();
             var capabilityResolver = scope.ServiceProvider.GetRequiredService<ICapabilityResolver>();
 
-            var processConfiguration = await capabilityResolver.ResolveAsync<ProcessConfiguration>(
-                appId, IdentifierCatalog.Capabilities.Process, CancellationToken.None);
+            var processConfiguration = await capabilityResolver.ResolveAsync<ProcessConfiguration>
+            (
+                appId, IdentifierCatalog.Capabilities.Process, CancellationToken.None
+            );
 
             if (processConfiguration is not null)
             {
@@ -432,10 +465,12 @@ public sealed class ProcessSupervisor
         }
         catch (Exception exception)
         {
-            _logger.LogWarning(
+            _logger.LogWarning
+            (
                 exception,
                 "Failed to resolve shutdown config for '{AppName}' — falling back to hard kill",
-                process.AppName);
+                process.AppName
+            );
         }
 
         var previousStateId = process.ProcessStateId;
@@ -466,15 +501,19 @@ public sealed class ProcessSupervisor
                 // Since we run processes with CreateNoWindow=true and redirect IO,
                 // graceful shutdown is attempted via Ctrl+C but may not work for all apps.
                 // Fall through to kill after timeout.
-                _logger.LogDebug(
+                _logger.LogDebug
+                (
                     "Attempting graceful shutdown for '{AppName}' (timeout: {Timeout}s)",
                     process.AppName,
-                    shutdownTimeoutSeconds);
+                    shutdownTimeoutSeconds
+                );
             }
 
             // Wait for the process to exit within the timeout
-            using var timeoutCancellation = new CancellationTokenSource(
-                TimeSpan.FromSeconds(shutdownTimeoutSeconds));
+            using var timeoutCancellation = new CancellationTokenSource
+            (
+                TimeSpan.FromSeconds(shutdownTimeoutSeconds)
+            );
 
             try
             {
@@ -483,9 +522,7 @@ public sealed class ProcessSupervisor
                 {
                     if (!process.IsRunning)
                     {
-                        _logger.LogDebug(
-                            "App '{AppName}' exited gracefully",
-                            process.AppName);
+                        _logger.LogDebug("App '{AppName}' exited gracefully", process.AppName);
                         return;
                     }
 
@@ -499,16 +536,20 @@ public sealed class ProcessSupervisor
         }
         catch (Exception exception)
         {
-            _logger.LogWarning(
+            _logger.LogWarning
+            (
                 exception,
                 "Graceful shutdown error for '{AppName}' — hard killing",
-                process.AppName);
+                process.AppName
+            );
         }
 
         // Hard kill after timeout or on error
-        _logger.LogInformation(
+        _logger.LogInformation
+        (
             "Graceful shutdown timeout for '{AppName}' — hard killing",
-            process.AppName);
+            process.AppName
+        );
         process.KillProcess();
     }
 

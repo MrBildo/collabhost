@@ -104,7 +104,8 @@ public sealed class StartCommandHandler
         managedProcess ??= hasProcess ? _supervisor.GetProcess(app.Id) : null;
 
         var appRow = await _db.Database
-            .SqlQuery<AppWithTypeRow>(
+            .SqlQuery<AppWithTypeRow>
+            (
                 $"""
                 SELECT
                     A.[Id]
@@ -121,7 +122,8 @@ public sealed class StartCommandHandler
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
                 WHERE
                     A.[ExternalId] = {externalId}
-                """)
+                """
+            )
             .SingleAsync(ct);
 
         var runtime = new RuntimeState

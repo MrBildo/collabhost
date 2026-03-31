@@ -65,7 +65,10 @@ public sealed class UpdateAppTypeCommandHandler(CollabhostDbContext db)
         }
 
         var appType = await _db.Set<AppType>()
-            .SingleOrDefaultAsync(t => t.ExternalId == command.ExternalId, ct);
+            .SingleOrDefaultAsync
+            (
+                t => t.ExternalId == command.ExternalId, ct
+            );
 
         if (appType is null)
         {
@@ -84,7 +87,10 @@ public sealed class UpdateAppTypeCommandHandler(CollabhostDbContext db)
             {
                 var capability = await _db.Set<Capability>()
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(c => c.Slug == slug, ct);
+                    .SingleOrDefaultAsync
+                    (
+                        c => c.Slug == slug, ct
+                    );
 
                 if (capability is null)
                 {

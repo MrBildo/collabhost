@@ -38,7 +38,8 @@ public sealed class GetAppCommandHandler
     public async Task<CommandResult<AppDetailResponse>> HandleAsync(GetAppCommand command, CancellationToken ct = default)
     {
         var row = await _db.Database
-            .SqlQuery<AppWithTypeRow>(
+            .SqlQuery<AppWithTypeRow>
+            (
                 $"""
                 SELECT
                     A.[Id]
@@ -55,7 +56,8 @@ public sealed class GetAppCommandHandler
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
                 WHERE
                     A.[ExternalId] = {command.ExternalId}
-                """)
+                """
+            )
             .SingleOrDefaultAsync(ct);
 
         if (row is null)

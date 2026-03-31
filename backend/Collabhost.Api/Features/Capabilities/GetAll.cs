@@ -40,13 +40,16 @@ public sealed class GetAllCapabilitiesCommandHandler(CollabhostDbContext db)
         var results = await _db.Set<Capability>()
             .OrderBy(c => c.Category)
             .ThenBy(c => c.Slug)
-            .Select(c => new GetAll.Response
+            .Select
             (
-                c.Slug,
-                c.DisplayName,
-                c.Description,
-                c.Category
-            ))
+                c => new GetAll.Response
+                (
+                    c.Slug,
+                    c.DisplayName,
+                    c.Description,
+                    c.Category
+                )
+            )
             .ToListAsync(ct);
 
         return CommandResult<List<GetAll.Response>>.Success(results);

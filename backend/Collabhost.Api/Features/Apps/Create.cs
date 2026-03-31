@@ -81,7 +81,10 @@ public sealed class CreateCommandHandler
         // Look up app type by ExternalId
         var appType = await _db.Set<AppType>()
             .AsNoTracking()
-            .SingleOrDefaultAsync(t => t.ExternalId == command.AppTypeExternalId, ct);
+            .SingleOrDefaultAsync
+            (
+                t => t.ExternalId == command.AppTypeExternalId, ct
+            );
 
         if (appType is null)
         {
@@ -161,7 +164,6 @@ public sealed class CreateCommandHandler
 
         return CommandResult<string>.Success(app.ExternalId);
     }
-
 }
 #pragma warning restore MA0051
 

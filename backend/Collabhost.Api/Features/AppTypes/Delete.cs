@@ -39,7 +39,10 @@ public sealed class DeleteAppTypeCommandHandler(CollabhostDbContext db)
     )
     {
         var appType = await _db.Set<AppType>()
-            .SingleOrDefaultAsync(t => t.ExternalId == command.ExternalId, ct);
+            .SingleOrDefaultAsync
+            (
+                t => t.ExternalId == command.ExternalId, ct
+            );
 
         if (appType is null)
         {
@@ -58,7 +61,10 @@ public sealed class DeleteAppTypeCommandHandler(CollabhostDbContext db)
 
         if (referencingApps.Count > 0)
         {
-            var appNames = string.Join(", ", referencingApps.Select(n => $"'{n}'"));
+            var appNames = string.Join
+            (
+                ", ", referencingApps.Select(n => $"'{n}'")
+            );
             return CommandResult<Empty>.Fail("CONFLICT", $"Cannot delete app type — referenced by apps: {appNames}.");
         }
 

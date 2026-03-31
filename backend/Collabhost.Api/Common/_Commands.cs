@@ -73,7 +73,11 @@ namespace Microsoft.Extensions.DependencyInjection
                     .SelectMany
                     (
                         t => t.GetInterfaces()
-                            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommandHandler<,>))
+                            .Where
+                            (
+                                i => i.IsGenericType
+                                    && i.GetGenericTypeDefinition() == typeof(ICommandHandler<,>)
+                            )
                             .Select(i => new { Interface = i, Implementation = t })
                     );
 

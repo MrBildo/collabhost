@@ -38,7 +38,8 @@ public sealed class ProxyConfigManager
         var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
 
         var proxyApp = await db.Database
-            .SqlQuery<ProxyAppLookup>(
+            .SqlQuery<ProxyAppLookup>
+            (
                 $"""
                 SELECT
                     A.[Id]
@@ -46,7 +47,8 @@ public sealed class ProxyConfigManager
                     [App] A
                 WHERE
                     A.[Name] = 'proxy'
-                """)
+                """
+            )
             .SingleOrDefaultAsync(cancellationToken);
 
         if (proxyApp is null)
@@ -218,7 +220,8 @@ public sealed class ProxyConfigManager
 
         // Load apps that have a routing capability
         var appIds = await db.Database
-            .SqlQuery<RoutableAppRow>(
+            .SqlQuery<RoutableAppRow>
+            (
                 $"""
                 SELECT
                     A.[Id]
@@ -229,15 +232,18 @@ public sealed class ProxyConfigManager
                     INNER JOIN [Capability] C ON C.[Id] = ATC.[CapabilityId]
                 WHERE
                     C.[Slug] = 'routing'
-                """)
+                """
+            )
             .ToListAsync(ct);
 
         var result = new List<AppRouteInfo>();
 
         foreach (var row in appIds)
         {
-            var routingConfiguration = await capabilityResolver.ResolveAsync<RoutingConfiguration>(
-                row.Id, IdentifierCatalog.Capabilities.Routing, ct);
+            var routingConfiguration = await capabilityResolver.ResolveAsync<RoutingConfiguration>
+            (
+                row.Id, IdentifierCatalog.Capabilities.Routing, ct
+            );
 
             if (routingConfiguration is null)
             {

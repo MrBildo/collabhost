@@ -11,8 +11,13 @@ public static class FeatureModuleServiceExtensions
         public IServiceCollection AddFeatureModules(Assembly assembly)
         {
             // Discover and register IFeatureModule instances for endpoint mapping
-            var moduleTypes = assembly.GetTypes()
-                .Where(t => t is { IsClass: true, IsAbstract: false } && t.IsAssignableTo(typeof(IFeatureModule)));
+            var moduleTypes = assembly
+                .GetTypes()
+                .Where
+                (
+                    t => t is { IsClass: true, IsAbstract: false }
+                        && t.IsAssignableTo(typeof(IFeatureModule))
+                );
 
             foreach (var moduleType in moduleTypes)
             {

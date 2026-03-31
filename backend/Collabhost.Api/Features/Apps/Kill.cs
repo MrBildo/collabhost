@@ -77,7 +77,8 @@ public sealed class KillCommandHandler
         managedProcess = _supervisor.GetProcess(app.Id);
 
         var appRow = await _db.Database
-            .SqlQuery<AppWithTypeRow>(
+            .SqlQuery<AppWithTypeRow>
+            (
                 $"""
                 SELECT
                     A.[Id]
@@ -94,7 +95,8 @@ public sealed class KillCommandHandler
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
                 WHERE
                     A.[ExternalId] = {command.ExternalId}
-                """)
+                """
+            )
             .SingleAsync(ct);
 
         var runtime = new RuntimeState

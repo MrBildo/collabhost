@@ -113,11 +113,13 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         fake.ShouldNotBeNull();
         fake.LastPushedConfig.ShouldNotBeNull();
 
-        var subjects = fake.LastPushedConfig["apps"]?["tls"]?["automation"]
-            ?["policies"]?[0]?["subjects"] as JsonArray;
+        var subjects = fake.LastPushedConfig["apps"]
+            ?["tls"]?["automation"]?["policies"]?[0]?["subjects"] as JsonArray;
         subjects.ShouldNotBeNull();
 
-        var subjectStrings = subjects.Select(s => s?.GetValue<string>()).ToList();
+        var subjectStrings = subjects
+            .Select(s => s?.GetValue<string>())
+            .ToList();
         subjectStrings.ShouldContain("collabhost.collab.internal");
         subjectStrings.ShouldContain("proxy-tls-test.collab.internal");
     }
@@ -168,11 +170,14 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         var routes = json.RootElement.GetProperty("routes");
         routes.GetArrayLength().ShouldBeGreaterThanOrEqualTo(1);
 
-        var routeArray = routes.EnumerateArray().ToList();
-        var matchingRoute = routeArray.FirstOrDefault
-        (
-            r => r.GetProperty("domain").GetString()?.Contains("proxy-routes-test", StringComparison.Ordinal) == true
-        );
+        var routeArray = routes
+            .EnumerateArray()
+            .ToList();
+        var matchingRoute = routeArray
+            .FirstOrDefault
+            (
+                r => r.GetProperty("domain").GetString()?.Contains("proxy-routes-test", StringComparison.Ordinal) == true
+            );
 
         matchingRoute.ValueKind.ShouldNotBe(JsonValueKind.Undefined);
         matchingRoute.GetProperty("https").GetBoolean().ShouldBeTrue();

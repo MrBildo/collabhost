@@ -18,7 +18,8 @@ public class AppMapping : IEntityTypeConfiguration<App>
         builder.HasIndex(e => e.ExternalId).IsUnique();
 
         // Slug used in domain routing (e.g. myapp.collab.internal) — 50 per spec
-        builder.Property(e => e.Name)
+        builder
+            .Property(e => e.Name)
             .HasConversion(v => v.Value, s => AppSlugValue.Create(s))
             .HasMaxLength(50)
             .IsRequired();

@@ -44,7 +44,10 @@ public sealed class GetAppTypeCommandHandler(CollabhostDbContext db)
     {
         var appType = await _db.Set<AppType>()
             .AsNoTracking()
-            .SingleOrDefaultAsync(t => t.ExternalId == command.ExternalId, ct);
+            .SingleOrDefaultAsync
+            (
+                t => t.ExternalId == command.ExternalId, ct
+            );
 
         if (appType is null)
         {
@@ -52,7 +55,8 @@ public sealed class GetAppTypeCommandHandler(CollabhostDbContext db)
         }
 
         var capabilityRows = await _db.Database
-            .SqlQuery<AppTypeCapabilityRow>(
+            .SqlQuery<AppTypeCapabilityRow>
+            (
                 $"""
                 SELECT
                     C.[Slug] AS [CapabilitySlug]
@@ -66,7 +70,8 @@ public sealed class GetAppTypeCommandHandler(CollabhostDbContext db)
                     ATC.[AppTypeId] = {appType.Id}
                 ORDER BY
                     C.[Category], C.[Slug]
-                """)
+                """
+            )
             .ToListAsync(ct);
 
         var capabilities = AppTypeCapabilityMapper.BuildCapabilityDictionary(capabilityRows);
