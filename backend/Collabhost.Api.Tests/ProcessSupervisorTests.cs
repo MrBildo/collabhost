@@ -3,7 +3,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Tests.Fixtures;
 
 using Shouldly;
@@ -183,8 +182,8 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
             AppTypeId = staticSite
-                ? IdentifierCatalog.AppTypes.StaticSiteExternalId
-                : IdentifierCatalog.AppTypes.ExecutableExternalId
+                ? TestCatalogConstants.AppTypes.StaticSiteExternalId
+                : TestCatalogConstants.AppTypes.ExecutableExternalId
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name, bool staticSite = false)

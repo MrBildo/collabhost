@@ -3,7 +3,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Tests.Fixtures;
 
 using Shouldly;
@@ -45,7 +44,7 @@ public class DeleteProtectionTests(CollabhostApiFixture fixture) : IClassFixture
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId
+            AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name)

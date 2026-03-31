@@ -108,7 +108,7 @@ public sealed class UpdateAppCommandHandler
                 var existingOverride = existingOverrides
                     .SingleOrDefault(e => e.AppTypeCapabilityId == typeCapability.Id);
 
-                if (overrideJson is null || IsEmptyObject(overrideJson))
+                if (overrideJson is null || overrideJson.IsEmptyObject())
                 {
                     // Null or empty = delete override (reset to type defaults)
                     if (existingOverride is not null)
@@ -152,6 +152,5 @@ public sealed class UpdateAppCommandHandler
         return CommandResult<Empty>.Success(Empty.Value);
     }
 
-    private static bool IsEmptyObject(JsonObject json) => json.Count == 0;
 }
 #pragma warning restore MA0051

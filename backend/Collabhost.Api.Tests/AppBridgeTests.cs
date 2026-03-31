@@ -3,7 +3,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Tests.Fixtures;
 
 using Shouldly;
@@ -117,7 +116,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         {
             Name = "bridge-override-test",
             DisplayName = "Override Test App",
-            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId,
+            AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
             CapabilityOverrides = new Dictionary<string, object>
             {
                 ["restart"] = new { policy = "never" }
@@ -151,7 +150,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         {
             Name = "bridge-invalid-slug",
             DisplayName = "Invalid Slug App",
-            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId,
+            AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
             CapabilityOverrides = new Dictionary<string, object>
             {
                 ["nonexistent-capability"] = new { foo = "bar" }
@@ -174,7 +173,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         {
             Name = "bridge-wrong-type",
             DisplayName = "Wrong Type App",
-            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId,
+            AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
             CapabilityOverrides = new Dictionary<string, object>
             {
                 ["health-check"] = new { endpoint = "/healthz" }
@@ -273,8 +272,8 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
             AppTypeId = staticSite
-                ? IdentifierCatalog.AppTypes.StaticSiteExternalId
-                : IdentifierCatalog.AppTypes.ExecutableExternalId
+                ? TestCatalogConstants.AppTypes.StaticSiteExternalId
+                : TestCatalogConstants.AppTypes.ExecutableExternalId
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name, bool staticSite = false)

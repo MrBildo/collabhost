@@ -120,7 +120,7 @@ public sealed class CreateCommandHandler
 
             foreach (var (overrideSlug, overrideJson) in command.CapabilityOverrides)
             {
-                if (overrideJson is null || IsEmptyObject(overrideJson))
+                if (overrideJson is null || overrideJson.IsEmptyObject())
                 {
                     continue;
                 }
@@ -162,6 +162,13 @@ public sealed class CreateCommandHandler
         return CommandResult<string>.Success(app.ExternalId);
     }
 
-    private static bool IsEmptyObject(JsonObject json) => json.Count == 0;
 }
 #pragma warning restore MA0051
+
+internal static class JsonObjectExtensions
+{
+    extension(JsonObject json)
+    {
+        public bool IsEmptyObject() => json.Count == 0;
+    }
+}

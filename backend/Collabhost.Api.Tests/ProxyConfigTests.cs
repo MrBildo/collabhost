@@ -4,7 +4,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Services.Proxy;
 using Collabhost.Api.Tests.Fixtures;
 
@@ -248,8 +247,8 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
     private static object CreateValidRequest(string name, bool staticSite = false)
     {
         var appTypeId = staticSite
-            ? IdentifierCatalog.AppTypes.StaticSiteExternalId
-            : IdentifierCatalog.AppTypes.ExecutableExternalId;
+            ? TestCatalogConstants.AppTypes.StaticSiteExternalId
+            : TestCatalogConstants.AppTypes.ExecutableExternalId;
 
         return new
         {

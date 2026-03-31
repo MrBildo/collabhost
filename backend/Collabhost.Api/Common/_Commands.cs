@@ -70,7 +70,8 @@ namespace Microsoft.Extensions.DependencyInjection
                 var handlerTypes = Assembly.GetExecutingAssembly()
                     .GetTypes()
                     .Where(t => !t.IsAbstract && !t.IsInterface)
-                    .SelectMany(
+                    .SelectMany
+                    (
                         t => t.GetInterfaces()
                             .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommandHandler<,>))
                             .Select(i => new { Interface = i, Implementation = t })

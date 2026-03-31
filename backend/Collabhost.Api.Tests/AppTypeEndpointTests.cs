@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Tests.Fixtures;
 
 using Shouldly;
@@ -40,7 +39,7 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
 
         // Act
         var response = await client.GetAsync(
-            $"/api/v1/app-types/{IdentifierCatalog.AppTypes.ExecutableExternalId}");
+            $"/api/v1/app-types/{TestCatalogConstants.AppTypes.ExecutableExternalId}");
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -182,7 +181,7 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
 
         // Act
         var response = await client.DeleteAsync(
-            $"/api/v1/app-types/{IdentifierCatalog.AppTypes.ExecutableExternalId}");
+            $"/api/v1/app-types/{TestCatalogConstants.AppTypes.ExecutableExternalId}");
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);

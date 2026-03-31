@@ -31,12 +31,14 @@ public sealed class KillCommandHandler
 (
     CollabhostDbContext db,
     ProcessSupervisor supervisor,
-    ProxyConfigManager proxyConfigManager
+    ProxyConfigManager proxyConfigManager,
+    ICapabilityBridge capabilityBridge
 ) : ICommandHandler<KillCommand, AppDetailResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
     private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
+    private readonly ICapabilityBridge _capabilityBridge = capabilityBridge ?? throw new ArgumentNullException(nameof(capabilityBridge));
 
     public async Task<CommandResult<AppDetailResponse>> HandleAsync(KillCommand command, CancellationToken ct = default)
     {
@@ -64,10 +66,12 @@ public sealed class KillCommandHandler
         managedProcess.KillProcess();
 
         // Build the bridge response
-        var resolvedCapabilities = await CapabilityBridge.ResolveAllCapabilitiesAsync(
-            _db, app.Id, app.AppTypeId, ct);
+        var resolvedCapabilities = await _capabilityBridge.ResolveAllCapabilitiesAsync
+        (
+            app.Id, app.AppTypeId, ct
+        );
 
-        var routingConfiguration = CapabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
+        var routingConfiguration = _capabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
 
         // Re-read the process state after kill
         managedProcess = _supervisor.GetProcess(app.Id);

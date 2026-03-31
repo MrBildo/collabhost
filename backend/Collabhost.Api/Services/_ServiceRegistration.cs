@@ -1,4 +1,5 @@
 using Collabhost.Api.Data.Interceptors;
+using Collabhost.Api.Features.Apps;
 
 using Microsoft.Extensions.Options;
 
@@ -40,6 +41,7 @@ public static class InfrastructureServiceExtensions
             services.AddHostedService<ProcessSupervisor>(sp => sp.GetRequiredService<ProcessSupervisor>());
             services.AddSingleton<UpdateCoordinator>();
             services.AddScoped<ICapabilityResolver, CapabilityResolver>();
+            services.AddScoped<ICapabilityBridge, CapabilityBridge>();
 
             return services;
         }

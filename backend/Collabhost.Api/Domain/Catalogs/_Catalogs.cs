@@ -9,12 +9,6 @@ public static class IdentifierCatalog
         public static readonly Guid Executable = new("bf5105c8-6a99-414c-96b6-c74aab5471f7");
         public static readonly Guid ReactApp = new("73e28a95-764f-4ae5-9c2b-a9fdea66c348");
         public static readonly Guid StaticSite = new("606cdf1f-f41e-42d2-bb13-04b598de0f63");
-
-        public const string DotNetAppExternalId = "01KN0P7JYNYACWC35R77C1KTV2";
-        public const string NodeAppExternalId = "01KN0P7JYNRBD8DC9DMKEDJX2M";
-        public const string ExecutableExternalId = "01KN0P7JYNJRAHGC01N17NFTWW";
-        public const string ReactAppExternalId = "01KN0P7JYNM6PJP07XTAXK77GR";
-        public const string StaticSiteExternalId = "01KN0P7JYN9TDB3SPPS25Z493F";
     }
 
     public static class Capabilities

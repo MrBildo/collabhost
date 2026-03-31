@@ -7,7 +7,22 @@ using Collabhost.Api.Domain.Entities;
 
 namespace Collabhost.Api.Features.Apps;
 
-internal static class CapabilityBridge
+public interface ICapabilityBridge
+{
+    Task<List<ResolvedCapabilityData>> ResolveAllCapabilitiesAsync
+    (
+        Guid appId,
+        Guid appTypeId,
+        CancellationToken ct
+    );
+
+    RoutingConfiguration? ExtractRoutingConfiguration
+    (
+        List<ResolvedCapabilityData> resolvedCapabilities
+    );
+}
+
+internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBridge
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -15,15 +30,16 @@ internal static class CapabilityBridge
         PropertyNameCaseInsensitive = true
     };
 
-    internal static async Task<List<ResolvedCapabilityData>> ResolveAllCapabilitiesAsync
+    private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
+
+    public async Task<List<ResolvedCapabilityData>> ResolveAllCapabilitiesAsync
     (
-        CollabhostDbContext db,
         Guid appId,
         Guid appTypeId,
         CancellationToken ct
     )
     {
-        var typeCapabilities = await db.Database
+        var typeCapabilities = await _db.Database
             .SqlQuery<TypeCapabilityRow>(
                 $"""
                 SELECT
@@ -42,7 +58,7 @@ internal static class CapabilityBridge
                 """)
             .ToListAsync(ct);
 
-        var overrides = await db.Set<CapabilityConfiguration>()
+        var overrides = await _db.Set<CapabilityConfiguration>()
             .AsNoTracking()
             .Where(cc => cc.AppId == appId)
             .ToListAsync(ct);
@@ -60,7 +76,7 @@ internal static class CapabilityBridge
             if (hasOverride && overrideRow is not null)
             {
                 // Find the capability ID to pass to MergeJson
-                var capabilityId = await db.Set<AppTypeCapability>()
+                var capabilityId = await _db.Set<AppTypeCapability>()
                     .AsNoTracking()
                     .Where(atc => atc.Id == typeCapability.AppTypeCapabilityId)
                     .Select(atc => atc.CapabilityId)
@@ -89,7 +105,7 @@ internal static class CapabilityBridge
         return results;
     }
 
-    internal static RoutingConfiguration? ExtractRoutingConfiguration
+    public RoutingConfiguration? ExtractRoutingConfiguration
     (
         List<ResolvedCapabilityData> resolvedCapabilities
     )

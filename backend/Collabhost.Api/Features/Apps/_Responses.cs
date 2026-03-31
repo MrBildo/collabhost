@@ -117,17 +117,17 @@ internal static class RuntimeStateBuilder
 
     private static string ResolveStateName(Guid stateId) => stateId switch
     {
-        _ when stateId == IdentifierCatalog.ProcessStates.Stopped => "stopped",
-        _ when stateId == IdentifierCatalog.ProcessStates.Starting => "starting",
-        _ when stateId == IdentifierCatalog.ProcessStates.Running => "running",
-        _ when stateId == IdentifierCatalog.ProcessStates.Stopping => "stopping",
-        _ when stateId == IdentifierCatalog.ProcessStates.Crashed => "crashed",
-        _ when stateId == IdentifierCatalog.ProcessStates.Restarting => "restarting",
+        _ when stateId == IdentifierCatalog.ProcessStates.Stopped => StringCatalog.ProcessStates.Stopped.ToLowerInvariant(),
+        _ when stateId == IdentifierCatalog.ProcessStates.Starting => StringCatalog.ProcessStates.Starting.ToLowerInvariant(),
+        _ when stateId == IdentifierCatalog.ProcessStates.Running => StringCatalog.ProcessStates.Running.ToLowerInvariant(),
+        _ when stateId == IdentifierCatalog.ProcessStates.Stopping => StringCatalog.ProcessStates.Stopping.ToLowerInvariant(),
+        _ when stateId == IdentifierCatalog.ProcessStates.Crashed => StringCatalog.ProcessStates.Crashed.ToLowerInvariant(),
+        _ when stateId == IdentifierCatalog.ProcessStates.Restarting => StringCatalog.ProcessStates.Restarting.ToLowerInvariant(),
         _ => "unknown"
     };
 }
 
-internal sealed record ResolvedCapabilityData
+public sealed record ResolvedCapabilityData
 (
     string Slug,
     string DisplayName,

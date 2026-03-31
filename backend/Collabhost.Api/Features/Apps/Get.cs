@@ -1,3 +1,5 @@
+using Collabhost.Api.Domain.Catalogs;
+
 namespace Collabhost.Api.Features.Apps;
 
 public static class Get
@@ -24,12 +26,14 @@ public sealed class GetAppCommandHandler
 (
     CollabhostDbContext db,
     ProcessSupervisor supervisor,
-    ProxyConfigManager proxyConfigManager
+    ProxyConfigManager proxyConfigManager,
+    ICapabilityBridge capabilityBridge
 ) : ICommandHandler<GetAppCommand, AppDetailResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
     private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
+    private readonly ICapabilityBridge _capabilityBridge = capabilityBridge ?? throw new ArgumentNullException(nameof(capabilityBridge));
 
     public async Task<CommandResult<AppDetailResponse>> HandleAsync(GetAppCommand command, CancellationToken ct = default)
     {
@@ -59,12 +63,16 @@ public sealed class GetAppCommandHandler
             return CommandResult<AppDetailResponse>.Fail("NOT_FOUND", "App not found.");
         }
 
-        var resolvedCapabilities = await CapabilityBridge.ResolveAllCapabilitiesAsync(
-            _db, row.Id, row.AppTypeId, ct);
+        var resolvedCapabilities = await _capabilityBridge.ResolveAllCapabilitiesAsync
+        (
+            row.Id, row.AppTypeId, ct
+        );
 
-        var routingConfiguration = CapabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
-        var hasProcessCapability = resolvedCapabilities.Exists(
-            c => string.Equals(c.Slug, "process", StringComparison.Ordinal));
+        var routingConfiguration = _capabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
+        var hasProcessCapability = resolvedCapabilities.Exists
+        (
+            c => string.Equals(c.Slug, StringCatalog.Capabilities.Process, StringComparison.Ordinal)
+        );
 
         var managedProcess = hasProcessCapability ? _supervisor.GetProcess(row.Id) : null;
 

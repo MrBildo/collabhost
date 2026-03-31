@@ -83,26 +83,37 @@ public sealed class GetAllAppTypesCommandHandler(CollabhostDbContext db)
 
         var grouped = capabilitiesByType
             .GroupBy(c => c.AppTypeId)
-            .ToDictionary(
+            .ToDictionary
+            (
                 g => g.Key,
-                g => AppTypeCapabilityMapper.BuildCapabilityDictionary(
-                    g.Select(r => new AppTypeCapabilityRow(
-                        r.CapabilitySlug,
-                        r.CapabilityDisplayName,
-                        r.CapabilityCategory,
-                        r.Configuration))),
-                GuidComparer.Instance);
+                g => AppTypeCapabilityMapper.BuildCapabilityDictionary
+                (
+                    g.Select
+                    (
+                        r => new AppTypeCapabilityRow
+                        (
+                            r.CapabilitySlug,
+                            r.CapabilityDisplayName,
+                            r.CapabilityCategory,
+                            r.Configuration
+                        )
+                    )
+                )
+            );
 
         var results = appTypes
-            .Select(t => new GetAll.Response
+            .Select
             (
-                t.ExternalId,
-                t.Name,
-                t.DisplayName,
-                t.Description,
-                t.IsBuiltIn,
-                grouped.TryGetValue(t.Id, out var caps) ? caps : new Dictionary<string, AppTypeCapabilityResponse>(StringComparer.Ordinal)
-            ))
+                t => new GetAll.Response
+                (
+                    t.ExternalId,
+                    t.Name,
+                    t.DisplayName,
+                    t.Description,
+                    t.IsBuiltIn,
+                    grouped.TryGetValue(t.Id, out var caps) ? caps : new Dictionary<string, AppTypeCapabilityResponse>(StringComparer.Ordinal)
+                )
+            )
             .ToList();
 
         return CommandResult<List<GetAll.Response>>.Success(results);
@@ -117,12 +128,3 @@ internal sealed record AppTypeCapabilityWithTypeRow
     string CapabilityCategory,
     string Configuration
 );
-
-internal sealed class GuidComparer : IEqualityComparer<Guid>
-{
-    public static readonly GuidComparer Instance = new();
-
-    public bool Equals(Guid x, Guid y) => x == y;
-
-    public int GetHashCode(Guid obj) => obj.GetHashCode();
-}

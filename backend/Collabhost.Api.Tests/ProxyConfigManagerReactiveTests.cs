@@ -129,7 +129,7 @@ public sealed class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId
+            AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId
         };
 
         var response = await client.PostAsJsonAsync("/api/v1/apps", request);
