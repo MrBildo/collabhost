@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 
 using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Domain.Entities;
@@ -67,11 +68,79 @@ public sealed class ProxyAppSeeder
         _db.Apps.Add(app);
         await _db.SaveChangesAsync(cancellationToken);
 
+        await CreateCapabilityOverridesAsync(app.Id, resolvedPath, cancellationToken);
+
         _logger.LogInformation
         (
             "Proxy app seeded — binary at '{BinaryPath}'",
             resolvedPath
         );
+    }
+
+    private async Task CreateCapabilityOverridesAsync
+    (
+        Guid appId,
+        string resolvedPath,
+        CancellationToken cancellationToken
+    )
+    {
+        var jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        // Look up AppTypeCapability rows for the Executable type
+        var processTypeCapability = await _db.Set<AppTypeCapability>()
+            .AsNoTracking()
+            .Where
+            (
+                atc => atc.AppTypeId == IdentifierCatalog.AppTypes.Executable
+                    && atc.CapabilityId == IdentifierCatalog.Capabilities.Process
+            )
+            .SingleAsync(cancellationToken);
+
+        var autoStartTypeCapability = await _db.Set<AppTypeCapability>()
+            .AsNoTracking()
+            .Where
+            (
+                atc => atc.AppTypeId == IdentifierCatalog.AppTypes.Executable
+                    && atc.CapabilityId == IdentifierCatalog.Capabilities.AutoStart
+            )
+            .SingleAsync(cancellationToken);
+
+        // Process capability override
+        var processOverride = new
+        {
+            discoveryStrategy = "manual",
+            command = resolvedPath,
+            arguments = "run --config \"\"",
+            workingDirectory = Path.GetDirectoryName(resolvedPath),
+            gracefulShutdown = true,
+            shutdownTimeoutSeconds = 10
+        };
+
+        var processConfiguration = CapabilityConfiguration.Create
+        (
+            appId,
+            processTypeCapability.Id,
+            JsonSerializer.Serialize(processOverride, jsonOptions)
+        );
+
+        _db.Set<CapabilityConfiguration>().Add(processConfiguration);
+
+        // Auto-start capability override
+        var autoStartOverride = new { enabled = true };
+
+        var autoStartConfiguration = CapabilityConfiguration.Create
+        (
+            appId,
+            autoStartTypeCapability.Id,
+            JsonSerializer.Serialize(autoStartOverride, jsonOptions)
+        );
+
+        _db.Set<CapabilityConfiguration>().Add(autoStartConfiguration);
+
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
     internal static string? ResolveBinaryPath(string binaryPath)
