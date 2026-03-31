@@ -36,6 +36,7 @@ public record AppCapabilityResponse
     string Category,
     string DisplayName,
     JsonObject Resolved,
+    JsonObject Defaults,
     bool HasOverrides
 );
 
@@ -110,13 +111,15 @@ internal static class RuntimeStateBuilder
 
         foreach (var resolved in resolvedCapabilities)
         {
-            var configNode = JsonNode.Parse(resolved.ResolvedConfiguration)?.AsObject() ?? new JsonObject();
+            var resolvedNode = JsonNode.Parse(resolved.ResolvedConfiguration)?.AsObject() ?? new JsonObject();
+            var defaultsNode = JsonNode.Parse(resolved.DefaultConfiguration)?.AsObject() ?? new JsonObject();
 
             result[resolved.Slug] = new AppCapabilityResponse
             (
                 resolved.Category,
                 resolved.DisplayName,
-                configNode,
+                resolvedNode,
+                defaultsNode,
                 resolved.HasOverrides
             );
         }
