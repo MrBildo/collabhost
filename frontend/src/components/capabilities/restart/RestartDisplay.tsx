@@ -8,6 +8,12 @@ import {
 
 import type { CapabilityWidgetProps } from '../types';
 
+const POLICY_LABELS: Record<string, string> = {
+  never: 'Never',
+  onCrash: 'On Crash',
+  always: 'Always',
+};
+
 function getFieldSource(
   fieldName: string,
   resolved: Record<string, unknown>,
@@ -28,7 +34,7 @@ function RestartDisplay({ displayName, resolved, defaults, hasOverrides }: Capab
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">Policy</span>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium capitalize">{policy}</span>
+            <span className="text-sm font-medium">{POLICY_LABELS[policy] ?? policy}</span>
             {hasOverrides && (
               <ConfigSourceIndicator source={getFieldSource('policy', resolved, defaults)} />
             )}
