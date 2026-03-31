@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Boxes, Globe, Moon, Server, Sun } from 'lucide-react';
+import { Blocks, Boxes, Globe, Layers, Moon, Server, Sun } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,6 +17,8 @@ import {
 
 const NAV_ITEMS = [
   { label: 'Apps', href: '/', icon: Boxes },
+  { label: 'App Types', href: '/app-types', icon: Layers },
+  { label: 'Capabilities', href: '/capabilities', icon: Blocks },
   { label: 'Routes', href: '/routes', icon: Globe },
   { label: 'System', href: '/system', icon: Server },
 ] as const;

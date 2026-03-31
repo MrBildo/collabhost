@@ -6,6 +6,10 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { AuthGate } from '@/components/AuthGate';
 import { AppListPage } from '@/routes/AppListPage';
 import { AppDetailPage } from '@/routes/AppDetailPage';
+import AppTypesListPage from '@/routes/AppTypesListPage';
+import AppTypeDetailPage from '@/routes/AppTypeDetailPage';
+import AppTypeCreatePage from '@/routes/AppTypeCreatePage';
+import CapabilitiesPage from '@/routes/CapabilitiesPage';
 import { RoutesPage } from '@/routes/RoutesPage';
 import { SystemPage } from '@/routes/SystemPage';
 
@@ -19,6 +23,10 @@ export function App() {
             <Routes>
               <Route path="/" element={<AppListPage />} />
               <Route path="/apps/:id" element={<AppDetailPage />} />
+              <Route path="/app-types" element={<AppTypesListPage />} />
+              <Route path="/app-types/new" element={<AppTypeCreatePage />} />
+              <Route path="/app-types/:id" element={<AppTypeDetailPage />} />
+              <Route path="/capabilities" element={<CapabilitiesPage />} />
               <Route path="/routes" element={<RoutesPage />} />
               <Route path="/system" element={<SystemPage />} />
             </Routes>

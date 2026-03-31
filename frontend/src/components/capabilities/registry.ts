@@ -1,7 +1,14 @@
 import { FallbackDisplay } from './fallback/FallbackDisplay';
+import { aspnetRuntimeFamily } from './aspnet-runtime';
+import { autoStartFamily } from './auto-start';
 import { environmentDefaultsFamily } from './environment-defaults';
 import { healthCheckFamily } from './health-check';
+import { nodeRuntimeFamily } from './node-runtime';
+import { portInjectionFamily } from './port-injection';
 import { processFamily } from './process';
+import { reactRuntimeFamily } from './react-runtime';
+import { restartFamily } from './restart';
+import { routingFamily } from './routing';
 import type { CapabilityComponentFamily, CapabilityWidgetProps } from './types';
 
 /** Registry mapping capability slugs to their component families. */
@@ -9,6 +16,13 @@ const capabilityRegistry = new Map<string, CapabilityComponentFamily>([
   ['process', processFamily],
   ['health-check', healthCheckFamily],
   ['environment-defaults', environmentDefaultsFamily],
+  ['port-injection', portInjectionFamily],
+  ['routing', routingFamily],
+  ['restart', restartFamily],
+  ['auto-start', autoStartFamily],
+  ['aspnet-runtime', aspnetRuntimeFamily],
+  ['node-runtime', nodeRuntimeFamily],
+  ['react-runtime', reactRuntimeFamily],
 ]);
 
 /**
