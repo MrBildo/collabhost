@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { AppListItem, SystemStatus } from '@/types/api';
+import type { AppResponse, SystemStatus } from '@/types/api';
 
 export function useSystemStatus() {
   return useQuery({
@@ -17,7 +17,7 @@ export function useAppList() {
   return useQuery({
     queryKey: ['apps'],
     queryFn: async () => {
-      const response = await api.get<AppListItem[]>('/apps');
+      const response = await api.get<AppResponse[]>('/apps');
       return response.data;
     },
     refetchInterval: 10_000,

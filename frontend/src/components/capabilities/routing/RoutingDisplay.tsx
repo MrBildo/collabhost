@@ -8,6 +8,11 @@ import {
 
 import type { CapabilityWidgetProps } from '../types';
 
+const SERVE_MODE_LABELS: Record<string, string> = {
+  reverseProxy: 'Reverse Proxy',
+  fileServer: 'File Server',
+};
+
 function getFieldSource(
   fieldName: string,
   resolved: Record<string, unknown>,
@@ -43,7 +48,7 @@ function RoutingDisplay({ displayName, resolved, defaults, hasOverrides }: Capab
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Serve Mode</span>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{serveMode}</span>
+              <span className="text-sm font-medium">{SERVE_MODE_LABELS[serveMode] ?? serveMode}</span>
               {hasOverrides && (
                 <ConfigSourceIndicator source={getFieldSource('serveMode', resolved, defaults)} />
               )}

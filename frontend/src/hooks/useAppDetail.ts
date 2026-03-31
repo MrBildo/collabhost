@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
-import type { AppDetail, LogsResponse, UpdateAppRequest } from '@/types/api';
+import type { AppResponse, LogsResponse, UpdateAppRequest } from '@/types/api';
 
 export function useAppDetail(id: string) {
-  return useQuery<AppDetail>({
+  return useQuery<AppResponse>({
     queryKey: ['apps', id, 'detail'],
-    queryFn: () => api.get<AppDetail>(`/apps/${id}`).then((response) => response.data),
-    staleTime: 10_000,
+    queryFn: () => api.get<AppResponse>(`/apps/${id}`).then((response) => response.data),
+    refetchInterval: 5000,
   });
 }
 
@@ -19,7 +19,7 @@ export function useAppLogs(id: string) {
   });
 }
 
-export function useUpdateAppConfig(id: string) {
+export function useUpdateApp(id: string) {
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, UpdateAppRequest>({

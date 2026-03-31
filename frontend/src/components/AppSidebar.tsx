@@ -1,7 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Blocks, Boxes, Globe, Layers, Moon, Server, Sun } from 'lucide-react';
-import { useTheme } from '@/hooks/useTheme';
-import { Button } from '@/components/ui/button';
+import { Blocks, Boxes, Globe, LayoutDashboard, Layers, Server } from 'lucide-react';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import {
   Sidebar,
   SidebarContent,
@@ -16,7 +15,8 @@ import {
 } from '@/components/ui/sidebar';
 
 const NAV_ITEMS = [
-  { label: 'Apps', href: '/', icon: Boxes },
+  { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { label: 'Apps', href: '/apps', icon: Boxes },
   { label: 'App Types', href: '/app-types', icon: Layers },
   { label: 'Capabilities', href: '/capabilities', icon: Blocks },
   { label: 'Routes', href: '/routes', icon: Globe },
@@ -24,11 +24,10 @@ const NAV_ITEMS = [
 ] as const;
 
 export function AppSidebar() {
-  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
   return (
-    <Sidebar>
+    <Sidebar className="bg-[image:var(--glass-bg)] backdrop-blur-[var(--glass-blur)] border-r border-[var(--glass-border)]">
       <SidebarHeader className="px-4 py-4">
         <div className="flex items-center gap-2">
           <Server className="h-5 w-5 text-primary" />
@@ -45,7 +44,7 @@ export function AppSidebar() {
               {NAV_ITEMS.map((item) => {
                 const isActive =
                   item.href === '/'
-                    ? location.pathname === '/' || location.pathname.startsWith('/apps')
+                    ? location.pathname === '/'
                     : location.pathname.startsWith(item.href);
 
                 return (
@@ -54,6 +53,9 @@ export function AppSidebar() {
                       isActive={isActive}
                       tooltip={item.label}
                       render={<NavLink to={item.href} />}
+                      className={
+                        isActive ? 'bg-[image:var(--gradient-primary)] text-primary-foreground' : ''
+                      }
                     >
                       <item.icon />
                       <span>{item.label}</span>
@@ -68,9 +70,7 @@ export function AppSidebar() {
       <SidebarSeparator />
       <SidebarFooter>
         <div className="flex items-center justify-between px-2">
-          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
-            {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-          </Button>
+          <ThemeToggle />
           <span className="text-xs text-muted-foreground">v0.1.0</span>
         </div>
       </SidebarFooter>
