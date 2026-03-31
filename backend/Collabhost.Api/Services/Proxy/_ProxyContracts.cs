@@ -14,7 +14,9 @@ public interface IProxyConfigClient
 public record AppRouteInfo
 (
     string Slug,
-    string? ServeMode
+    string? ServeMode,
+    int? Port,
+    bool SpaFallback
 );
 
 public interface IProxyAppSeeder
