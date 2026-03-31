@@ -172,7 +172,7 @@ public class LogRetrievalTests(CollabhostApiFixture fixture) : IClassFixture<Col
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable
+            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name)

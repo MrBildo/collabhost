@@ -50,10 +50,10 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
-        json.RootElement.GetProperty("externalId").GetString().ShouldBe(externalId);
+        json.RootElement.GetProperty("id").GetString().ShouldBe(externalId);
         json.RootElement.GetProperty("name").GetString().ShouldBe("get-test");
         json.RootElement.GetProperty("displayName").GetString().ShouldBe("Get Test App");
-        json.RootElement.GetProperty("appTypeName").GetString().ShouldBe("Executable");
+        json.RootElement.GetProperty("appType").GetProperty("displayName").GetString().ShouldBe("Executable");
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = "",
             DisplayName = "",
-            AppTypeId = Guid.Empty
+            AppTypeId = ""
         };
 
         // Act
@@ -157,7 +157,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = "",
             DisplayName = "Some Display Name",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable
+            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId
         };
 
         // Act
@@ -176,7 +176,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = "valid-slug",
             DisplayName = "",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable
+            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId
         };
 
         // Act
@@ -195,7 +195,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = "My App!",
             DisplayName = "My App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable
+            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId
         };
 
         // Act
@@ -260,7 +260,7 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable
+            AppTypeId = IdentifierCatalog.AppTypes.ExecutableExternalId
         };
 
     private static async Task<string> CreateAppAsync(HttpClient client, string name)

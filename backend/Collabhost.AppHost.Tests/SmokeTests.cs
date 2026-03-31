@@ -13,7 +13,7 @@ public class SmokeTests(AppHostFixture fixture)
 {
     private readonly HttpClient _client = fixture.ApiClient;
 
-    private static readonly Guid _executableAppTypeId = new("bf5105c8-6a99-414c-96b6-c74aab5471f7");
+    private static readonly string _executableAppTypeExternalId = "01KN0P7JYNJRAHGC01N17NFTWW";
 
     [Fact]
     public async Task HealthCheck_ReturnsOk()
@@ -66,14 +66,13 @@ public class SmokeTests(AppHostFixture fixture)
         var getContent = await getResponse.Content.ReadAsStringAsync();
         var getJson = JsonDocument.Parse(getContent);
         getJson.RootElement.GetProperty("name").GetString().ShouldBe(slug);
-        getJson.RootElement.GetProperty("appTypeName").GetString().ShouldBe("Executable");
+        getJson.RootElement.GetProperty("appType").GetProperty("displayName").GetString().ShouldBe("Executable");
     }
 
     [Fact]
     public async Task AppLifecycle_GetStatus_ReturnsStopped()
     {
-        // Arrange — start/stop deferred to Card #39 (capability-aware process discovery)
-        // ProcessSupervisor currently uses a stub command that cannot execute in real environments.
+        // Arrange — ProcessSupervisor uses a stub command that cannot execute in real environments.
         // Test verifies the status endpoint works for a never-started app.
         var slug = UniqueSlug("lifecycle");
         var externalId = await CreateAppAsync(slug);
@@ -149,20 +148,17 @@ public class SmokeTests(AppHostFixture fixture)
     }
 
     [Fact]
-    public async Task Update_ReturnsNotSupported()
+    public async Task Capabilities_ListReturnsSeededData()
     {
-        // Arrange — update endpoint is a stub in the capability model
-        var slug = UniqueSlug("update");
-        var externalId = await CreateAppAsync(slug);
+        // Act
+        var response = await _client.GetAsync("/api/v1/capabilities");
 
-        // Act — call update endpoint
-        var updateResponse = await _client.PostAsync($"/api/v1/apps/{externalId}/update", null);
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-        // Assert — returns 400 (not supported in capability model yet)
-        updateResponse.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
-
-        var body = await updateResponse.Content.ReadAsStringAsync();
-        body.ShouldContain("NOT_SUPPORTED");
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetArrayLength().ShouldBeGreaterThanOrEqualTo(10);
     }
 
     private static string UniqueSlug(string prefix) =>
@@ -173,7 +169,7 @@ public class SmokeTests(AppHostFixture fixture)
         {
             Name = slug,
             DisplayName = $"Smoke {slug}",
-            AppTypeId = _executableAppTypeId
+            AppTypeId = _executableAppTypeExternalId
         };
 
     private async Task<string> CreateAppAsync(string slug)

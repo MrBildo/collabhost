@@ -1,5 +1,9 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
 using Collabhost.Api.Domain.Entities;
 using Collabhost.Api.Domain.Values;
+using Collabhost.Api.Features.AppTypes;
 
 namespace Collabhost.Api.Features.Apps;
 
@@ -9,7 +13,8 @@ public static class Create
     (
         string Name,
         string DisplayName,
-        Guid AppTypeId
+        string AppTypeId,
+        Dictionary<string, JsonObject?>? CapabilityOverrides
     );
 
     public record Response(string ExternalId);
@@ -25,7 +30,8 @@ public static class Create
         (
             request.Name,
             request.DisplayName,
-            request.AppTypeId
+            request.AppTypeId,
+            request.CapabilityOverrides
         );
 
         var result = await dispatcher.DispatchAsync(command, ct);
@@ -40,10 +46,12 @@ public record CreateCommand
 (
     string Name,
     string DisplayName,
-    Guid AppTypeId
+    string AppTypeExternalId,
+    Dictionary<string, JsonObject?>? CapabilityOverrides
 ) : ICommand<string>;
 
-public class CreateCommandHandler
+#pragma warning disable MA0051 // Long method justified — app creation with capability override validation
+public sealed class CreateCommandHandler
 (
     CollabhostDbContext db,
     ProxyConfigManager proxyConfigManager
@@ -54,7 +62,6 @@ public class CreateCommandHandler
 
     public async Task<CommandResult<string>> HandleAsync(CreateCommand command, CancellationToken ct = default)
     {
-        // Validate required fields
         var (slugValid, slugError) = AppSlugValue.CanCreate(command.Name);
         if (!slugValid)
         {
@@ -66,14 +73,21 @@ public class CreateCommandHandler
             return CommandResult<string>.Fail("INVALID_DISPLAY_NAME", "Display name is required.");
         }
 
-        // Validate app type exists
-        var appTypeExists = await _db.Set<AppType>().AnyAsync(t => t.Id == command.AppTypeId, ct);
-        if (!appTypeExists)
+        if (string.IsNullOrWhiteSpace(command.AppTypeExternalId))
         {
-            return CommandResult<string>.Fail("INVALID_APP_TYPE", "The specified AppTypeId does not exist.");
+            return CommandResult<string>.Fail("INVALID_APP_TYPE", "App type ID is required.");
         }
 
-        // Check for duplicate name
+        // Look up app type by ExternalId
+        var appType = await _db.Set<AppType>()
+            .AsNoTracking()
+            .SingleOrDefaultAsync(t => t.ExternalId == command.AppTypeExternalId, ct);
+
+        if (appType is null)
+        {
+            return CommandResult<string>.Fail("INVALID_APP_TYPE", "The specified app type does not exist.");
+        }
+
         var slug = AppSlugValue.Create(command.Name);
         var nameExists = await _db.Apps.AnyAsync(a => a.Name == slug, ct);
         if (nameExists)
@@ -85,14 +99,69 @@ public class CreateCommandHandler
         (
             slug,
             command.DisplayName,
-            command.AppTypeId
+            appType.Id
         );
 
         _db.Apps.Add(app);
+
+        // Process capability overrides
+        if (command.CapabilityOverrides is not null)
+        {
+            var typeCapabilities = await _db.Set<AppTypeCapability>()
+                .AsNoTracking()
+                .Where(atc => atc.AppTypeId == appType.Id)
+                .ToListAsync(ct);
+
+            var capabilities = await _db.Set<Capability>()
+                .AsNoTracking()
+                .ToListAsync(ct);
+
+            var capabilityLookup = capabilities.ToDictionary(c => c.Slug, StringComparer.Ordinal);
+
+            foreach (var (overrideSlug, overrideJson) in command.CapabilityOverrides)
+            {
+                if (overrideJson is null || IsEmptyObject(overrideJson))
+                {
+                    continue;
+                }
+
+                if (!capabilityLookup.TryGetValue(overrideSlug, out var capability))
+                {
+                    return CommandResult<string>.Fail("UNKNOWN_CAPABILITY", $"Unknown capability slug: '{overrideSlug}'.");
+                }
+
+                var typeCapability = typeCapabilities
+                    .SingleOrDefault(tc => tc.CapabilityId == capability.Id);
+
+                if (typeCapability is null)
+                {
+                    return CommandResult<string>.Fail("INVALID_OVERRIDE", $"App type '{appType.Name}' does not have capability '{overrideSlug}'.");
+                }
+
+                var validationError = CapabilityConfigurationValidator.Validate(overrideSlug, overrideJson);
+                if (validationError is not null)
+                {
+                    return CommandResult<string>.Fail("INVALID_CONFIGURATION", validationError);
+                }
+
+                var capabilityConfiguration = CapabilityConfiguration.Create
+                (
+                    app.Id,
+                    typeCapability.Id,
+                    overrideJson.ToJsonString()
+                );
+
+                _db.Set<CapabilityConfiguration>().Add(capabilityConfiguration);
+            }
+        }
+
         await _db.SaveChangesAsync(ct);
 
         await _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<string>.Success(app.ExternalId);
     }
+
+    private static bool IsEmptyObject(JsonObject json) => json.Count == 0;
 }
+#pragma warning restore MA0051

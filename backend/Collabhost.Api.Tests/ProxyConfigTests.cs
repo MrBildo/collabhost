@@ -248,8 +248,8 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
     private static object CreateValidRequest(string name, bool staticSite = false)
     {
         var appTypeId = staticSite
-            ? IdentifierCatalog.AppTypes.StaticSite
-            : IdentifierCatalog.AppTypes.Executable;
+            ? IdentifierCatalog.AppTypes.StaticSiteExternalId
+            : IdentifierCatalog.AppTypes.ExecutableExternalId;
 
         return new
         {

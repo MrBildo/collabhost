@@ -19,7 +19,7 @@ public sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>
     v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
 );
 
-public record AppLookup(Guid Id, string ExternalId, string DisplayName, Guid AppTypeId);
+public record AppLookup(Guid Id, string ExternalId, string Name, string DisplayName, Guid AppTypeId);
 
 public static class CollabhostDbContextExtensions
 {
@@ -35,6 +35,7 @@ public static class CollabhostDbContextExtensions
                     SELECT
                         A.[Id]
                         ,A.[ExternalId]
+                        ,A.[Name]
                         ,A.[DisplayName]
                         ,A.[AppTypeId]
                     FROM

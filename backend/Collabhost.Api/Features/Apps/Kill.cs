@@ -2,7 +2,7 @@ using Collabhost.Api.Domain.Catalogs;
 
 namespace Collabhost.Api.Features.Apps;
 
-public static class Start
+public static class Kill
 {
     public static async Task<Results<Ok<AppDetailResponse>, NotFound, ProblemHttpResult>> HandleAsync
     (
@@ -11,13 +11,12 @@ public static class Start
         CancellationToken ct
     )
     {
-        var result = await dispatcher.DispatchAsync(new StartCommand(externalId), ct);
+        var result = await dispatcher.DispatchAsync(new KillCommand(externalId), ct);
 
         Results<Ok<AppDetailResponse>, NotFound, ProblemHttpResult> response = result switch
         {
             { IsSuccess: true } => TypedResults.Ok(result.Value),
             { ErrorCode: "NOT_FOUND" } => TypedResults.NotFound(),
-            { ErrorCode: "ALREADY_RUNNING" } => TypedResults.Problem(result.ErrorMessage, statusCode: 409),
             _ => TypedResults.Problem(result.ErrorMessage, statusCode: 400)
         };
 
@@ -25,21 +24,21 @@ public static class Start
     }
 }
 
-public record StartCommand(string ExternalId) : ICommand<AppDetailResponse>;
+public record KillCommand(string ExternalId) : ICommand<AppDetailResponse>;
 
-#pragma warning disable MA0051 // Long method justified — bridge orchestration across process and proxy systems
-public sealed class StartCommandHandler
+#pragma warning disable MA0051 // Long method justified — bridge kill with full response
+public sealed class KillCommandHandler
 (
     CollabhostDbContext db,
     ProcessSupervisor supervisor,
     ProxyConfigManager proxyConfigManager
-) : ICommandHandler<StartCommand, AppDetailResponse>
+) : ICommandHandler<KillCommand, AppDetailResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
     private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
 
-    public async Task<CommandResult<AppDetailResponse>> HandleAsync(StartCommand command, CancellationToken ct = default)
+    public async Task<CommandResult<AppDetailResponse>> HandleAsync(KillCommand command, CancellationToken ct = default)
     {
         var app = await _db.FindAppByExternalIdAsync(command.ExternalId, ct);
 
@@ -48,52 +47,30 @@ public sealed class StartCommandHandler
             return CommandResult<AppDetailResponse>.Fail("NOT_FOUND", "App not found.");
         }
 
+        var hasProcess = await _db.HasCapabilityAsync(app.AppTypeId, IdentifierCatalog.Capabilities.Process, ct);
+
+        if (!hasProcess)
+        {
+            return CommandResult<AppDetailResponse>.Fail("NO_PROCESS", "This app type has no process to manage.");
+        }
+
+        var managedProcess = _supervisor.GetProcess(app.Id);
+
+        if (managedProcess is null || !managedProcess.IsRunning)
+        {
+            return CommandResult<AppDetailResponse>.Fail("NOT_RUNNING", "No running process to kill.");
+        }
+
+        managedProcess.KillProcess();
+
+        // Build the bridge response
         var resolvedCapabilities = await CapabilityBridge.ResolveAllCapabilitiesAsync(
             _db, app.Id, app.AppTypeId, ct);
 
-        var hasRouting = resolvedCapabilities.Exists(
-            c => string.Equals(c.Slug, StringCatalog.Capabilities.Routing, StringComparison.Ordinal));
-        var hasProcess = resolvedCapabilities.Exists(
-            c => string.Equals(c.Slug, StringCatalog.Capabilities.Process, StringComparison.Ordinal));
-
-        // Bridge orchestration: enable route first, then start process
-        if (hasRouting)
-        {
-            _proxyConfigManager.EnableRoute(app.Name);
-            await _proxyConfigManager.SyncRoutesAsync(ct);
-        }
-
-        ManagedProcess? managedProcess = null;
-
-        if (hasProcess)
-        {
-            try
-            {
-                managedProcess = await _supervisor.StartAppAsync(app.Id, ct);
-            }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("already running", StringComparison.Ordinal))
-            {
-                return CommandResult<AppDetailResponse>.Fail("ALREADY_RUNNING", ex.Message);
-            }
-        }
-
-        // Build the bridge response
-        return await BuildAppDetailResponseAsync(command.ExternalId, app, resolvedCapabilities, managedProcess, hasProcess, ct);
-    }
-
-    private async Task<CommandResult<AppDetailResponse>> BuildAppDetailResponseAsync
-    (
-        string externalId,
-        AppLookup app,
-        List<ResolvedCapabilityData> resolvedCapabilities,
-        ManagedProcess? managedProcess,
-        bool hasProcess,
-        CancellationToken ct
-    )
-    {
         var routingConfiguration = CapabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
 
-        managedProcess ??= hasProcess ? _supervisor.GetProcess(app.Id) : null;
+        // Re-read the process state after kill
+        managedProcess = _supervisor.GetProcess(app.Id);
 
         var appRow = await _db.Database
             .SqlQuery<AppWithTypeRow>(
@@ -112,13 +89,13 @@ public sealed class StartCommandHandler
                     [App] A
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
                 WHERE
-                    A.[ExternalId] = {externalId}
+                    A.[ExternalId] = {command.ExternalId}
                 """)
             .SingleAsync(ct);
 
         var runtime = new RuntimeState
         (
-            hasProcess ? RuntimeStateBuilder.BuildProcessState(managedProcess) : null,
+            RuntimeStateBuilder.BuildProcessState(managedProcess),
             RuntimeStateBuilder.BuildRouteState(appRow.Name, routingConfiguration, _proxyConfigManager)
         );
 

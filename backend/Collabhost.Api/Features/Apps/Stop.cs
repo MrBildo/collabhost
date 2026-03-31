@@ -1,11 +1,10 @@
 using Collabhost.Api.Domain.Catalogs;
-using Collabhost.Api.Domain.Entities;
 
 namespace Collabhost.Api.Features.Apps;
 
 public static class Stop
 {
-    public static async Task<Results<Ok<ProcessStatusResponse>, NotFound, ProblemHttpResult>> HandleAsync
+    public static async Task<Results<Ok<AppDetailResponse>, NotFound, ProblemHttpResult>> HandleAsync
     (
         string externalId,
         CommandDispatcher dispatcher,
@@ -14,7 +13,7 @@ public static class Stop
     {
         var result = await dispatcher.DispatchAsync(new StopCommand(externalId), ct);
 
-        Results<Ok<ProcessStatusResponse>, NotFound, ProblemHttpResult> response = result switch
+        Results<Ok<AppDetailResponse>, NotFound, ProblemHttpResult> response = result switch
         {
             { IsSuccess: true } => TypedResults.Ok(result.Value),
             { ErrorCode: "NOT_FOUND" } => TypedResults.NotFound(),
@@ -26,42 +25,111 @@ public static class Stop
     }
 }
 
-public record StopCommand(string ExternalId) : ICommand<ProcessStatusResponse>;
+public record StopCommand(string ExternalId) : ICommand<AppDetailResponse>;
 
-public class StopCommandHandler
+#pragma warning disable MA0051 // Long method justified — bridge orchestration across process and proxy systems
+public sealed class StopCommandHandler
 (
     CollabhostDbContext db,
-    ProcessSupervisor supervisor
-) : ICommandHandler<StopCommand, ProcessStatusResponse>
+    ProcessSupervisor supervisor,
+    ProxyConfigManager proxyConfigManager
+) : ICommandHandler<StopCommand, AppDetailResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
+    private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
 
-    public async Task<CommandResult<ProcessStatusResponse>> HandleAsync(StopCommand command, CancellationToken ct = default)
+    public async Task<CommandResult<AppDetailResponse>> HandleAsync(StopCommand command, CancellationToken ct = default)
     {
         var app = await _db.FindAppByExternalIdAsync(command.ExternalId, ct);
 
         if (app is null)
         {
-            return CommandResult<ProcessStatusResponse>.Fail("NOT_FOUND", "App not found.");
+            return CommandResult<AppDetailResponse>.Fail("NOT_FOUND", "App not found.");
         }
 
-        // Check if app type has process capability
-        var hasProcess = await _db.HasCapabilityAsync(app.AppTypeId, IdentifierCatalog.Capabilities.Process, ct);
+        var resolvedCapabilities = await CapabilityBridge.ResolveAllCapabilitiesAsync(
+            _db, app.Id, app.AppTypeId, ct);
 
-        if (!hasProcess)
+        var hasProcess = resolvedCapabilities.Exists(
+            c => string.Equals(c.Slug, StringCatalog.Capabilities.Process, StringComparison.Ordinal));
+        var hasRouting = resolvedCapabilities.Exists(
+            c => string.Equals(c.Slug, StringCatalog.Capabilities.Routing, StringComparison.Ordinal));
+
+        // Bridge orchestration: stop process first, then disable route
+        ManagedProcess? managedProcess = null;
+
+        if (hasProcess)
         {
-            return CommandResult<ProcessStatusResponse>.Fail("NO_PROCESS", "This app type has no process to manage.");
+            try
+            {
+                managedProcess = await _supervisor.StopAppAsync(app.Id, ct);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("already stopped", StringComparison.Ordinal))
+            {
+                return CommandResult<AppDetailResponse>.Fail("ALREADY_STOPPED", ex.Message);
+            }
         }
 
-        try
+        if (hasRouting)
         {
-            var managed = await _supervisor.StopAppAsync(app.Id, ct);
-            return CommandResult<ProcessStatusResponse>.Success(ProcessStatusMapper.Map(managed));
+            _proxyConfigManager.DisableRoute(app.Name);
+            await _proxyConfigManager.SyncRoutesAsync(ct);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already stopped", StringComparison.Ordinal))
-        {
-            return CommandResult<ProcessStatusResponse>.Fail("ALREADY_STOPPED", ex.Message);
-        }
+
+        // Build the bridge response
+        var routingConfiguration = CapabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
+
+        managedProcess ??= hasProcess ? _supervisor.GetProcess(app.Id) : null;
+
+        var appRow = await _db.Database
+            .SqlQuery<AppWithTypeRow>(
+                $"""
+                SELECT
+                    A.[Id]
+                    ,A.[ExternalId]
+                    ,A.[Name]
+                    ,A.[DisplayName]
+                    ,A.[RegisteredAt]
+                    ,A.[AppTypeId]
+                    ,AT.[ExternalId] AS [AppTypeExternalId]
+                    ,AT.[Name] AS [AppTypeName]
+                    ,AT.[DisplayName] AS [AppTypeDisplayName]
+                FROM
+                    [App] A
+                    INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
+                WHERE
+                    A.[ExternalId] = {command.ExternalId}
+                """)
+            .SingleAsync(ct);
+
+        var runtime = new RuntimeState
+        (
+            hasProcess ? RuntimeStateBuilder.BuildProcessState(managedProcess) : null,
+            RuntimeStateBuilder.BuildRouteState(appRow.Name, routingConfiguration, _proxyConfigManager)
+        );
+
+        var capabilities = RuntimeStateBuilder.BuildCapabilityDictionary(resolvedCapabilities);
+
+        var appTypeReference = new AppTypeReference
+        (
+            appRow.AppTypeExternalId,
+            appRow.AppTypeName,
+            appRow.AppTypeDisplayName
+        );
+
+        var response = new AppDetailResponse
+        (
+            appRow.ExternalId,
+            appRow.Name,
+            appRow.DisplayName,
+            appTypeReference,
+            appRow.RegisteredAt,
+            runtime,
+            capabilities
+        );
+
+        return CommandResult<AppDetailResponse>.Success(response);
     }
 }
+#pragma warning restore MA0051

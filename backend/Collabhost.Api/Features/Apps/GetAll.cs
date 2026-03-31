@@ -1,24 +1,10 @@
+using Collabhost.Api.Domain.Entities;
+
 namespace Collabhost.Api.Features.Apps;
 
 public static class GetAll
 {
-    public record Response
-    (
-        string ExternalId,
-        string Name,
-        string DisplayName,
-        string AppTypeName
-    );
-
-    internal sealed record Row
-    (
-        string ExternalId,
-        string Name,
-        string DisplayName,
-        string AppTypeName
-    );
-
-    public static async Task<Results<Ok<List<Response>>, ProblemHttpResult>> HandleAsync
+    public static async Task<Ok<List<AppDetailResponse>>> HandleAsync
     (
         CommandDispatcher dispatcher,
         CancellationToken ct
@@ -26,28 +12,39 @@ public static class GetAll
     {
         var result = await dispatcher.DispatchAsync(new GetAllAppsCommand(), ct);
 
-        return result.IsSuccess
-            ? TypedResults.Ok(result.Value)
-            : TypedResults.Problem(result.ErrorMessage, statusCode: 500);
+        return TypedResults.Ok(result.Value!);
     }
 }
 
-public record GetAllAppsCommand : ICommand<List<GetAll.Response>>;
+public record GetAllAppsCommand : ICommand<List<AppDetailResponse>>;
 
-public sealed class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandHandler<GetAllAppsCommand, List<GetAll.Response>>
+#pragma warning disable MA0051 // Long method justified — bridge aggregation across DB and core systems
+public sealed class GetAllAppsCommandHandler
+(
+    CollabhostDbContext db,
+    ProcessSupervisor supervisor,
+    ProxyConfigManager proxyConfigManager
+) : ICommandHandler<GetAllAppsCommand, List<AppDetailResponse>>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
+    private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
+    private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
 
-    public async Task<CommandResult<List<GetAll.Response>>> HandleAsync(GetAllAppsCommand command, CancellationToken ct = default)
+    public async Task<CommandResult<List<AppDetailResponse>>> HandleAsync(GetAllAppsCommand command, CancellationToken ct = default)
     {
-        var rows = await _db.Database
-            .SqlQuery<GetAll.Row>(
+        var appRows = await _db.Database
+            .SqlQuery<AppWithTypeRow>(
                 $"""
                 SELECT
-                    A.[ExternalId]
+                    A.[Id]
+                    ,A.[ExternalId]
                     ,A.[Name]
                     ,A.[DisplayName]
-                    ,AT.[DisplayName] AS [AppTypeName]
+                    ,A.[RegisteredAt]
+                    ,A.[AppTypeId]
+                    ,AT.[ExternalId] AS [AppTypeExternalId]
+                    ,AT.[Name] AS [AppTypeName]
+                    ,AT.[DisplayName] AS [AppTypeDisplayName]
                 FROM
                     [App] A
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
@@ -56,17 +53,60 @@ public sealed class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandH
                 """)
             .ToListAsync(ct);
 
-        var results = rows
-            .Select(
-                row => new GetAll.Response
-                (
-                    row.ExternalId,
-                    row.Name,
-                    row.DisplayName,
-                    row.AppTypeName
-                ))
-            .ToList();
+        var results = new List<AppDetailResponse>();
 
-        return CommandResult<List<GetAll.Response>>.Success(results);
+        foreach (var row in appRows)
+        {
+            var resolvedCapabilities = await CapabilityBridge.ResolveAllCapabilitiesAsync(
+                _db, row.Id, row.AppTypeId, ct);
+
+            var routingConfiguration = CapabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
+            var hasProcessCapability = resolvedCapabilities.Exists(
+                c => string.Equals(c.Slug, "process", StringComparison.Ordinal));
+
+            var managedProcess = hasProcessCapability ? _supervisor.GetProcess(row.Id) : null;
+
+            var runtime = new RuntimeState
+            (
+                hasProcessCapability ? RuntimeStateBuilder.BuildProcessState(managedProcess) : null,
+                RuntimeStateBuilder.BuildRouteState(row.Name, routingConfiguration, _proxyConfigManager)
+            );
+
+            var capabilities = RuntimeStateBuilder.BuildCapabilityDictionary(resolvedCapabilities);
+
+            var appTypeReference = new AppTypeReference
+            (
+                row.AppTypeExternalId,
+                row.AppTypeName,
+                row.AppTypeDisplayName
+            );
+
+            results.Add(new AppDetailResponse
+            (
+                row.ExternalId,
+                row.Name,
+                row.DisplayName,
+                appTypeReference,
+                row.RegisteredAt,
+                runtime,
+                capabilities
+            ));
+        }
+
+        return CommandResult<List<AppDetailResponse>>.Success(results);
     }
 }
+#pragma warning restore MA0051
+
+internal sealed record AppWithTypeRow
+(
+    Guid Id,
+    string ExternalId,
+    string Name,
+    string DisplayName,
+    DateTime RegisteredAt,
+    Guid AppTypeId,
+    string AppTypeExternalId,
+    string AppTypeName,
+    string AppTypeDisplayName
+);
