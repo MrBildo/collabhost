@@ -1,13 +1,13 @@
 # Collabhost — Agent Workflow
 
-## Current State (updated 2026-03-29)
+## Current State (updated 2026-03-31)
 
-- **Phase:** MVP Phase 1 (Backend) + Phase 2 (Dashboard) — COMPLETE
-- **Research:** Complete. 8 projects investigated, synthesis produced. See `research/SYNTHESIS.md`.
-- **Phase 1 cards:** #10–#15, #17, #18, #20, #21 — all Done, merged to main.
-- **Phase 2 cards:** #22–#25 — all Done, merged to main via PR #10 (squash).
-- **Architecture:** Defined in `.agents/temp/architecture-mockup/ARCHITECTURE.md` (NOTE: some sections are stale — see below). Key patterns: vertical slice features, unified command dispatcher (reads AND writes), lookup tables (not enums), Guid internal / ULID external IDs, shadow audit properties, TypedResults endpoints, handler auto-registration, value objects with CanCreate/Create, EF Core value conversions, C# 14 extension blocks everywhere. `AppTypeBehavior` centralized predicate class. SSE streaming for long-running operations (update endpoint). `Channel`-based ordered event delivery. Shell wrapping for user-provided commands. `SingleAsync` (not `FirstAsync`) for single-result entity lookups. Lookup API endpoints (`/api/v1/lookups/`). `UtcDateTimeConverter` for SQLite DateTime kind. Tailwind v4 + shadcn/ui (base-nova style).
-- **Build:** 63 backend tests (55 integration + 8 Aspire smoke), 5 frontend tests, all passing. `dotnet format` clean. `npm run build/lint/format:check` clean.
+- **Phase:** Capability Architecture — COMPLETE. Post-MVP production design.
+- **Research:** Complete. 8 projects investigated, synthesis produced.
+- **Capability Architecture (Card #36):** Full implementation across 8 PRs (#12–#18). Replaced hardcoded AppTypeBehavior with data-driven capability composition model. See `.agents/specs/capability-architecture.md` for full spec.
+- **Key patterns:** Capability composition (AppType → AppTypeCapability → Capability), live inheritance with overrides (CapabilityConfiguration), configuration merge service (ICapabilityResolver), Core vs Bridge vs UI architecture (ProcessSupervisor/ProxyConfigManager are core systems, API endpoints are the bridge, frontend consumes bridge output), discovery strategies (dotnet-runtimeconfig, package-json, manual), universal stop/start with derived state (no persisted flags), capability widget registry (slug → component family).
+- **Build:** 95 backend tests (87 integration + 8 Aspire smoke), 38 frontend tests, all passing.
+- **Follow-up cards:** #42 (typed JSON wrapper), #47 (API-driven label maps), #48 (8 UI feedback items from e2e testing — includes artifact capability blocker).
 
 ### ARCHITECTURE.md staleness notes
 The following sections in `.agents/temp/architecture-mockup/ARCHITECTURE.md` are **stale** after card #20 and #21:
