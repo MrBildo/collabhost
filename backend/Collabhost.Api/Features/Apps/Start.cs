@@ -33,13 +33,15 @@ public sealed class StartCommandHandler
     CollabhostDbContext db,
     ProcessSupervisor supervisor,
     ProxyConfigManager proxyConfigManager,
-    ICapabilityBridge capabilityBridge
+    ICapabilityBridge capabilityBridge,
+    IProcessStateNameResolver stateNameResolver
 ) : ICommandHandler<StartCommand, AppDetailResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
     private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
     private readonly ICapabilityBridge _capabilityBridge = capabilityBridge ?? throw new ArgumentNullException(nameof(capabilityBridge));
+    private readonly IProcessStateNameResolver _stateNameResolver = stateNameResolver ?? throw new ArgumentNullException(nameof(stateNameResolver));
 
     public async Task<CommandResult<AppDetailResponse>> HandleAsync(StartCommand command, CancellationToken ct = default)
     {
@@ -55,14 +57,8 @@ public sealed class StartCommandHandler
             app.Id, app.AppTypeId, ct
         );
 
-        var hasRouting = resolvedCapabilities.Exists
-        (
-            c => string.Equals(c.Slug, StringCatalog.Capabilities.Routing, StringComparison.Ordinal)
-        );
-        var hasProcess = resolvedCapabilities.Exists
-        (
-            c => string.Equals(c.Slug, StringCatalog.Capabilities.Process, StringComparison.Ordinal)
-        );
+        var hasRouting = resolvedCapabilities.HasCapability(StringCatalog.Capabilities.Routing);
+        var hasProcess = resolvedCapabilities.HasCapability(StringCatalog.Capabilities.Process);
 
         // Bridge orchestration: enable route first, then start process
         if (hasRouting)
@@ -128,7 +124,9 @@ public sealed class StartCommandHandler
 
         var runtime = new RuntimeState
         (
-            hasProcess ? RuntimeStateBuilder.BuildProcessState(managedProcess) : null,
+            hasProcess
+                ? await RuntimeStateBuilder.BuildProcessStateAsync(managedProcess, _stateNameResolver, ct)
+                : null,
             RuntimeStateBuilder.BuildRouteState(appRow.Name, routingConfiguration, _proxyConfigManager)
         );
 

@@ -16,40 +16,51 @@ public record ProcessStatusResponse
 
 internal static class ProcessStatusMapper
 {
-    internal static ProcessStatusResponse Map(ManagedProcess process) =>
-        new
+    internal static async Task<ProcessStatusResponse> MapAsync
+    (
+        ManagedProcess process,
+        IProcessStateNameResolver stateNameResolver,
+        CancellationToken ct
+    )
+    {
+        var stateName = await stateNameResolver.ResolveDisplayNameAsync(process.ProcessStateId, ct);
+
+        return new ProcessStatusResponse
         (
             process.AppExternalId,
             process.AppName,
-            ResolveStateName(process.ProcessStateId),
+            stateName,
             process.Pid,
             process.StartedAt,
             process.UptimeSeconds,
             process.RestartCount,
             process.LastRestartAt
         );
+    }
 
-    internal static ProcessStatusResponse Stopped(string externalId, string appName) =>
-        new
+    internal static async Task<ProcessStatusResponse> StoppedAsync
+    (
+        string externalId,
+        string appName,
+        IProcessStateNameResolver stateNameResolver,
+        CancellationToken ct
+    )
+    {
+        var stoppedName = await stateNameResolver.ResolveDisplayNameAsync
+        (
+            IdentifierCatalog.ProcessStates.Stopped, ct
+        );
+
+        return new ProcessStatusResponse
         (
             externalId,
             appName,
-            StringCatalog.ProcessStates.Stopped,
+            stoppedName,
             null,
             null,
             null,
             0,
             null
         );
-
-    private static string ResolveStateName(Guid stateId) => stateId switch
-    {
-        _ when stateId == IdentifierCatalog.ProcessStates.Stopped => StringCatalog.ProcessStates.Stopped,
-        _ when stateId == IdentifierCatalog.ProcessStates.Starting => StringCatalog.ProcessStates.Starting,
-        _ when stateId == IdentifierCatalog.ProcessStates.Running => StringCatalog.ProcessStates.Running,
-        _ when stateId == IdentifierCatalog.ProcessStates.Stopping => StringCatalog.ProcessStates.Stopping,
-        _ when stateId == IdentifierCatalog.ProcessStates.Crashed => StringCatalog.ProcessStates.Crashed,
-        _ when stateId == IdentifierCatalog.ProcessStates.Restarting => StringCatalog.ProcessStates.Restarting,
-        _ => "Unknown"
-    };
+    }
 }

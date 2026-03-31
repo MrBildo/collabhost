@@ -62,7 +62,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
 
         // Process section should be present but have no PID (not started)
         var process = runtime.GetProperty("process");
-        process.GetProperty("state").GetString().ShouldBe("stopped");
+        process.GetProperty("state").GetString().ShouldBe("Stopped");
         process.GetProperty("pid").ValueKind.ShouldBe(JsonValueKind.Null);
     }
 

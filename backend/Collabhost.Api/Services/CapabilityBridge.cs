@@ -5,7 +5,28 @@ using Collabhost.Api.Domain.Capabilities;
 using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Domain.Entities;
 
-namespace Collabhost.Api.Features.Apps;
+namespace Collabhost.Api.Services;
+
+public sealed record ResolvedCapabilityData
+(
+    string Slug,
+    string DisplayName,
+    string Category,
+    string ResolvedConfiguration,
+    bool HasOverrides
+);
+
+public static class ResolvedCapabilityDataExtensions
+{
+    extension(List<ResolvedCapabilityData> capabilities)
+    {
+        public bool HasCapability(string capabilitySlug) =>
+            capabilities.Exists
+            (
+                c => string.Equals(c.Slug, capabilitySlug, StringComparison.Ordinal)
+            );
+    }
+}
 
 public interface ICapabilityBridge
 {

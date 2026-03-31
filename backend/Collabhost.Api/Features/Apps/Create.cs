@@ -167,10 +167,3 @@ public sealed class CreateCommandHandler
 }
 #pragma warning restore MA0051
 
-internal static class JsonObjectExtensions
-{
-    extension(JsonObject json)
-    {
-        public bool IsEmptyObject() => json.Count == 0;
-    }
-}

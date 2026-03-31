@@ -27,13 +27,15 @@ public sealed class GetAppCommandHandler
     CollabhostDbContext db,
     ProcessSupervisor supervisor,
     ProxyConfigManager proxyConfigManager,
-    ICapabilityBridge capabilityBridge
+    ICapabilityBridge capabilityBridge,
+    IProcessStateNameResolver stateNameResolver
 ) : ICommandHandler<GetAppCommand, AppDetailResponse>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProcessSupervisor _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
     private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
     private readonly ICapabilityBridge _capabilityBridge = capabilityBridge ?? throw new ArgumentNullException(nameof(capabilityBridge));
+    private readonly IProcessStateNameResolver _stateNameResolver = stateNameResolver ?? throw new ArgumentNullException(nameof(stateNameResolver));
 
     public async Task<CommandResult<AppDetailResponse>> HandleAsync(GetAppCommand command, CancellationToken ct = default)
     {
@@ -71,16 +73,15 @@ public sealed class GetAppCommandHandler
         );
 
         var routingConfiguration = _capabilityBridge.ExtractRoutingConfiguration(resolvedCapabilities);
-        var hasProcessCapability = resolvedCapabilities.Exists
-        (
-            c => string.Equals(c.Slug, StringCatalog.Capabilities.Process, StringComparison.Ordinal)
-        );
+        var hasProcessCapability = resolvedCapabilities.HasCapability(StringCatalog.Capabilities.Process);
 
         var managedProcess = hasProcessCapability ? _supervisor.GetProcess(row.Id) : null;
 
         var runtime = new RuntimeState
         (
-            hasProcessCapability ? RuntimeStateBuilder.BuildProcessState(managedProcess) : null,
+            hasProcessCapability
+                ? await RuntimeStateBuilder.BuildProcessStateAsync(managedProcess, _stateNameResolver, ct)
+                : null,
             RuntimeStateBuilder.BuildRouteState(row.Name, routingConfiguration, _proxyConfigManager)
         );
 

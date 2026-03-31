@@ -33,7 +33,7 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
         json.RootElement.GetProperty("id").GetString().ShouldBe(externalId);
 
         var processRuntime = json.RootElement.GetProperty("runtime").GetProperty("process");
-        processRuntime.GetProperty("state").GetString().ShouldBe("running");
+        processRuntime.GetProperty("state").GetString().ShouldBe("Running");
         processRuntime.GetProperty("pid").GetInt32().ShouldBeGreaterThan(0);
         processRuntime.GetProperty("restartCount").GetInt32().ShouldBe(0);
     }
@@ -57,7 +57,7 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
         json.RootElement.GetProperty("id").GetString().ShouldBe(externalId);
 
         var processRuntime = json.RootElement.GetProperty("runtime").GetProperty("process");
-        processRuntime.GetProperty("state").GetString().ShouldBe("stopped");
+        processRuntime.GetProperty("state").GetString().ShouldBe("Stopped");
         processRuntime.GetProperty("pid").ValueKind.ShouldBe(JsonValueKind.Null);
     }
 
@@ -80,7 +80,7 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
         json.RootElement.GetProperty("id").GetString().ShouldBe(externalId);
 
         var processRuntime = json.RootElement.GetProperty("runtime").GetProperty("process");
-        processRuntime.GetProperty("state").GetString().ShouldBe("running");
+        processRuntime.GetProperty("state").GetString().ShouldBe("Running");
         processRuntime.GetProperty("pid").GetInt32().ShouldBeGreaterThan(0);
         processRuntime.GetProperty("restartCount").GetInt32().ShouldBe(0);
     }

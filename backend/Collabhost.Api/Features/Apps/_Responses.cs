@@ -1,7 +1,6 @@
 using System.Text.Json.Nodes;
 
 using Collabhost.Api.Domain.Capabilities;
-using Collabhost.Api.Domain.Catalogs;
 
 namespace Collabhost.Api.Features.Apps;
 
@@ -53,14 +52,24 @@ public record AppDetailResponse
 
 internal static class RuntimeStateBuilder
 {
-    internal static ProcessRuntimeState BuildProcessState(ManagedProcess? managedProcess)
+    internal static async Task<ProcessRuntimeState> BuildProcessStateAsync
+    (
+        ManagedProcess? managedProcess,
+        IProcessStateNameResolver stateNameResolver,
+        CancellationToken ct
+    )
     {
         if (managedProcess is null)
         {
-            return new ProcessRuntimeState("stopped", null, null, 0);
+            var stoppedName = await stateNameResolver.ResolveDisplayNameAsync
+            (
+                Domain.Catalogs.IdentifierCatalog.ProcessStates.Stopped, ct
+            );
+
+            return new ProcessRuntimeState(stoppedName, null, null, 0);
         }
 
-        var stateName = ResolveStateName(managedProcess.ProcessStateId);
+        var stateName = await stateNameResolver.ResolveDisplayNameAsync(managedProcess.ProcessStateId, ct);
 
         return new ProcessRuntimeState
         (
@@ -114,24 +123,4 @@ internal static class RuntimeStateBuilder
 
         return result;
     }
-
-    private static string ResolveStateName(Guid stateId) => stateId switch
-    {
-        _ when stateId == IdentifierCatalog.ProcessStates.Stopped => StringCatalog.ProcessStates.Stopped.ToLowerInvariant(),
-        _ when stateId == IdentifierCatalog.ProcessStates.Starting => StringCatalog.ProcessStates.Starting.ToLowerInvariant(),
-        _ when stateId == IdentifierCatalog.ProcessStates.Running => StringCatalog.ProcessStates.Running.ToLowerInvariant(),
-        _ when stateId == IdentifierCatalog.ProcessStates.Stopping => StringCatalog.ProcessStates.Stopping.ToLowerInvariant(),
-        _ when stateId == IdentifierCatalog.ProcessStates.Crashed => StringCatalog.ProcessStates.Crashed.ToLowerInvariant(),
-        _ when stateId == IdentifierCatalog.ProcessStates.Restarting => StringCatalog.ProcessStates.Restarting.ToLowerInvariant(),
-        _ => "unknown"
-    };
 }
-
-public sealed record ResolvedCapabilityData
-(
-    string Slug,
-    string DisplayName,
-    string Category,
-    string ResolvedConfiguration,
-    bool HasOverrides
-);
