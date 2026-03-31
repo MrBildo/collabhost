@@ -2,14 +2,11 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using Collabhost.Api.Data;
 using Collabhost.Api.Domain.Catalogs;
-using Collabhost.Api.Domain.Entities;
 using Collabhost.Api.Services;
 using Collabhost.Api.Services.Proxy;
 using Collabhost.Api.Tests.Fixtures;
 
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 using Shouldly;
@@ -131,15 +128,7 @@ public sealed class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = $"C:\\apps\\{name}",
-            CommandLine = $"{name}.exe",
-            Arguments = (string?)null,
-            WorkingDirectory = (string?)null,
-            RestartPolicyId = IdentifierCatalog.RestartPolicies.Never,
-            HealthEndpoint = (string?)null,
-            UpdateCommand = (string?)null,
-            AutoStart = false
+            AppTypeId = IdentifierCatalog.AppTypes.Executable
         };
 
         var response = await client.PostAsJsonAsync("/api/v1/apps", request);

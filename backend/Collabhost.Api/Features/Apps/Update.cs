@@ -1,22 +1,8 @@
-using Collabhost.Api.Domain.Lookups;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class Update
 {
-    public record Request
-    (
-        string DisplayName,
-        string InstallDirectory,
-        string CommandLine,
-        string? Arguments,
-        string? WorkingDirectory,
-        Guid RestartPolicyId,
-        string? HealthEndpoint,
-        string? UpdateCommand,
-        int? UpdateTimeoutSeconds,
-        bool AutoStart
-    );
+    public record Request(string DisplayName);
 
     public static async Task<Results<NoContent, NotFound, ProblemHttpResult>> HandleAsync
     (
@@ -29,16 +15,7 @@ public static class Update
         var command = new UpdateAppCommand
         (
             externalId,
-            request.DisplayName,
-            request.InstallDirectory,
-            request.CommandLine,
-            request.Arguments,
-            request.WorkingDirectory,
-            request.RestartPolicyId,
-            request.HealthEndpoint,
-            request.UpdateCommand,
-            request.UpdateTimeoutSeconds,
-            request.AutoStart
+            request.DisplayName
         );
 
         var result = await dispatcher.DispatchAsync(command, ct);
@@ -54,16 +31,7 @@ public static class Update
 public record UpdateAppCommand
 (
     string ExternalId,
-    string DisplayName,
-    string InstallDirectory,
-    string CommandLine,
-    string? Arguments,
-    string? WorkingDirectory,
-    Guid RestartPolicyId,
-    string? HealthEndpoint,
-    string? UpdateCommand,
-    int? UpdateTimeoutSeconds,
-    bool AutoStart
+    string DisplayName
 ) : ICommand<Empty>;
 
 public class UpdateAppCommandHandler
@@ -83,46 +51,17 @@ public class UpdateAppCommandHandler
             return CommandResult<Empty>.Fail("INVALID_DISPLAY_NAME", "Display name is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(command.InstallDirectory))
-        {
-            return CommandResult<Empty>.Fail("INVALID_INSTALL_DIRECTORY", "Install directory is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(command.CommandLine))
-        {
-            return CommandResult<Empty>.Fail("INVALID_COMMAND_LINE", "CreateCommand line is required.");
-        }
-
         var app = await _db.Apps.SingleOrDefaultAsync(a => a.ExternalId == command.ExternalId, ct);
         if (app is null)
         {
             return CommandResult<Empty>.Fail("NOT_FOUND", "App not found.");
         }
 
-        // Validate lookup reference
-        var restartPolicyExists = await _db.Set<RestartPolicy>().AnyAsync(p => p.Id == command.RestartPolicyId, ct);
-        if (!restartPolicyExists)
-        {
-            return CommandResult<Empty>.Fail("INVALID_RESTART_POLICY", "The specified RestartPolicyId does not exist.");
-        }
-
-        app.UpdateConfiguration
-        (
-            command.DisplayName,
-            command.InstallDirectory,
-            command.CommandLine,
-            command.Arguments,
-            command.WorkingDirectory,
-            command.RestartPolicyId,
-            command.HealthEndpoint,
-            command.UpdateCommand,
-            command.UpdateTimeoutSeconds,
-            command.AutoStart
-        );
+        app.UpdateDetails(command.DisplayName);
 
         await _db.SaveChangesAsync(ct);
 
-        _ = _proxyConfigManager.SyncRoutesAsync(ct);
+        await _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<Empty>.Success(Empty.Value);
     }

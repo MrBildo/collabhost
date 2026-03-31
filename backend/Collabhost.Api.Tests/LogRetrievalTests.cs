@@ -167,27 +167,17 @@ public class LogRetrievalTests(CollabhostApiFixture fixture) : IClassFixture<Col
         return string.Join(" ", words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
     }
 
-    private static object CreateValidRequest(string name, bool staticSite = false) =>
+    private static object CreateValidRequest(string name) =>
         new
         {
             Name = name,
             DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = staticSite
-                ? IdentifierCatalog.AppTypes.StaticSite
-                : IdentifierCatalog.AppTypes.Executable,
-            InstallDirectory = $"C:\\apps\\{name}",
-            CommandLine = $"{name}.exe",
-            Arguments = (string?)null,
-            WorkingDirectory = (string?)null,
-            RestartPolicyId = IdentifierCatalog.RestartPolicies.Never,
-            HealthEndpoint = (string?)null,
-            UpdateCommand = (string?)null,
-            AutoStart = false
+            AppTypeId = IdentifierCatalog.AppTypes.Executable
         };
 
-    private static async Task<string> CreateAppAsync(HttpClient client, string name, bool staticSite = false)
+    private static async Task<string> CreateAppAsync(HttpClient client, string name)
     {
-        var request = CreateValidRequest(name, staticSite);
+        var request = CreateValidRequest(name);
         var response = await client.PostAsJsonAsync("/api/v1/apps", request);
         response.EnsureSuccessStatusCode();
 

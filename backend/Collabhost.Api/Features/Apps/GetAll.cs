@@ -1,5 +1,3 @@
-using Collabhost.Api.Domain;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class GetAll
@@ -9,13 +7,7 @@ public static class GetAll
         string ExternalId,
         string Name,
         string DisplayName,
-        string AppTypeName,
-        int? Port,
-        string? UpdateCommand,
-        int? UpdateTimeoutSeconds,
-        bool AutoStart,
-        bool IsProtected,
-        bool IsRoutable
+        string AppTypeName
     );
 
     internal sealed record Row
@@ -23,12 +15,7 @@ public static class GetAll
         string ExternalId,
         string Name,
         string DisplayName,
-        string AppTypeName,
-        int? Port,
-        string? UpdateCommand,
-        int? UpdateTimeoutSeconds,
-        bool AutoStart,
-        Guid AppTypeId
+        string AppTypeName
     );
 
     public static async Task<Results<Ok<List<Response>>, ProblemHttpResult>> HandleAsync
@@ -61,11 +48,6 @@ public sealed class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandH
                     ,A.[Name]
                     ,A.[DisplayName]
                     ,AT.[DisplayName] AS [AppTypeName]
-                    ,A.[Port]
-                    ,A.[UpdateCommand]
-                    ,A.[UpdateTimeoutSeconds]
-                    ,A.[AutoStart]
-                    ,A.[AppTypeId]
                 FROM
                     [App] A
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
@@ -81,13 +63,7 @@ public sealed class GetAllAppsCommandHandler(CollabhostDbContext db) : ICommandH
                     row.ExternalId,
                     row.Name,
                     row.DisplayName,
-                    row.AppTypeName,
-                    row.Port,
-                    row.UpdateCommand,
-                    row.UpdateTimeoutSeconds,
-                    row.AutoStart,
-                    AppTypeBehavior.IsProtected(row.AppTypeId),
-                    AppTypeBehavior.IsRoutable(row.AppTypeId)
+                    row.AppTypeName
                 ))
             .ToList();
 

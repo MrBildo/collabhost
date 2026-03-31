@@ -1,3 +1,6 @@
+using Collabhost.Api.Domain.Catalogs;
+using Collabhost.Api.Domain.Entities;
+
 namespace Collabhost.Api.Features.Apps;
 
 public static class Stop
@@ -43,7 +46,10 @@ public class StopCommandHandler
             return CommandResult<ProcessStatusResponse>.Fail("NOT_FOUND", "App not found.");
         }
 
-        if (!AppTypeBehavior.HasProcess(app.AppTypeId))
+        // Check if app type has process capability
+        var hasProcess = await _db.HasCapabilityAsync(app.AppTypeId, IdentifierCatalog.Capabilities.Process, ct);
+
+        if (!hasProcess)
         {
             return CommandResult<ProcessStatusResponse>.Fail("NO_PROCESS", "This app type has no process to manage.");
         }

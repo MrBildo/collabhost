@@ -1,4 +1,4 @@
-using System.Globalization;
+using System.Text.Json;
 
 namespace Collabhost.Api.Features.Proxy;
 
@@ -9,9 +9,7 @@ public static class GetRoutes
         string ExternalId,
         string Name,
         string DisplayName,
-        Guid AppTypeId,
-        int? Port,
-        string? InstallDirectory
+        string? ServeMode
     );
 
     public static async Task<Results<Ok<RouteListResponse>, ProblemHttpResult>> HandleAsync
@@ -39,6 +37,7 @@ public class GetRoutesCommandHandler
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
     private readonly ProxySettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
 
+#pragma warning disable MA0051 // Long method justified — SQL query with JSON parsing
     public async Task<CommandResult<RouteListResponse>> HandleAsync(GetRoutesCommand command, CancellationToken ct = default)
     {
         var rows = await _db.Database
@@ -48,35 +47,33 @@ public class GetRoutesCommandHandler
                     A.[ExternalId]
                     ,A.[Name]
                     ,A.[DisplayName]
-                    ,A.[AppTypeId]
-                    ,A.[Port]
-                    ,A.[InstallDirectory]
+                    ,ATC.[Configuration] AS [ServeMode]
                 FROM
                     [App] A
+                    INNER JOIN [AppTypeCapability] ATC ON ATC.[AppTypeId] = A.[AppTypeId]
+                    INNER JOIN [Capability] C ON C.[Id] = ATC.[CapabilityId]
+                WHERE
+                    C.[Slug] = 'routing'
                 ORDER BY
                     A.[Name]
                 """)
             .ToListAsync(ct);
 
         var routes = rows
-            .Where(r => AppTypeBehavior.IsRoutable(r.AppTypeId))
             .Select
             (
                 r =>
                 {
-                    var proxyMode = AppTypeBehavior.ProxyMode(r.AppTypeId);
+                    var serveMode = ExtractServeMode(r.ServeMode);
                     var domain = $"{r.Name}.{_settings.BaseDomain}";
-                    var target = proxyMode == "reverse_proxy"
-                        ? $"localhost:{r.Port?.ToString(CultureInfo.InvariantCulture)}"
-                        : r.InstallDirectory ?? "";
 
                     return new RouteEntry
                     (
                         r.ExternalId,
                         r.DisplayName,
                         domain,
-                        target,
-                        proxyMode,
+                        serveMode ?? "unknown",
+                        serveMode ?? "unknown",
                         Https: true
                     );
                 }
@@ -87,5 +84,29 @@ public class GetRoutesCommandHandler
         (
             new RouteListResponse(routes, _settings.BaseDomain)
         );
+    }
+#pragma warning restore MA0051
+
+    private static string? ExtractServeMode(string? routingConfiguration)
+    {
+        if (string.IsNullOrWhiteSpace(routingConfiguration))
+        {
+            return null;
+        }
+
+        try
+        {
+            var doc = JsonDocument.Parse(routingConfiguration);
+            if (doc.RootElement.TryGetProperty("serveMode", out var serveModeElement))
+            {
+                return serveModeElement.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Invalid JSON
+        }
+
+        return null;
     }
 }

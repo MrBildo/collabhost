@@ -19,7 +19,7 @@ public sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>
     v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
 );
 
-public record AppLookup(Guid Id, string ExternalId, string DisplayName, Guid AppTypeId, string? UpdateCommand);
+public record AppLookup(Guid Id, string ExternalId, string DisplayName, Guid AppTypeId);
 
 public static class CollabhostDbContextExtensions
 {
@@ -37,12 +37,19 @@ public static class CollabhostDbContextExtensions
                         ,A.[ExternalId]
                         ,A.[DisplayName]
                         ,A.[AppTypeId]
-                        ,A.[UpdateCommand]
                     FROM
                         [App] A
                     WHERE
                         A.[ExternalId] = {externalId}
                     """)
                 .SingleOrDefaultAsync(ct);
+
+        public Task<bool> HasCapabilityAsync
+        (
+            Guid appTypeId,
+            Guid capabilityId,
+            CancellationToken ct = default
+        ) => db.Set<AppTypeCapability>()
+                .AnyAsync(atc => atc.AppTypeId == appTypeId && atc.CapabilityId == capabilityId, ct);
     }
 }

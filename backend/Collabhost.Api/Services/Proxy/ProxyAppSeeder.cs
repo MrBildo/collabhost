@@ -19,8 +19,7 @@ public sealed class ProxyAppSeeder
 
     public async Task SeedAsync(CancellationToken cancellationToken)
     {
-        var proxyServiceTypeId = IdentifierCatalog.AppTypes.ProxyService;
-
+        // Check if proxy app already exists by name
         var existingCount = await _db.Database
             .SqlQuery<int>(
                 $"""
@@ -29,7 +28,7 @@ public sealed class ProxyAppSeeder
                 FROM
                     [App] A
                 WHERE
-                    A.[AppTypeId] = {proxyServiceTypeId}
+                    A.[Name] = 'proxy'
                 """)
             .SingleAsync(cancellationToken);
 
@@ -55,22 +54,12 @@ public sealed class ProxyAppSeeder
             return;
         }
 
-        var installDirectory = Path.GetDirectoryName(resolvedPath) ?? resolvedPath;
-
+        // Use Executable type for the proxy app
         var app = App.Register
         (
             AppSlugValue.Create("proxy"),
             "Proxy",
-            IdentifierCatalog.AppTypes.ProxyService,
-            installDirectory,
-            resolvedPath,
-            "run --resume",
-            installDirectory,
-            IdentifierCatalog.RestartPolicies.Always,
-            null,
-            null,
-            null,
-            true
+            IdentifierCatalog.AppTypes.Executable
         );
 
         _db.Apps.Add(app);
@@ -78,7 +67,7 @@ public sealed class ProxyAppSeeder
 
         _logger.LogInformation
         (
-            "Proxy app seeded — binary at '{BinaryPath}', auto-start enabled",
+            "Proxy app seeded — binary at '{BinaryPath}'",
             resolvedPath
         );
     }

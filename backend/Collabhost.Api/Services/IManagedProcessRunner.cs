@@ -13,7 +13,7 @@ public record ProcessStartConfig
 (
     string Command,
     string? Arguments,
-    string WorkingDirectory,
+    string? WorkingDirectory,
     IReadOnlyDictionary<string, string> EnvironmentVariables,
     Action<string, LogStream> OnOutput
 );

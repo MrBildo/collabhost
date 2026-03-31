@@ -1,5 +1,4 @@
 using Collabhost.Api.Domain.Entities;
-using Collabhost.Api.Domain.Lookups;
 using Collabhost.Api.Domain.Values;
 
 namespace Collabhost.Api.Features.Apps;
@@ -10,16 +9,7 @@ public static class Create
     (
         string Name,
         string DisplayName,
-        Guid AppTypeId,
-        string InstallDirectory,
-        string CommandLine,
-        string? Arguments,
-        string? WorkingDirectory,
-        Guid? RestartPolicyId,
-        string? HealthEndpoint,
-        string? UpdateCommand,
-        int? UpdateTimeoutSeconds,
-        bool AutoStart
+        Guid AppTypeId
     );
 
     public record Response(string ExternalId);
@@ -35,16 +25,7 @@ public static class Create
         (
             request.Name,
             request.DisplayName,
-            request.AppTypeId,
-            request.InstallDirectory,
-            request.CommandLine,
-            request.Arguments,
-            request.WorkingDirectory,
-            request.RestartPolicyId,
-            request.HealthEndpoint,
-            request.UpdateCommand,
-            request.UpdateTimeoutSeconds,
-            request.AutoStart
+            request.AppTypeId
         );
 
         var result = await dispatcher.DispatchAsync(command, ct);
@@ -59,27 +40,16 @@ public record CreateCommand
 (
     string Name,
     string DisplayName,
-    Guid AppTypeId,
-    string InstallDirectory,
-    string CommandLine,
-    string? Arguments,
-    string? WorkingDirectory,
-    Guid? RestartPolicyId,
-    string? HealthEndpoint,
-    string? UpdateCommand,
-    int? UpdateTimeoutSeconds,
-    bool AutoStart
+    Guid AppTypeId
 ) : ICommand<string>;
 
 public class CreateCommandHandler
 (
     CollabhostDbContext db,
-    PortAllocator portAllocator,
     ProxyConfigManager proxyConfigManager
 ) : ICommandHandler<CreateCommand, string>
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
-    private readonly PortAllocator _portAllocator = portAllocator ?? throw new ArgumentNullException(nameof(portAllocator));
     private readonly ProxyConfigManager _proxyConfigManager = proxyConfigManager ?? throw new ArgumentNullException(nameof(proxyConfigManager));
 
     public async Task<CommandResult<string>> HandleAsync(CreateCommand command, CancellationToken ct = default)
@@ -96,34 +66,11 @@ public class CreateCommandHandler
             return CommandResult<string>.Fail("INVALID_DISPLAY_NAME", "Display name is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(command.InstallDirectory))
-        {
-            return CommandResult<string>.Fail("INVALID_INSTALL_DIRECTORY", "Install directory is required.");
-        }
-
-        // Validate lookup references exist
+        // Validate app type exists
         var appTypeExists = await _db.Set<AppType>().AnyAsync(t => t.Id == command.AppTypeId, ct);
         if (!appTypeExists)
         {
             return CommandResult<string>.Fail("INVALID_APP_TYPE", "The specified AppTypeId does not exist.");
-        }
-
-        var isStaticSite = command.AppTypeId == Domain.Catalogs.IdentifierCatalog.AppTypes.StaticSite;
-        if (!isStaticSite && string.IsNullOrWhiteSpace(command.CommandLine))
-        {
-            return CommandResult<string>.Fail("INVALID_COMMAND_LINE", "Command line is required for non-static-site app types.");
-        }
-
-        // Static sites have no process — force "Never" restart policy and disable auto-start
-        var restartPolicyId = isStaticSite
-            ? Domain.Catalogs.IdentifierCatalog.RestartPolicies.Never
-            : command.RestartPolicyId ?? Domain.Catalogs.IdentifierCatalog.RestartPolicies.Never;
-        var autoStart = isStaticSite ? false : command.AutoStart;
-
-        var restartPolicyExists = await _db.Set<RestartPolicy>().AnyAsync(p => p.Id == restartPolicyId, ct);
-        if (!restartPolicyExists)
-        {
-            return CommandResult<string>.Fail("INVALID_RESTART_POLICY", "The specified RestartPolicyId does not exist.");
         }
 
         // Check for duplicate name
@@ -138,29 +85,13 @@ public class CreateCommandHandler
         (
             slug,
             command.DisplayName,
-            command.AppTypeId,
-            command.InstallDirectory,
-            command.CommandLine,
-            command.Arguments,
-            command.WorkingDirectory,
-            restartPolicyId,
-            command.HealthEndpoint,
-            command.UpdateCommand,
-            command.UpdateTimeoutSeconds,
-            autoStart
+            command.AppTypeId
         );
-
-        // Auto-assign port
-        var port = await _portAllocator.AllocateAsync(ct);
-        app.AssignPort(port);
 
         _db.Apps.Add(app);
         await _db.SaveChangesAsync(ct);
 
-        if (AppTypeBehavior.IsRoutable(command.AppTypeId))
-        {
-            _ = _proxyConfigManager.SyncRoutesAsync(ct);
-        }
+        await _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<string>.Success(app.ExternalId);
     }

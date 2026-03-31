@@ -10,7 +10,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
     public JsonObject Generate(IReadOnlyList<AppRouteInfo> apps)
     {
         var routableApps = apps
-            .Where(a => AppTypeBehavior.IsRoutable(a.AppTypeId))
+            .Where(a => a.ServeMode is not null)
             .ToList();
 
         var subjects = BuildSubjectList(routableApps);
@@ -55,11 +55,10 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
 
         foreach (var app in routableApps)
         {
-            var proxyMode = AppTypeBehavior.ProxyMode(app.AppTypeId);
-            var route = proxyMode switch
+            var route = app.ServeMode switch
             {
-                "reverse_proxy" => BuildReverseProxyRoute(app),
-                "file_server" => BuildFileServerRoute(app),
+                "reverseProxy" => BuildReverseProxyRoute(app),
+                "fileServer" => BuildFileServerRoute(app),
                 _ => null
             };
 
@@ -100,6 +99,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
             ["terminal"] = true
         };
 
+    // TODO: Card #39 — resolve port from runtime process state via ProcessSupervisor
     private JsonObject BuildReverseProxyRoute(AppRouteInfo app) =>
         new()
         {
@@ -120,7 +120,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
                     {
                         new JsonObject
                         {
-                            ["dial"] = $"localhost:{app.Port?.ToString(CultureInfo.InvariantCulture)}"
+                            ["dial"] = "localhost:0"
                         }
                     }
                 }
@@ -128,6 +128,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
             ["terminal"] = true
         };
 
+    // TODO: Card #39 — resolve install directory from artifact capability
     private JsonObject BuildFileServerRoute(AppRouteInfo app) =>
         new()
         {
@@ -153,7 +154,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
                                 new JsonObject
                                 {
                                     ["handler"] = "vars",
-                                    ["root"] = app.InstallDirectory
+                                    ["root"] = ""
                                 }
                             }
                         },

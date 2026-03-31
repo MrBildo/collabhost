@@ -1,5 +1,3 @@
-using Collabhost.Api.Domain;
-
 namespace Collabhost.Api.Features.Apps;
 
 public static class Get
@@ -10,21 +8,9 @@ public static class Get
         string Name,
         string DisplayName,
         string AppTypeName,
-        string InstallDirectory,
-        string CommandLine,
-        string? Arguments,
-        string? WorkingDirectory,
-        string RestartPolicyName,
-        int? Port,
-        string? HealthEndpoint,
-        string? UpdateCommand,
-        int? UpdateTimeoutSeconds,
-        bool AutoStart,
         DateTime RegisteredAt,
         Guid AppTypeId
     );
-
-    public record EnvironmentVariableResponse(string Name, string Value);
 
     public record DetailResponse
     (
@@ -32,20 +18,7 @@ public static class Get
         string Name,
         string DisplayName,
         string AppTypeName,
-        string InstallDirectory,
-        string CommandLine,
-        string? Arguments,
-        string? WorkingDirectory,
-        string RestartPolicyName,
-        int? Port,
-        string? HealthEndpoint,
-        string? UpdateCommand,
-        int? UpdateTimeoutSeconds,
-        bool AutoStart,
-        DateTime RegisteredAt,
-        bool IsProtected,
-        bool IsRoutable,
-        IReadOnlyList<EnvironmentVariableResponse> EnvironmentVariables
+        DateTime RegisteredAt
     );
 
     public static async Task<Results<Ok<DetailResponse>, NotFound>> HandleAsync
@@ -69,7 +42,6 @@ public sealed class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandl
 {
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
 
-#pragma warning disable MA0051 // Long method justified — multi-query SQL projection
     public async Task<CommandResult<Get.DetailResponse>> HandleAsync(GetAppCommand command, CancellationToken ct = default)
     {
         var row = await _db.Database
@@ -80,22 +52,11 @@ public sealed class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandl
                     ,A.[Name]
                     ,A.[DisplayName]
                     ,AT.[DisplayName] AS [AppTypeName]
-                    ,A.[InstallDirectory]
-                    ,A.[CommandLine]
-                    ,A.[Arguments]
-                    ,A.[WorkingDirectory]
-                    ,RP.[DisplayName] AS [RestartPolicyName]
-                    ,A.[Port]
-                    ,A.[HealthEndpoint]
-                    ,A.[UpdateCommand]
-                    ,A.[UpdateTimeoutSeconds]
-                    ,A.[AutoStart]
                     ,A.[RegisteredAt]
                     ,A.[AppTypeId]
                 FROM
                     [App] A
                     INNER JOIN [AppType] AT ON AT.[Id] = A.[AppTypeId]
-                    INNER JOIN [RestartPolicy] RP ON RP.[Id] = A.[RestartPolicyId]
                 WHERE
                     A.[ExternalId] = {command.ExternalId}
                 """)
@@ -106,45 +67,15 @@ public sealed class GetAppCommandHandler(CollabhostDbContext db) : ICommandHandl
             return CommandResult<Get.DetailResponse>.Fail("NOT_FOUND", "App not found");
         }
 
-        var environmentVariables = await _db.Database
-            .SqlQuery<Get.EnvironmentVariableResponse>(
-                $"""
-                SELECT
-                    EV.[Name]
-                    ,EV.[Value]
-                FROM
-                    [EnvironmentVariable] EV
-                    INNER JOIN [App] A ON A.[Id] = EV.[AppId]
-                WHERE
-                    A.[ExternalId] = {command.ExternalId}
-                ORDER BY
-                    EV.[Name]
-                """)
-            .ToListAsync(ct);
-
         var detail = new Get.DetailResponse
         (
             row.ExternalId,
             row.Name,
             row.DisplayName,
             row.AppTypeName,
-            row.InstallDirectory,
-            row.CommandLine,
-            row.Arguments,
-            row.WorkingDirectory,
-            row.RestartPolicyName,
-            row.Port,
-            row.HealthEndpoint,
-            row.UpdateCommand,
-            row.UpdateTimeoutSeconds,
-            row.AutoStart,
-            row.RegisteredAt,
-            AppTypeBehavior.IsProtected(row.AppTypeId),
-            AppTypeBehavior.IsRoutable(row.AppTypeId),
-            environmentVariables
+            row.RegisteredAt
         );
 
         return CommandResult<Get.DetailResponse>.Success(detail);
     }
-#pragma warning restore MA0051
 }
