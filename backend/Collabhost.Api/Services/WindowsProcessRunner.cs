@@ -144,35 +144,29 @@ public class WindowsProcessRunner : IManagedProcessRunner
             // then detach and re-ignore Ctrl+C on our own process.
             try
             {
-                // Detach from our current console so we can attach to the child's
-                _ = FreeConsole();
+                FreeConsole();
 
                 if (!AttachConsole((uint)_process.Id))
                 {
-                    // Reattach to our own console if attach failed
-                    _ = AttachConsole(_attachParentProcess);
+                    AttachConsole(_attachParentProcess);
                     return false;
                 }
 
-                // Disable Ctrl+C handling on our own process so we don't kill ourselves
-                _ = SetConsoleCtrlHandler(null, true);
+                SetConsoleCtrlHandler(null, true);
 
-                // Send Ctrl+C to the console group (pid 0 = all processes attached to the console)
                 var sent = GenerateConsoleCtrlEvent(_ctrlCEvent, 0);
 
-                // Reattach to our own console and re-enable Ctrl+C handling
-                _ = FreeConsole();
-                _ = AttachConsole(_attachParentProcess);
-                _ = SetConsoleCtrlHandler(null, false);
+                FreeConsole();
+                AttachConsole(_attachParentProcess);
+                SetConsoleCtrlHandler(null, false);
 
                 return sent;
             }
             catch
             {
-                // If P/Invoke fails for any reason, restore console state and return false
-                _ = FreeConsole();
-                _ = AttachConsole(_attachParentProcess);
-                _ = SetConsoleCtrlHandler(null, false);
+                FreeConsole();
+                AttachConsole(_attachParentProcess);
+                SetConsoleCtrlHandler(null, false);
                 return false;
             }
         }
