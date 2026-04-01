@@ -68,7 +68,7 @@ public class WindowsProcessRunner : IManagedProcessRunner
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = config.Command,
+            FileName = ResolveCommand(config.Command),
             Arguments = config.Arguments ?? "",
             WorkingDirectory = config.WorkingDirectory,
             UseShellExecute = false,
@@ -83,6 +83,36 @@ public class WindowsProcessRunner : IManagedProcessRunner
         }
 
         return startInfo;
+    }
+
+    // On Windows, commands like "npm" are actually "npm.cmd" batch files.
+    // With UseShellExecute=false, the OS won't resolve these automatically.
+    private static string ResolveCommand(string command)
+    {
+        if (Path.HasExtension(command))
+        {
+            return command;
+        }
+
+        string[] extensions = [".cmd", ".bat", ".exe"];
+
+        foreach (var ext in extensions)
+        {
+            var candidate = command + ext;
+
+            // Check PATH via where-style resolution
+            var fullPath = Environment.GetEnvironmentVariable("PATH")?
+                .Split(Path.PathSeparator)
+                .Select(dir => Path.Combine(dir, candidate))
+                .FirstOrDefault(File.Exists);
+
+            if (fullPath is not null)
+            {
+                return fullPath;
+            }
+        }
+
+        return command;
     }
 
     private sealed class ProcessHandle : IProcessHandle
