@@ -38,6 +38,9 @@ builder.Services.AddCommandDispatcher();
 // Infrastructure services
 builder.Services.AddInfrastructureServices();
 
+// Platform services
+builder.Services.AddPlatformServices(builder.Configuration);
+
 // Proxy services
 builder.Services.AddProxyServices(builder.Configuration);
 

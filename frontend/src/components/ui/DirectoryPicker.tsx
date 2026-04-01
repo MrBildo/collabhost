@@ -21,6 +21,7 @@ type DirectoryPickerProps = {
   onChange: (path: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  initialPath?: string;
 };
 
 /** Extracts the parent directory from a partial path for browsing. */
@@ -45,6 +46,7 @@ function DirectoryPicker({
   onChange,
   placeholder = 'Enter directory path...',
   disabled = false,
+  initialPath,
 }: DirectoryPickerProps) {
   const [inputValue, setInputValue] = useState(value);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -89,8 +91,8 @@ function DirectoryPicker({
           fetchEntries(parentPath);
           setShowDropdown(true);
         } else if (newValue.length > 0) {
-          // Might be typing a drive letter — browse roots
-          fetchEntries(null);
+          // Might be typing a drive letter — browse roots, or seed from initialPath
+          fetchEntries(initialPath ?? null);
           setShowDropdown(true);
         } else {
           setShowDropdown(false);
@@ -98,7 +100,7 @@ function DirectoryPicker({
         }
       }, 300);
     },
-    [onChange, fetchEntries],
+    [onChange, fetchEntries, initialPath],
   );
 
   const handleEntrySelect = useCallback(
@@ -168,7 +170,7 @@ function DirectoryPicker({
               <DialogTitle>Browse Directories</DialogTitle>
             </DialogHeader>
             <TreeBrowser
-              initialPath={inputValue}
+              initialPath={inputValue || initialPath || ''}
               onSelect={(path) => {
                 setInputValue(path);
                 onChange(path);

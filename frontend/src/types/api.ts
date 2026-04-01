@@ -174,6 +174,7 @@ export type SystemStatus = {
   status: string;
   version: string;
   timestamp: string;
+  toolsDirectory: string;
 };
 
 // -- Update SSE --

@@ -97,4 +97,38 @@ describe('DirectoryPicker', () => {
     const input = screen.getByPlaceholderText('Enter directory path...');
     expect(input).toBeDisabled();
   });
+
+  test('accepts initialPath prop without error', () => {
+    const toolsPath = String.raw`C:\tools`;
+    render(<DirectoryPicker value="" onChange={vi.fn()} initialPath={toolsPath} />);
+    const input = screen.getByPlaceholderText('Enter directory path...');
+    expect(input).toHaveValue('');
+  });
+
+  test('uses initialPath for browse dialog when value is empty', async () => {
+    const user = userEvent.setup();
+    const toolsPath = String.raw`C:\tools`;
+    const toolsMyappPath = String.raw`C:\tools\myapp`;
+
+    mockGet.mockResolvedValue({
+      data: {
+        currentPath: toolsPath,
+        parent: 'C:\\',
+        entries: [{ name: 'myapp', path: toolsMyappPath }],
+      },
+    });
+
+    render(<DirectoryPicker value="" onChange={vi.fn()} initialPath={toolsPath} />);
+
+    await user.click(screen.getByText('Browse'));
+
+    await waitFor(
+      () => {
+        expect(mockGet).toHaveBeenCalledWith('/filesystem/browse', {
+          params: { path: toolsPath },
+        });
+      },
+      { timeout: 1000 },
+    );
+  });
 });

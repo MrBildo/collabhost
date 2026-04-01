@@ -12,6 +12,14 @@ vi.mock('@/lib/api', () => ({
   getAdminKey: vi.fn(),
 }));
 
+// Mock useSystemStatus to provide toolsDirectory
+vi.mock('@/hooks/useSystem', () => ({
+  useSystemStatus: vi.fn(() => ({
+    data: { toolsDirectory: String.raw`C:\collabhost\tools` },
+  })),
+  useAppList: vi.fn(() => ({ data: [] })),
+}));
+
 describe('ArtifactWidget', () => {
   const defaultProps = {
     displayName: 'Artifact',

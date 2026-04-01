@@ -2,10 +2,12 @@ import { useCallback } from 'react';
 
 import { cn } from '@/lib/utils';
 import { DirectoryPicker } from '@/components/ui/DirectoryPicker';
+import { useSystemStatus } from '@/hooks/useSystem';
 
 import type { CapabilityWidgetProps } from '../types';
 
 function ArtifactWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) {
+  const { data: systemStatus } = useSystemStatus();
   const location = String(resolved['location'] ?? '');
 
   const isFieldOverridden = useCallback(
@@ -48,6 +50,7 @@ function ArtifactWidget({ resolved, defaults, onChange }: CapabilityWidgetProps)
             onChange={(path) => handleFieldChange('location', path)}
             placeholder="e.g. C:\apps\myapp"
             disabled={!onChange}
+            initialPath={systemStatus?.toolsDirectory}
           />
         </div>
       </div>
