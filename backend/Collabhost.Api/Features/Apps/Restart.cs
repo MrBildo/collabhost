@@ -60,6 +60,13 @@ public sealed class RestartCommandHandler
 
         var managedProcess = await _supervisor.RestartAppAsync(app.Id, ct);
 
+        // Re-sync routes after restart so Caddy picks up the new port
+        var hasRouting = await _db.HasCapabilityAsync(app.AppTypeId, IdentifierCatalog.Capabilities.Routing, ct);
+        if (hasRouting)
+        {
+            await _proxyConfigManager.SyncRoutesAsync(ct);
+        }
+
         // Build the bridge response
         var resolvedCapabilities = await _capabilityBridge.ResolveAllCapabilitiesAsync
         (
