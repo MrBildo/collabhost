@@ -28,5 +28,12 @@ public interface IProcessHandle : IDisposable
 
     event Action<int>? Exited;
 
+    /// <summary>
+    /// Attempts a graceful shutdown signal (Ctrl+C on Windows, SIGTERM on Linux).
+    /// Returns true if the signal was sent successfully, false if it could not be delivered.
+    /// The caller must still wait for the process to exit and fall back to Kill() on timeout.
+    /// </summary>
+    bool TryGracefulShutdown();
+
     void Kill();
 }

@@ -1,7 +1,11 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
+using Collabhost.Api.Services;
 using Collabhost.Api.Tests.Fixtures;
+
+using Microsoft.Extensions.DependencyInjection;
 
 using Shouldly;
 
@@ -170,4 +174,132 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task StopApp_GracefulShutdownEnabled_SendsGracefulSignalBeforeKill()
+    {
+        // Arrange — create an Executable app with graceful shutdown override
+        var client = _fixture.CreateAuthenticatedClient();
+        var externalId = await CreateAppWithGracefulShutdownAsync(client, "graceful-stop", gracefulShutdown: true);
+        await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
+
+        var runner = _fixture.Services.GetRequiredService<IManagedProcessRunner>() as FakeProcessRunner;
+        var handle = runner!.LastHandle!;
+
+        // Act
+        var response = await client.PostAsync($"/api/v1/apps/{externalId}/stop", null);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        handle.GracefulShutdownRequested.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task StopApp_GracefulShutdownDisabled_SkipsGracefulSignal()
+    {
+        // Arrange — default Executable has gracefulShutdown=false
+        var client = _fixture.CreateAuthenticatedClient();
+        var externalId = await CreateAppAsync(client, "hard-stop");
+        await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
+
+        var runner = _fixture.Services.GetRequiredService<IManagedProcessRunner>() as FakeProcessRunner;
+        var handle = runner!.LastHandle!;
+
+        // Act
+        var response = await client.PostAsync($"/api/v1/apps/{externalId}/stop", null);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        handle.GracefulShutdownRequested.ShouldBeFalse();
+        handle.HasExited.ShouldBeTrue();
+        handle.ExitCode.ShouldBe(-1);
+    }
+
+    [Fact]
+    public async Task StopApp_GracefulShutdownTimesOut_FallsBackToHardKill()
+    {
+        // Arrange — create app with graceful shutdown, but configure fake to NOT exit on graceful signal
+        var client = _fixture.CreateAuthenticatedClient();
+        var externalId = await CreateAppWithGracefulShutdownAsync
+        (
+            client, "graceful-timeout", gracefulShutdown: true, shutdownTimeoutSeconds: 1
+        );
+        await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
+
+        var runner = _fixture.Services.GetRequiredService<IManagedProcessRunner>() as FakeProcessRunner;
+        var handle = runner!.LastHandle!;
+        handle.ExitOnGracefulShutdown = false;
+
+        // Act
+        var response = await client.PostAsync($"/api/v1/apps/{externalId}/stop", null);
+
+        // Assert — graceful was attempted, then hard kill after timeout
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        handle.GracefulShutdownRequested.ShouldBeTrue();
+        handle.HasExited.ShouldBeTrue();
+        handle.ExitCode.ShouldBe(-1);
+    }
+
+    [Fact]
+    public async Task StopApp_GracefulSignalFails_FallsBackToHardKill()
+    {
+        // Arrange — create app with graceful shutdown, but configure fake to fail signal delivery
+        var client = _fixture.CreateAuthenticatedClient();
+        var externalId = await CreateAppWithGracefulShutdownAsync(client, "graceful-fail", gracefulShutdown: true);
+        await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
+
+        var runner = _fixture.Services.GetRequiredService<IManagedProcessRunner>() as FakeProcessRunner;
+        var handle = runner!.LastHandle!;
+        handle.SimulateGracefulShutdownSuccess = false;
+
+        // Act
+        var response = await client.PostAsync($"/api/v1/apps/{externalId}/stop", null);
+
+        // Assert — graceful was attempted but failed, fell back to hard kill
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        handle.GracefulShutdownRequested.ShouldBeTrue();
+        handle.HasExited.ShouldBeTrue();
+        handle.ExitCode.ShouldBe(-1);
+    }
+
+    private static object CreateRequestWithGracefulShutdown
+    (
+        string name,
+        bool gracefulShutdown,
+        int shutdownTimeoutSeconds = 5
+    )
+    {
+        var processOverride = new JsonObject
+        {
+            ["gracefulShutdown"] = gracefulShutdown,
+            ["shutdownTimeoutSeconds"] = shutdownTimeoutSeconds
+        };
+
+        return new
+        {
+            Name = name,
+            DisplayName = $"{ToTitleCase(name)} App",
+            AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
+            CapabilityOverrides = new Dictionary<string, JsonObject>(StringComparer.Ordinal)
+            {
+                ["process"] = processOverride
+            }
+        };
+    }
+
+    private static async Task<string> CreateAppWithGracefulShutdownAsync
+    (
+        HttpClient client,
+        string name,
+        bool gracefulShutdown,
+        int shutdownTimeoutSeconds = 5
+    )
+    {
+        var request = CreateRequestWithGracefulShutdown(name, gracefulShutdown, shutdownTimeoutSeconds);
+        var response = await client.PostAsJsonAsync("/api/v1/apps", request);
+        response.EnsureSuccessStatusCode();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        return json.RootElement.GetProperty("externalId").GetString()!;
+    }
 }

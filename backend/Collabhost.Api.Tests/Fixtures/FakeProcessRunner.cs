@@ -36,11 +36,32 @@ public class FakeProcessHandle(Action<string, LogStream>? onOutput = null) : IPr
     public int Pid { get; } = Interlocked.Increment(ref _nextPid);
     public bool HasExited { get; private set; }
     public int? ExitCode { get; private set; }
+    public bool GracefulShutdownRequested { get; private set; }
+    public bool SimulateGracefulShutdownSuccess { get; set; } = true;
+    public bool ExitOnGracefulShutdown { get; set; } = true;
 #pragma warning disable CS0067 // Event required by interface, intentionally unused in fake
     public event Action<int>? Exited;
 #pragma warning restore CS0067
 
     public void EmitOutput(string line, LogStream stream = LogStream.StdOut) => _onOutput?.Invoke(line, stream);
+
+    public bool TryGracefulShutdown()
+    {
+        GracefulShutdownRequested = true;
+
+        if (!SimulateGracefulShutdownSuccess)
+        {
+            return false;
+        }
+
+        if (ExitOnGracefulShutdown && !HasExited)
+        {
+            HasExited = true;
+            ExitCode = 0;
+        }
+
+        return true;
+    }
 
     public void Kill()
     {
