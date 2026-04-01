@@ -108,6 +108,15 @@ public sealed class ProxyAppSeeder
             )
             .SingleAsync(cancellationToken);
 
+        var artifactTypeCapability = await _db.Set<AppTypeCapability>()
+            .AsNoTracking()
+            .Where
+            (
+                atc => atc.AppTypeId == IdentifierCatalog.AppTypes.SystemService
+                    && atc.CapabilityId == IdentifierCatalog.Capabilities.Artifact
+            )
+            .SingleAsync(cancellationToken);
+
         // Process capability override
         var processOverride = new
         {
@@ -139,6 +148,18 @@ public sealed class ProxyAppSeeder
         );
 
         _db.Set<CapabilityConfiguration>().Add(autoStartConfiguration);
+
+        // Artifact capability override — location is the directory containing the binary
+        var artifactOverride = new { location = Path.GetDirectoryName(resolvedPath) };
+
+        var artifactConfiguration = CapabilityConfiguration.Create
+        (
+            appId,
+            artifactTypeCapability.Id,
+            JsonSerializer.Serialize(artifactOverride, jsonOptions)
+        );
+
+        _db.Set<CapabilityConfiguration>().Add(artifactConfiguration);
 
         await _db.SaveChangesAsync(cancellationToken);
     }
