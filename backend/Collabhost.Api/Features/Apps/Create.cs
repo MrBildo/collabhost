@@ -197,6 +197,7 @@ public sealed class CreateCommandHandler
 
         await _db.SaveChangesAsync(ct);
 
+        _proxyConfigManager.DisableRoute(app.Name);
         await _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<string>.Success(app.ExternalId);

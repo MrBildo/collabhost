@@ -26,6 +26,9 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         var client = _fixture.CreateAuthenticatedClient();
         var externalId = await CreateAppAsync(client, "proxy-exec-test");
 
+        // Start the app so the route is enabled (routes are disabled on creation)
+        await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
+
         // Act
         await client.PostAsync("/api/v1/proxy/reload", null);
 
@@ -49,7 +52,10 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
     {
         // Arrange
         var client = _fixture.CreateAuthenticatedClient();
-        await CreateAppAsync(client, "proxy-static-test", staticSite: true);
+        var externalId = await CreateAppAsync(client, "proxy-static-test", staticSite: true);
+
+        // Start the app so the route is enabled (routes are disabled on creation)
+        await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
 
         // Act
         await client.PostAsync("/api/v1/proxy/reload", null);
@@ -68,6 +74,34 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         // file_server is wrapped in a subroute handler
         var handler = appRoute["handle"]?[0]?["handler"]?.GetValue<string>();
         handler.ShouldBe("subroute");
+    }
+
+    [Fact]
+    public async Task Config_GeneratesDisabledRoute_ForNewlyCreatedApp()
+    {
+        // Arrange
+        var client = _fixture.CreateAuthenticatedClient();
+        await CreateAppAsync(client, "proxy-disabled-new");
+
+        // Act — reload without starting the app
+        await client.PostAsync("/api/v1/proxy/reload", null);
+
+        // Assert
+        var fake = _fixture.Services.GetRequiredService<IProxyConfigClient>() as FakeProxyConfigClient;
+        fake.ShouldNotBeNull();
+        fake.LastPushedConfig.ShouldNotBeNull();
+
+        var routes = GetRoutes(fake.LastPushedConfig);
+        routes.ShouldNotBeNull();
+
+        var appRoute = FindRouteById(routes, "route_proxy-disabled-new");
+        appRoute.ShouldNotBeNull("Expected a route with @id = route_proxy-disabled-new");
+
+        var handler = appRoute["handle"]?[0]?["handler"]?.GetValue<string>();
+        handler.ShouldBe("static_response");
+
+        var statusCode = appRoute["handle"]?[0]?["status_code"]?.GetValue<string>();
+        statusCode.ShouldBe("503");
     }
 
     [Fact]

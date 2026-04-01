@@ -23,7 +23,10 @@ public class ProxyArtifactTests(CollabhostApiFixture fixture) : IClassFixture<Co
         // Arrange
         var client = _fixture.CreateAuthenticatedClient();
         var tempDir = CreateTempDirectory();
-        await CreateAppAsync(client, "proxy-artifact-root", staticSite: true, artifactLocation: tempDir);
+        var externalId = await CreateAppAsync(client, "proxy-artifact-root", staticSite: true, artifactLocation: tempDir);
+
+        // Start the app so the route is enabled (routes are disabled on creation)
+        await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
 
         // Act
         await client.PostAsync("/api/v1/proxy/reload", null);

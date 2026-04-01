@@ -83,7 +83,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         var json = JsonDocument.Parse(content);
         var route = json.RootElement.GetProperty("runtime").GetProperty("route");
         route.GetProperty("domain").GetString().ShouldBe("bridge-route.collab.internal");
-        route.GetProperty("state").GetString().ShouldBe("active");
+        route.GetProperty("state").GetString().ShouldBe("disabled");
     }
 
     [Fact]
@@ -233,6 +233,59 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         var json = JsonDocument.Parse(content);
         json.RootElement.GetProperty("runtime").GetProperty("route")
             .GetProperty("state").GetString().ShouldBe("disabled");
+    }
+
+    [Fact]
+    public async Task CreateApp_RouteDisabledByDefault()
+    {
+        // Arrange
+        var client = _fixture.CreateAuthenticatedClient();
+        var externalId = await CreateAppAsync(client, "bridge-create-disabled");
+
+        // Act
+        var response = await client.GetAsync($"/api/v1/apps/{externalId}");
+
+        // Assert
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("runtime").GetProperty("route")
+            .GetProperty("state").GetString().ShouldBe("disabled");
+    }
+
+    [Fact]
+    public async Task CreateApp_StaticSite_RouteDisabledByDefault()
+    {
+        // Arrange
+        var client = _fixture.CreateAuthenticatedClient();
+        var externalId = await CreateAppAsync(client, "bridge-create-static-disabled", staticSite: true);
+
+        // Act
+        var response = await client.GetAsync($"/api/v1/apps/{externalId}");
+
+        // Assert
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("runtime").GetProperty("route")
+            .GetProperty("state").GetString().ShouldBe("disabled");
+    }
+
+    [Fact]
+    public async Task StartApp_StaticSite_EnablesRoute()
+    {
+        // Arrange
+        var client = _fixture.CreateAuthenticatedClient();
+        var externalId = await CreateAppAsync(client, "bridge-start-static", staticSite: true);
+
+        // Act
+        var response = await client.PostAsync($"/api/v1/apps/{externalId}/start", null);
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("runtime").GetProperty("route")
+            .GetProperty("state").GetString().ShouldBe("active");
     }
 
     [Fact]

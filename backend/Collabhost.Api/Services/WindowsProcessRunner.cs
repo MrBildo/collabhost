@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace Collabhost.Api.Services;
 
-public class WindowsProcessRunner : IManagedProcessRunner
+public sealed class WindowsProcessRunner : IManagedProcessRunner
 {
     public IProcessHandle Start(ProcessStartConfig config)
     {
@@ -96,14 +96,14 @@ public class WindowsProcessRunner : IManagedProcessRunner
 
         string[] extensions = [".cmd", ".bat", ".exe"];
 
-        foreach (var ext in extensions)
+        foreach (var extension in extensions)
         {
-            var candidate = command + ext;
+            var candidate = command + extension;
 
             // Check PATH via where-style resolution
             var fullPath = Environment.GetEnvironmentVariable("PATH")?
                 .Split(Path.PathSeparator)
-                .Select(dir => Path.Combine(dir, candidate))
+                .Select(directory => Path.Combine(directory, candidate))
                 .FirstOrDefault(File.Exists);
 
             if (fullPath is not null)
@@ -227,6 +227,7 @@ public class WindowsProcessRunner : IManagedProcessRunner
 
         // P/Invoke for Windows graceful console shutdown
         private const uint _ctrlCEvent = 0;
+
         private const uint _attachParentProcess = 0xFFFFFFFF;
 
         [DllImport("kernel32.dll", SetLastError = true)]
