@@ -10,7 +10,7 @@ function maskKey(key: string): string {
   return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
 
-export function SystemPage() {
+export default function SystemPage() {
   const { data: status, isLoading: isStatusLoading } = useSystemStatus();
   const { data: apps, isLoading: isAppsLoading } = useAppList();
 

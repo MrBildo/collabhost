@@ -5,13 +5,9 @@ import {
   GlassCardHeader,
   GlassCardTitle,
 } from '@/components/ui/GlassCard';
+import { useLookupLabel, useServeModes } from '@/hooks/useLookups';
 
 import type { CapabilityWidgetProps } from '../types';
-
-const SERVE_MODE_LABELS: Record<string, string> = {
-  reverseProxy: 'Reverse Proxy',
-  fileServer: 'File Server',
-};
 
 function getFieldSource(
   fieldName: string,
@@ -25,6 +21,8 @@ function RoutingDisplay({ displayName, resolved, defaults, hasOverrides }: Capab
   const domainPattern = String(resolved['domainPattern'] ?? '');
   const serveMode = String(resolved['serveMode'] ?? '');
   const spaFallback = Boolean(resolved['spaFallback']);
+  const { data: serveModes } = useServeModes();
+  const { getDisplayLabel: getServeModeLabel } = useLookupLabel(serveModes);
 
   return (
     <GlassCard size="sm">
@@ -48,22 +46,28 @@ function RoutingDisplay({ displayName, resolved, defaults, hasOverrides }: Capab
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Serve Mode</span>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{SERVE_MODE_LABELS[serveMode] ?? serveMode}</span>
+              <span className="inline-flex items-center rounded-full bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                {getServeModeLabel(serveMode)}
+              </span>
               {hasOverrides && (
                 <ConfigSourceIndicator source={getFieldSource('serveMode', resolved, defaults)} />
               )}
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">SPA Fallback</span>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{spaFallback ? 'Yes' : 'No'}</span>
-              {hasOverrides && (
-                <ConfigSourceIndicator source={getFieldSource('spaFallback', resolved, defaults)} />
-              )}
+          {serveMode === 'file-server' && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">SPA Fallback</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{spaFallback ? 'Yes' : 'No'}</span>
+                {hasOverrides && (
+                  <ConfigSourceIndicator
+                    source={getFieldSource('spaFallback', resolved, defaults)}
+                  />
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </GlassCardContent>
     </GlassCard>

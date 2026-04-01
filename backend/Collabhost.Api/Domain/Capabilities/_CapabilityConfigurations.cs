@@ -77,7 +77,7 @@ public sealed class NodeRuntimeConfiguration
 
 public sealed class ReactRuntimeConfiguration
 {
-    public string Version { get; set; } = default!;
+    public string ReactVersion { get; set; } = default!;
 
     public string? Router { get; set; }
 

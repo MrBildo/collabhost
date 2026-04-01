@@ -109,6 +109,10 @@ public class ManagedProcess(Guid appId, string appExternalId, string appName) : 
         _restartDelayCancellation = null;
     }
 
+    public bool HasProcessExited => _handle?.HasExited ?? true;
+
+    public bool TryGracefulShutdown() => _handle?.TryGracefulShutdown() ?? false;
+
     public void KillProcess() => _handle?.Kill();
 
     public void Dispose()

@@ -1,13 +1,15 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Tests.Fixtures;
 
 using Shouldly;
 
 using Xunit;
+
+using static Collabhost.Api.Tests.Fixtures.AppTestHelpers;
 
 namespace Collabhost.Api.Tests;
 
@@ -117,9 +119,9 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
             Name = "bridge-override-test",
             DisplayName = "Override Test App",
             AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
-            CapabilityOverrides = new Dictionary<string, object>
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
             {
-                ["restart"] = new { policy = "never" }
+                ["restart"] = new { policy = StringCatalog.RestartPolicies.Never }
             }
         };
 
@@ -138,7 +140,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
 
         var restartCapability = json.RootElement.GetProperty("capabilities").GetProperty("restart");
         restartCapability.GetProperty("hasOverrides").GetBoolean().ShouldBeTrue();
-        restartCapability.GetProperty("resolved").GetProperty("policy").GetString().ShouldBe("never");
+        restartCapability.GetProperty("resolved").GetProperty("policy").GetString().ShouldBe(StringCatalog.RestartPolicies.Never);
     }
 
     [Fact]
@@ -151,7 +153,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
             Name = "bridge-invalid-slug",
             DisplayName = "Invalid Slug App",
             AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
-            CapabilityOverrides = new Dictionary<string, object>
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["nonexistent-capability"] = new { foo = "bar" }
             }
@@ -174,7 +176,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
             Name = "bridge-wrong-type",
             DisplayName = "Wrong Type App",
             AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
-            CapabilityOverrides = new Dictionary<string, object>
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["health-check"] = new { endpoint = "/healthz" }
             }
@@ -197,9 +199,9 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         // Act — set an override
         var updateResponse = await client.PutAsJsonAsync($"/api/v1/apps/{externalId}", new
         {
-            CapabilityOverrides = new Dictionary<string, object>
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
             {
-                ["restart"] = new { policy = "always" }
+                ["restart"] = new { policy = StringCatalog.RestartPolicies.Always }
             }
         });
 
@@ -258,32 +260,5 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
-    }
-
-    private static string ToTitleCase(string input)
-    {
-        var words = input.Split('-', ' ');
-        return string.Join(" ", words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
-    }
-
-    private static object CreateValidRequest(string name, bool staticSite = false) =>
-        new
-        {
-            Name = name,
-            DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = staticSite
-                ? TestCatalogConstants.AppTypes.StaticSiteExternalId
-                : TestCatalogConstants.AppTypes.ExecutableExternalId
-        };
-
-    private static async Task<string> CreateAppAsync(HttpClient client, string name, bool staticSite = false)
-    {
-        var request = CreateValidRequest(name, staticSite);
-        var response = await client.PostAsJsonAsync("/api/v1/apps", request);
-        response.EnsureSuccessStatusCode();
-
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        return json.RootElement.GetProperty("externalId").GetString()!;
     }
 }

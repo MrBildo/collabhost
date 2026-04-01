@@ -231,7 +231,7 @@ public sealed class ProxyConfigManager
                     INNER JOIN [AppTypeCapability] ATC ON ATC.[AppTypeId] = A.[AppTypeId]
                     INNER JOIN [Capability] C ON C.[Id] = ATC.[CapabilityId]
                 WHERE
-                    C.[Slug] = 'routing'
+                    C.[Slug] = {StringCatalog.Capabilities.Routing}
                 """
             )
             .ToListAsync(ct);
@@ -252,7 +252,7 @@ public sealed class ProxyConfigManager
 
             // Resolve port from in-memory process state for reverse proxy routes
             int? port = null;
-            if (string.Equals(routingConfiguration.ServeMode, "reverseProxy", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(routingConfiguration.ServeMode, StringCatalog.ServeModes.ReverseProxy, StringComparison.OrdinalIgnoreCase))
             {
                 var managedProcess = _processSupervisor.GetProcess(row.Id);
                 port = managedProcess?.Port;

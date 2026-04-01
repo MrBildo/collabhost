@@ -1,5 +1,7 @@
 using System.Text.Json;
 
+using Collabhost.Api.Domain.Catalogs;
+
 namespace Collabhost.Api.Features.Proxy;
 
 public static class GetRoutes
@@ -54,7 +56,7 @@ public class GetRoutesCommandHandler
                     INNER JOIN [AppTypeCapability] ATC ON ATC.[AppTypeId] = A.[AppTypeId]
                     INNER JOIN [Capability] C ON C.[Id] = ATC.[CapabilityId]
                 WHERE
-                    C.[Slug] = 'routing'
+                    C.[Slug] = {StringCatalog.Capabilities.Routing}
                 ORDER BY
                     A.[Name]
                 """

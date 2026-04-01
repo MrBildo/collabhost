@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Tests.Fixtures;
 
 using Shouldly;
@@ -78,12 +79,12 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
             Name = "custom-type-test",
             DisplayName = "Custom Type Test",
             Description = "A test custom type",
-            Capabilities = new Dictionary<string, object>
+            Capabilities = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["routing"] = new
                 {
                     domainPattern = "{slug}.collab.internal",
-                    serveMode = "reverseProxy"
+                    serveMode = StringCatalog.ServeModes.ReverseProxy
                 }
             }
         };
@@ -128,7 +129,7 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
         {
             Name = "unknown-cap-test",
             DisplayName = "Unknown Capability Test",
-            Capabilities = new Dictionary<string, object>
+            Capabilities = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["nonexistent-capability"] = new { foo = "bar" }
             }
@@ -219,12 +220,12 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
         {
             Name = "delete-ref-type",
             DisplayName = "Delete Ref Type",
-            Capabilities = new Dictionary<string, object>
+            Capabilities = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["routing"] = new
                 {
                     domainPattern = "{slug}.collab.internal",
-                    serveMode = "reverseProxy"
+                    serveMode = StringCatalog.ServeModes.ReverseProxy
                 }
             }
         });

@@ -9,6 +9,7 @@ public static class IdentifierCatalog
         public static readonly Guid Executable = new("bf5105c8-6a99-414c-96b6-c74aab5471f7");
         public static readonly Guid ReactApp = new("73e28a95-764f-4ae5-9c2b-a9fdea66c348");
         public static readonly Guid StaticSite = new("606cdf1f-f41e-42d2-bb13-04b598de0f63");
+        public static readonly Guid SystemService = new("56608f77-aa9d-44b7-a3cb-df7c361d8fb8");
     }
 
     public static class Capabilities
@@ -34,6 +35,26 @@ public static class IdentifierCatalog
         public static readonly Guid Crashed = new("55331f23-8eae-4e56-811d-8bbdeaca03ca");
         public static readonly Guid Restarting = new("517b2fb1-e5f9-4fdd-98de-10cedec5bcc3");
     }
+
+    public static class RestartPolicies
+    {
+        public static readonly Guid Never = new("efecc013-d65f-407c-af7a-ab61043e00b2");
+        public static readonly Guid OnCrash = new("16657ec0-d027-497e-9bbf-eb835492f80b");
+        public static readonly Guid Always = new("89ff36ea-1f8a-42a2-a02d-b33b3dd2918c");
+    }
+
+    public static class ServeModes
+    {
+        public static readonly Guid ReverseProxy = new("56d426ec-c60b-449f-a62a-f294bb893fda");
+        public static readonly Guid FileServer = new("47a7a3f0-9ab5-4194-8b1a-ee1267cb844c");
+    }
+
+    public static class DiscoveryStrategies
+    {
+        public static readonly Guid DotNetRuntimeConfig = new("f3ee2904-4e01-483f-ad94-e8237953fcfc");
+        public static readonly Guid PackageJson = new("506cfcc2-b806-43c3-9baf-593053d9826e");
+        public static readonly Guid Manual = new("59e2a600-f739-470b-9981-cfe538af272b");
+    }
 }
 
 // Immutable machine-readable Name constants for lookup entities.
@@ -48,6 +69,7 @@ public static class StringCatalog
         public const string Executable = "executable";
         public const string ReactApp = "react-app";
         public const string StaticSite = "static-site";
+        public const string SystemService = "system-service";
     }
 
     public static class Capabilities
@@ -64,6 +86,26 @@ public static class StringCatalog
         public const string ReactRuntime = "react-runtime";
     }
 
+    public static class RestartPolicies
+    {
+        public const string Never = "never";
+        public const string OnCrash = "on-crash";
+        public const string Always = "always";
+    }
+
+    public static class ServeModes
+    {
+        public const string ReverseProxy = "reverse-proxy";
+        public const string FileServer = "file-server";
+    }
+
+    public static class DiscoveryStrategies
+    {
+        public const string DotNetRuntimeConfig = "dotnet-runtimeconfig";
+        public const string PackageJson = "package-json";
+        public const string Manual = "manual";
+    }
+
     public static class ProcessStates
     {
         public const string Stopped = "Stopped";
@@ -74,3 +116,4 @@ public static class StringCatalog
         public const string Restarting = "Restarting";
     }
 }
+

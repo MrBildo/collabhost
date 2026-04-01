@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Collabhost.Api.Migrations
 {
     [DbContext(typeof(CollabhostDbContext))]
-    [Migration("20260331010542_InitialCreate")]
+    [Migration("20260401135838_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -161,6 +161,15 @@ namespace Collabhost.Api.Migrations
                             ExternalId = "01KN0P7JYN9TDB3SPPS25Z493F",
                             IsBuiltIn = true,
                             Name = "static-site"
+                        },
+                        new
+                        {
+                            Id = new Guid("56608f77-aa9d-44b7-a3cb-df7c361d8fb8"),
+                            Description = "System process with management but no routing",
+                            DisplayName = "System Service",
+                            ExternalId = "01KN4N7APRQJQ8WG6NGZ1Y98TY",
+                            IsBuiltIn = true,
+                            Name = "system-service"
                         });
                 });
 
@@ -218,7 +227,7 @@ namespace Collabhost.Api.Migrations
                             Id = new Guid("41b486b0-037f-44e8-9a96-028c490fa48c"),
                             AppTypeId = new Guid("d3333aba-642e-4784-a501-856a25ae6fe5"),
                             CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
-                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}"
+                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverse-proxy\"}"
                         },
                         new
                         {
@@ -274,7 +283,7 @@ namespace Collabhost.Api.Migrations
                             Id = new Guid("74137008-620c-46cc-ba2c-e1e1896d25c1"),
                             AppTypeId = new Guid("49d21824-f9e6-4a44-9b12-130f8c680cb9"),
                             CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
-                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}"
+                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverse-proxy\"}"
                         },
                         new
                         {
@@ -309,7 +318,7 @@ namespace Collabhost.Api.Migrations
                             Id = new Guid("ecb72690-91c9-43ae-9039-92ada963271c"),
                             AppTypeId = new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"),
                             CapabilityId = new Guid("8460d864-4df5-423d-bb46-c351594b6667"),
-                            Configuration = "{\"discoveryStrategy\":\"manual\",\"gracefulShutdown\":false,\"shutdownTimeoutSeconds\":10}"
+                            Configuration = "{\"discoveryStrategy\":\"manual\",\"gracefulShutdown\":false,\"shutdownTimeoutSeconds\":10,\"command\":\"echo\",\"arguments\":\"no command configured\"}"
                         },
                         new
                         {
@@ -323,14 +332,14 @@ namespace Collabhost.Api.Migrations
                             Id = new Guid("fa660eb9-810a-47c1-8010-799481c4dca5"),
                             AppTypeId = new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"),
                             CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
-                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverseProxy\"}"
+                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"reverse-proxy\"}"
                         },
                         new
                         {
                             Id = new Guid("14cb559d-7675-43bb-acdd-f1f15671c570"),
                             AppTypeId = new Guid("bf5105c8-6a99-414c-96b6-c74aab5471f7"),
                             CapabilityId = new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"),
-                            Configuration = "{\"policy\":\"onCrash\"}"
+                            Configuration = "{\"policy\":\"on-crash\"}"
                         },
                         new
                         {
@@ -344,7 +353,7 @@ namespace Collabhost.Api.Migrations
                             Id = new Guid("e708632b-d307-4045-9778-679d979b1578"),
                             AppTypeId = new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"),
                             CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
-                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"fileServer\",\"spaFallback\":true}"
+                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"file-server\",\"spaFallback\":true}"
                         },
                         new
                         {
@@ -358,14 +367,35 @@ namespace Collabhost.Api.Migrations
                             Id = new Guid("b256a4b1-86fe-46db-ab50-0061e7854996"),
                             AppTypeId = new Guid("73e28a95-764f-4ae5-9c2b-a9fdea66c348"),
                             CapabilityId = new Guid("2bc51a48-5e56-4c27-958a-615009fea233"),
-                            Configuration = "{\"version\":\"18.x\",\"router\":\"react-router\",\"bundler\":\"vite\"}"
+                            Configuration = "{\"reactVersion\":\"18.x\",\"router\":\"react-router\",\"bundler\":\"vite\"}"
                         },
                         new
                         {
                             Id = new Guid("a4cbac96-a44d-4823-9924-e4a530ee96b2"),
                             AppTypeId = new Guid("606cdf1f-f41e-42d2-bb13-04b598de0f63"),
                             CapabilityId = new Guid("6e77364e-d15c-4a02-b12d-9d8a0d623ff3"),
-                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"fileServer\",\"spaFallback\":false}"
+                            Configuration = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"file-server\",\"spaFallback\":false}"
+                        },
+                        new
+                        {
+                            Id = new Guid("eec22dfc-d996-4563-9e26-dd671f3057e2"),
+                            AppTypeId = new Guid("56608f77-aa9d-44b7-a3cb-df7c361d8fb8"),
+                            CapabilityId = new Guid("8460d864-4df5-423d-bb46-c351594b6667"),
+                            Configuration = "{\"discoveryStrategy\":\"manual\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":10,\"command\":\"echo\",\"arguments\":\"no command configured\"}"
+                        },
+                        new
+                        {
+                            Id = new Guid("521df52f-53cd-448c-ac85-b727fd9d7168"),
+                            AppTypeId = new Guid("56608f77-aa9d-44b7-a3cb-df7c361d8fb8"),
+                            CapabilityId = new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"),
+                            Configuration = "{\"policy\":\"on-crash\"}"
+                        },
+                        new
+                        {
+                            Id = new Guid("564a6534-79a7-4610-af93-27c3916c105f"),
+                            AppTypeId = new Guid("56608f77-aa9d-44b7-a3cb-df7c361d8fb8"),
+                            CapabilityId = new Guid("30e21343-9124-4bec-b247-f780a5be12df"),
+                            Configuration = "{\"enabled\":true}"
                         });
                 });
 
@@ -528,6 +558,72 @@ namespace Collabhost.Api.Migrations
                     b.ToTable("CapabilityConfiguration", (string)null);
                 });
 
+            modelBuilder.Entity("Collabhost.Api.Domain.Lookups.DiscoveryStrategy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("datetime('now')");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("datetime('now')");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DiscoveryStrategy", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("f3ee2904-4e01-483f-ad94-e8237953fcfc"),
+                            DisplayName = ".NET Runtime Config",
+                            IsActive = true,
+                            Name = "dotnet-runtimeconfig",
+                            Ordinal = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("506cfcc2-b806-43c3-9baf-593053d9826e"),
+                            DisplayName = "package.json",
+                            IsActive = true,
+                            Name = "package-json",
+                            Ordinal = 1
+                        },
+                        new
+                        {
+                            Id = new Guid("59e2a600-f739-470b-9981-cfe538af272b"),
+                            DisplayName = "Manual",
+                            IsActive = true,
+                            Name = "manual",
+                            Ordinal = 2
+                        });
+                });
+
             modelBuilder.Entity("Collabhost.Api.Domain.Lookups.ProcessState", b =>
                 {
                     b.Property<Guid>("Id")
@@ -615,6 +711,130 @@ namespace Collabhost.Api.Migrations
                             IsActive = true,
                             Name = "Restarting",
                             Ordinal = 5
+                        });
+                });
+
+            modelBuilder.Entity("Collabhost.Api.Domain.Lookups.RestartPolicy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("datetime('now')");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("datetime('now')");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("RestartPolicy", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("efecc013-d65f-407c-af7a-ab61043e00b2"),
+                            DisplayName = "Never",
+                            IsActive = true,
+                            Name = "never",
+                            Ordinal = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("16657ec0-d027-497e-9bbf-eb835492f80b"),
+                            DisplayName = "On Crash",
+                            IsActive = true,
+                            Name = "on-crash",
+                            Ordinal = 1
+                        },
+                        new
+                        {
+                            Id = new Guid("89ff36ea-1f8a-42a2-a02d-b33b3dd2918c"),
+                            DisplayName = "Always",
+                            IsActive = true,
+                            Name = "always",
+                            Ordinal = 2
+                        });
+                });
+
+            modelBuilder.Entity("Collabhost.Api.Domain.Lookups.ServeMode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("datetime('now')");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("datetime('now')");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ServeMode", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("56d426ec-c60b-449f-a62a-f294bb893fda"),
+                            DisplayName = "Reverse Proxy",
+                            IsActive = true,
+                            Name = "reverse-proxy",
+                            Ordinal = 0
+                        },
+                        new
+                        {
+                            Id = new Guid("47a7a3f0-9ab5-4194-8b1a-ee1267cb844c"),
+                            DisplayName = "File Server",
+                            IsActive = true,
+                            Name = "file-server",
+                            Ordinal = 1
                         });
                 });
 

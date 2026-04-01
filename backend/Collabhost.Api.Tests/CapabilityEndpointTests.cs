@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 
+using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Tests.Fixtures;
 
 using Shouldly;
@@ -66,7 +67,7 @@ public class CapabilityEndpointTests(CollabhostApiFixture fixture) : IClassFixtu
         var hasProcess = false;
         foreach (var element in json.RootElement.EnumerateArray())
         {
-            if (element.GetProperty("slug").GetString() == "process")
+            if (element.GetProperty("slug").GetString() == StringCatalog.Capabilities.Process)
             {
                 hasProcess = true;
                 element.GetProperty("category").GetString().ShouldBe("behavioral");

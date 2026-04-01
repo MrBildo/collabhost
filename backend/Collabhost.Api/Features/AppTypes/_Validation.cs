@@ -45,11 +45,8 @@ internal static class CapabilityConfigurationValidator
     {
         var deserialized = JsonSerializer.Deserialize<T>(json, _jsonOptions);
 
-        if (deserialized is null)
-        {
-            return $"Configuration for capability '{slug}' deserialized to null.";
-        }
-
-        return null;
+        return deserialized is null
+            ? $"Configuration for capability '{slug}' deserialized to null."
+            : null;
     }
 }

@@ -1,18 +1,15 @@
-import type { CapabilityWidgetProps } from '../types';
+import { useDiscoveryStrategies, useLookupLabel } from '@/hooks/useLookups';
 
-const DISCOVERY_STRATEGY_LABELS: Record<string, string> = {
-  'dotnet-runtimeconfig': '.NET',
-  'package-json': 'npm',
-  manual: 'Manual',
-};
+import type { CapabilityWidgetProps } from '../types';
 
 function ProcessSummary({ resolved }: CapabilityWidgetProps) {
   const discoveryStrategy = String(resolved['discoveryStrategy'] ?? '');
-  const label = DISCOVERY_STRATEGY_LABELS[discoveryStrategy] ?? discoveryStrategy;
+  const { data: strategies } = useDiscoveryStrategies();
+  const { getDisplayLabel } = useLookupLabel(strategies);
 
   return (
     <span className="inline-flex items-center rounded-full bg-muted/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-      {label}
+      {getDisplayLabel(discoveryStrategy)}
     </span>
   );
 }

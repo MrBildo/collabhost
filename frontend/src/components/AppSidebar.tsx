@@ -54,7 +54,9 @@ export function AppSidebar() {
                       tooltip={item.label}
                       render={<NavLink to={item.href} />}
                       className={
-                        isActive ? 'bg-[image:var(--gradient-primary)] text-primary-foreground' : ''
+                        isActive
+                          ? 'bg-[image:var(--sidebar-active-bg)] border border-[var(--sidebar-active-border)] text-primary'
+                          : ''
                       }
                     >
                       <item.icon />

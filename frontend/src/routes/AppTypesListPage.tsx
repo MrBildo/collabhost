@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { GradientButton } from '@/components/ui/GradientButton';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   GlassCard,
@@ -32,10 +32,10 @@ export default function AppTypesListPage() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">App Types</h1>
-        <Button variant="outline" render={<Link to="/app-types/new" />}>
+        <GradientButton render={<Link to="/app-types/new" />}>
           <Plus className="h-4 w-4" />
           New App Type
-        </Button>
+        </GradientButton>
       </div>
 
       {isLoading && (
@@ -58,10 +58,10 @@ export default function AppTypesListPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Create your first app type to get started.
           </p>
-          <Button className="mt-4" size="lg" render={<Link to="/app-types/new" />}>
+          <GradientButton className="mt-4" size="lg" render={<Link to="/app-types/new" />}>
             <Plus className="h-5 w-5" />
             New App Type
-          </Button>
+          </GradientButton>
         </div>
       )}
 

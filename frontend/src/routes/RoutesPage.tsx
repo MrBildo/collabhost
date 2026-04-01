@@ -17,7 +17,7 @@ import { useReloadProxy, useRoutes } from '@/hooks/useRoutes';
 
 type ReloadFeedback = 'success' | 'error' | null;
 
-export function RoutesPage() {
+export default function RoutesPage() {
   const { data, isLoading } = useRoutes();
   const reloadProxy = useReloadProxy();
   const [reloadFeedback, setReloadFeedback] = useState<ReloadFeedback>(null);

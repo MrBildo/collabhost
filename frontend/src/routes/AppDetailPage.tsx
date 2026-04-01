@@ -43,8 +43,7 @@ import { useAppDetail, useAppLogs, useUpdateApp, useDeleteApp } from '@/hooks/us
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import type { UpdateEvent } from '@/hooks/useAppUpdate';
 import { formatDateTime, formatUptime } from '@/lib/format';
-import { toCapabilityEntries } from '@/lib/utils';
-import { cn } from '@/lib/utils';
+import { cn, toCapabilityEntries } from '@/lib/utils';
 import type { AppResponse, ProcessState, UpdateAppRequest } from '@/types/api';
 
 function deriveDisplayStatus(app: AppResponse): ProcessState {
@@ -60,7 +59,7 @@ function deriveDisplayStatus(app: AppResponse): ProcessState {
   return 'Stopped';
 }
 
-export function AppDetailPage() {
+export default function AppDetailPage() {
   const { id } = useParams<{ id: string }>();
 
   if (!id) {

@@ -48,7 +48,7 @@ public record AppDetailResponse
     AppTypeReference AppType,
     DateTime RegisteredAt,
     RuntimeState Runtime,
-    Dictionary<string, AppCapabilityResponse> Capabilities
+    IReadOnlyDictionary<string, AppCapabilityResponse> Capabilities
 );
 
 internal static class RuntimeStateBuilder
@@ -102,7 +102,7 @@ internal static class RuntimeStateBuilder
         return new RouteRuntimeState(state, domain);
     }
 
-    internal static Dictionary<string, AppCapabilityResponse> BuildCapabilityDictionary
+    internal static IReadOnlyDictionary<string, AppCapabilityResponse> BuildCapabilityDictionary
     (
         IEnumerable<ResolvedCapabilityData> resolvedCapabilities
     )
@@ -111,8 +111,8 @@ internal static class RuntimeStateBuilder
 
         foreach (var resolved in resolvedCapabilities)
         {
-            var resolvedNode = JsonNode.Parse(resolved.ResolvedConfiguration)?.AsObject() ?? new JsonObject();
-            var defaultsNode = JsonNode.Parse(resolved.DefaultConfiguration)?.AsObject() ?? new JsonObject();
+            var resolvedNode = JsonNode.Parse(resolved.ResolvedConfiguration)?.AsObject() ?? [];
+            var defaultsNode = JsonNode.Parse(resolved.DefaultConfiguration)?.AsObject() ?? [];
 
             result[resolved.Slug] = new AppCapabilityResponse
             (

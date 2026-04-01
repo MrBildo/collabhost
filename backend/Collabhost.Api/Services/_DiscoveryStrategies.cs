@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using System.Text.Json;
 
 using Collabhost.Api.Domain.Capabilities;
+using Collabhost.Api.Domain.Catalogs;
 
 namespace Collabhost.Api.Services;
 
@@ -21,7 +22,7 @@ public interface IDiscoveryStrategy
 
 public sealed class DotNetRuntimeConfigDiscoveryStrategy : IDiscoveryStrategy
 {
-    public string StrategyName => "dotnet-runtimeconfig";
+    public string StrategyName => StringCatalog.DiscoveryStrategies.DotNetRuntimeConfig;
 
     public DiscoveredProcess Discover(ProcessConfiguration processConfiguration)
     {
@@ -59,7 +60,7 @@ public sealed class DotNetRuntimeConfigDiscoveryStrategy : IDiscoveryStrategy
 
 public sealed class PackageJsonDiscoveryStrategy : IDiscoveryStrategy
 {
-    public string StrategyName => "package-json";
+    public string StrategyName => StringCatalog.DiscoveryStrategies.PackageJson;
 
     public DiscoveredProcess Discover(ProcessConfiguration processConfiguration)
     {
@@ -101,7 +102,7 @@ public sealed class PackageJsonDiscoveryStrategy : IDiscoveryStrategy
 
 public sealed class ManualDiscoveryStrategy : IDiscoveryStrategy
 {
-    public string StrategyName => "manual";
+    public string StrategyName => StringCatalog.DiscoveryStrategies.Manual;
 
     public DiscoveredProcess Discover(ProcessConfiguration processConfiguration) =>
         string.IsNullOrWhiteSpace(processConfiguration.Command)
@@ -123,9 +124,9 @@ public sealed class DiscoveryStrategyFactory
     private static readonly FrozenDictionary<string, IDiscoveryStrategy> _strategies =
         new Dictionary<string, IDiscoveryStrategy>(StringComparer.OrdinalIgnoreCase)
         {
-            ["dotnet-runtimeconfig"] = new DotNetRuntimeConfigDiscoveryStrategy(),
-            ["package-json"] = new PackageJsonDiscoveryStrategy(),
-            ["manual"] = new ManualDiscoveryStrategy()
+            [StringCatalog.DiscoveryStrategies.DotNetRuntimeConfig] = new DotNetRuntimeConfigDiscoveryStrategy(),
+            [StringCatalog.DiscoveryStrategies.PackageJson] = new PackageJsonDiscoveryStrategy(),
+            [StringCatalog.DiscoveryStrategies.Manual] = new ManualDiscoveryStrategy()
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     public IDiscoveryStrategy GetStrategy(string strategyName)

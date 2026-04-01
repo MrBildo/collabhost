@@ -171,7 +171,7 @@ function AppCard({ app }: AppCardProps) {
   );
 }
 
-export function AppListPage() {
+export default function AppListPage() {
   const { data: apps, isLoading, error } = useApps();
 
   return (

@@ -8,17 +8,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useLookupLabel, useRestartPolicies } from '@/hooks/useLookups';
 
 import type { CapabilityWidgetProps } from '../types';
 
-const RESTART_POLICIES = [
-  { value: 'never', label: 'Never' },
-  { value: 'onCrash', label: 'On Crash' },
-  { value: 'always', label: 'Always' },
-] as const;
-
 function RestartWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) {
   const policy = String(resolved['policy'] ?? 'never');
+  const { data: policies } = useRestartPolicies();
+  const { options } = useLookupLabel(policies);
 
   const isFieldOverridden = useCallback(
     (field: string): boolean => {
@@ -59,9 +56,9 @@ function RestartWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) 
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {RESTART_POLICIES.map((option) => (
+            {options.map((option) => (
               <SelectItem key={option.value} value={option.value}>
-                {option.label}
+                {option.displayName}
               </SelectItem>
             ))}
           </SelectContent>

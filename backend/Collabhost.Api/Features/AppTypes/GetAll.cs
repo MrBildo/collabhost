@@ -13,7 +13,7 @@ public static class GetAll
         string DisplayName,
         string? Description,
         bool IsBuiltIn,
-        Dictionary<string, AppTypeCapabilityResponse> Capabilities
+        IReadOnlyDictionary<string, AppTypeCapabilityResponse> Capabilities
     );
 
     public static async Task<Ok<List<Response>>> HandleAsync

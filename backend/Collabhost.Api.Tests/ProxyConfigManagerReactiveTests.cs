@@ -1,7 +1,3 @@
-using System.Globalization;
-using System.Net.Http.Json;
-using System.Text.Json;
-
 using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Services;
 using Collabhost.Api.Services.Proxy;
@@ -12,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 
 using Xunit;
+
+using static Collabhost.Api.Tests.Fixtures.AppTestHelpers;
 
 namespace Collabhost.Api.Tests;
 
@@ -115,29 +113,6 @@ public sealed class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture
 
         // Assert — no sync should have been triggered
         fake.LoadCallCount.ShouldBe(countBefore);
-    }
-
-    private static string ToTitleCase(string input)
-    {
-        var words = input.Split('-', ' ');
-        return string.Join(" ", words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
-    }
-
-    private static async Task<string> CreateAppAsync(HttpClient client, string name)
-    {
-        var request = new
-        {
-            Name = name,
-            DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId
-        };
-
-        var response = await client.PostAsJsonAsync("/api/v1/apps", request);
-        response.EnsureSuccessStatusCode();
-
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        return json.RootElement.GetProperty("externalId").GetString()!;
     }
 
     public void Dispose()

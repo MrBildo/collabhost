@@ -298,7 +298,7 @@ public sealed class ProcessSupervisor
             app.Id, IdentifierCatalog.Capabilities.Restart, ct
         );
 
-        var restartPolicy = restartConfiguration?.Policy ?? "never";
+        var restartPolicy = restartConfiguration?.Policy ?? StringCatalog.RestartPolicies.Never;
         _restartPolicies[appId] = restartPolicy;
 
         handle.Exited += exitCode => OnProcessExited(appId, exitCode);
@@ -357,12 +357,12 @@ public sealed class ProcessSupervisor
 
         // Apply restart policy
         _restartPolicies.TryGetValue(appId, out var restartPolicy);
-        restartPolicy ??= "never";
+        restartPolicy ??= StringCatalog.RestartPolicies.Never;
 
         var shouldRestart = restartPolicy switch
         {
-            "always" => true,
-            "onCrash" => exitCode != 0,
+            StringCatalog.RestartPolicies.Always => true,
+            StringCatalog.RestartPolicies.OnCrash => exitCode != 0,
             _ => false
         };
 
@@ -493,23 +493,30 @@ public sealed class ProcessSupervisor
 
     private async Task SendGracefulShutdownAsync(ManagedProcess process, int shutdownTimeoutSeconds)
     {
+        _logger.LogInformation
+        (
+            "Attempting graceful shutdown for '{AppName}' (timeout: {Timeout}s)",
+            process.AppName,
+            shutdownTimeoutSeconds
+        );
+
         try
         {
-            if (OperatingSystem.IsWindows())
+            var signalSent = process.TryGracefulShutdown();
+
+            if (!signalSent)
             {
-                // On Windows, send Ctrl+C by generating a console control event
-                // Since we run processes with CreateNoWindow=true and redirect IO,
-                // graceful shutdown is attempted via Ctrl+C but may not work for all apps.
-                // Fall through to kill after timeout.
-                _logger.LogDebug
+                _logger.LogWarning
                 (
-                    "Attempting graceful shutdown for '{AppName}' (timeout: {Timeout}s)",
-                    process.AppName,
-                    shutdownTimeoutSeconds
+                    "Could not send graceful shutdown signal to '{AppName}' — hard killing",
+                    process.AppName
                 );
+                process.KillProcess();
+                return;
             }
 
-            // Wait for the process to exit within the timeout
+            _logger.LogDebug("Graceful shutdown signal sent to '{AppName}'", process.AppName);
+
             using var timeoutCancellation = new CancellationTokenSource
             (
                 TimeSpan.FromSeconds(shutdownTimeoutSeconds)
@@ -517,12 +524,11 @@ public sealed class ProcessSupervisor
 
             try
             {
-                // Poll for exit since we have a handle reference
                 while (!timeoutCancellation.Token.IsCancellationRequested)
                 {
-                    if (!process.IsRunning)
+                    if (process.HasProcessExited)
                     {
-                        _logger.LogDebug("App '{AppName}' exited gracefully", process.AppName);
+                        _logger.LogInformation("App '{AppName}' exited gracefully", process.AppName);
                         return;
                     }
 
@@ -544,10 +550,9 @@ public sealed class ProcessSupervisor
             );
         }
 
-        // Hard kill after timeout or on error
         _logger.LogInformation
         (
-            "Graceful shutdown timeout for '{AppName}' — hard killing",
+            "Graceful shutdown timed out for '{AppName}' — hard killing",
             process.AppName
         );
         process.KillProcess();
