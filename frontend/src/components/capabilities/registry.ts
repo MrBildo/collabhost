@@ -1,4 +1,5 @@
 import { FallbackDisplay } from './fallback/FallbackDisplay';
+import { artifactFamily } from './artifact';
 import { aspnetRuntimeFamily } from './aspnet-runtime';
 import { autoStartFamily } from './auto-start';
 import { environmentDefaultsFamily } from './environment-defaults';
@@ -13,6 +14,7 @@ import type { CapabilityComponentFamily, CapabilityWidgetProps } from './types';
 
 /** Registry mapping capability slugs to their component families. */
 const capabilityRegistry = new Map<string, CapabilityComponentFamily>([
+  ['artifact', artifactFamily],
   ['process', processFamily],
   ['health-check', healthCheckFamily],
   ['environment-defaults', environmentDefaultsFamily],
