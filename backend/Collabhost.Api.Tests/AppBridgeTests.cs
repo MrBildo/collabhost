@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -8,6 +7,8 @@ using Collabhost.Api.Tests.Fixtures;
 using Shouldly;
 
 using Xunit;
+
+using static Collabhost.Api.Tests.Fixtures.AppTestHelpers;
 
 namespace Collabhost.Api.Tests;
 
@@ -260,30 +261,4 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
-    private static string ToTitleCase(string input)
-    {
-        var words = input.Split('-', ' ');
-        return string.Join(" ", words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
-    }
-
-    private static object CreateValidRequest(string name, bool staticSite = false) =>
-        new
-        {
-            Name = name,
-            DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = staticSite
-                ? TestCatalogConstants.AppTypes.StaticSiteExternalId
-                : TestCatalogConstants.AppTypes.ExecutableExternalId
-        };
-
-    private static async Task<string> CreateAppAsync(HttpClient client, string name, bool staticSite = false)
-    {
-        var request = CreateValidRequest(name, staticSite);
-        var response = await client.PostAsJsonAsync("/api/v1/apps", request);
-        response.EnsureSuccessStatusCode();
-
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        return json.RootElement.GetProperty("externalId").GetString()!;
-    }
 }

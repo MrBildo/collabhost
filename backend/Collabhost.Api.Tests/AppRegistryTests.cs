@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -8,6 +7,8 @@ using Collabhost.Api.Tests.Fixtures;
 using Shouldly;
 
 using Xunit;
+
+using static Collabhost.Api.Tests.Fixtures.AppTestHelpers;
 
 namespace Collabhost.Api.Tests;
 
@@ -248,28 +249,4 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
-    private static string ToTitleCase(string input)
-    {
-        var words = input.Split('-', ' ');
-        return string.Join(" ", words.Select(w => char.ToUpper(w[0], CultureInfo.InvariantCulture) + w[1..]));
-    }
-
-    private static object CreateValidRequest(string name) =>
-        new
-        {
-            Name = name,
-            DisplayName = $"{ToTitleCase(name)} App",
-            AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId
-        };
-
-    private static async Task<string> CreateAppAsync(HttpClient client, string name)
-    {
-        var request = CreateValidRequest(name);
-        var response = await client.PostAsJsonAsync("/api/v1/apps", request);
-        response.EnsureSuccessStatusCode();
-
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        return json.RootElement.GetProperty("externalId").GetString()!;
-    }
 }
