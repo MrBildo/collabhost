@@ -1,13 +1,13 @@
 # Collabhost — Agent Workflow
 
-## Current State (updated 2026-03-31)
+## Current State (updated 2026-04-01)
 
-- **Phase:** Capability Architecture — COMPLETE. Post-MVP production design.
-- **Research:** Complete. 8 projects investigated, synthesis produced.
-- **Capability Architecture (Card #36):** Full implementation across 8 PRs (#12–#18). Replaced hardcoded AppTypeBehavior with data-driven capability composition model. See `.agents/specs/capability-architecture.md` for full spec.
-- **Key patterns:** Capability composition (AppType → AppTypeCapability → Capability), live inheritance with overrides (CapabilityConfiguration), configuration merge service (ICapabilityResolver), Core vs Bridge vs UI architecture (ProcessSupervisor/ProxyConfigManager are core systems, API endpoints are the bridge, frontend consumes bridge output), discovery strategies (dotnet-runtimeconfig, package-json, manual), universal stop/start with derived state (no persisted flags), capability widget registry (slug → component family).
-- **Build:** 95 backend tests (87 integration + 8 Aspire smoke), 38 frontend tests, all passing.
-- **Follow-up cards:** #42 (typed JSON wrapper), #47 (API-driven label maps), #48 (8 UI feedback items from e2e testing — includes artifact capability blocker).
+- **Phase:** Capability reclassification — COMPLETE. PR #19 merged.
+- **Release `capability-reclassification`:** Cards #32, #37, #48 completed. Reclassified capability fields into type-structural (informational) vs operator-configurable (behavioral). Backend is now single source of truth for all option values via DB-backed `LookupEntity` rows (RestartPolicy, ServeMode, DiscoveryStrategy) with dedicated lookup endpoints. Added SystemService app type. Graceful process shutdown implemented. Test helpers consolidated.
+- **Key patterns:** Capability composition (AppType → AppTypeCapability → Capability), live inheritance with overrides (CapabilityConfiguration), configuration merge service (ICapabilityResolver), Core vs Bridge vs UI architecture, discovery strategies (dotnet-runtimeconfig, package-json, manual), universal stop/start with derived state, capability widget registry (slug → component family), DB-backed lookups for all option/enum values (slug format names, individual API endpoints, frontend caches).
+- **Convention:** All option/enum-like values must be `LookupEntity` rows in DB, exposed via API, consumed by frontend. See COLLABHOST_KB.md §1 Domain Patterns.
+- **Build:** 98 backend tests (integration), 38 frontend tests, all passing.
+- **Follow-up cards:** #42 (typed JSON wrapper), #49 (artifact capability — blocker for e2e), #50 (configuration display layout redesign).
 
 ### ARCHITECTURE.md staleness notes
 The following sections in `.agents/temp/architecture-mockup/ARCHITECTURE.md` are **stale** after card #20 and #21:
