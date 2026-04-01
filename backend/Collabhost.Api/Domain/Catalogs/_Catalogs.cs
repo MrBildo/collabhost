@@ -24,6 +24,7 @@ public static class IdentifierCatalog
         public static readonly Guid AspNetRuntime = new("1f642072-7975-4fa0-8109-4d9be5ffa909");
         public static readonly Guid NodeRuntime = new("0ba21247-bf12-4487-b2ad-e4c84a784d75");
         public static readonly Guid ReactRuntime = new("2bc51a48-5e56-4c27-958a-615009fea233");
+        public static readonly Guid Artifact = new("cdd957fc-0402-45fe-9a37-788545a2ea91");
     }
 
     public static class ProcessStates
@@ -84,6 +85,7 @@ public static class StringCatalog
         public const string AspNetRuntime = "aspnet-runtime";
         public const string NodeRuntime = "node-runtime";
         public const string ReactRuntime = "react-runtime";
+        public const string Artifact = "artifact";
     }
 
     public static class RestartPolicies

@@ -17,34 +17,31 @@ public interface IDiscoveryStrategy
 {
     string StrategyName { get; }
 
-    DiscoveredProcess Discover(ProcessConfiguration processConfiguration);
+    DiscoveredProcess Discover(ProcessConfiguration processConfiguration, string effectiveWorkingDirectory);
 }
 
 public sealed class DotNetRuntimeConfigDiscoveryStrategy : IDiscoveryStrategy
 {
     public string StrategyName => StringCatalog.DiscoveryStrategies.DotNetRuntimeConfig;
 
-    public DiscoveredProcess Discover(ProcessConfiguration processConfiguration)
+    public DiscoveredProcess Discover(ProcessConfiguration processConfiguration, string effectiveWorkingDirectory)
     {
-        var workingDirectory = processConfiguration.WorkingDirectory;
-
-        if (string.IsNullOrWhiteSpace(workingDirectory))
+        if (string.IsNullOrWhiteSpace(effectiveWorkingDirectory))
         {
             throw new InvalidOperationException
             (
                 "Cannot use dotnet-runtimeconfig discovery strategy: " +
-                "WorkingDirectory is not configured on the process capability. " +
-                "This will be resolved when the artifact capability is implemented."
+                "Artifact location is not configured. Set the artifact capability's location field."
             );
         }
 
-        var runtimeConfigFiles = Directory.GetFiles(workingDirectory, "*.runtimeconfig.json");
+        var runtimeConfigFiles = Directory.GetFiles(effectiveWorkingDirectory, "*.runtimeconfig.json");
 
         if (runtimeConfigFiles.Length == 0)
         {
             throw new InvalidOperationException
             (
-                $"No *.runtimeconfig.json file found in '{workingDirectory}'. " +
+                $"No *.runtimeconfig.json file found in '{effectiveWorkingDirectory}'. " +
                 "Ensure the application has been published or built."
             );
         }
@@ -54,7 +51,7 @@ public sealed class DotNetRuntimeConfigDiscoveryStrategy : IDiscoveryStrategy
             .GetFileNameWithoutExtension(runtimeConfigPath)
             .Replace(".runtimeconfig", "", StringComparison.OrdinalIgnoreCase) + ".dll";
 
-        return new DiscoveredProcess("dotnet", dllName, workingDirectory);
+        return new DiscoveredProcess("dotnet", dllName, effectiveWorkingDirectory);
     }
 }
 
@@ -62,21 +59,18 @@ public sealed class PackageJsonDiscoveryStrategy : IDiscoveryStrategy
 {
     public string StrategyName => StringCatalog.DiscoveryStrategies.PackageJson;
 
-    public DiscoveredProcess Discover(ProcessConfiguration processConfiguration)
+    public DiscoveredProcess Discover(ProcessConfiguration processConfiguration, string effectiveWorkingDirectory)
     {
-        var workingDirectory = processConfiguration.WorkingDirectory;
-
-        if (string.IsNullOrWhiteSpace(workingDirectory))
+        if (string.IsNullOrWhiteSpace(effectiveWorkingDirectory))
         {
             throw new InvalidOperationException
             (
                 "Cannot use package-json discovery strategy: " +
-                "WorkingDirectory is not configured on the process capability. " +
-                "This will be resolved when the artifact capability is implemented."
+                "Artifact location is not configured. Set the artifact capability's location field."
             );
         }
 
-        var packageJsonPath = Path.Combine(workingDirectory, "package.json");
+        var packageJsonPath = Path.Combine(effectiveWorkingDirectory, "package.json");
 
         if (!File.Exists(packageJsonPath))
         {
@@ -92,7 +86,7 @@ public sealed class PackageJsonDiscoveryStrategy : IDiscoveryStrategy
 
         return document.RootElement.TryGetProperty("scripts", out var scripts)
             && scripts.TryGetProperty("start", out _)
-            ? new DiscoveredProcess("npm", "start", workingDirectory)
+            ? new DiscoveredProcess("npm", "start", effectiveWorkingDirectory)
             : throw new InvalidOperationException
             (
                 $"package.json at '{packageJsonPath}' does not have a 'scripts.start' entry."
@@ -104,7 +98,7 @@ public sealed class ManualDiscoveryStrategy : IDiscoveryStrategy
 {
     public string StrategyName => StringCatalog.DiscoveryStrategies.Manual;
 
-    public DiscoveredProcess Discover(ProcessConfiguration processConfiguration) =>
+    public DiscoveredProcess Discover(ProcessConfiguration processConfiguration, string effectiveWorkingDirectory) =>
         string.IsNullOrWhiteSpace(processConfiguration.Command)
             ? throw new InvalidOperationException
             (
@@ -115,7 +109,7 @@ public sealed class ManualDiscoveryStrategy : IDiscoveryStrategy
             (
                 processConfiguration.Command,
                 processConfiguration.Arguments,
-                processConfiguration.WorkingDirectory
+                effectiveWorkingDirectory
             );
 }
 

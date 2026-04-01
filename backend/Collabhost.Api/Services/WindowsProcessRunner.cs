@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace Collabhost.Api.Services;
 
-public class WindowsProcessRunner : IManagedProcessRunner
+public sealed class WindowsProcessRunner : IManagedProcessRunner
 {
     public IProcessHandle Start(ProcessStartConfig config)
     {
@@ -68,7 +68,7 @@ public class WindowsProcessRunner : IManagedProcessRunner
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = config.Command,
+            FileName = ResolveCommand(config.Command),
             Arguments = config.Arguments ?? "",
             WorkingDirectory = config.WorkingDirectory,
             UseShellExecute = false,
@@ -83,6 +83,36 @@ public class WindowsProcessRunner : IManagedProcessRunner
         }
 
         return startInfo;
+    }
+
+    // On Windows, commands like "npm" are actually "npm.cmd" batch files.
+    // With UseShellExecute=false, the OS won't resolve these automatically.
+    private static string ResolveCommand(string command)
+    {
+        if (Path.HasExtension(command))
+        {
+            return command;
+        }
+
+        string[] extensions = [".cmd", ".bat", ".exe"];
+
+        foreach (var extension in extensions)
+        {
+            var candidate = command + extension;
+
+            // Check PATH via where-style resolution
+            var fullPath = Environment.GetEnvironmentVariable("PATH")?
+                .Split(Path.PathSeparator)
+                .Select(directory => Path.Combine(directory, candidate))
+                .FirstOrDefault(File.Exists);
+
+            if (fullPath is not null)
+            {
+                return fullPath;
+            }
+        }
+
+        return command;
     }
 
     private sealed class ProcessHandle : IProcessHandle
@@ -197,6 +227,7 @@ public class WindowsProcessRunner : IManagedProcessRunner
 
         // P/Invoke for Windows graceful console shutdown
         private const uint _ctrlCEvent = 0;
+
         private const uint _attachParentProcess = 0xFFFFFFFF;
 
         [DllImport("kernel32.dll", SetLastError = true)]

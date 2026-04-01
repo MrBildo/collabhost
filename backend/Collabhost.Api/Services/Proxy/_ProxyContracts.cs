@@ -16,7 +16,8 @@ public record AppRouteInfo
     string Slug,
     string? ServeMode,
     int? Port,
-    bool SpaFallback
+    bool SpaFallback,
+    string? ArtifactLocation = null
 );
 
 public interface IProxyAppSeeder

@@ -28,7 +28,7 @@ public class CapabilityEndpointTests(CollabhostApiFixture fixture) : IClassFixtu
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
-        json.RootElement.GetArrayLength().ShouldBe(10);
+        json.RootElement.GetArrayLength().ShouldBe(11);
     }
 
     [Fact]

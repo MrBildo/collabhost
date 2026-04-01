@@ -41,7 +41,8 @@ public class CapabilityMapping : IEntityTypeConfiguration<Capability>
             Capability.CreateSeeded(IdentifierCatalog.Capabilities.AutoStart, StringCatalog.Capabilities.AutoStart, "Auto Start", "Whether the app starts automatically when Collabhost starts", "behavioral"),
             Capability.CreateSeeded(IdentifierCatalog.Capabilities.AspNetRuntime, StringCatalog.Capabilities.AspNetRuntime, "ASP.NET Runtime", ".NET runtime and framework version information", "informational"),
             Capability.CreateSeeded(IdentifierCatalog.Capabilities.NodeRuntime, StringCatalog.Capabilities.NodeRuntime, "Node.js Runtime", "Node.js version and package manager information", "informational"),
-            Capability.CreateSeeded(IdentifierCatalog.Capabilities.ReactRuntime, StringCatalog.Capabilities.ReactRuntime, "React", "React framework and tooling information", "informational")
+            Capability.CreateSeeded(IdentifierCatalog.Capabilities.ReactRuntime, StringCatalog.Capabilities.ReactRuntime, "React", "React framework and tooling information", "informational"),
+            Capability.CreateSeeded(IdentifierCatalog.Capabilities.Artifact, StringCatalog.Capabilities.Artifact, "Artifact", "Where the app's files are located on the host filesystem", "behavioral")
         );
     }
 }

@@ -9,6 +9,8 @@ using Shouldly;
 
 using Xunit;
 
+using static Collabhost.Api.Tests.Fixtures.AppTestHelpers;
+
 namespace Collabhost.Api.Tests;
 
 public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<CollabhostApiFixture>
@@ -215,7 +217,7 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
         // Arrange
         var client = _fixture.CreateAuthenticatedClient();
 
-        // Create a custom type with routing capability
+        // Create a custom type with routing and artifact capabilities
         var createTypeResponse = await client.PostAsJsonAsync("/api/v1/app-types", new
         {
             Name = "delete-ref-type",
@@ -226,7 +228,8 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
                 {
                     domainPattern = "{slug}.collab.internal",
                     serveMode = StringCatalog.ServeModes.ReverseProxy
-                }
+                },
+                ["artifact"] = new { location = "" }
             }
         });
         createTypeResponse.EnsureSuccessStatusCode();
@@ -234,11 +237,16 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
         var typeExternalId = JsonDocument.Parse(typeContent).RootElement.GetProperty("externalId").GetString()!;
 
         // Create an app using that type
+        var tempDir = CreateTempDirectory();
         await client.PostAsJsonAsync("/api/v1/apps", new
         {
             Name = "delete-ref-app",
             DisplayName = "Delete Ref App",
-            AppTypeId = typeExternalId
+            AppTypeId = typeExternalId,
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["artifact"] = new { location = tempDir }
+            }
         });
 
         // Act

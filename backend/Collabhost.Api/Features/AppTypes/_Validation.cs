@@ -32,6 +32,7 @@ internal static class CapabilityConfigurationValidator
                 StringCatalog.Capabilities.AspNetRuntime => ValidateDeserialization<AspNetRuntimeConfiguration>(jsonString, slug),
                 StringCatalog.Capabilities.NodeRuntime => ValidateDeserialization<NodeRuntimeConfiguration>(jsonString, slug),
                 StringCatalog.Capabilities.ReactRuntime => ValidateDeserialization<ReactRuntimeConfiguration>(jsonString, slug),
+                StringCatalog.Capabilities.Artifact => ValidateDeserialization<ArtifactConfiguration>(jsonString, slug),
                 _ => null // Unknown slugs are handled elsewhere
             };
         }

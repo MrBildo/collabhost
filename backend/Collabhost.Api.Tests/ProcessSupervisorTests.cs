@@ -275,6 +275,11 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
             ["shutdownTimeoutSeconds"] = shutdownTimeoutSeconds
         };
 
+        var artifactOverride = new JsonObject
+        {
+            ["location"] = CreateTempDirectory()
+        };
+
         return new
         {
             Name = name,
@@ -282,7 +287,8 @@ public class ProcessSupervisorTests(CollabhostApiFixture fixture) : IClassFixtur
             AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
             CapabilityOverrides = new Dictionary<string, JsonObject>(StringComparer.Ordinal)
             {
-                ["process"] = processOverride
+                ["process"] = processOverride,
+                ["artifact"] = artifactOverride
             }
         };
     }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Domain.Entities;
 using Collabhost.Api.Domain.Values;
 using Collabhost.Api.Features.AppTypes;
@@ -158,8 +159,45 @@ public sealed class CreateCommandHandler
             }
         }
 
+        // Validate that artifact capability override is present with a valid location
+        var hasArtifactOverride = command.CapabilityOverrides is not null
+            && command.CapabilityOverrides.TryGetValue(StringCatalog.Capabilities.Artifact, out var artifactJson)
+            && artifactJson is not null
+            && !artifactJson.IsEmptyObject();
+
+        if (!hasArtifactOverride)
+        {
+            return CommandResult<string>.Fail
+            (
+                "MISSING_ARTIFACT",
+                "Artifact capability override is required. Provide a 'artifact' capability override with a non-empty 'location' field."
+            );
+        }
+
+        var artifactLocationNode = command.CapabilityOverrides![StringCatalog.Capabilities.Artifact]?["location"];
+        var artifactLocation = artifactLocationNode?.GetValue<string>();
+
+        if (string.IsNullOrWhiteSpace(artifactLocation))
+        {
+            return CommandResult<string>.Fail
+            (
+                "INVALID_ARTIFACT_LOCATION",
+                "Artifact location is required and must not be empty."
+            );
+        }
+
+        if (!Directory.Exists(artifactLocation))
+        {
+            return CommandResult<string>.Fail
+            (
+                "INVALID_ARTIFACT_LOCATION",
+                $"Artifact location '{artifactLocation}' does not exist on disk."
+            );
+        }
+
         await _db.SaveChangesAsync(ct);
 
+        _proxyConfigManager.DisableRoute(app.Name);
         await _proxyConfigManager.SyncRoutesAsync(ct);
 
         return CommandResult<string>.Success(app.ExternalId);

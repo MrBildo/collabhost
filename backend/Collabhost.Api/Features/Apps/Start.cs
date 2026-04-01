@@ -60,11 +60,12 @@ public sealed class StartCommandHandler
         var hasRouting = resolvedCapabilities.HasCapability(StringCatalog.Capabilities.Routing);
         var hasProcess = resolvedCapabilities.HasCapability(StringCatalog.Capabilities.Process);
 
-        // Bridge orchestration: enable route first, then start process
+        // Bridge orchestration: enable route, start process, then sync routes.
+        // Route sync must happen after process start so reverse-proxy routes
+        // pick up the assigned port (otherwise Caddy gets port 0 → 502).
         if (hasRouting)
         {
             _proxyConfigManager.EnableRoute(app.Name);
-            await _proxyConfigManager.SyncRoutesAsync(ct);
         }
 
         ManagedProcess? managedProcess = null;
@@ -79,6 +80,11 @@ public sealed class StartCommandHandler
             {
                 return CommandResult<AppDetailResponse>.Fail("ALREADY_RUNNING", ex.Message);
             }
+        }
+
+        if (hasRouting)
+        {
+            await _proxyConfigManager.SyncRoutesAsync(ct);
         }
 
         // Build the bridge response

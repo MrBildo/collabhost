@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 
 using Collabhost.Api.Domain.Capabilities;
 using Collabhost.Api.Domain.Catalogs;
@@ -156,11 +155,22 @@ public sealed class ProxyConfigManager
             return;
         }
 
-        if (processEvent.AppId != _proxyAppId)
+        if (processEvent.AppId == _proxyAppId)
         {
+            HandleProxyAppEvent(processEvent);
             return;
         }
 
+        // When any non-proxy app transitions to Running, re-sync routes so Caddy
+        // picks up the newly assigned port for reverse-proxy routes.
+        if (processEvent.NewStateId == IdentifierCatalog.ProcessStates.Running)
+        {
+            HandleAppRunning(processEvent);
+        }
+    }
+
+    private void HandleProxyAppEvent(ProcessStateChangedEvent processEvent)
+    {
         if (processEvent.NewStateId == IdentifierCatalog.ProcessStates.Running)
         {
             // Background route sync is intentional — OnProcessStateChanged is a synchronous
@@ -178,6 +188,41 @@ public sealed class ProxyConfigManager
             _logger.LogInformation("Proxy process stopped — admin API is unavailable");
         }
     }
+
+    private void HandleAppRunning(ProcessStateChangedEvent processEvent) =>
+        // Background route sync is intentional — OnProcessStateChanged is a synchronous
+        // event callback and cannot await. The task is self-contained with full error handling.
+#pragma warning disable VSTHRD110, MA0134 // Intentional fire-and-forget from synchronous event callback
+        Task.Run(async () =>
+        {
+            try
+            {
+                var hasReverseProxyRouting = await HasReverseProxyRoutingAsync(processEvent.AppId);
+
+                if (!hasReverseProxyRouting)
+                {
+                    return;
+                }
+
+                _logger.LogInformation
+                (
+                    "App '{AppExternalId}' is now running — re-syncing proxy routes for updated port",
+                    processEvent.AppExternalId
+                );
+
+                await SyncRoutesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError
+                (
+                    ex,
+                    "Failed to re-sync routes after app '{AppExternalId}' started",
+                    processEvent.AppExternalId
+                );
+            }
+        });
+#pragma warning restore VSTHRD110, MA0134
 
     private async Task HandleProxyRunningAsync()
     {
@@ -209,6 +254,20 @@ public sealed class ProxyConfigManager
                 _logger.LogError(retryEx, "Retry route sync also failed — routes may be stale");
             }
         }
+    }
+
+    private async Task<bool> HasReverseProxyRoutingAsync(Guid appId)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var capabilityResolver = scope.ServiceProvider.GetRequiredService<ICapabilityResolver>();
+
+        var routingConfiguration = await capabilityResolver.ResolveAsync<RoutingConfiguration>
+        (
+            appId, IdentifierCatalog.Capabilities.Routing
+        );
+
+        return routingConfiguration is not null
+            && string.Equals(routingConfiguration.ServeMode, StringCatalog.ServeModes.ReverseProxy, StringComparison.OrdinalIgnoreCase);
     }
 
 #pragma warning disable MA0051 // Long method justified — loading routable apps with capability resolution
@@ -260,14 +319,36 @@ public sealed class ProxyConfigManager
 
             var spaFallback = routingConfiguration.SpaFallback ?? false;
 
+            // Resolve artifact location for file-server routes
+            string? artifactLocation = null;
+            if (string.Equals(routingConfiguration.ServeMode, StringCatalog.ServeModes.FileServer, StringComparison.OrdinalIgnoreCase))
+            {
+                var artifactConfiguration = await capabilityResolver.ResolveAsync<ArtifactConfiguration>
+                (
+                    row.Id, IdentifierCatalog.Capabilities.Artifact, ct
+                );
+
+                artifactLocation = artifactConfiguration?.Location;
+
+                if (string.IsNullOrWhiteSpace(artifactLocation))
+                {
+                    _logger.LogWarning
+                    (
+                        "Skipping route for '{Slug}' — artifact location is not configured",
+                        row.Slug
+                    );
+                    continue;
+                }
+            }
+
             // Check if route is disabled
             if (!IsRouteEnabled(row.Slug))
             {
-                result.Add(new AppRouteInfo(row.Slug, "disabled", port, spaFallback));
+                result.Add(new AppRouteInfo(row.Slug, "disabled", port, spaFallback, artifactLocation));
                 continue;
             }
 
-            result.Add(new AppRouteInfo(row.Slug, routingConfiguration.ServeMode, port, spaFallback));
+            result.Add(new AppRouteInfo(row.Slug, routingConfiguration.ServeMode, port, spaFallback, artifactLocation));
         }
 
         return result;

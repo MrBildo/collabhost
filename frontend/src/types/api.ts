@@ -126,6 +126,19 @@ export type UpdateAppRequest = {
   capabilityOverrides: Record<string, Record<string, unknown> | null> | null;
 };
 
+// -- Filesystem --
+
+export type FilesystemEntry = {
+  name: string;
+  path: string;
+};
+
+export type FilesystemBrowseResponse = {
+  currentPath: string;
+  parent: string | null;
+  entries: FilesystemEntry[];
+};
+
 // -- Logs --
 
 export type LogEntry = {
@@ -161,6 +174,7 @@ export type SystemStatus = {
   status: string;
   version: string;
   timestamp: string;
+  toolsDirectory: string;
 };
 
 // -- Update SSE --

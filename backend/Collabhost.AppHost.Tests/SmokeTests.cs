@@ -169,13 +169,22 @@ public class SmokeTests(AppHostFixture fixture)
     private static string UniqueSlug(string prefix) =>
         $"smoke-{prefix}-{Guid.NewGuid():N}"[..30];
 
-    private static object CreateAppRequest(string slug) =>
-        new
+    private static object CreateAppRequest(string slug)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), "collabhost-smoke", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempPath);
+
+        return new
         {
             Name = slug,
             DisplayName = $"Smoke {slug}",
-            AppTypeId = _executableAppTypeExternalId
+            AppTypeId = _executableAppTypeExternalId,
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["artifact"] = new { location = tempPath }
+            }
         };
+    }
 
     private async Task<string> CreateAppAsync(string slug)
     {

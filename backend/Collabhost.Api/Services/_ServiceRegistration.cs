@@ -46,6 +46,14 @@ public static class InfrastructureServiceExtensions
             return services;
         }
 
+        public IServiceCollection AddPlatformServices(IConfiguration configuration)
+        {
+            services.Configure<PlatformSettings>(configuration.GetSection("Platform"));
+            services.AddSingleton(sp => sp.GetRequiredService<IOptions<PlatformSettings>>().Value);
+
+            return services;
+        }
+
         public IServiceCollection AddProxyServices(IConfiguration configuration)
         {
             services.Configure<ProxySettings>(configuration.GetSection("Proxy"));

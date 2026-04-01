@@ -45,8 +45,8 @@ public sealed class ProxyConfigManagerReactiveTests(CollabhostApiFixture fixture
         // Small delay to allow any async handlers to fire
         await Task.Delay(500);
 
-        // Assert — bridge calls SyncRoutes once (for route enablement).
-        // Non-proxy app state changes should not trigger additional syncs.
+        // Assert — bridge calls SyncRoutes once (after process start, with port assigned).
+        // In test env, proxy config manager is disabled so reactive handler doesn't add extra syncs.
         fake.LoadCallCount.ShouldBe(countBefore + 1);
     }
 
