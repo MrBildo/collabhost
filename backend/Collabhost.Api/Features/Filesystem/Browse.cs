@@ -26,6 +26,7 @@ public record BrowseQuery(string? Path);
 
 public record BrowseCommand(string? Path) : ICommand<Browse.Response>;
 
+#pragma warning disable MA0051 // Long method justified — filesystem browsing with multiple validation/error paths
 public sealed class BrowseCommandHandler : ICommandHandler<BrowseCommand, Browse.Response>
 {
     public Task<CommandResult<Browse.Response>> HandleAsync(BrowseCommand command, CancellationToken ct = default)
@@ -38,7 +39,7 @@ public sealed class BrowseCommandHandler : ICommandHandler<BrowseCommand, Browse
             var roots = DriveInfo.GetDrives()
                 .Where(d => d.IsReady)
                 .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(d => new Browse.DirectoryEntry(d.Name.TrimEnd(global::System.IO.Path.DirectorySeparatorChar), d.RootDirectory.FullName))
+                .Select(d => new Browse.DirectoryEntry(d.Name.TrimEnd(Path.DirectorySeparatorChar), d.RootDirectory.FullName))
                 .ToList();
 
             var response = new Browse.Response(null, null, roots);
@@ -58,7 +59,7 @@ public sealed class BrowseCommandHandler : ICommandHandler<BrowseCommand, Browse
         string normalizedPath;
         try
         {
-            normalizedPath = global::System.IO.Path.GetFullPath(path);
+            normalizedPath = Path.GetFullPath(path);
         }
         catch (Exception)
         {
@@ -98,3 +99,4 @@ public sealed class BrowseCommandHandler : ICommandHandler<BrowseCommand, Browse
         return Task.FromResult(CommandResult<Browse.Response>.Success(browseResponse));
     }
 }
+#pragma warning restore MA0051

@@ -3,7 +3,7 @@ import { Folder, FolderOpen, ChevronRight, Loader2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -157,13 +157,12 @@ function DirectoryPicker({
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger
-            render={
-              <Button variant="outline" size="default" disabled={disabled}>
-                <FolderOpen className="size-4" />
-                <span>Browse</span>
-              </Button>
-            }
-          />
+            className={cn(buttonVariants({ variant: 'outline', size: 'default' }))}
+            disabled={disabled}
+          >
+            <FolderOpen className="size-4" />
+            <span>Browse</span>
+          </DialogTrigger>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Browse Directories</DialogTitle>

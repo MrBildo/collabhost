@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 
 import { cn } from '@/lib/utils';
-import { DirectoryPicker } from '@/components/ui/directory-picker';
+import { DirectoryPicker } from '@/components/ui/DirectoryPicker';
 
 import type { CapabilityWidgetProps } from '../types';
 

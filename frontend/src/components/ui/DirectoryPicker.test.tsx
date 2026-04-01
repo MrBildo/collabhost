@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { DirectoryPicker } from './directory-picker';
+import { DirectoryPicker } from './DirectoryPicker';
 
 // Mock the api module
 const mockGet = vi.fn();

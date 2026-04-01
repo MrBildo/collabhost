@@ -227,7 +227,7 @@ public sealed class ProcessSupervisor
             ?? throw new InvalidOperationException("Process capability configuration could not be resolved.");
 
         // Resolve artifact configuration for working directory
-        var artifactConfiguration = await capabilityResolver.ResolveAsync<Domain.Capabilities.ArtifactConfiguration>
+        var artifactConfiguration = await capabilityResolver.ResolveAsync<ArtifactConfiguration>
         (
             app.Id, IdentifierCatalog.Capabilities.Artifact, ct
         );

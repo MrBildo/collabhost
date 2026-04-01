@@ -1,6 +1,6 @@
 namespace Collabhost.Api.Features.Filesystem;
 
-public class FilesystemModule : IFeatureModule
+public sealed class FilesystemModule : IFeatureModule
 {
     public IEndpointRouteBuilder MapEndpoints(IEndpointRouteBuilder endpoints)
     {
