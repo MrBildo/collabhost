@@ -57,12 +57,12 @@ public sealed class ProxyAppSeeder
             return;
         }
 
-        // Use Executable type for the proxy app
+        // Use SystemService type — process management without routing
         var app = App.Register
         (
             AppSlugValue.Create("proxy"),
             "Proxy",
-            IdentifierCatalog.AppTypes.Executable
+            IdentifierCatalog.AppTypes.SystemService
         );
 
         _db.Apps.Add(app);
@@ -89,12 +89,12 @@ public sealed class ProxyAppSeeder
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        // Look up AppTypeCapability rows for the Executable type
+        // Look up AppTypeCapability rows for the SystemService type
         var processTypeCapability = await _db.Set<AppTypeCapability>()
             .AsNoTracking()
             .Where
             (
-                atc => atc.AppTypeId == IdentifierCatalog.AppTypes.Executable
+                atc => atc.AppTypeId == IdentifierCatalog.AppTypes.SystemService
                     && atc.CapabilityId == IdentifierCatalog.Capabilities.Process
             )
             .SingleAsync(cancellationToken);
@@ -103,7 +103,7 @@ public sealed class ProxyAppSeeder
             .AsNoTracking()
             .Where
             (
-                atc => atc.AppTypeId == IdentifierCatalog.AppTypes.Executable
+                atc => atc.AppTypeId == IdentifierCatalog.AppTypes.SystemService
                     && atc.CapabilityId == IdentifierCatalog.Capabilities.AutoStart
             )
             .SingleAsync(cancellationToken);
@@ -111,7 +111,7 @@ public sealed class ProxyAppSeeder
         // Process capability override
         var processOverride = new
         {
-            discoveryStrategy = "manual",
+            discoveryStrategy = StringCatalog.DiscoveryStrategies.Manual,
             command = resolvedPath,
             arguments = "run --config \"\"",
             workingDirectory = Path.GetDirectoryName(resolvedPath),

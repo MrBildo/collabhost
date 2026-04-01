@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using Collabhost.Api.Domain.Catalogs;
 using Collabhost.Api.Tests.Fixtures;
 
 using Shouldly;
@@ -120,7 +121,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
             AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
             CapabilityOverrides = new Dictionary<string, object>
             {
-                ["restart"] = new { policy = "never" }
+                ["restart"] = new { policy = StringCatalog.RestartPolicies.Never }
             }
         };
 
@@ -139,7 +140,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
 
         var restartCapability = json.RootElement.GetProperty("capabilities").GetProperty("restart");
         restartCapability.GetProperty("hasOverrides").GetBoolean().ShouldBeTrue();
-        restartCapability.GetProperty("resolved").GetProperty("policy").GetString().ShouldBe("never");
+        restartCapability.GetProperty("resolved").GetProperty("policy").GetString().ShouldBe(StringCatalog.RestartPolicies.Never);
     }
 
     [Fact]
@@ -200,7 +201,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         {
             CapabilityOverrides = new Dictionary<string, object>
             {
-                ["restart"] = new { policy = "always" }
+                ["restart"] = new { policy = StringCatalog.RestartPolicies.Always }
             }
         });
 

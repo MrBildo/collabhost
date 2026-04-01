@@ -298,7 +298,7 @@ public sealed class ProcessSupervisor
             app.Id, IdentifierCatalog.Capabilities.Restart, ct
         );
 
-        var restartPolicy = restartConfiguration?.Policy ?? "never";
+        var restartPolicy = restartConfiguration?.Policy ?? StringCatalog.RestartPolicies.Never;
         _restartPolicies[appId] = restartPolicy;
 
         handle.Exited += exitCode => OnProcessExited(appId, exitCode);
@@ -357,12 +357,12 @@ public sealed class ProcessSupervisor
 
         // Apply restart policy
         _restartPolicies.TryGetValue(appId, out var restartPolicy);
-        restartPolicy ??= "never";
+        restartPolicy ??= StringCatalog.RestartPolicies.Never;
 
         var shouldRestart = restartPolicy switch
         {
-            "always" => true,
-            "onCrash" => exitCode != 0,
+            StringCatalog.RestartPolicies.Always => true,
+            StringCatalog.RestartPolicies.OnCrash => exitCode != 0,
             _ => false
         };
 

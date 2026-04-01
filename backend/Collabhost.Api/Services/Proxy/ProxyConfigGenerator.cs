@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 
+using Collabhost.Api.Domain.Catalogs;
+
 namespace Collabhost.Api.Services.Proxy;
 
 public sealed class ProxyConfigGenerator(ProxySettings settings)
@@ -58,8 +60,8 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
             var route = app.ServeMode switch
             {
                 "disabled" => BuildDisabledRoute(app),
-                "reverseProxy" => BuildReverseProxyRoute(app),
-                "fileServer" => BuildFileServerRoute(app),
+                StringCatalog.ServeModes.ReverseProxy => BuildReverseProxyRoute(app),
+                StringCatalog.ServeModes.FileServer => BuildFileServerRoute(app),
                 _ => null
             };
 

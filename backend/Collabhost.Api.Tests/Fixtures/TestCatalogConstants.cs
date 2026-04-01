@@ -13,5 +13,6 @@ public static class TestCatalogConstants
         public const string ExecutableExternalId = "01KN0P7JYNJRAHGC01N17NFTWW";
         public const string ReactAppExternalId = "01KN0P7JYNM6PJP07XTAXK77GR";
         public const string StaticSiteExternalId = "01KN0P7JYN9TDB3SPPS25Z493F";
+        public const string SystemServiceExternalId = "01KN0P7JYN5QSVC3SYSTEM0SVC";
     }
 }

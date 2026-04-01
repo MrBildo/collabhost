@@ -81,13 +81,21 @@ public class AppTypeCapabilityMapping : IEntityTypeConfiguration<AppTypeCapabili
         (
             AppTypeCapability.CreateSeeded(new Guid("e708632b-d307-4045-9778-679d979b1578"), IdentifierCatalog.AppTypes.ReactApp, IdentifierCatalog.Capabilities.Routing, """{"domainPattern":"{slug}.collab.internal","serveMode":"fileServer","spaFallback":true}"""),
             AppTypeCapability.CreateSeeded(new Guid("d9c3ac3e-052c-4992-ac36-bd3079499663"), IdentifierCatalog.AppTypes.ReactApp, IdentifierCatalog.Capabilities.NodeRuntime, """{"nodeVersion":"22.x","packageManager":"npm","buildCommand":"npm run build"}"""),
-            AppTypeCapability.CreateSeeded(new Guid("b256a4b1-86fe-46db-ab50-0061e7854996"), IdentifierCatalog.AppTypes.ReactApp, IdentifierCatalog.Capabilities.ReactRuntime, """{"version":"18.x","router":"react-router","bundler":"vite"}""")
+            AppTypeCapability.CreateSeeded(new Guid("b256a4b1-86fe-46db-ab50-0061e7854996"), IdentifierCatalog.AppTypes.ReactApp, IdentifierCatalog.Capabilities.ReactRuntime, """{"reactVersion":"18.x","router":"react-router","bundler":"vite"}""")
         );
 
         // --- Static Site ---
         builder.HasData
         (
             AppTypeCapability.CreateSeeded(new Guid("a4cbac96-a44d-4823-9924-e4a530ee96b2"), IdentifierCatalog.AppTypes.StaticSite, IdentifierCatalog.Capabilities.Routing, """{"domainPattern":"{slug}.collab.internal","serveMode":"fileServer","spaFallback":false}""")
+        );
+
+        // --- System Service ---
+        builder.HasData
+        (
+            AppTypeCapability.CreateSeeded(new Guid("c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.Process, """{"discoveryStrategy":"manual","gracefulShutdown":true,"shutdownTimeoutSeconds":10,"command":"echo","arguments":"no command configured"}"""),
+            AppTypeCapability.CreateSeeded(new Guid("d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f6a"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.Restart, """{"policy":"onCrash"}"""),
+            AppTypeCapability.CreateSeeded(new Guid("e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6a7b"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.AutoStart, """{"enabled":true}""")
         );
     }
 }

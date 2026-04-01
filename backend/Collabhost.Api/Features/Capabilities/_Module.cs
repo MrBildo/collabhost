@@ -9,6 +9,7 @@ public sealed class CapabilitiesModule : IFeatureModule
             .WithTags("Capabilities");
 
         group.MapGet("/", GetAll.HandleAsync);
+        group.MapGet("/field-options", GetFieldOptions.HandleAsync);
 
         return endpoints;
     }

@@ -9,6 +9,7 @@ public static class IdentifierCatalog
         public static readonly Guid Executable = new("bf5105c8-6a99-414c-96b6-c74aab5471f7");
         public static readonly Guid ReactApp = new("73e28a95-764f-4ae5-9c2b-a9fdea66c348");
         public static readonly Guid StaticSite = new("606cdf1f-f41e-42d2-bb13-04b598de0f63");
+        public static readonly Guid SystemService = new("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d");
     }
 
     public static class Capabilities
@@ -48,6 +49,7 @@ public static class StringCatalog
         public const string Executable = "executable";
         public const string ReactApp = "react-app";
         public const string StaticSite = "static-site";
+        public const string SystemService = "system-service";
     }
 
     public static class Capabilities
@@ -64,6 +66,26 @@ public static class StringCatalog
         public const string ReactRuntime = "react-runtime";
     }
 
+    public static class RestartPolicies
+    {
+        public const string Never = "never";
+        public const string OnCrash = "onCrash";
+        public const string Always = "always";
+    }
+
+    public static class ServeModes
+    {
+        public const string ReverseProxy = "reverseProxy";
+        public const string FileServer = "fileServer";
+    }
+
+    public static class DiscoveryStrategies
+    {
+        public const string DotNetRuntimeConfig = "dotnet-runtimeconfig";
+        public const string PackageJson = "package-json";
+        public const string Manual = "manual";
+    }
+
     public static class ProcessStates
     {
         public const string Stopped = "Stopped";
@@ -72,5 +94,28 @@ public static class StringCatalog
         public const string Stopping = "Stopping";
         public const string Crashed = "Crashed";
         public const string Restarting = "Restarting";
+    }
+}
+
+public static class DisplayNames
+{
+    public static class RestartPolicies
+    {
+        public const string Never = "Never";
+        public const string OnCrash = "On Crash";
+        public const string Always = "Always";
+    }
+
+    public static class ServeModes
+    {
+        public const string ReverseProxy = "Reverse Proxy";
+        public const string FileServer = "File Server";
+    }
+
+    public static class DiscoveryStrategies
+    {
+        public const string DotNetRuntimeConfig = ".NET Runtime Config";
+        public const string PackageJson = "package.json";
+        public const string Manual = "Manual";
     }
 }
