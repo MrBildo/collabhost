@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Collabhost.Api.Migrations
 {
     [DbContext(typeof(CollabhostDbContext))]
-    [Migration("20260401133124_AddLookupEntities")]
-    partial class AddLookupEntities
+    [Migration("20260401135838_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -164,10 +164,10 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"),
+                            Id = new Guid("56608f77-aa9d-44b7-a3cb-df7c361d8fb8"),
                             Description = "System process with management but no routing",
                             DisplayName = "System Service",
-                            ExternalId = "01KN0P7JYN5QSVC3SYSTEM0SVC",
+                            ExternalId = "01KN4N7APRQJQ8WG6NGZ1Y98TY",
                             IsBuiltIn = true,
                             Name = "system-service"
                         });
@@ -378,22 +378,22 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"),
-                            AppTypeId = new Guid("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"),
+                            Id = new Guid("eec22dfc-d996-4563-9e26-dd671f3057e2"),
+                            AppTypeId = new Guid("56608f77-aa9d-44b7-a3cb-df7c361d8fb8"),
                             CapabilityId = new Guid("8460d864-4df5-423d-bb46-c351594b6667"),
                             Configuration = "{\"discoveryStrategy\":\"manual\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":10,\"command\":\"echo\",\"arguments\":\"no command configured\"}"
                         },
                         new
                         {
-                            Id = new Guid("d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f6a"),
-                            AppTypeId = new Guid("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"),
+                            Id = new Guid("521df52f-53cd-448c-ac85-b727fd9d7168"),
+                            AppTypeId = new Guid("56608f77-aa9d-44b7-a3cb-df7c361d8fb8"),
                             CapabilityId = new Guid("2661f347-6af3-40a6-a0c4-57fb7e4d1f72"),
                             Configuration = "{\"policy\":\"on-crash\"}"
                         },
                         new
                         {
-                            Id = new Guid("e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6a7b"),
-                            AppTypeId = new Guid("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"),
+                            Id = new Guid("564a6534-79a7-4610-af93-27c3916c105f"),
+                            AppTypeId = new Guid("56608f77-aa9d-44b7-a3cb-df7c361d8fb8"),
                             CapabilityId = new Guid("30e21343-9124-4bec-b247-f780a5be12df"),
                             Configuration = "{\"enabled\":true}"
                         });
@@ -600,7 +600,7 @@ namespace Collabhost.Api.Migrations
                     b.HasData(
                         new
                         {
-                            Id = new Guid("c3456789-0003-4000-8000-000000000001"),
+                            Id = new Guid("f3ee2904-4e01-483f-ad94-e8237953fcfc"),
                             DisplayName = ".NET Runtime Config",
                             IsActive = true,
                             Name = "dotnet-runtimeconfig",
@@ -608,7 +608,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c3456789-0003-4000-8000-000000000002"),
+                            Id = new Guid("506cfcc2-b806-43c3-9baf-593053d9826e"),
                             DisplayName = "package.json",
                             IsActive = true,
                             Name = "package-json",
@@ -616,7 +616,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("c3456789-0003-4000-8000-000000000003"),
+                            Id = new Guid("59e2a600-f739-470b-9981-cfe538af272b"),
                             DisplayName = "Manual",
                             IsActive = true,
                             Name = "manual",
@@ -756,7 +756,7 @@ namespace Collabhost.Api.Migrations
                     b.HasData(
                         new
                         {
-                            Id = new Guid("a1234567-0001-4000-8000-000000000001"),
+                            Id = new Guid("efecc013-d65f-407c-af7a-ab61043e00b2"),
                             DisplayName = "Never",
                             IsActive = true,
                             Name = "never",
@@ -764,7 +764,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("a1234567-0001-4000-8000-000000000002"),
+                            Id = new Guid("16657ec0-d027-497e-9bbf-eb835492f80b"),
                             DisplayName = "On Crash",
                             IsActive = true,
                             Name = "on-crash",
@@ -772,7 +772,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("a1234567-0001-4000-8000-000000000003"),
+                            Id = new Guid("89ff36ea-1f8a-42a2-a02d-b33b3dd2918c"),
                             DisplayName = "Always",
                             IsActive = true,
                             Name = "always",
@@ -822,7 +822,7 @@ namespace Collabhost.Api.Migrations
                     b.HasData(
                         new
                         {
-                            Id = new Guid("b2345678-0002-4000-8000-000000000001"),
+                            Id = new Guid("56d426ec-c60b-449f-a62a-f294bb893fda"),
                             DisplayName = "Reverse Proxy",
                             IsActive = true,
                             Name = "reverse-proxy",
@@ -830,7 +830,7 @@ namespace Collabhost.Api.Migrations
                         },
                         new
                         {
-                            Id = new Guid("b2345678-0002-4000-8000-000000000002"),
+                            Id = new Guid("47a7a3f0-9ab5-4194-8b1a-ee1267cb844c"),
                             DisplayName = "File Server",
                             IsActive = true,
                             Name = "file-server",

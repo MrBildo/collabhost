@@ -160,6 +160,13 @@ var app = new App { Name = name, DisplayName = displayName };
 
 **Lookup tables, not enums** for persisted/displayed values. Lookup entities are seeded with fixed Guid IDs and have `Name`, `DisplayName`, `Description`, `Ordinal`, `IsActive`.
 
+**Backend is the source of truth for all option/enum-like values.** Any field with a fixed set of valid values (dropdowns, selects, mode switches) — e.g., restart policies, serve modes, discovery strategies — must follow this chain:
+
+1. **Define** as a backend lookup (lookup table or catalog constant)
+2. **Reference** from backend logic (never raw string literals — use the lookup/catalog)
+3. **Expose** valid values + display labels via API
+4. **Consume** from the API on the frontend — never hardcode option lists in widget components
+
 **Catalog pattern** — two companion static classes for lookup constants:
 
 ```csharp

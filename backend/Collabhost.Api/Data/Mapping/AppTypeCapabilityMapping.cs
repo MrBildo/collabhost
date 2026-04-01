@@ -93,9 +93,9 @@ public class AppTypeCapabilityMapping : IEntityTypeConfiguration<AppTypeCapabili
         // --- System Service ---
         builder.HasData
         (
-            AppTypeCapability.CreateSeeded(new Guid("c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.Process, """{"discoveryStrategy":"manual","gracefulShutdown":true,"shutdownTimeoutSeconds":10,"command":"echo","arguments":"no command configured"}"""),
-            AppTypeCapability.CreateSeeded(new Guid("d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f6a"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.Restart, """{"policy":"on-crash"}"""),
-            AppTypeCapability.CreateSeeded(new Guid("e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6a7b"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.AutoStart, """{"enabled":true}""")
+            AppTypeCapability.CreateSeeded(new Guid("eec22dfc-d996-4563-9e26-dd671f3057e2"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.Process, """{"discoveryStrategy":"manual","gracefulShutdown":true,"shutdownTimeoutSeconds":10,"command":"echo","arguments":"no command configured"}"""),
+            AppTypeCapability.CreateSeeded(new Guid("521df52f-53cd-448c-ac85-b727fd9d7168"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.Restart, """{"policy":"on-crash"}"""),
+            AppTypeCapability.CreateSeeded(new Guid("564a6534-79a7-4610-af93-27c3916c105f"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.AutoStart, """{"enabled":true}""")
         );
     }
 }

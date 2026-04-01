@@ -40,7 +40,7 @@ public class AppTypeMapping : IEntityTypeConfiguration<AppType>
             AppType.CreateSeeded(IdentifierCatalog.AppTypes.Executable, "01KN0P7JYNJRAHGC01N17NFTWW", StringCatalog.AppTypes.Executable, "Executable", "Generic executable process", true),
             AppType.CreateSeeded(IdentifierCatalog.AppTypes.ReactApp, "01KN0P7JYNM6PJP07XTAXK77GR", StringCatalog.AppTypes.ReactApp, "React App", "React single-page application served as static files", true),
             AppType.CreateSeeded(IdentifierCatalog.AppTypes.StaticSite, "01KN0P7JYN9TDB3SPPS25Z493F", StringCatalog.AppTypes.StaticSite, "Static Site", "Static files served directly by the reverse proxy", true),
-            AppType.CreateSeeded(IdentifierCatalog.AppTypes.SystemService, "01KN0P7JYN5QSVC3SYSTEM0SVC", StringCatalog.AppTypes.SystemService, "System Service", "System process with management but no routing", true)
+            AppType.CreateSeeded(IdentifierCatalog.AppTypes.SystemService, "01KN4N7APRQJQ8WG6NGZ1Y98TY", StringCatalog.AppTypes.SystemService, "System Service", "System process with management but no routing", true)
         );
     }
 }
