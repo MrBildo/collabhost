@@ -31,5 +31,4 @@ public class DeleteProtectionTests(CollabhostApiFixture fixture) : IClassFixture
         var getResponse = await client.GetAsync($"/api/v1/apps/{externalId}");
         getResponse.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
-
 }

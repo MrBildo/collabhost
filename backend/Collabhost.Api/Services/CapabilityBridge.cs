@@ -19,10 +19,10 @@ public sealed record ResolvedCapabilityData
 
 public static class ResolvedCapabilityDataExtensions
 {
-    extension(List<ResolvedCapabilityData> capabilities)
+    extension(IReadOnlyList<ResolvedCapabilityData> capabilities)
     {
         public bool HasCapability(string capabilitySlug) =>
-            capabilities.Exists
+            capabilities.Any
             (
                 c => string.Equals(c.Slug, capabilitySlug, StringComparison.Ordinal)
             );
@@ -31,7 +31,7 @@ public static class ResolvedCapabilityDataExtensions
 
 public interface ICapabilityBridge
 {
-    Task<List<ResolvedCapabilityData>> ResolveAllCapabilitiesAsync
+    Task<IReadOnlyList<ResolvedCapabilityData>> ResolveAllCapabilitiesAsync
     (
         Guid appId,
         Guid appTypeId,
@@ -40,7 +40,7 @@ public interface ICapabilityBridge
 
     RoutingConfiguration? ExtractRoutingConfiguration
     (
-        List<ResolvedCapabilityData> resolvedCapabilities
+        IReadOnlyList<ResolvedCapabilityData> resolvedCapabilities
     );
 }
 
@@ -54,7 +54,7 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
 
     private readonly CollabhostDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
 
-    public async Task<List<ResolvedCapabilityData>> ResolveAllCapabilitiesAsync
+    public async Task<IReadOnlyList<ResolvedCapabilityData>> ResolveAllCapabilitiesAsync
     (
         Guid appId,
         Guid appTypeId,
@@ -86,7 +86,6 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
             .AsNoTracking()
             .Where(cc => cc.AppId == appId)
             .ToListAsync(ct);
-
 
         var overrideLookup = overrides.ToDictionary(o => o.AppTypeCapabilityId);
 
@@ -135,7 +134,7 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
 
     public RoutingConfiguration? ExtractRoutingConfiguration
     (
-        List<ResolvedCapabilityData> resolvedCapabilities
+        IReadOnlyList<ResolvedCapabilityData> resolvedCapabilities
     )
     {
         var routingData = resolvedCapabilities
@@ -144,12 +143,9 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
                 c => string.Equals(c.Slug, StringCatalog.Capabilities.Routing, StringComparison.Ordinal)
             );
 
-        if (routingData is null)
-        {
-            return null;
-        }
-
-        return JsonSerializer.Deserialize<RoutingConfiguration>(routingData.ResolvedConfiguration, _jsonOptions);
+        return routingData is null
+            ? null
+            : JsonSerializer.Deserialize<RoutingConfiguration>(routingData.ResolvedConfiguration, _jsonOptions);
     }
 }
 

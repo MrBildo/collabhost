@@ -14,7 +14,7 @@ public static class Create
         string Name,
         string DisplayName,
         string AppTypeId,
-        Dictionary<string, JsonObject?>? CapabilityOverrides
+        IDictionary<string, JsonObject?>? CapabilityOverrides
     );
 
     public record Response(string ExternalId);
@@ -47,7 +47,7 @@ public record CreateCommand
     string Name,
     string DisplayName,
     string AppTypeExternalId,
-    Dictionary<string, JsonObject?>? CapabilityOverrides
+    IDictionary<string, JsonObject?>? CapabilityOverrides
 ) : ICommand<string>;
 
 #pragma warning disable MA0051 // Long method justified — app creation with capability override validation

@@ -123,25 +123,12 @@ public class WindowsProcessRunner : IManagedProcessRunner
 
         public event Action<int>? Exited;
 
-        public bool TryGracefulShutdown()
-        {
-            if (_process.HasExited)
-            {
-                return true;
-            }
-
-            if (OperatingSystem.IsWindows())
-            {
-                return TryGracefulShutdownWindows();
-            }
-
-            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
-            {
-                return TryGracefulShutdownUnix();
-            }
-
-            return false;
-        }
+        public bool TryGracefulShutdown() =>
+            _process.HasExited
+            || (OperatingSystem.IsWindows()
+                ? TryGracefulShutdownWindows()
+                : (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+                    && TryGracefulShutdownUnix());
 
         private bool TryGracefulShutdownWindows()
         {

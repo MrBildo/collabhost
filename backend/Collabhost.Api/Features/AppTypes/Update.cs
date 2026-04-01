@@ -10,7 +10,7 @@ public static class Update
     (
         string DisplayName,
         string? Description,
-        Dictionary<string, JsonObject?>? Capabilities
+        IDictionary<string, JsonObject?>? Capabilities
     );
 
     public static async Task<Results<NoContent, NotFound, ProblemHttpResult>> HandleAsync
@@ -44,7 +44,7 @@ public record UpdateAppTypeCommand
     string ExternalId,
     string DisplayName,
     string? Description,
-    Dictionary<string, JsonObject?>? Capabilities
+    IDictionary<string, JsonObject?>? Capabilities
 ) : ICommand<Empty>;
 
 #pragma warning disable MA0051 // Long method justified — update with capability synchronization

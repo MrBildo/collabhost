@@ -79,7 +79,7 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
             Name = "custom-type-test",
             DisplayName = "Custom Type Test",
             Description = "A test custom type",
-            Capabilities = new Dictionary<string, object>
+            Capabilities = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["routing"] = new
                 {
@@ -129,7 +129,7 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
         {
             Name = "unknown-cap-test",
             DisplayName = "Unknown Capability Test",
-            Capabilities = new Dictionary<string, object>
+            Capabilities = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["nonexistent-capability"] = new { foo = "bar" }
             }
@@ -220,7 +220,7 @@ public class AppTypeEndpointTests(CollabhostApiFixture fixture) : IClassFixture<
         {
             Name = "delete-ref-type",
             DisplayName = "Delete Ref Type",
-            Capabilities = new Dictionary<string, object>
+            Capabilities = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["routing"] = new
                 {

@@ -160,5 +160,4 @@ public class LogRetrievalTests(CollabhostApiFixture fixture) : IClassFixture<Col
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
-
 }

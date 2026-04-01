@@ -248,5 +248,4 @@ public class AppRegistryTests(CollabhostApiFixture fixture) : IClassFixture<Coll
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
-
 }

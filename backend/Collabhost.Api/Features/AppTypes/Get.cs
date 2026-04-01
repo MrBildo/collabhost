@@ -11,7 +11,7 @@ public static class Get
         string DisplayName,
         string? Description,
         bool IsBuiltIn,
-        Dictionary<string, AppTypeCapabilityResponse> Capabilities
+        IReadOnlyDictionary<string, AppTypeCapabilityResponse> Capabilities
     );
 
     public static async Task<Results<Ok<Response>, NotFound>> HandleAsync

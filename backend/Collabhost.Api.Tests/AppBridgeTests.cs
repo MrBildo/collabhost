@@ -119,7 +119,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
             Name = "bridge-override-test",
             DisplayName = "Override Test App",
             AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
-            CapabilityOverrides = new Dictionary<string, object>
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["restart"] = new { policy = StringCatalog.RestartPolicies.Never }
             }
@@ -153,7 +153,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
             Name = "bridge-invalid-slug",
             DisplayName = "Invalid Slug App",
             AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
-            CapabilityOverrides = new Dictionary<string, object>
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["nonexistent-capability"] = new { foo = "bar" }
             }
@@ -176,7 +176,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
             Name = "bridge-wrong-type",
             DisplayName = "Wrong Type App",
             AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
-            CapabilityOverrides = new Dictionary<string, object>
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["health-check"] = new { endpoint = "/healthz" }
             }
@@ -199,7 +199,7 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         // Act — set an override
         var updateResponse = await client.PutAsJsonAsync($"/api/v1/apps/{externalId}", new
         {
-            CapabilityOverrides = new Dictionary<string, object>
+            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["restart"] = new { policy = StringCatalog.RestartPolicies.Always }
             }
@@ -261,5 +261,4 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
-
 }

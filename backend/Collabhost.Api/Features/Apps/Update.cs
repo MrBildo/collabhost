@@ -10,7 +10,7 @@ public static class Update
     public record Request
     (
         string? DisplayName,
-        Dictionary<string, JsonObject?>? CapabilityOverrides
+        IDictionary<string, JsonObject?>? CapabilityOverrides
     );
 
     public static async Task<Results<NoContent, NotFound, ProblemHttpResult>> HandleAsync
@@ -42,7 +42,7 @@ public record UpdateAppCommand
 (
     string ExternalId,
     string? DisplayName,
-    Dictionary<string, JsonObject?>? CapabilityOverrides
+    IDictionary<string, JsonObject?>? CapabilityOverrides
 ) : ICommand<Empty>;
 
 #pragma warning disable MA0051 // Long method justified — app update with capability override synchronization

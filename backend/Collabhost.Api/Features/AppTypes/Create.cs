@@ -12,7 +12,7 @@ public static class Create
         string Name,
         string DisplayName,
         string? Description,
-        Dictionary<string, JsonObject>? Capabilities
+        IDictionary<string, JsonObject>? Capabilities
     );
 
     public record Response(string ExternalId);
@@ -45,7 +45,7 @@ public record CreateAppTypeCommand
     string Name,
     string DisplayName,
     string? Description,
-    Dictionary<string, JsonObject>? Capabilities
+    IDictionary<string, JsonObject>? Capabilities
 ) : ICommand<string>;
 
 public sealed class CreateAppTypeCommandHandler(CollabhostDbContext db)
@@ -109,7 +109,7 @@ public sealed class CreateAppTypeCommandHandler(CollabhostDbContext db)
     private async Task<CommandResult> CreateCapabilityRowsAsync
     (
         Guid appTypeId,
-        Dictionary<string, JsonObject> capabilities,
+        IDictionary<string, JsonObject> capabilities,
         CancellationToken ct
     )
     {

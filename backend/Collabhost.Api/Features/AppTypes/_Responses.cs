@@ -11,7 +11,7 @@ public record AppTypeCapabilityResponse
 
 internal static class AppTypeCapabilityMapper
 {
-    internal static Dictionary<string, AppTypeCapabilityResponse> BuildCapabilityDictionary
+    internal static IReadOnlyDictionary<string, AppTypeCapabilityResponse> BuildCapabilityDictionary
     (
         IEnumerable<AppTypeCapabilityRow> rows
     )
@@ -20,7 +20,7 @@ internal static class AppTypeCapabilityMapper
 
         foreach (var row in rows)
         {
-            var defaults = JsonNode.Parse(row.Configuration)?.AsObject() ?? new JsonObject();
+            var defaults = JsonNode.Parse(row.Configuration)?.AsObject() ?? [];
 
             result[row.CapabilitySlug] = new AppTypeCapabilityResponse
             (

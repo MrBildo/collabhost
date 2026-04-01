@@ -242,5 +242,4 @@ public class ProxyConfigTests(CollabhostApiFixture fixture) : IClassFixture<Coll
 
         return null;
     }
-
 }

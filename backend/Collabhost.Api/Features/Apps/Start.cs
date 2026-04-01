@@ -89,7 +89,7 @@ public sealed class StartCommandHandler
     (
         string externalId,
         AppLookup app,
-        List<ResolvedCapabilityData> resolvedCapabilities,
+        IReadOnlyList<ResolvedCapabilityData> resolvedCapabilities,
         ManagedProcess? managedProcess,
         bool hasProcess,
         CancellationToken ct
