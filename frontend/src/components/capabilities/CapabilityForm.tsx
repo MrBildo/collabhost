@@ -3,6 +3,9 @@ import { useCallback, useMemo, useState } from 'react';
 import { getCapabilityComponents } from './registry';
 import type { CapabilityEntry } from './types';
 
+/** Informational-only capabilities that are display context, not operator-configurable. */
+const DISPLAY_ONLY_SLUGS = new Set(['aspnet-runtime', 'node-runtime', 'react-runtime']);
+
 type CapabilityFormProps = {
   /** List of capabilities from the app type, with resolved values and defaults. */
   capabilities: CapabilityEntry[];
@@ -28,9 +31,14 @@ function groupByCategory(capabilities: CapabilityEntry[]) {
 function CapabilityForm({ capabilities, onOverridesChange }: CapabilityFormProps) {
   const [overrides, setOverrides] = useState<Record<string, Record<string, unknown> | null>>({});
 
-  const { behavioral, informational } = useMemo(
-    () => groupByCategory(capabilities),
+  const editableCapabilities = useMemo(
+    () => capabilities.filter((cap) => !DISPLAY_ONLY_SLUGS.has(cap.slug)),
     [capabilities],
+  );
+
+  const { behavioral, informational } = useMemo(
+    () => groupByCategory(editableCapabilities),
+    [editableCapabilities],
   );
 
   const handleCapabilityChange = useCallback(

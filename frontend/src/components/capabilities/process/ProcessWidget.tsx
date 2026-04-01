@@ -1,21 +1,9 @@
 import { useCallback } from 'react';
 
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { useFieldOptions } from '@/hooks/useFieldOptions';
 
 import type { CapabilityWidgetProps } from '../types';
-
-const DISCOVERY_STRATEGIES = [
-  { value: 'dotnet-runtimeconfig', label: '.NET Runtime Config' },
-  { value: 'package-json', label: 'package.json' },
-  { value: 'manual', label: 'Manual' },
-] as const;
 
 function ProcessWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) {
   const discoveryStrategy = String(resolved['discoveryStrategy'] ?? 'manual');
@@ -23,6 +11,7 @@ function ProcessWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) 
   const shutdownTimeoutSeconds = Number(resolved['shutdownTimeoutSeconds']);
   const command = String(resolved['command'] ?? '');
   const args = String(resolved['args'] ?? '');
+  const { getDisplayLabel: getStrategyLabel } = useFieldOptions('process', 'discoveryStrategy');
 
   const handleFieldChange = useCallback(
     (field: string, value: unknown) => {
@@ -49,23 +38,11 @@ function ProcessWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) 
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1.5">
-        <label className="text-sm font-medium">Discovery Strategy</label>
-        <Select
-          value={discoveryStrategy}
-          onValueChange={(value) => handleFieldChange('discoveryStrategy', value)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {DISCOVERY_STRATEGIES.map((strategy) => (
-              <SelectItem key={strategy.value} value={strategy.value}>
-                {strategy.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">Discovery Strategy</span>
+        <span className="inline-flex items-center rounded-full bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+          {getStrategyLabel(discoveryStrategy)}
+        </span>
       </div>
 
       {discoveryStrategy === 'manual' && (

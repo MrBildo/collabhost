@@ -5,14 +5,9 @@ import {
   GlassCardHeader,
   GlassCardTitle,
 } from '@/components/ui/GlassCard';
+import { useFieldOptions } from '@/hooks/useFieldOptions';
 
 import type { CapabilityWidgetProps } from '../types';
-
-const DISCOVERY_STRATEGY_LABELS: Record<string, string> = {
-  'dotnet-runtimeconfig': '.NET Runtime Config',
-  'package-json': 'package.json',
-  manual: 'Manual',
-};
 
 function getFieldSource(
   fieldName: string,
@@ -26,6 +21,7 @@ function ProcessDisplay({ displayName, resolved, defaults, hasOverrides }: Capab
   const discoveryStrategy = String(resolved['discoveryStrategy'] ?? '');
   const gracefulShutdown = Boolean(resolved['gracefulShutdown']);
   const shutdownTimeoutSeconds = Number(resolved['shutdownTimeoutSeconds'] ?? 0);
+  const { getDisplayLabel: getStrategyLabel } = useFieldOptions('process', 'discoveryStrategy');
 
   return (
     <GlassCard size="sm">
@@ -37,8 +33,8 @@ function ProcessDisplay({ displayName, resolved, defaults, hasOverrides }: Capab
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Discovery Strategy</span>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">
-                {DISCOVERY_STRATEGY_LABELS[discoveryStrategy] ?? discoveryStrategy}
+              <span className="inline-flex items-center rounded-full bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                {getStrategyLabel(discoveryStrategy)}
               </span>
               {hasOverrides && (
                 <ConfigSourceIndicator
