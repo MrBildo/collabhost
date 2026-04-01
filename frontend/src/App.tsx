@@ -4,15 +4,15 @@ import { Toaster } from '@/components/ui/sonner';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { AuthGate } from '@/components/AuthGate';
-import { AppListPage } from '@/routes/AppListPage';
-import { AppDetailPage } from '@/routes/AppDetailPage';
+import AppListPage from '@/routes/AppListPage';
+import AppDetailPage from '@/routes/AppDetailPage';
 import AppCreatePage from '@/routes/AppCreatePage';
 import AppTypesListPage from '@/routes/AppTypesListPage';
 import AppTypeDetailPage from '@/routes/AppTypeDetailPage';
 import AppTypeCreatePage from '@/routes/AppTypeCreatePage';
 import CapabilitiesPage from '@/routes/CapabilitiesPage';
-import { RoutesPage } from '@/routes/RoutesPage';
-import { SystemPage } from '@/routes/SystemPage';
+import RoutesPage from '@/routes/RoutesPage';
+import SystemPage from '@/routes/SystemPage';
 
 export function App() {
   return (
