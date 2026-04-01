@@ -97,6 +97,10 @@
   /* Gradient accents — light mode */
   --gradient-primary: linear-gradient(310deg, hsl(195, 100%, 42%), hsl(185, 80%, 55%));
   --gradient-destructive: linear-gradient(310deg, hsl(0, 72%, 51%), hsl(15, 80%, 55%));
+
+  /* Sidebar active — subtle gradient tint */
+  --sidebar-active-bg: linear-gradient(310deg, hsla(195, 100%, 42%, 0.12), hsla(185, 80%, 55%, 0.08));
+  --sidebar-active-border: hsla(195, 100%, 42%, 0.2);
 }
 
 [data-theme='dark'] {
@@ -143,6 +147,10 @@
   /* Gradient accents — dark mode */
   --gradient-primary: linear-gradient(310deg, hsl(195, 90%, 55%), hsl(185, 80%, 65%));
   --gradient-destructive: linear-gradient(310deg, hsl(0, 72%, 55%), hsl(15, 80%, 60%));
+
+  /* Sidebar active — subtle gradient tint */
+  --sidebar-active-bg: linear-gradient(310deg, hsla(195, 90%, 55%, 0.15), hsla(185, 80%, 65%, 0.08));
+  --sidebar-active-border: hsla(195, 90%, 55%, 0.25);
 }
 
 @layer base {
