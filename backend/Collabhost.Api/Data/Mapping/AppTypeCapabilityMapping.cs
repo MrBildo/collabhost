@@ -51,7 +51,8 @@ public class AppTypeCapabilityMapping : IEntityTypeConfiguration<AppTypeCapabili
             AppTypeCapability.CreateSeeded(new Guid("7eb34403-7641-49aa-8a0c-7f30a39d2355"), IdentifierCatalog.AppTypes.DotNetApp, IdentifierCatalog.Capabilities.EnvironmentDefaults, """{"defaults":{"ASPNETCORE_ENVIRONMENT":"Production"}}"""),
             AppTypeCapability.CreateSeeded(new Guid("3cf3ba43-bb6a-4823-ac18-2747c57c802f"), IdentifierCatalog.AppTypes.DotNetApp, IdentifierCatalog.Capabilities.Restart, """{"policy":"always"}"""),
             AppTypeCapability.CreateSeeded(new Guid("fcd84bc2-a09c-4e1b-a1e8-2a660a0d3113"), IdentifierCatalog.AppTypes.DotNetApp, IdentifierCatalog.Capabilities.AutoStart, """{"enabled":true}"""),
-            AppTypeCapability.CreateSeeded(new Guid("097ade9a-ab92-4a0f-ac1e-51d58e1d37cc"), IdentifierCatalog.AppTypes.DotNetApp, IdentifierCatalog.Capabilities.AspNetRuntime, """{"targetFramework":"net10.0","runtimeVersion":"10.0.x","selfContained":false}""")
+            AppTypeCapability.CreateSeeded(new Guid("097ade9a-ab92-4a0f-ac1e-51d58e1d37cc"), IdentifierCatalog.AppTypes.DotNetApp, IdentifierCatalog.Capabilities.AspNetRuntime, """{"targetFramework":"net10.0","runtimeVersion":"10.0.x","selfContained":false}"""),
+            AppTypeCapability.CreateSeeded(new Guid("57b55f26-c099-4b2f-ba7b-04678331417f"), IdentifierCatalog.AppTypes.DotNetApp, IdentifierCatalog.Capabilities.Artifact, """{"location":""}""")
         );
 
         // --- Node.js App ---
@@ -63,7 +64,8 @@ public class AppTypeCapabilityMapping : IEntityTypeConfiguration<AppTypeCapabili
             AppTypeCapability.CreateSeeded(new Guid("a5792083-b9e7-4ef7-8f3f-b9835d908362"), IdentifierCatalog.AppTypes.NodeApp, IdentifierCatalog.Capabilities.HealthCheck, """{"endpoint":"/health","intervalSeconds":30,"timeoutSeconds":5,"retries":3}"""),
             AppTypeCapability.CreateSeeded(new Guid("088e99f8-dd64-4d14-bed2-e0e2027ac1b4"), IdentifierCatalog.AppTypes.NodeApp, IdentifierCatalog.Capabilities.Restart, """{"policy":"always"}"""),
             AppTypeCapability.CreateSeeded(new Guid("909f7e6d-451c-4bff-b8d5-bfb04f3b5116"), IdentifierCatalog.AppTypes.NodeApp, IdentifierCatalog.Capabilities.AutoStart, """{"enabled":true}"""),
-            AppTypeCapability.CreateSeeded(new Guid("84810cdc-4299-42f1-903d-8fff82ed4e92"), IdentifierCatalog.AppTypes.NodeApp, IdentifierCatalog.Capabilities.NodeRuntime, """{"nodeVersion":"22.x","packageManager":"npm"}""")
+            AppTypeCapability.CreateSeeded(new Guid("84810cdc-4299-42f1-903d-8fff82ed4e92"), IdentifierCatalog.AppTypes.NodeApp, IdentifierCatalog.Capabilities.NodeRuntime, """{"nodeVersion":"22.x","packageManager":"npm"}"""),
+            AppTypeCapability.CreateSeeded(new Guid("21565387-1774-4a67-acac-906b7f88c0ca"), IdentifierCatalog.AppTypes.NodeApp, IdentifierCatalog.Capabilities.Artifact, """{"location":""}""")
         );
 
         // --- Executable ---
@@ -73,7 +75,8 @@ public class AppTypeCapabilityMapping : IEntityTypeConfiguration<AppTypeCapabili
             AppTypeCapability.CreateSeeded(new Guid("254d4414-246f-44e5-82d0-0075b3f994c0"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.PortInjection, """{"environmentVariableName":"PORT","portFormat":"{port}"}"""),
             AppTypeCapability.CreateSeeded(new Guid("fa660eb9-810a-47c1-8010-799481c4dca5"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.Routing, """{"domainPattern":"{slug}.collab.internal","serveMode":"reverse-proxy"}"""),
             AppTypeCapability.CreateSeeded(new Guid("14cb559d-7675-43bb-acdd-f1f15671c570"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.Restart, """{"policy":"on-crash"}"""),
-            AppTypeCapability.CreateSeeded(new Guid("408ae72c-0771-4817-a5ed-950419ee5771"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.AutoStart, """{"enabled":false}""")
+            AppTypeCapability.CreateSeeded(new Guid("408ae72c-0771-4817-a5ed-950419ee5771"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.AutoStart, """{"enabled":false}"""),
+            AppTypeCapability.CreateSeeded(new Guid("1884ba18-d094-4381-87eb-38d1b1209c1b"), IdentifierCatalog.AppTypes.Executable, IdentifierCatalog.Capabilities.Artifact, """{"location":""}""")
         );
 
         // --- React App ---
@@ -81,13 +84,15 @@ public class AppTypeCapabilityMapping : IEntityTypeConfiguration<AppTypeCapabili
         (
             AppTypeCapability.CreateSeeded(new Guid("e708632b-d307-4045-9778-679d979b1578"), IdentifierCatalog.AppTypes.ReactApp, IdentifierCatalog.Capabilities.Routing, """{"domainPattern":"{slug}.collab.internal","serveMode":"file-server","spaFallback":true}"""),
             AppTypeCapability.CreateSeeded(new Guid("d9c3ac3e-052c-4992-ac36-bd3079499663"), IdentifierCatalog.AppTypes.ReactApp, IdentifierCatalog.Capabilities.NodeRuntime, """{"nodeVersion":"22.x","packageManager":"npm","buildCommand":"npm run build"}"""),
-            AppTypeCapability.CreateSeeded(new Guid("b256a4b1-86fe-46db-ab50-0061e7854996"), IdentifierCatalog.AppTypes.ReactApp, IdentifierCatalog.Capabilities.ReactRuntime, """{"reactVersion":"18.x","router":"react-router","bundler":"vite"}""")
+            AppTypeCapability.CreateSeeded(new Guid("b256a4b1-86fe-46db-ab50-0061e7854996"), IdentifierCatalog.AppTypes.ReactApp, IdentifierCatalog.Capabilities.ReactRuntime, """{"reactVersion":"18.x","router":"react-router","bundler":"vite"}"""),
+            AppTypeCapability.CreateSeeded(new Guid("ce8aba78-b73a-4e29-bae4-cc2bfd5a4cde"), IdentifierCatalog.AppTypes.ReactApp, IdentifierCatalog.Capabilities.Artifact, """{"location":""}""")
         );
 
         // --- Static Site ---
         builder.HasData
         (
-            AppTypeCapability.CreateSeeded(new Guid("a4cbac96-a44d-4823-9924-e4a530ee96b2"), IdentifierCatalog.AppTypes.StaticSite, IdentifierCatalog.Capabilities.Routing, """{"domainPattern":"{slug}.collab.internal","serveMode":"file-server","spaFallback":false}""")
+            AppTypeCapability.CreateSeeded(new Guid("a4cbac96-a44d-4823-9924-e4a530ee96b2"), IdentifierCatalog.AppTypes.StaticSite, IdentifierCatalog.Capabilities.Routing, """{"domainPattern":"{slug}.collab.internal","serveMode":"file-server","spaFallback":false}"""),
+            AppTypeCapability.CreateSeeded(new Guid("a040791b-319e-46d6-8c58-55f5ace69827"), IdentifierCatalog.AppTypes.StaticSite, IdentifierCatalog.Capabilities.Artifact, """{"location":""}""")
         );
 
         // --- System Service ---
@@ -95,7 +100,8 @@ public class AppTypeCapabilityMapping : IEntityTypeConfiguration<AppTypeCapabili
         (
             AppTypeCapability.CreateSeeded(new Guid("eec22dfc-d996-4563-9e26-dd671f3057e2"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.Process, """{"discoveryStrategy":"manual","gracefulShutdown":true,"shutdownTimeoutSeconds":10,"command":"echo","arguments":"no command configured"}"""),
             AppTypeCapability.CreateSeeded(new Guid("521df52f-53cd-448c-ac85-b727fd9d7168"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.Restart, """{"policy":"on-crash"}"""),
-            AppTypeCapability.CreateSeeded(new Guid("564a6534-79a7-4610-af93-27c3916c105f"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.AutoStart, """{"enabled":true}""")
+            AppTypeCapability.CreateSeeded(new Guid("564a6534-79a7-4610-af93-27c3916c105f"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.AutoStart, """{"enabled":true}"""),
+            AppTypeCapability.CreateSeeded(new Guid("b280d836-1434-4906-9775-3afa718b52ef"), IdentifierCatalog.AppTypes.SystemService, IdentifierCatalog.Capabilities.Artifact, """{"location":""}""")
         );
     }
 }

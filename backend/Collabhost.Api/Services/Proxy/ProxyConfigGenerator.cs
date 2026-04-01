@@ -161,13 +161,11 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
         };
     }
 
-    // GAP: InstallDirectory is not on the App entity — file_server root path cannot be resolved.
-    // The artifact capability (future card) will provide this. For now, root is empty string.
     private JsonObject BuildFileServerRoute(AppRouteInfo app)
     {
         var subrouteHandlers = new JsonArray();
 
-        // Root vars handler
+        // Root vars handler — uses artifact location as file-server root
         subrouteHandlers.Add(new JsonObject
         {
             ["handle"] = new JsonArray
@@ -175,7 +173,7 @@ public sealed class ProxyConfigGenerator(ProxySettings settings)
                 new JsonObject
                 {
                     ["handler"] = "vars",
-                    ["root"] = ""
+                    ["root"] = app.ArtifactLocation ?? ""
                 }
             }
         });

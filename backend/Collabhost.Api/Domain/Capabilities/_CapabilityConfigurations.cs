@@ -83,3 +83,8 @@ public sealed class ReactRuntimeConfiguration
 
     public string? Bundler { get; set; }
 }
+
+public sealed class ArtifactConfiguration
+{
+    public string Location { get; set; } = default!;
+}

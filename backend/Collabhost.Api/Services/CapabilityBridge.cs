@@ -42,6 +42,11 @@ public interface ICapabilityBridge
     (
         IReadOnlyList<ResolvedCapabilityData> resolvedCapabilities
     );
+
+    ArtifactConfiguration? ExtractArtifactConfiguration
+    (
+        IReadOnlyList<ResolvedCapabilityData> resolvedCapabilities
+    );
 }
 
 internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBridge
@@ -146,6 +151,22 @@ internal sealed class CapabilityBridge(CollabhostDbContext db) : ICapabilityBrid
         return routingData is null
             ? null
             : JsonSerializer.Deserialize<RoutingConfiguration>(routingData.ResolvedConfiguration, _jsonOptions);
+    }
+
+    public ArtifactConfiguration? ExtractArtifactConfiguration
+    (
+        IReadOnlyList<ResolvedCapabilityData> resolvedCapabilities
+    )
+    {
+        var artifactData = resolvedCapabilities
+            .SingleOrDefault
+            (
+                c => string.Equals(c.Slug, StringCatalog.Capabilities.Artifact, StringComparison.Ordinal)
+            );
+
+        return artifactData is null
+            ? null
+            : JsonSerializer.Deserialize<ArtifactConfiguration>(artifactData.ResolvedConfiguration, _jsonOptions);
     }
 }
 

@@ -226,9 +226,38 @@ public sealed class ProcessSupervisor
         )
             ?? throw new InvalidOperationException("Process capability configuration could not be resolved.");
 
+        // Resolve artifact configuration for working directory
+        var artifactConfiguration = await capabilityResolver.ResolveAsync<Domain.Capabilities.ArtifactConfiguration>
+        (
+            app.Id, IdentifierCatalog.Capabilities.Artifact, ct
+        );
+
+        if (artifactConfiguration is null || string.IsNullOrWhiteSpace(artifactConfiguration.Location))
+        {
+            var errorMessage = "Cannot start app: artifact location is not configured. Set the artifact capability's location field.";
+            var errorProcess = new ManagedProcess(app.Id, app.ExternalId, app.DisplayName);
+            errorProcess.LogBuffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, errorMessage));
+            _processes[appId] = errorProcess;
+            throw new InvalidOperationException(errorMessage);
+        }
+
+        if (!Directory.Exists(artifactConfiguration.Location))
+        {
+            var errorMessage = $"Cannot start app: artifact location '{artifactConfiguration.Location}' does not exist on disk.";
+            var errorProcess = new ManagedProcess(app.Id, app.ExternalId, app.DisplayName);
+            errorProcess.LogBuffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, errorMessage));
+            _processes[appId] = errorProcess;
+            throw new InvalidOperationException(errorMessage);
+        }
+
+        // Compute effective working directory from artifact + optional relative process working directory
+        var effectiveWorkingDirectory = !string.IsNullOrWhiteSpace(processConfiguration.WorkingDirectory)
+            ? Path.Combine(artifactConfiguration.Location, processConfiguration.WorkingDirectory)
+            : artifactConfiguration.Location;
+
         // Discover the command/args/working directory using the appropriate strategy
         var strategy = _discoveryStrategyFactory.GetStrategy(processConfiguration.DiscoveryStrategy);
-        var discoveredProcess = strategy.Discover(processConfiguration);
+        var discoveredProcess = strategy.Discover(processConfiguration, effectiveWorkingDirectory);
 
         // Build environment variables from environment-defaults capability
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);

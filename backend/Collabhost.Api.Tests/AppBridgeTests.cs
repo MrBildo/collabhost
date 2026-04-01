@@ -121,7 +121,8 @@ public class AppBridgeTests(CollabhostApiFixture fixture) : IClassFixture<Collab
             AppTypeId = TestCatalogConstants.AppTypes.ExecutableExternalId,
             CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
             {
-                ["restart"] = new { policy = StringCatalog.RestartPolicies.Never }
+                ["restart"] = new { policy = StringCatalog.RestartPolicies.Never },
+                ["artifact"] = new { location = CreateTempDirectory() }
             }
         };
 

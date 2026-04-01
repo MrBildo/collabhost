@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 
 using Collabhost.Api.Domain.Capabilities;
 using Collabhost.Api.Domain.Catalogs;
@@ -260,14 +259,36 @@ public sealed class ProxyConfigManager
 
             var spaFallback = routingConfiguration.SpaFallback ?? false;
 
+            // Resolve artifact location for file-server routes
+            string? artifactLocation = null;
+            if (string.Equals(routingConfiguration.ServeMode, StringCatalog.ServeModes.FileServer, StringComparison.OrdinalIgnoreCase))
+            {
+                var artifactConfiguration = await capabilityResolver.ResolveAsync<ArtifactConfiguration>
+                (
+                    row.Id, IdentifierCatalog.Capabilities.Artifact, ct
+                );
+
+                artifactLocation = artifactConfiguration?.Location;
+
+                if (string.IsNullOrWhiteSpace(artifactLocation))
+                {
+                    _logger.LogWarning
+                    (
+                        "Skipping route for '{Slug}' — artifact location is not configured",
+                        row.Slug
+                    );
+                    continue;
+                }
+            }
+
             // Check if route is disabled
             if (!IsRouteEnabled(row.Slug))
             {
-                result.Add(new AppRouteInfo(row.Slug, "disabled", port, spaFallback));
+                result.Add(new AppRouteInfo(row.Slug, "disabled", port, spaFallback, artifactLocation));
                 continue;
             }
 
-            result.Add(new AppRouteInfo(row.Slug, routingConfiguration.ServeMode, port, spaFallback));
+            result.Add(new AppRouteInfo(row.Slug, routingConfiguration.ServeMode, port, spaFallback, artifactLocation));
         }
 
         return result;
