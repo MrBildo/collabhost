@@ -5,7 +5,7 @@ import {
   GlassCardHeader,
   GlassCardTitle,
 } from '@/components/ui/GlassCard';
-import { useFieldOptions } from '@/hooks/useFieldOptions';
+import { useLookupLabel, useRestartPolicies } from '@/hooks/useLookups';
 
 import type { CapabilityWidgetProps } from '../types';
 
@@ -19,7 +19,8 @@ function getFieldSource(
 
 function RestartDisplay({ displayName, resolved, defaults, hasOverrides }: CapabilityWidgetProps) {
   const policy = String(resolved['policy'] ?? '');
-  const { getDisplayLabel } = useFieldOptions('restart', 'policy');
+  const { data: policies } = useRestartPolicies();
+  const { getDisplayLabel } = useLookupLabel(policies);
 
   return (
     <GlassCard size="sm">

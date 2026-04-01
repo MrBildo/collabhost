@@ -56,21 +56,6 @@ export type CapabilityCatalogItem = {
   category: string;
 };
 
-export type FieldOption = {
-  value: string;
-  displayName: string;
-};
-
-export type FieldOptionGroup = {
-  capabilitySlug: string;
-  fieldName: string;
-  options: FieldOption[];
-};
-
-export type FieldOptionsResponse = {
-  fieldOptions: FieldOptionGroup[];
-};
-
 // -- Process State --
 
 export type ProcessState =

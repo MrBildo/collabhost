@@ -8,13 +8,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useFieldOptions } from '@/hooks/useFieldOptions';
+import { useLookupLabel, useRestartPolicies } from '@/hooks/useLookups';
 
 import type { CapabilityWidgetProps } from '../types';
 
 function RestartWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) {
   const policy = String(resolved['policy'] ?? 'never');
-  const { options } = useFieldOptions('restart', 'policy');
+  const { data: policies } = useRestartPolicies();
+  const { options } = useLookupLabel(policies);
 
   const isFieldOverridden = useCallback(
     (field: string): boolean => {

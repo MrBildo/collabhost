@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 
 import { Input } from '@/components/ui/input';
-import { useFieldOptions } from '@/hooks/useFieldOptions';
+import { useDiscoveryStrategies, useLookupLabel } from '@/hooks/useLookups';
 
 import type { CapabilityWidgetProps } from '../types';
 
@@ -11,7 +11,8 @@ function ProcessWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) 
   const shutdownTimeoutSeconds = Number(resolved['shutdownTimeoutSeconds']);
   const command = String(resolved['command'] ?? '');
   const args = String(resolved['args'] ?? '');
-  const { getDisplayLabel: getStrategyLabel } = useFieldOptions('process', 'discoveryStrategy');
+  const { data: strategies } = useDiscoveryStrategies();
+  const { getDisplayLabel: getStrategyLabel } = useLookupLabel(strategies);
 
   const handleFieldChange = useCallback(
     (field: string, value: unknown) => {

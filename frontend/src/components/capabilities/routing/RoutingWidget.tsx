@@ -2,15 +2,16 @@ import { useCallback } from 'react';
 
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
-import { useFieldOptions } from '@/hooks/useFieldOptions';
+import { useLookupLabel, useServeModes } from '@/hooks/useLookups';
 
 import type { CapabilityWidgetProps } from '../types';
 
 function RoutingWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) {
   const domainPattern = String(resolved['domainPattern'] ?? '');
-  const serveMode = String(resolved['serveMode'] ?? 'reverseProxy');
+  const serveMode = String(resolved['serveMode'] ?? 'reverse-proxy');
   const spaFallback = Boolean(resolved['spaFallback']);
-  const { getDisplayLabel: getServeModeLabel } = useFieldOptions('routing', 'serveMode');
+  const { data: serveModes } = useServeModes();
+  const { getDisplayLabel: getServeModeLabel } = useLookupLabel(serveModes);
 
   const isFieldOverridden = useCallback(
     (field: string): boolean => {
@@ -61,7 +62,7 @@ function RoutingWidget({ resolved, defaults, onChange }: CapabilityWidgetProps) 
         </span>
       </div>
 
-      {serveMode === 'fileServer' && (
+      {serveMode === 'file-server' && (
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium">SPA Fallback</label>
           <button

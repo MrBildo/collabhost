@@ -5,7 +5,7 @@ import {
   GlassCardHeader,
   GlassCardTitle,
 } from '@/components/ui/GlassCard';
-import { useFieldOptions } from '@/hooks/useFieldOptions';
+import { useLookupLabel, useServeModes } from '@/hooks/useLookups';
 
 import type { CapabilityWidgetProps } from '../types';
 
@@ -21,7 +21,8 @@ function RoutingDisplay({ displayName, resolved, defaults, hasOverrides }: Capab
   const domainPattern = String(resolved['domainPattern'] ?? '');
   const serveMode = String(resolved['serveMode'] ?? '');
   const spaFallback = Boolean(resolved['spaFallback']);
-  const { getDisplayLabel: getServeModeLabel } = useFieldOptions('routing', 'serveMode');
+  const { data: serveModes } = useServeModes();
+  const { getDisplayLabel: getServeModeLabel } = useLookupLabel(serveModes);
 
   return (
     <GlassCard size="sm">
@@ -54,7 +55,7 @@ function RoutingDisplay({ displayName, resolved, defaults, hasOverrides }: Capab
             </div>
           </div>
 
-          {serveMode === 'fileServer' && (
+          {serveMode === 'file-server' && (
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">SPA Fallback</span>
               <div className="flex items-center gap-2">

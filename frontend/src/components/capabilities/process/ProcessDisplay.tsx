@@ -5,7 +5,7 @@ import {
   GlassCardHeader,
   GlassCardTitle,
 } from '@/components/ui/GlassCard';
-import { useFieldOptions } from '@/hooks/useFieldOptions';
+import { useDiscoveryStrategies, useLookupLabel } from '@/hooks/useLookups';
 
 import type { CapabilityWidgetProps } from '../types';
 
@@ -21,7 +21,8 @@ function ProcessDisplay({ displayName, resolved, defaults, hasOverrides }: Capab
   const discoveryStrategy = String(resolved['discoveryStrategy'] ?? '');
   const gracefulShutdown = Boolean(resolved['gracefulShutdown']);
   const shutdownTimeoutSeconds = Number(resolved['shutdownTimeoutSeconds'] ?? 0);
-  const { getDisplayLabel: getStrategyLabel } = useFieldOptions('process', 'discoveryStrategy');
+  const { data: strategies } = useDiscoveryStrategies();
+  const { getDisplayLabel: getStrategyLabel } = useLookupLabel(strategies);
 
   return (
     <GlassCard size="sm">

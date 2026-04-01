@@ -35,6 +35,26 @@ public static class IdentifierCatalog
         public static readonly Guid Crashed = new("55331f23-8eae-4e56-811d-8bbdeaca03ca");
         public static readonly Guid Restarting = new("517b2fb1-e5f9-4fdd-98de-10cedec5bcc3");
     }
+
+    public static class RestartPolicies
+    {
+        public static readonly Guid Never = new("a1234567-0001-4000-8000-000000000001");
+        public static readonly Guid OnCrash = new("a1234567-0001-4000-8000-000000000002");
+        public static readonly Guid Always = new("a1234567-0001-4000-8000-000000000003");
+    }
+
+    public static class ServeModes
+    {
+        public static readonly Guid ReverseProxy = new("b2345678-0002-4000-8000-000000000001");
+        public static readonly Guid FileServer = new("b2345678-0002-4000-8000-000000000002");
+    }
+
+    public static class DiscoveryStrategies
+    {
+        public static readonly Guid DotNetRuntimeConfig = new("c3456789-0003-4000-8000-000000000001");
+        public static readonly Guid PackageJson = new("c3456789-0003-4000-8000-000000000002");
+        public static readonly Guid Manual = new("c3456789-0003-4000-8000-000000000003");
+    }
 }
 
 // Immutable machine-readable Name constants for lookup entities.
@@ -69,14 +89,14 @@ public static class StringCatalog
     public static class RestartPolicies
     {
         public const string Never = "never";
-        public const string OnCrash = "onCrash";
+        public const string OnCrash = "on-crash";
         public const string Always = "always";
     }
 
     public static class ServeModes
     {
-        public const string ReverseProxy = "reverseProxy";
-        public const string FileServer = "fileServer";
+        public const string ReverseProxy = "reverse-proxy";
+        public const string FileServer = "file-server";
     }
 
     public static class DiscoveryStrategies
@@ -97,25 +117,3 @@ public static class StringCatalog
     }
 }
 
-public static class DisplayNames
-{
-    public static class RestartPolicies
-    {
-        public const string Never = "Never";
-        public const string OnCrash = "On Crash";
-        public const string Always = "Always";
-    }
-
-    public static class ServeModes
-    {
-        public const string ReverseProxy = "Reverse Proxy";
-        public const string FileServer = "File Server";
-    }
-
-    public static class DiscoveryStrategies
-    {
-        public const string DotNetRuntimeConfig = ".NET Runtime Config";
-        public const string PackageJson = "package.json";
-        public const string Manual = "Manual";
-    }
-}
