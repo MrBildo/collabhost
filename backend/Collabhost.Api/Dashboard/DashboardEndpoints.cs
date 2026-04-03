@@ -1,3 +1,4 @@
+using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
@@ -16,6 +17,7 @@ public static class DashboardEndpoints
     (
         AppStore store,
         ProcessSupervisor supervisor,
+        ProxyManager proxy,
         CancellationToken ct
     )
     {
@@ -31,14 +33,25 @@ public static class DashboardEndpoints
         {
             var process = supervisor.GetProcess(app.Id);
             var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
+            var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
 
-            if (!hasProcess)
+            if (!hasProcess && !hasRouting)
             {
                 stopped++;
                 continue;
             }
 
-            var state = process?.State ?? ProcessState.Stopped;
+            ProcessState state;
+
+            if (hasProcess)
+            {
+                state = process?.State ?? ProcessState.Stopped;
+            }
+            else
+            {
+                // Routing-only: route enabled = running
+                state = proxy.IsRouteEnabled(app.Slug) ? ProcessState.Running : ProcessState.Stopped;
+            }
 
             switch (state)
             {
