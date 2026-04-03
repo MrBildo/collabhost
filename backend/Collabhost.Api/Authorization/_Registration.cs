@@ -1,7 +1,5 @@
 using System.Globalization;
 
-using Microsoft.Extensions.Options;
-
 namespace Collabhost.Api.Authorization;
 
 public static class AuthorizationRegistration

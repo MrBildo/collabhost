@@ -1,6 +1,4 @@
 using System.Diagnostics;
-
-using Collabhost.Api.Capabilities;
 using Collabhost.Api.Registry;
 
 namespace Collabhost.Api.Proxy;
@@ -26,7 +24,6 @@ public class ProxyAppSeeder
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-#pragma warning disable MA0051 // Long method justified -- proxy app seeding with binary resolution and capability override creation
     public async Task SeedAsync(CancellationToken cancellationToken)
     {
         var existingProxy = await _appStore.GetBySlugAsync("proxy", cancellationToken);
@@ -77,7 +74,6 @@ public class ProxyAppSeeder
 
         _logger.LogInformation("Proxy app seeded -- binary at '{BinaryPath}'", resolvedPath);
     }
-#pragma warning restore MA0051
 
     private async Task CreateCapabilityOverridesAsync
     (

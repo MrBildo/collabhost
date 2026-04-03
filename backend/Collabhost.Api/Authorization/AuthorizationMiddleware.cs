@@ -1,5 +1,3 @@
-using System.Globalization;
-
 using Microsoft.Extensions.Options;
 
 namespace Collabhost.Api.Authorization;

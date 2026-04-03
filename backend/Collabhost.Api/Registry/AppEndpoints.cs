@@ -10,7 +10,6 @@ namespace Collabhost.Api.Registry;
 
 #pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
 #pragma warning disable MA0011 // Ulid.ToString/TryParse is not locale-sensitive
-#pragma warning disable MA0051 // Long methods justified -- endpoint handlers with inline projection
 public static class AppEndpoints
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -792,13 +791,10 @@ public static class AppEndpoints
         IReadOnlyDictionary<string, CapabilityOverride> overrides
     )
     {
-        var sections = new List<SettingsSection>();
-
-        // Identity section (always first)
-        sections.Add
-        (
-            new SettingsSection
-            (
+        var sections = new List<SettingsSection>
+        {
+            // Identity section (always first)
+            new            (
                 "identity",
                 "Identity",
                 [
@@ -822,7 +818,7 @@ public static class AppEndpoints
                     )
                 ]
             )
-        );
+        };
 
         // Capability sections
         foreach (var binding in bindings.OrderBy(b => b.CapabilitySlug.GetCapabilityOrder()))
@@ -901,7 +897,6 @@ public static class AppEndpoints
         return sections;
     }
 }
-#pragma warning restore MA0051
 #pragma warning restore MA0011
 #pragma warning restore MA0076
 

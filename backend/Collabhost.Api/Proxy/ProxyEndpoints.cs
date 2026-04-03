@@ -9,7 +9,6 @@ namespace Collabhost.Api.Proxy;
 
 #pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
 #pragma warning disable MA0011 // Ulid.ToString is not locale-sensitive
-#pragma warning disable MA0051 // Long method justified -- route projection with capability resolution
 public static class ProxyEndpoints
 {
     public static void Map(IEndpointRouteBuilder routes)
@@ -98,6 +97,5 @@ public static class ProxyEndpoints
         return Task.FromResult<IResult>(TypedResults.NoContent());
     }
 }
-#pragma warning restore MA0051
 #pragma warning restore MA0011
 #pragma warning restore MA0076

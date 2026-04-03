@@ -1,12 +1,7 @@
-using System.Globalization;
-
-using Collabhost.Api.Capabilities;
-
 namespace Collabhost.Api.Registry;
 
 #pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
 #pragma warning disable MA0011 // Ulid.ToString is not locale-sensitive
-#pragma warning disable MA0051 // Long method justified -- BuildTags with metadata deserialization
 public static class AppTypeEndpoints
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -86,13 +81,10 @@ public static class AppTypeEndpoints
 
     private static List<RegistrationSection> BuildRegistrationSections(AppType appType)
     {
-        var sections = new List<RegistrationSection>();
-
-        // Basics section (always first)
-        sections.Add
-        (
-            new RegistrationSection
-            (
+        var sections = new List<RegistrationSection>
+        {
+            // Basics section (always first)
+            new            (
                 "basics",
                 "Basics",
                 [
@@ -117,7 +109,7 @@ public static class AppTypeEndpoints
                     )
                 ]
             )
-        );
+        };
 
         // Artifact section (if the type has artifact capability)
         var artifactBinding = appType.Bindings.SingleOrDefault
@@ -192,7 +184,6 @@ public static class AppTypeEndpoints
         return tags;
     }
 }
-#pragma warning restore MA0051
 #pragma warning restore MA0011
 #pragma warning restore MA0076
 

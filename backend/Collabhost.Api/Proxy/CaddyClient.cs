@@ -1,5 +1,3 @@
-using System.Net.Http.Json;
-
 namespace Collabhost.Api.Proxy;
 
 public interface ICaddyClient
