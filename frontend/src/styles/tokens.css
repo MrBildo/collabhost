@@ -1,0 +1,75 @@
+/* War Machine Design Tokens
+ * Source of truth for the Collabhost design system.
+ * All visual identity values live here as CSS custom properties.
+ */
+
+:root {
+  /* Backgrounds */
+  --wm-bg: #111111;
+  --wm-bg-panel: #191919;
+  --wm-bg-inset: #0d0d0d;
+  --wm-bg-hover: #222222;
+  --wm-bg-active: #252525;
+
+  /* Borders */
+  --wm-border: #2a2a2a;
+  --wm-border-active: #444444;
+
+  /* Text */
+  --wm-text: #d4d4d4;
+  --wm-text-dim: #777777;
+  --wm-text-bright: #f0f0f0;
+
+  /* Amber (primary accent) */
+  --wm-amber: #f59e0b;
+  --wm-amber-dim: rgba(245, 158, 11, 0.12);
+  --wm-amber-glow: rgba(245, 158, 11, 0.25);
+  --wm-amber-border: rgba(245, 158, 11, 0.3);
+
+  /* Green (running, healthy, success) */
+  --wm-green: #22c55e;
+  --wm-green-dim: rgba(34, 197, 94, 0.1);
+  --wm-green-border: rgba(34, 197, 94, 0.3);
+  --wm-green-glow: rgba(34, 197, 94, 0.5);
+
+  /* Red (crashed, error, danger) */
+  --wm-red: #ef4444;
+  --wm-red-dim: rgba(239, 68, 68, 0.1);
+  --wm-red-border: rgba(239, 68, 68, 0.3);
+  --wm-red-glow: rgba(239, 68, 68, 0.5);
+
+  /* Blue (info, health) */
+  --wm-blue: #3b82f6;
+  --wm-blue-dim: rgba(59, 130, 246, 0.1);
+  --wm-blue-border: rgba(59, 130, 246, 0.3);
+
+  /* Yellow (warning) */
+  --wm-yellow: #eab308;
+  --wm-yellow-dim: rgba(234, 179, 8, 0.1);
+  --wm-yellow-border: rgba(234, 179, 8, 0.3);
+
+  /* Orange (kill/force) */
+  --wm-orange: #f97316;
+  --wm-orange-dim: rgba(249, 115, 22, 0.12);
+
+  /* Typography */
+  --wm-mono: "IBM Plex Mono", "Cascadia Code", monospace;
+  --wm-sans: "IBM Plex Sans", -apple-system, sans-serif;
+
+  /* Spacing scale */
+  --wm-space-xs: 4px;
+  --wm-space-sm: 8px;
+  --wm-space-md: 12px;
+  --wm-space-lg: 16px;
+  --wm-space-xl: 24px;
+  --wm-space-2xl: 32px;
+  --wm-space-3xl: 48px;
+
+  /* Border radii */
+  --wm-radius-sm: 2px;
+  --wm-radius: 3px;
+  --wm-radius-md: 4px;
+
+  /* Topbar height */
+  --wm-topbar-height: 42px;
+}
