@@ -96,12 +96,7 @@ function AppDetailPage() {
     {
       key: 'type',
       label: 'Type',
-      value: (
-        <span className="flex items-center gap-2">
-          <TypeBadge label={app.appType.name} />
-          <span style={{ color: 'var(--wm-text-dim)' }}>{app.appType.displayName}</span>
-        </span>
-      ),
+      value: <TypeBadge label={app.appType.name} />,
     },
     { key: 'registered', label: 'Registered', value: formatDateTime(app.registeredAt) },
     {
