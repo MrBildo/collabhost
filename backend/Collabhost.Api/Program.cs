@@ -28,13 +28,13 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// Database init (dev only -- migrations for production)
 if (app.Environment.IsDevelopment())
 {
     await using var scope = app.Services.CreateAsyncScope();
     var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
     await using var context = await db.CreateDbContextAsync();
     await context.Database.EnsureCreatedAsync();
+
     app.MapOpenApi();
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 }

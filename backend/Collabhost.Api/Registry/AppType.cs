@@ -2,7 +2,7 @@ using Collabhost.Api.Capabilities;
 
 namespace Collabhost.Api.Registry;
 
-public sealed class AppType
+public class AppType
 {
     public Ulid Id { get; init; } = Ulid.NewUlid();
 
@@ -18,18 +18,17 @@ public sealed class AppType
 
     public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 
-    // Navigation
     public ICollection<CapabilityBinding> Bindings { get; init; } = [];
 }
 
-public sealed class AppTypeMetadata
+public class AppTypeMetadata
 {
     public RuntimeInfo? Runtime { get; set; }
 
     public FrameworkInfo? Framework { get; set; }
 }
 
-public sealed class RuntimeInfo
+public class RuntimeInfo
 {
     public required string Name { get; set; }
 
@@ -40,7 +39,7 @@ public sealed class RuntimeInfo
     public string? PackageManager { get; set; }
 }
 
-public sealed class FrameworkInfo
+public class FrameworkInfo
 {
     public required string Name { get; set; }
 

@@ -6,7 +6,7 @@ using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.Data;
 
-public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<App> Apps => Set<App>();
 
@@ -38,20 +38,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
             entity.Property(a => a.Id)
                 .HasConversion(v => v.ToString(null, CultureInfo.InvariantCulture), v => Ulid.Parse(v, CultureInfo.InvariantCulture))
-                .HasMaxLength(26); // ULID string representation
+                .HasMaxLength(26);
 
             entity.Property(a => a.Slug)
-                .HasMaxLength(100); // slug max length
+                .HasMaxLength(100);
 
             entity.HasIndex(a => a.Slug)
                 .IsUnique();
 
             entity.Property(a => a.DisplayName)
-                .HasMaxLength(200); // display name max length
+                .HasMaxLength(200);
 
             entity.Property(a => a.AppTypeId)
                 .HasConversion(v => v.ToString(null, CultureInfo.InvariantCulture), v => Ulid.Parse(v, CultureInfo.InvariantCulture))
-                .HasMaxLength(26); // ULID string representation
+                .HasMaxLength(26);
 
             entity.HasOne(a => a.AppType)
                 .WithMany()
@@ -65,19 +65,19 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
             entity.Property(t => t.Id)
                 .HasConversion(v => v.ToString(null, CultureInfo.InvariantCulture), v => Ulid.Parse(v, CultureInfo.InvariantCulture))
-                .HasMaxLength(26); // ULID string representation
+                .HasMaxLength(26);
 
             entity.Property(t => t.Slug)
-                .HasMaxLength(100); // slug max length
+                .HasMaxLength(100);
 
             entity.HasIndex(t => t.Slug)
                 .IsUnique();
 
             entity.Property(t => t.DisplayName)
-                .HasMaxLength(200); // display name max length
+                .HasMaxLength(200);
 
             entity.Property(t => t.Description)
-                .HasMaxLength(500); // description max length
+                .HasMaxLength(500);
 
             entity.HasMany(t => t.Bindings)
                 .WithOne()
@@ -91,14 +91,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
             entity.Property(b => b.Id)
                 .HasConversion(v => v.ToString(null, CultureInfo.InvariantCulture), v => Ulid.Parse(v, CultureInfo.InvariantCulture))
-                .HasMaxLength(26); // ULID string representation
+                .HasMaxLength(26);
 
             entity.Property(b => b.AppTypeId)
                 .HasConversion(v => v.ToString(null, CultureInfo.InvariantCulture), v => Ulid.Parse(v, CultureInfo.InvariantCulture))
-                .HasMaxLength(26); // ULID string representation
+                .HasMaxLength(26);
 
             entity.Property(b => b.CapabilitySlug)
-                .HasMaxLength(50); // capability slug max length
+                .HasMaxLength(50);
 
             entity.HasIndex(b => new { b.AppTypeId, b.CapabilitySlug })
                 .IsUnique();
@@ -111,14 +111,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
             entity.Property(o => o.Id)
                 .HasConversion(v => v.ToString(null, CultureInfo.InvariantCulture), v => Ulid.Parse(v, CultureInfo.InvariantCulture))
-                .HasMaxLength(26); // ULID string representation
+                .HasMaxLength(26);
 
             entity.Property(o => o.AppId)
                 .HasConversion(v => v.ToString(null, CultureInfo.InvariantCulture), v => Ulid.Parse(v, CultureInfo.InvariantCulture))
-                .HasMaxLength(26); // ULID string representation
+                .HasMaxLength(26);
 
             entity.Property(o => o.CapabilitySlug)
-                .HasMaxLength(50); // capability slug max length
+                .HasMaxLength(50);
 
             entity.HasIndex(o => new { o.AppId, o.CapabilitySlug })
                 .IsUnique();
@@ -141,7 +141,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     {
         var dotnetApp = new AppType
         {
-            Id = Ulid.Parse("01JQDZ000000000000000DNETA"),
+            Id = Ulid.Parse("01KN8K1MRQ0K06ADYJJ8VAXG5Y"),
             Slug = "dotnet-app",
             DisplayName = ".NET Application",
             Description = "ASP.NET Core or .NET console application",
@@ -151,7 +151,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         var nodejsApp = new AppType
         {
-            Id = Ulid.Parse("01JQDZ000000000000000NODEA"),
+            Id = Ulid.Parse("01KN8K1MRT4XGXXW5BBQ8YZNN2"),
             Slug = "nodejs-app",
             DisplayName = "Node.js Application",
             Description = "Server-side JavaScript with npm",
@@ -161,7 +161,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         var staticSite = new AppType
         {
-            Id = Ulid.Parse("01JQDZ000000000000000STATA"),
+            Id = Ulid.Parse("01KN8K1MRT26VCX65J1ZSVWESB"),
             Slug = "static-site",
             DisplayName = "Static Site",
             Description = "Static files served by Caddy",
@@ -179,56 +179,56 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         (
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000DNETBND01"),
+                Id = Ulid.Parse("01KN8K1MRTP60DVWP6ERZ8R4F9"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "artifact",
                 DefaultConfigurationJson = """{"location":""}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000DNETBND02"),
+                Id = Ulid.Parse("01KN8K1MRTJD1NCG0J9R4364MJ"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "process",
                 DefaultConfigurationJson = """{"discoveryStrategy":"DotNetRuntimeConfiguration","gracefulShutdown":true,"shutdownTimeoutSeconds":30}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000DNETBND03"),
+                Id = Ulid.Parse("01KN8K1MRTCFS85XS4TRW6EGSR"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "port-injection",
                 DefaultConfigurationJson = """{"environmentVariableName":"ASPNETCORE_URLS","portFormat":"http://localhost:{port}"}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000DNETBND04"),
+                Id = Ulid.Parse("01KN8K1MRT34CN63B8QZ96N3Q7"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "routing",
                 DefaultConfigurationJson = """{"domainPattern":"{slug}.collab.internal","serveMode":"ReverseProxy","spaFallback":false}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000DNETBND05"),
+                Id = Ulid.Parse("01KN8K1MRTG49PHRKY1N3DMFKN"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "health-check",
                 DefaultConfigurationJson = """{"endpoint":"/health","intervalSeconds":30,"timeoutSeconds":5}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000DNETBND06"),
+                Id = Ulid.Parse("01KN8K1MRTGF8GQ3X2CFS2JCQS"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "restart",
                 DefaultConfigurationJson = """{"policy":"OnCrash"}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000DNETBND07"),
+                Id = Ulid.Parse("01KN8K1MRT1SW33ZS6DK4TTGKB"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "auto-start",
                 DefaultConfigurationJson = """{"enabled":true}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000DNETBND08"),
+                Id = Ulid.Parse("01KN8K1MRT0B5TF2TTXV68DAFJ"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "environment-defaults",
                 DefaultConfigurationJson = """{"variables":{"ASPNETCORE_ENVIRONMENT":"Production"}}"""
@@ -240,56 +240,56 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         (
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000NODEBND01"),
+                Id = Ulid.Parse("01KN8K1MRTHFBR5P75WEE5K3NT"),
                 AppTypeId = nodejsApp.Id,
                 CapabilitySlug = "artifact",
                 DefaultConfigurationJson = """{"location":""}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000NODEBND02"),
+                Id = Ulid.Parse("01KN8K1MRT9RES6FCWSNFYNXGK"),
                 AppTypeId = nodejsApp.Id,
                 CapabilitySlug = "process",
                 DefaultConfigurationJson = """{"discoveryStrategy":"PackageJson","gracefulShutdown":true,"shutdownTimeoutSeconds":15}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000NODEBND03"),
+                Id = Ulid.Parse("01KN8K1MRTD4TJKKDPGHG36Z4K"),
                 AppTypeId = nodejsApp.Id,
                 CapabilitySlug = "port-injection",
                 DefaultConfigurationJson = """{"environmentVariableName":"PORT","portFormat":"{port}"}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000NODEBND04"),
+                Id = Ulid.Parse("01KN8K1MRTGPRVSG3F6EJBB8CM"),
                 AppTypeId = nodejsApp.Id,
                 CapabilitySlug = "routing",
                 DefaultConfigurationJson = """{"domainPattern":"{slug}.collab.internal","serveMode":"ReverseProxy","spaFallback":false}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000NODEBND05"),
+                Id = Ulid.Parse("01KN8K1MRTEFCM6C0ZXM6GFM68"),
                 AppTypeId = nodejsApp.Id,
                 CapabilitySlug = "health-check",
                 DefaultConfigurationJson = """{"endpoint":"/health","intervalSeconds":30,"timeoutSeconds":5}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000NODEBND06"),
+                Id = Ulid.Parse("01KN8K1MRT9D970Y0XZR74W1Z1"),
                 AppTypeId = nodejsApp.Id,
                 CapabilitySlug = "restart",
                 DefaultConfigurationJson = """{"policy":"OnCrash"}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000NODEBND07"),
+                Id = Ulid.Parse("01KN8K1MRTT086R433KGMBT21A"),
                 AppTypeId = nodejsApp.Id,
                 CapabilitySlug = "auto-start",
                 DefaultConfigurationJson = """{"enabled":true}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000NODEBND08"),
+                Id = Ulid.Parse("01KN8K1MRTZZ9PJ1QMZSG5QHRE"),
                 AppTypeId = nodejsApp.Id,
                 CapabilitySlug = "environment-defaults",
                 DefaultConfigurationJson = """{"variables":{"NODE_ENV":"production"}}"""
@@ -301,14 +301,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         (
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000STATBND01"),
+                Id = Ulid.Parse("01KN8K1MRTE14RGEAS4VDD44P3"),
                 AppTypeId = staticSite.Id,
                 CapabilitySlug = "artifact",
                 DefaultConfigurationJson = """{"location":""}"""
             },
             new CapabilityBinding
             {
-                Id = Ulid.Parse("01JQDZ00000000000STATBND02"),
+                Id = Ulid.Parse("01KN8K1MRTETFY88Z8FTJGCBB5"),
                 AppTypeId = staticSite.Id,
                 CapabilitySlug = "routing",
                 DefaultConfigurationJson = """{"domainPattern":"{slug}.collab.internal","serveMode":"FileServer","spaFallback":true}"""

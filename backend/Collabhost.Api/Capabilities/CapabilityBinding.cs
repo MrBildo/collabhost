@@ -1,6 +1,6 @@
 namespace Collabhost.Api.Capabilities;
 
-public sealed class CapabilityBinding
+public class CapabilityBinding
 {
     public Ulid Id { get; init; } = Ulid.NewUlid();
 

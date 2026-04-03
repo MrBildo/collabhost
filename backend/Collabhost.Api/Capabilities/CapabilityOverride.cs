@@ -1,6 +1,6 @@
 namespace Collabhost.Api.Capabilities;
 
-public sealed class CapabilityOverride
+public class CapabilityOverride
 {
     public Ulid Id { get; init; } = Ulid.NewUlid();
 

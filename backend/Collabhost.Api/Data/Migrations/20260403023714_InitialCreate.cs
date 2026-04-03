@@ -97,9 +97,9 @@ namespace Collabhost.Api.Data.Migrations
                 columns: new[] { "Id", "CreatedAt", "Description", "DisplayName", "IsBuiltIn", "MetadataJson", "Slug" },
                 values: new object[,]
                 {
-                    { "01JQDZ000000000000000DNETA", new DateTime(2026, 4, 3, 1, 6, 12, 198, DateTimeKind.Utc).AddTicks(6729), "ASP.NET Core or .NET console application", ".NET Application", true, "{\"runtime\":{\"name\":\".NET\",\"version\":\"10\",\"targetFramework\":\"net10.0\"}}", "dotnet-app" },
-                    { "01JQDZ000000000000000QZDEA", new DateTime(2026, 4, 3, 1, 6, 12, 199, DateTimeKind.Utc).AddTicks(3222), "Server-side JavaScript with npm", "Node.js Application", true, "{\"runtime\":{\"name\":\"Node.js\",\"version\":\"22\",\"packageManager\":\"npm\"}}", "nodejs-app" },
-                    { "01JQDZ000000000000000STATA", new DateTime(2026, 4, 3, 1, 6, 12, 199, DateTimeKind.Utc).AddTicks(3229), "Static files served by Caddy", "Static Site", true, null, "static-site" }
+                    { "01KN8K1MRQ0K06ADYJJ8VAXG5Y", new DateTime(2026, 4, 3, 2, 37, 13, 803, DateTimeKind.Utc).AddTicks(5489), "ASP.NET Core or .NET console application", ".NET Application", true, "{\"runtime\":{\"name\":\".NET\",\"version\":\"10\",\"targetFramework\":\"net10.0\"}}", "dotnet-app" },
+                    { "01KN8K1MRT26VCX65J1ZSVWESB", new DateTime(2026, 4, 3, 2, 37, 13, 804, DateTimeKind.Utc).AddTicks(2127), "Static files served by Caddy", "Static Site", true, null, "static-site" },
+                    { "01KN8K1MRT4XGXXW5BBQ8YZNN2", new DateTime(2026, 4, 3, 2, 37, 13, 804, DateTimeKind.Utc).AddTicks(2115), "Server-side JavaScript with npm", "Node.js Application", true, "{\"runtime\":{\"name\":\"Node.js\",\"version\":\"22\",\"packageManager\":\"npm\"}}", "nodejs-app" }
                 });
 
             migrationBuilder.InsertData(
@@ -107,24 +107,24 @@ namespace Collabhost.Api.Data.Migrations
                 columns: new[] { "Id", "AppTypeId", "CapabilitySlug", "DefaultConfigurationJson" },
                 values: new object[,]
                 {
-                    { "01JQDZ00000000000DNETBND01", "01JQDZ000000000000000DNETA", "artifact", "{\"location\":\"\"}" },
-                    { "01JQDZ00000000000DNETBND02", "01JQDZ000000000000000DNETA", "process", "{\"discoveryStrategy\":\"DotNetRuntimeConfiguration\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":30}" },
-                    { "01JQDZ00000000000DNETBND03", "01JQDZ000000000000000DNETA", "port-injection", "{\"environmentVariableName\":\"ASPNETCORE_URLS\",\"portFormat\":\"http://localhost:{port}\"}" },
-                    { "01JQDZ00000000000DNETBND04", "01JQDZ000000000000000DNETA", "routing", "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"ReverseProxy\",\"spaFallback\":false}" },
-                    { "01JQDZ00000000000DNETBND05", "01JQDZ000000000000000DNETA", "health-check", "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5}" },
-                    { "01JQDZ00000000000DNETBND06", "01JQDZ000000000000000DNETA", "restart", "{\"policy\":\"OnCrash\"}" },
-                    { "01JQDZ00000000000DNETBND07", "01JQDZ000000000000000DNETA", "auto-start", "{\"enabled\":true}" },
-                    { "01JQDZ00000000000DNETBND08", "01JQDZ000000000000000DNETA", "environment-defaults", "{\"variables\":{\"ASPNETCORE_ENVIRONMENT\":\"Production\"}}" },
-                    { "01JQDZ00000000000NZDEBND01", "01JQDZ000000000000000QZDEA", "artifact", "{\"location\":\"\"}" },
-                    { "01JQDZ00000000000NZDEBND02", "01JQDZ000000000000000QZDEA", "process", "{\"discoveryStrategy\":\"PackageJson\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":15}" },
-                    { "01JQDZ00000000000NZDEBND03", "01JQDZ000000000000000QZDEA", "port-injection", "{\"environmentVariableName\":\"PORT\",\"portFormat\":\"{port}\"}" },
-                    { "01JQDZ00000000000NZDEBND04", "01JQDZ000000000000000QZDEA", "routing", "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"ReverseProxy\",\"spaFallback\":false}" },
-                    { "01JQDZ00000000000NZDEBND05", "01JQDZ000000000000000QZDEA", "health-check", "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5}" },
-                    { "01JQDZ00000000000NZDEBND06", "01JQDZ000000000000000QZDEA", "restart", "{\"policy\":\"OnCrash\"}" },
-                    { "01JQDZ00000000000NZDEBND07", "01JQDZ000000000000000QZDEA", "auto-start", "{\"enabled\":true}" },
-                    { "01JQDZ00000000000NZDEBND08", "01JQDZ000000000000000QZDEA", "environment-defaults", "{\"variables\":{\"NODE_ENV\":\"production\"}}" },
-                    { "01JQDZ00000000000STATBND01", "01JQDZ000000000000000STATA", "artifact", "{\"location\":\"\"}" },
-                    { "01JQDZ00000000000STATBND02", "01JQDZ000000000000000STATA", "routing", "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"FileServer\",\"spaFallback\":true}" }
+                    { "01KN8K1MRT0B5TF2TTXV68DAFJ", "01KN8K1MRQ0K06ADYJJ8VAXG5Y", "environment-defaults", "{\"variables\":{\"ASPNETCORE_ENVIRONMENT\":\"Production\"}}" },
+                    { "01KN8K1MRT1SW33ZS6DK4TTGKB", "01KN8K1MRQ0K06ADYJJ8VAXG5Y", "auto-start", "{\"enabled\":true}" },
+                    { "01KN8K1MRT34CN63B8QZ96N3Q7", "01KN8K1MRQ0K06ADYJJ8VAXG5Y", "routing", "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"ReverseProxy\",\"spaFallback\":false}" },
+                    { "01KN8K1MRT9D970Y0XZR74W1Z1", "01KN8K1MRT4XGXXW5BBQ8YZNN2", "restart", "{\"policy\":\"OnCrash\"}" },
+                    { "01KN8K1MRT9RES6FCWSNFYNXGK", "01KN8K1MRT4XGXXW5BBQ8YZNN2", "process", "{\"discoveryStrategy\":\"PackageJson\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":15}" },
+                    { "01KN8K1MRTCFS85XS4TRW6EGSR", "01KN8K1MRQ0K06ADYJJ8VAXG5Y", "port-injection", "{\"environmentVariableName\":\"ASPNETCORE_URLS\",\"portFormat\":\"http://localhost:{port}\"}" },
+                    { "01KN8K1MRTD4TJKKDPGHG36Z4K", "01KN8K1MRT4XGXXW5BBQ8YZNN2", "port-injection", "{\"environmentVariableName\":\"PORT\",\"portFormat\":\"{port}\"}" },
+                    { "01KN8K1MRTE14RGEAS4VDD44P3", "01KN8K1MRT26VCX65J1ZSVWESB", "artifact", "{\"location\":\"\"}" },
+                    { "01KN8K1MRTEFCM6C0ZXM6GFM68", "01KN8K1MRT4XGXXW5BBQ8YZNN2", "health-check", "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5}" },
+                    { "01KN8K1MRTETFY88Z8FTJGCBB5", "01KN8K1MRT26VCX65J1ZSVWESB", "routing", "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"FileServer\",\"spaFallback\":true}" },
+                    { "01KN8K1MRTG49PHRKY1N3DMFKN", "01KN8K1MRQ0K06ADYJJ8VAXG5Y", "health-check", "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5}" },
+                    { "01KN8K1MRTGF8GQ3X2CFS2JCQS", "01KN8K1MRQ0K06ADYJJ8VAXG5Y", "restart", "{\"policy\":\"OnCrash\"}" },
+                    { "01KN8K1MRTGPRVSG3F6EJBB8CM", "01KN8K1MRT4XGXXW5BBQ8YZNN2", "routing", "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"ReverseProxy\",\"spaFallback\":false}" },
+                    { "01KN8K1MRTHFBR5P75WEE5K3NT", "01KN8K1MRT4XGXXW5BBQ8YZNN2", "artifact", "{\"location\":\"\"}" },
+                    { "01KN8K1MRTJD1NCG0J9R4364MJ", "01KN8K1MRQ0K06ADYJJ8VAXG5Y", "process", "{\"discoveryStrategy\":\"DotNetRuntimeConfiguration\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":30}" },
+                    { "01KN8K1MRTP60DVWP6ERZ8R4F9", "01KN8K1MRQ0K06ADYJJ8VAXG5Y", "artifact", "{\"location\":\"\"}" },
+                    { "01KN8K1MRTT086R433KGMBT21A", "01KN8K1MRT4XGXXW5BBQ8YZNN2", "auto-start", "{\"enabled\":true}" },
+                    { "01KN8K1MRTZZ9PJ1QMZSG5QHRE", "01KN8K1MRT4XGXXW5BBQ8YZNN2", "environment-defaults", "{\"variables\":{\"NODE_ENV\":\"production\"}}" }
                 });
 
             migrationBuilder.CreateIndex(

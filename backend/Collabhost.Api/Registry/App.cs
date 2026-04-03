@@ -1,6 +1,6 @@
 namespace Collabhost.Api.Registry;
 
-public sealed class App
+public class App
 {
     public Ulid Id { get; init; } = Ulid.NewUlid();
 
@@ -14,6 +14,5 @@ public sealed class App
 
     public DateTime? ModifiedAt { get; set; }
 
-    // Navigation (loaded when needed, not eagerly)
     public AppType? AppType { get; init; }
 }

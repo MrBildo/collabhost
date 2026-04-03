@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Collabhost.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260403010612_InitialCreate")]
+    [Migration("20260403023714_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -50,127 +50,127 @@ namespace Collabhost.Api.Data.Migrations
                     b.HasData(
                         new
                         {
-                            Id = "01JQDZ00000000000DNETBND01",
-                            AppTypeId = "01JQDZ000000000000000DNETA",
+                            Id = "01KN8K1MRTP60DVWP6ERZ8R4F9",
+                            AppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
                             CapabilitySlug = "artifact",
                             DefaultConfigurationJson = "{\"location\":\"\"}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000DNETBND02",
-                            AppTypeId = "01JQDZ000000000000000DNETA",
+                            Id = "01KN8K1MRTJD1NCG0J9R4364MJ",
+                            AppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
                             CapabilitySlug = "process",
                             DefaultConfigurationJson = "{\"discoveryStrategy\":\"DotNetRuntimeConfiguration\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":30}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000DNETBND03",
-                            AppTypeId = "01JQDZ000000000000000DNETA",
+                            Id = "01KN8K1MRTCFS85XS4TRW6EGSR",
+                            AppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
                             CapabilitySlug = "port-injection",
                             DefaultConfigurationJson = "{\"environmentVariableName\":\"ASPNETCORE_URLS\",\"portFormat\":\"http://localhost:{port}\"}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000DNETBND04",
-                            AppTypeId = "01JQDZ000000000000000DNETA",
+                            Id = "01KN8K1MRT34CN63B8QZ96N3Q7",
+                            AppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
                             CapabilitySlug = "routing",
                             DefaultConfigurationJson = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"ReverseProxy\",\"spaFallback\":false}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000DNETBND05",
-                            AppTypeId = "01JQDZ000000000000000DNETA",
+                            Id = "01KN8K1MRTG49PHRKY1N3DMFKN",
+                            AppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
                             CapabilitySlug = "health-check",
                             DefaultConfigurationJson = "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000DNETBND06",
-                            AppTypeId = "01JQDZ000000000000000DNETA",
+                            Id = "01KN8K1MRTGF8GQ3X2CFS2JCQS",
+                            AppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
                             CapabilitySlug = "restart",
                             DefaultConfigurationJson = "{\"policy\":\"OnCrash\"}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000DNETBND07",
-                            AppTypeId = "01JQDZ000000000000000DNETA",
+                            Id = "01KN8K1MRT1SW33ZS6DK4TTGKB",
+                            AppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
                             CapabilitySlug = "auto-start",
                             DefaultConfigurationJson = "{\"enabled\":true}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000DNETBND08",
-                            AppTypeId = "01JQDZ000000000000000DNETA",
+                            Id = "01KN8K1MRT0B5TF2TTXV68DAFJ",
+                            AppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
                             CapabilitySlug = "environment-defaults",
                             DefaultConfigurationJson = "{\"variables\":{\"ASPNETCORE_ENVIRONMENT\":\"Production\"}}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000NZDEBND01",
-                            AppTypeId = "01JQDZ000000000000000QZDEA",
+                            Id = "01KN8K1MRTHFBR5P75WEE5K3NT",
+                            AppTypeId = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
                             CapabilitySlug = "artifact",
                             DefaultConfigurationJson = "{\"location\":\"\"}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000NZDEBND02",
-                            AppTypeId = "01JQDZ000000000000000QZDEA",
+                            Id = "01KN8K1MRT9RES6FCWSNFYNXGK",
+                            AppTypeId = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
                             CapabilitySlug = "process",
                             DefaultConfigurationJson = "{\"discoveryStrategy\":\"PackageJson\",\"gracefulShutdown\":true,\"shutdownTimeoutSeconds\":15}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000NZDEBND03",
-                            AppTypeId = "01JQDZ000000000000000QZDEA",
+                            Id = "01KN8K1MRTD4TJKKDPGHG36Z4K",
+                            AppTypeId = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
                             CapabilitySlug = "port-injection",
                             DefaultConfigurationJson = "{\"environmentVariableName\":\"PORT\",\"portFormat\":\"{port}\"}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000NZDEBND04",
-                            AppTypeId = "01JQDZ000000000000000QZDEA",
+                            Id = "01KN8K1MRTGPRVSG3F6EJBB8CM",
+                            AppTypeId = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
                             CapabilitySlug = "routing",
                             DefaultConfigurationJson = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"ReverseProxy\",\"spaFallback\":false}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000NZDEBND05",
-                            AppTypeId = "01JQDZ000000000000000QZDEA",
+                            Id = "01KN8K1MRTEFCM6C0ZXM6GFM68",
+                            AppTypeId = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
                             CapabilitySlug = "health-check",
                             DefaultConfigurationJson = "{\"endpoint\":\"/health\",\"intervalSeconds\":30,\"timeoutSeconds\":5}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000NZDEBND06",
-                            AppTypeId = "01JQDZ000000000000000QZDEA",
+                            Id = "01KN8K1MRT9D970Y0XZR74W1Z1",
+                            AppTypeId = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
                             CapabilitySlug = "restart",
                             DefaultConfigurationJson = "{\"policy\":\"OnCrash\"}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000NZDEBND07",
-                            AppTypeId = "01JQDZ000000000000000QZDEA",
+                            Id = "01KN8K1MRTT086R433KGMBT21A",
+                            AppTypeId = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
                             CapabilitySlug = "auto-start",
                             DefaultConfigurationJson = "{\"enabled\":true}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000NZDEBND08",
-                            AppTypeId = "01JQDZ000000000000000QZDEA",
+                            Id = "01KN8K1MRTZZ9PJ1QMZSG5QHRE",
+                            AppTypeId = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
                             CapabilitySlug = "environment-defaults",
                             DefaultConfigurationJson = "{\"variables\":{\"NODE_ENV\":\"production\"}}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000STATBND01",
-                            AppTypeId = "01JQDZ000000000000000STATA",
+                            Id = "01KN8K1MRTE14RGEAS4VDD44P3",
+                            AppTypeId = "01KN8K1MRT26VCX65J1ZSVWESB",
                             CapabilitySlug = "artifact",
                             DefaultConfigurationJson = "{\"location\":\"\"}"
                         },
                         new
                         {
-                            Id = "01JQDZ00000000000STATBND02",
-                            AppTypeId = "01JQDZ000000000000000STATA",
+                            Id = "01KN8K1MRTETFY88Z8FTJGCBB5",
+                            AppTypeId = "01KN8K1MRT26VCX65J1ZSVWESB",
                             CapabilitySlug = "routing",
                             DefaultConfigurationJson = "{\"domainPattern\":\"{slug}.collab.internal\",\"serveMode\":\"FileServer\",\"spaFallback\":true}"
                         });
@@ -280,8 +280,8 @@ namespace Collabhost.Api.Data.Migrations
                     b.HasData(
                         new
                         {
-                            Id = "01JQDZ000000000000000DNETA",
-                            CreatedAt = new DateTime(2026, 4, 3, 1, 6, 12, 198, DateTimeKind.Utc).AddTicks(6729),
+                            Id = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
+                            CreatedAt = new DateTime(2026, 4, 3, 2, 37, 13, 803, DateTimeKind.Utc).AddTicks(5489),
                             Description = "ASP.NET Core or .NET console application",
                             DisplayName = ".NET Application",
                             IsBuiltIn = true,
@@ -290,8 +290,8 @@ namespace Collabhost.Api.Data.Migrations
                         },
                         new
                         {
-                            Id = "01JQDZ000000000000000QZDEA",
-                            CreatedAt = new DateTime(2026, 4, 3, 1, 6, 12, 199, DateTimeKind.Utc).AddTicks(3222),
+                            Id = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
+                            CreatedAt = new DateTime(2026, 4, 3, 2, 37, 13, 804, DateTimeKind.Utc).AddTicks(2115),
                             Description = "Server-side JavaScript with npm",
                             DisplayName = "Node.js Application",
                             IsBuiltIn = true,
@@ -300,8 +300,8 @@ namespace Collabhost.Api.Data.Migrations
                         },
                         new
                         {
-                            Id = "01JQDZ000000000000000STATA",
-                            CreatedAt = new DateTime(2026, 4, 3, 1, 6, 12, 199, DateTimeKind.Utc).AddTicks(3229),
+                            Id = "01KN8K1MRT26VCX65J1ZSVWESB",
+                            CreatedAt = new DateTime(2026, 4, 3, 2, 37, 13, 804, DateTimeKind.Utc).AddTicks(2127),
                             Description = "Static files served by Caddy",
                             DisplayName = "Static Site",
                             IsBuiltIn = true,
