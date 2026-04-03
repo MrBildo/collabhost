@@ -66,6 +66,31 @@ public class ProxyManagerTests
     }
 
     [Fact]
+    public void EnableRoute_AfterDisable_ThenRequestSync_DoesNotThrow()
+    {
+        var manager = CreateProxyManager();
+
+        manager.DisableRoute("my-app");
+        manager.IsRouteEnabled("my-app").ShouldBeFalse();
+
+        manager.EnableRoute("my-app");
+        manager.IsRouteEnabled("my-app").ShouldBeTrue();
+
+        Should.NotThrow(() => manager.RequestSync());
+    }
+
+    [Fact]
+    public void DisableRoute_ThenRequestSync_DoesNotThrow()
+    {
+        var manager = CreateProxyManager();
+
+        manager.DisableRoute("static-site");
+        manager.IsRouteEnabled("static-site").ShouldBeFalse();
+
+        Should.NotThrow(() => manager.RequestSync());
+    }
+
+    [Fact]
     public void RequestSync_DoesNotThrow() =>
         Should.NotThrow(() => CreateProxyManager().RequestSync());
 

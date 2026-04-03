@@ -259,6 +259,24 @@ public class ProxyConfigurationBuilderTests
     }
 
     [Fact]
+    public void Build_DisabledFileServerRoute_Returns503NotFileServer()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new("static-site", ServeMode.FileServer, Port: null, SpaFallback: true, ArtifactDirectory: "/srv/site", Enabled: false)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings);
+
+        var appRoute = GetRoutes(config)![1]!;
+        appRoute["@id"]!.GetValue<string>().ShouldBe("route_static-site");
+
+        var handler = appRoute["handle"]![0]!;
+        handler["handler"]!.GetValue<string>().ShouldBe("static_response");
+        handler["status_code"]!.GetValue<string>().ShouldBe("503");
+    }
+
+    [Fact]
     public void Build_CertLifetime_ReflectedInTlsConfig()
     {
         var settings = new ProxySettings

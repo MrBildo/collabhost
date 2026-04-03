@@ -59,6 +59,11 @@ public static class AppEndpoints
                 b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
             );
 
+            var hasRouting = bindings.Any
+            (
+                b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
+            );
+
             var routingBinding = bindings.SingleOrDefault
             (
                 b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
@@ -81,11 +86,9 @@ public static class AppEndpoints
             var domain = routingConfiguration?.DomainPattern
                 .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
 
-            var domainActive = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
+            var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-            var status = hasProcess
-                ? (process?.State ?? ProcessState.Stopped)
-                : ProcessState.Stopped;
+            var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
             items.Add
             (
@@ -97,13 +100,13 @@ public static class AppEndpoints
                     new AppTypeRef(app.AppType.Slug, app.AppType.DisplayName),
                     status.ToApiString(),
                     domain,
-                    domainActive,
+                    routeEnabled,
                     process?.Port,
                     process?.UptimeSeconds,
                     new AppListActions
                     (
-                        hasProcess && status is ProcessState.Stopped or ProcessState.Crashed,
-                        hasProcess && status == ProcessState.Running
+                        CanStart(hasProcess, hasRouting, status),
+                        CanStop(hasProcess, hasRouting, status)
                     )
                 )
             );
@@ -137,9 +140,10 @@ public static class AppEndpoints
             b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
         );
 
-        var status = hasProcess
-            ? (process?.State ?? ProcessState.Stopped)
-            : ProcessState.Stopped;
+        var hasRouting = bindings.Any
+        (
+            b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
+        );
 
         // Routing
         var routingBinding = bindings.SingleOrDefault
@@ -164,7 +168,9 @@ public static class AppEndpoints
         var domain = routingConfiguration?.DomainPattern
             .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
 
-        var domainActive = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
+        var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
+
+        var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
         // Restart policy + auto-start
         string? restartPolicyValue = null;
@@ -228,7 +234,7 @@ public static class AppEndpoints
             route = new AppRoute(domain, target, true);
         }
 
-        var actions = BuildActions(hasProcess, status);
+        var actions = BuildActions(hasProcess, hasRouting, status);
 
         var detail = new AppDetail
         (
@@ -250,7 +256,7 @@ public static class AppEndpoints
             restartPolicyValue,
             autoStartValue,
             domain,
-            domainActive,
+            routeEnabled,
             null,
             tags,
             null,
@@ -363,7 +369,7 @@ public static class AppEndpoints
             {
                 return TypedResults.Problem
                 (
-                    detail: string.Join("; ", validationErrors),
+                    string.Join("; ", validationErrors),
                     statusCode: 400
                 );
             }
@@ -419,6 +425,7 @@ public static class AppEndpoints
         string slug,
         AppStore store,
         ProcessSupervisor supervisor,
+        ProxyManager proxy,
         CancellationToken ct
     )
     {
@@ -429,12 +436,28 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
+        var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
+        var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
+
+        // Routing-only apps (e.g. static sites): enable route instead of starting a process
+        if (!hasProcess && hasRouting)
+        {
+            proxy.EnableRoute(app.Slug);
+            proxy.RequestSync();
+
+            var status = ProcessState.Running;
+            var actions = BuildActions(hasProcess, hasRouting, status);
+
+            return TypedResults.Ok
+            (
+                new AppActionResult(app.Id.ToString(), status.ToApiString(), actions)
+            );
+        }
+
         try
         {
             var managed = await supervisor.StartAppAsync(app.Id, ct);
-
-            var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
-            var actions = BuildActions(hasProcess, managed.State);
+            var actions = BuildActions(hasProcess, hasRouting, managed.State);
 
             return TypedResults.Ok
             (
@@ -443,7 +466,7 @@ public static class AppEndpoints
         }
         catch (InvalidOperationException exception)
         {
-            return TypedResults.Problem(detail: exception.Message, statusCode: 409);
+            return TypedResults.Problem(exception.Message, statusCode: 409);
         }
     }
 
@@ -452,6 +475,7 @@ public static class AppEndpoints
         string slug,
         AppStore store,
         ProcessSupervisor supervisor,
+        ProxyManager proxy,
         CancellationToken ct
     )
     {
@@ -462,12 +486,28 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
+        var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
+        var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
+
+        // Routing-only apps (e.g. static sites): disable route instead of stopping a process
+        if (!hasProcess && hasRouting)
+        {
+            proxy.DisableRoute(app.Slug);
+            proxy.RequestSync();
+
+            var status = ProcessState.Stopped;
+            var actions = BuildActions(hasProcess, hasRouting, status);
+
+            return TypedResults.Ok
+            (
+                new AppActionResult(app.Id.ToString(), status.ToApiString(), actions)
+            );
+        }
+
         try
         {
             var managed = await supervisor.StopAppAsync(app.Id, ct);
-
-            var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
-            var actions = BuildActions(hasProcess, managed.State);
+            var actions = BuildActions(hasProcess, hasRouting, managed.State);
 
             return TypedResults.Ok
             (
@@ -476,7 +516,7 @@ public static class AppEndpoints
         }
         catch (InvalidOperationException exception)
         {
-            return TypedResults.Problem(detail: exception.Message, statusCode: 409);
+            return TypedResults.Problem(exception.Message, statusCode: 409);
         }
     }
 
@@ -500,7 +540,8 @@ public static class AppEndpoints
             var managed = await supervisor.RestartAppAsync(app.Id, ct);
 
             var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
-            var actions = BuildActions(hasProcess, managed.State);
+            var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
+            var actions = BuildActions(hasProcess, hasRouting, managed.State);
 
             return TypedResults.Ok
             (
@@ -509,7 +550,7 @@ public static class AppEndpoints
         }
         catch (InvalidOperationException exception)
         {
-            return TypedResults.Problem(detail: exception.Message, statusCode: 409);
+            return TypedResults.Problem(exception.Message, statusCode: 409);
         }
     }
 
@@ -536,7 +577,8 @@ public static class AppEndpoints
             var state = process?.State ?? ProcessState.Stopped;
 
             var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
-            var actions = BuildActions(hasProcess, state);
+            var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
+            var actions = BuildActions(hasProcess, hasRouting, state);
 
             return TypedResults.Ok
             (
@@ -545,7 +587,7 @@ public static class AppEndpoints
         }
         catch (InvalidOperationException exception)
         {
-            return TypedResults.Problem(detail: exception.Message, statusCode: 409);
+            return TypedResults.Problem(exception.Message, statusCode: 409);
         }
     }
 
@@ -614,7 +656,7 @@ public static class AppEndpoints
 
         if (!isValid)
         {
-            return TypedResults.Problem(detail: error, statusCode: 400);
+            return TypedResults.Problem(error, statusCode: 400);
         }
 
         var exists = await store.ExistsBySlugAsync(request.Name, ct);
@@ -623,21 +665,21 @@ public static class AppEndpoints
         {
             return TypedResults.Problem
             (
-                detail: $"An app with slug '{request.Name}' already exists.",
+                $"An app with slug '{request.Name}' already exists.",
                 statusCode: 409
             );
         }
 
         if (!Ulid.TryParse(request.AppTypeId, out var appTypeId))
         {
-            return TypedResults.Problem(detail: "Invalid app type ID.", statusCode: 400);
+            return TypedResults.Problem("Invalid app type ID.", statusCode: 400);
         }
 
         var appType = await store.GetAppTypeByIdAsync(appTypeId, ct);
 
         if (appType is null)
         {
-            return TypedResults.Problem(detail: "App type not found.", statusCode: 404);
+            return TypedResults.Problem("App type not found.", statusCode: 404);
         }
 
         var app = new App
@@ -727,11 +769,30 @@ public static class AppEndpoints
         return TypedResults.NoContent();
     }
 
-    private static AppActions BuildActions(bool hasProcess, ProcessState status) =>
+    private static ProcessState ResolveStatus
+    (
+        bool hasProcess,
+        ManagedProcess? process,
+        bool hasRouting,
+        bool routeEnabled
+    ) =>
+        hasProcess
+            ? process?.State ?? ProcessState.Stopped
+            : hasRouting && routeEnabled
+                ? ProcessState.Running
+                : ProcessState.Stopped;
+
+    private static bool CanStart(bool hasProcess, bool hasRouting, ProcessState status) =>
+        (hasProcess || hasRouting) && status is ProcessState.Stopped or ProcessState.Crashed;
+
+    private static bool CanStop(bool hasProcess, bool hasRouting, ProcessState status) =>
+        (hasProcess || hasRouting) && status == ProcessState.Running;
+
+    private static AppActions BuildActions(bool hasProcess, bool hasRouting, ProcessState status) =>
         new
         (
-            hasProcess && status is ProcessState.Stopped or ProcessState.Crashed,
-            hasProcess && status == ProcessState.Running,
+            CanStart(hasProcess, hasRouting, status),
+            CanStop(hasProcess, hasRouting, status),
             hasProcess && status == ProcessState.Running,
             hasProcess && status is ProcessState.Running or ProcessState.Starting or ProcessState.Restarting,
             false
@@ -874,11 +935,11 @@ public static class AppEndpoints
                         value,
                         defaultValue,
                         fieldDescriptor.Editable,
-                        Options: fieldDescriptor.Options?
+                        fieldDescriptor.Options?
                             .Select(o => new FieldOption(o.Value.ToCamelCase(), o.Label))
                                 .ToList(),
-                        HelpText: fieldDescriptor.HelpText,
-                        Unit: fieldDescriptor.Unit
+                        fieldDescriptor.HelpText,
+                        fieldDescriptor.Unit
                     )
                 );
             }
