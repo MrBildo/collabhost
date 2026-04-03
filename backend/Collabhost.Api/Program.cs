@@ -1,3 +1,4 @@
+using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
 using Collabhost.Api.Registry;
 
@@ -16,6 +17,7 @@ builder.Services.AddMemoryCache();
 
 // Subsystems
 builder.Services.AddRegistry();
+builder.Services.AddCapabilities();
 
 // OpenAPI
 builder.Services.AddOpenApi();
