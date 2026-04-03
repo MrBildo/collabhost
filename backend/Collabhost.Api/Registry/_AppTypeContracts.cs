@@ -4,8 +4,6 @@ namespace Collabhost.Api.Registry;
 
 // JSON-serialized DTOs -- List<T> is practical for response types
 #pragma warning disable MA0016
-#pragma warning disable MA0053 // API contract records are unsealed by convention -- no inheritance concern for DTOs
-
 // --- App Type List ---
 
 public record AppTypeListItem
