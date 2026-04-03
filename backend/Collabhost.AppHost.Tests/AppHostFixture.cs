@@ -9,15 +9,20 @@ namespace Collabhost.AppHost.Tests;
 public class AppHostFixture : IAsyncLifetime
 {
     private DistributedApplication? _app;
-
-    public const string TestAdminKey = "smoke-test-admin-key";
+    private string? _dbDirectory;
 
     public HttpClient ApiClient { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
-        // Set auth key as env var — inherited by child API process
-        Environment.SetEnvironmentVariable("AUTH__ADMINKEY", TestAdminKey);
+        // Create a temp directory for the SQLite database
+        _dbDirectory = Path.Combine(Path.GetTempPath(), "collabhost-smoke", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_dbDirectory);
+
+        var dbPath = Path.Combine(_dbDirectory, "collabhost.db");
+
+        // Override the connection string via env var — Aspire passes this to the API process
+        Environment.SetEnvironmentVariable("ConnectionStrings__Host", $"Data Source={dbPath}");
 
         var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.Collabhost_AppHost>();
@@ -32,7 +37,6 @@ public class AppHostFixture : IAsyncLifetime
             .WaitAsync(TimeSpan.FromSeconds(30));
 
         ApiClient = _app.CreateHttpClient("api");
-        ApiClient.DefaultRequestHeaders.Add("X-User-Key", TestAdminKey);
     }
 
     public async Task DisposeAsync()
@@ -42,7 +46,19 @@ public class AppHostFixture : IAsyncLifetime
             await _app.DisposeAsync();
         }
 
-        Environment.SetEnvironmentVariable("AUTH__ADMINKEY", null);
+        Environment.SetEnvironmentVariable("ConnectionStrings__Host", null);
+
+        if (_dbDirectory is not null && Directory.Exists(_dbDirectory))
+        {
+            try
+            {
+                Directory.Delete(_dbDirectory, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup
+            }
+        }
     }
 }
 

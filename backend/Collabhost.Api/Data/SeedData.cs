@@ -6,6 +6,9 @@ namespace Collabhost.Api.Data;
 #pragma warning disable CA1305, MA0011, MA0076 // Ulid.Parse/ToString are not locale-sensitive
 public static class SeedData
 {
+    // Fixed timestamp for seed data — avoids EF PendingModelChangesWarning from DateTime.UtcNow defaults
+    private static readonly DateTime _seedTimestamp = new(2026, 4, 3, 0, 0, 0, DateTimeKind.Utc);
+
     public static void Apply(ModelBuilder modelBuilder)
     {
         var appTypes = SeedAppTypes(modelBuilder);
@@ -34,6 +37,7 @@ public static class SeedData
             DisplayName = ".NET Application",
             Description = "ASP.NET Core or .NET console application",
             IsBuiltIn = true,
+            CreatedAt = _seedTimestamp,
             MetadataJson = """{"runtime":{"name":".NET","version":"10","targetFramework":"net10.0"}}"""
         };
 
@@ -44,6 +48,7 @@ public static class SeedData
             DisplayName = "Node.js Application",
             Description = "Server-side JavaScript with npm",
             IsBuiltIn = true,
+            CreatedAt = _seedTimestamp,
             MetadataJson = """{"runtime":{"name":"Node.js","version":"22","packageManager":"npm"}}"""
         };
 
@@ -54,6 +59,7 @@ public static class SeedData
             DisplayName = "Static Site",
             Description = "Static files served by Caddy",
             IsBuiltIn = true,
+            CreatedAt = _seedTimestamp,
             MetadataJson = null
         };
 
@@ -64,6 +70,7 @@ public static class SeedData
             DisplayName = "System Service",
             Description = "Infrastructure process with no routing or port injection",
             IsBuiltIn = true,
+            CreatedAt = _seedTimestamp,
             MetadataJson = null
         };
 
@@ -74,6 +81,7 @@ public static class SeedData
             DisplayName = "Executable",
             Description = "Generic binary with port injection and reverse proxy routing",
             IsBuiltIn = true,
+            CreatedAt = _seedTimestamp,
             MetadataJson = null
         };
 
