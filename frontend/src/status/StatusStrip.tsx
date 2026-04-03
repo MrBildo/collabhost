@@ -12,7 +12,7 @@ type StatusStripProps = {
   className?: string
 }
 
-const COLOR_CLASSES: Record<string, string> = {
+const COLOR_CLASSES: Record<NonNullable<StatusCell['color']>, string> = {
   amber: 'wm-status-cell__value--amber',
   green: 'wm-status-cell__value--green',
   red: 'wm-status-cell__value--red',

@@ -1,10 +1,134 @@
+import { ActionButton } from '@/actions/ActionButton'
+import type { RouteEntry } from '@/api/types'
+import { Breadcrumbs } from '@/chrome/Breadcrumbs'
+import { useReloadProxy, useRoutes } from '@/hooks/use-routes'
+import { ROUTES } from '@/lib/routes'
+import { EmptyState } from '@/shared/EmptyState'
+import { ErrorBanner } from '@/shared/ErrorBanner'
+import { Spinner } from '@/shared/Spinner'
+import type { Column } from '@/tables/DataTable'
+import { DataTable } from '@/tables/DataTable'
+import { useNavigate } from 'react-router-dom'
+
 function RoutesPage() {
+  const navigate = useNavigate()
+  const routesQuery = useRoutes()
+  const reloadMutation = useReloadProxy()
+
+  const routes = routesQuery.data?.routes ?? []
+  const baseDomain = routesQuery.data?.baseDomain ?? ''
+
+  const columns: Column<RouteEntry>[] = [
+    {
+      key: 'domain',
+      header: 'Domain',
+      sortFn: (a, b) => a.domain.localeCompare(b.domain),
+      render: (route) => (
+        <span className="text-xs" style={{ color: 'var(--wm-text-bright)', fontWeight: 600 }}>
+          {route.domain}
+        </span>
+      ),
+    },
+    {
+      key: 'target',
+      header: 'Target',
+      render: (route) => (
+        <span className="text-xs" style={{ color: 'var(--wm-text-dim)', fontVariantNumeric: 'tabular-nums' }}>
+          {route.target}
+        </span>
+      ),
+    },
+    {
+      key: 'proxyMode',
+      header: 'Mode',
+      render: (route) => (
+        <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
+          {route.proxyMode}
+        </span>
+      ),
+    },
+    {
+      key: 'https',
+      header: 'HTTPS',
+      width: '60px',
+      render: (route) => (
+        <span className="text-xs" style={{ color: route.https ? 'var(--wm-green)' : 'var(--wm-text-dim)' }}>
+          {route.https ? 'Yes' : 'No'}
+        </span>
+      ),
+    },
+    {
+      key: 'app',
+      header: 'App',
+      render: (route) => (
+        <button
+          type="button"
+          className="text-xs wm-link"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--wm-amber)' }}
+          onClick={(e) => {
+            e.stopPropagation()
+            navigate(ROUTES.appDetail(route.appName))
+          }}
+        >
+          {route.appDisplayName}
+        </button>
+      ),
+    },
+  ]
+
+  if (routesQuery.isLoading) {
+    return (
+      <div className="py-8">
+        <Spinner />
+      </div>
+    )
+  }
+
   return (
     <div>
-      <h1 className="wm-section-title mb-6">Proxy Routes</h1>
-      <p className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-        Route listing with domain, target, mode, and TLS status.
-      </p>
+      <Breadcrumbs
+        segments={[{ label: 'Routes' }]}
+        actions={
+          <ActionButton size="sm" onClick={() => reloadMutation.mutate()} disabled={reloadMutation.isPending}>
+            {reloadMutation.isPending ? 'Reloading...' : 'Reload Proxy'}
+          </ActionButton>
+        }
+      />
+
+      {routesQuery.error && (
+        <ErrorBanner
+          message={routesQuery.error instanceof Error ? routesQuery.error.message : 'Failed to load routes'}
+          className="mb-4"
+        />
+      )}
+
+      {reloadMutation.isError && (
+        <ErrorBanner
+          message={reloadMutation.error instanceof Error ? reloadMutation.error.message : 'Failed to reload proxy'}
+          className="mb-4"
+        />
+      )}
+
+      {reloadMutation.isSuccess && (
+        <div className="wm-alert mb-4" style={{ borderColor: 'var(--wm-green)', color: 'var(--wm-green)' }}>
+          Proxy configuration reloaded successfully.
+        </div>
+      )}
+
+      {baseDomain && (
+        <div className="mb-3 text-xs" style={{ color: 'var(--wm-text-dim)' }}>
+          Base domain: <span style={{ color: 'var(--wm-text-bright)' }}>{baseDomain}</span>
+        </div>
+      )}
+
+      {routes.length === 0 ? (
+        <EmptyState
+          title="No routes configured"
+          description="Routes are created automatically when apps with domains are registered."
+        />
+      ) : (
+        <DataTable columns={columns} data={routes} keyFn={(route) => route.appExternalId} />
+      )}
     </div>
   )
 }

@@ -48,19 +48,7 @@ function KeyValueField({ value, onChange, disabled, className }: KeyValueFieldPr
           </div>
           <div className="flex items-center justify-center">
             {!disabled && (
-              <button
-                type="button"
-                className="text-xs"
-                style={{ color: 'var(--wm-text-dim)', cursor: 'pointer' }}
-                onClick={() => handleRemove(k)}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = 'var(--wm-red)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = 'var(--wm-text-dim)'
-                }}
-                aria-label={`Remove ${k}`}
-              >
+              <button type="button" className="wm-kv-remove" onClick={() => handleRemove(k)} aria-label={`Remove ${k}`}>
                 x
               </button>
             )}
@@ -68,7 +56,10 @@ function KeyValueField({ value, onChange, disabled, className }: KeyValueFieldPr
         </div>
       ))}
       {!disabled && (
-        <div className="wm-kv-row" style={{ borderTop: entries.length > 0 ? '1px solid rgba(42,42,42,0.5)' : 'none' }}>
+        <div
+          className="wm-kv-row"
+          style={{ borderTop: entries.length > 0 ? '1px solid var(--wm-border-subtle)' : 'none' }}
+        >
           <div className="wm-kv-key" style={{ color: 'var(--wm-text-dim)' }}>
             <input
               type="text"

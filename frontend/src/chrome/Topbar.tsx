@@ -43,19 +43,7 @@ function Topbar() {
 
         {/* Right side: hostname + shortcut hint */}
         <div className="ml-auto flex items-center gap-4">
-          <span className="text-xs" style={{ color: 'var(--wm-text-dim)', letterSpacing: '0.04em' }}>
-            <kbd
-              className="px-1.5 py-0.5 rounded"
-              style={{
-                background: 'var(--wm-bg-inset)',
-                border: '1px solid var(--wm-border)',
-                fontSize: '9px',
-                fontFamily: 'var(--wm-mono)',
-              }}
-            >
-              Ctrl+K
-            </kbd>
-          </span>
+          <kbd className="wm-kbd">Ctrl+K</kbd>
         </div>
       </div>
     </nav>

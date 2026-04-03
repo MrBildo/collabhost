@@ -226,7 +226,7 @@
 .wm-input--readonly {
   background: var(--wm-bg);
   color: var(--wm-text-dim);
-  border-color: rgba(42, 42, 42, 0.5);
+  border-color: var(--wm-border-subtle);
   cursor: default;
 }
 
@@ -464,6 +464,19 @@
   border-bottom-color: var(--wm-amber);
 }
 
+/* === Kbd === */
+
+.wm-kbd {
+  padding: 2px 6px;
+  border-radius: var(--wm-radius);
+  background: var(--wm-bg-inset);
+  border: 1px solid var(--wm-border);
+  font-family: var(--wm-mono);
+  font-size: 9px;
+  color: var(--wm-text-dim);
+  letter-spacing: 0.04em;
+}
+
 /* === Loading === */
 
 .wm-loading-bar {
@@ -523,6 +536,13 @@
   border: 1px solid var(--wm-green-border);
 }
 
+/* === Settings Field Separator === */
+
+.wm-settings-field-separator {
+  padding-top: 8px;
+  border-top: 1px solid var(--wm-border-subtle);
+}
+
 /* === Danger Zone === */
 
 .wm-danger-zone {
@@ -552,7 +572,7 @@
 .wm-kv-row {
   display: grid;
   grid-template-columns: 140px 1fr 32px;
-  border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+  border-bottom: 1px solid var(--wm-border-subtle);
   align-items: center;
 }
 
@@ -565,13 +585,26 @@
   font-size: 11px;
   color: var(--wm-amber);
   font-weight: 600;
-  border-right: 1px solid rgba(42, 42, 42, 0.5);
+  border-right: 1px solid var(--wm-border-subtle);
 }
 
 .wm-kv-value {
   padding: 7px 12px;
   font-size: 11px;
   color: var(--wm-text);
+}
+
+.wm-kv-remove {
+  font-size: 11px;
+  color: var(--wm-text-dim);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.wm-kv-remove:hover {
+  color: var(--wm-red);
 }
 
 /* === Data Table === */
@@ -595,7 +628,7 @@
 
 .wm-table td {
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+  border-bottom: 1px solid var(--wm-border-subtle);
   vertical-align: middle;
 }
 
@@ -708,7 +741,7 @@
   display: flex;
   justify-content: space-between;
   padding: 5px 0;
-  border-bottom: 1px solid rgba(42, 42, 42, 0.5);
+  border-bottom: 1px solid var(--wm-border-subtle);
   font-size: 11px;
 }
 
@@ -817,4 +850,219 @@
   padding: 32px;
   max-width: 400px;
   width: 100%;
+}
+
+/* === Type Card (Registration) === */
+
+.wm-type-card {
+  background: var(--wm-bg-panel);
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-md);
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.wm-type-card:hover {
+  background: var(--wm-bg-hover);
+  border-color: var(--wm-border-active);
+}
+
+.wm-type-card--selected {
+  background: var(--wm-amber-dim);
+  border-color: var(--wm-amber-border);
+}
+
+.wm-type-card__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wm-text-bright);
+  margin-bottom: 2px;
+}
+
+.wm-type-card--selected .wm-type-card__name {
+  color: var(--wm-amber);
+}
+
+.wm-type-card__desc {
+  font-size: 10px;
+  color: var(--wm-text-dim);
+  line-height: 1.4;
+}
+
+.wm-type-card__tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.wm-type-card__tag {
+  font-family: var(--wm-mono);
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: var(--wm-radius-sm);
+  background: var(--wm-bg-inset);
+  color: var(--wm-text-dim);
+  border: 1px solid var(--wm-border);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wm-type-card--selected .wm-type-card__tag {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: var(--wm-amber);
+}
+
+/* === Confirm Dialog === */
+
+dialog.wm-dialog-overlay {
+  /* Reset native dialog styles for showModal() */
+  border: none;
+  padding: 0;
+  margin: auto;
+  max-width: none;
+  max-height: none;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+}
+
+dialog.wm-dialog-overlay::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+  animation: wm-fade-in 0.12s ease-out;
+}
+
+.wm-dialog {
+  background: var(--wm-bg-panel);
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-md);
+  padding: 24px;
+  max-width: 440px;
+  width: 90%;
+  animation: wm-slide-up 0.15s ease-out;
+}
+
+.wm-dialog__title {
+  font-family: var(--wm-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--wm-text-bright);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+
+.wm-dialog__body {
+  font-size: 11px;
+  color: var(--wm-text-dim);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.wm-dialog__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@keyframes wm-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes wm-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* === Step Indicator (Registration) === */
+
+.wm-steps {
+  display: flex;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.wm-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--wm-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--wm-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.wm-step--active {
+  color: var(--wm-amber);
+}
+
+.wm-step--done {
+  color: var(--wm-green);
+}
+
+.wm-step__num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid var(--wm-border);
+  background: transparent;
+}
+
+.wm-step--active .wm-step__num {
+  background: var(--wm-amber-dim);
+  border-color: var(--wm-amber-border);
+  color: var(--wm-amber);
+}
+
+.wm-step--done .wm-step__num {
+  background: var(--wm-green-dim);
+  border-color: var(--wm-green-border);
+  color: var(--wm-green);
+}
+
+.wm-step__line {
+  width: 32px;
+  height: 1px;
+  background: var(--wm-border);
+  margin: 0 10px;
+}
+
+.wm-step__line--done {
+  background: var(--wm-green-border);
+}
+
+/* === Settings Field Value (read mode) === */
+
+.wm-field-value {
+  font-size: 12px;
+  color: var(--wm-text-bright);
+  padding-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.wm-field-value--dim {
+  color: var(--wm-text-dim);
 }

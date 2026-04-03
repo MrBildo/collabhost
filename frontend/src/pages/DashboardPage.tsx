@@ -1,5 +1,4 @@
 import { ActionButton } from '@/actions/ActionButton'
-import type { AppListItem } from '@/api/types'
 import { useApps, useStartApp, useStopApp } from '@/hooks/use-apps'
 import { useDashboardEvents, useDashboardStats } from '@/hooks/use-dashboard'
 import { formatMemory } from '@/lib/format'
@@ -9,12 +8,9 @@ import { ErrorBanner } from '@/shared/ErrorBanner'
 import { EventList } from '@/shared/EventList'
 import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
-import { TypeBadge } from '@/shared/TypeBadge'
-import { StatusDot } from '@/status/StatusDot'
 import { StatusStrip } from '@/status/StatusStrip'
-import { StatusText } from '@/status/StatusText'
-import type { Column } from '@/tables/DataTable'
 import { DataTable } from '@/tables/DataTable'
+import { buildDashboardColumns } from '@/tables/app-columns'
 import { Link, useNavigate } from 'react-router-dom'
 
 function DashboardPage() {
@@ -62,87 +58,11 @@ function DashboardPage() {
       ]
     : []
 
-  const columns: Column<AppListItem>[] = [
-    {
-      key: 'status-dot',
-      header: '',
-      width: '28px',
-      render: (app) => <StatusDot status={app.status} />,
-    },
-    {
-      key: 'name',
-      header: 'Name',
-      sortFn: (a, b) => a.displayName.localeCompare(b.displayName),
-      render: (app) => (
-        <div>
-          <div className="text-xs" style={{ color: 'var(--wm-text-bright)', fontWeight: 600 }}>
-            {app.displayName}
-          </div>
-          <div className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-            {app.name}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'type',
-      header: 'Type',
-      render: (app) => <TypeBadge label={app.appType.name} />,
-    },
-    {
-      key: 'status',
-      header: 'Status',
-      render: (app) => <StatusText status={app.status} />,
-    },
-    {
-      key: 'domain',
-      header: 'Domain',
-      render: (app) => (
-        <span
-          className="text-xs"
-          style={{
-            color: app.domainActive ? 'var(--wm-text-dim)' : 'var(--wm-text-dim)',
-            opacity: app.domainActive ? 1 : 0.5,
-          }}
-        >
-          {app.domain ?? '--'}
-        </span>
-      ),
-    },
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'right',
-      render: (app) => {
-        const isAnyPending = startMutation.isPending || stopMutation.isPending
-        return (
-          // biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation prevents row navigation, buttons have own handlers
-          <div className="flex items-center gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
-            {app.actions.canStart && (
-              <ActionButton
-                variant="success"
-                size="sm"
-                disabled={isAnyPending}
-                onClick={() => startMutation.mutate(app.name)}
-              >
-                Start
-              </ActionButton>
-            )}
-            {app.actions.canStop && (
-              <ActionButton
-                variant="default"
-                size="sm"
-                disabled={isAnyPending}
-                onClick={() => stopMutation.mutate(app.name)}
-              >
-                Stop
-              </ActionButton>
-            )}
-          </div>
-        )
-      },
-    },
-  ]
+  const columns = buildDashboardColumns({
+    onStart: (slug) => startMutation.mutate(slug),
+    onStop: (slug) => stopMutation.mutate(slug),
+    isActionPending: startMutation.isPending || stopMutation.isPending,
+  })
 
   if (isLoading) {
     return (

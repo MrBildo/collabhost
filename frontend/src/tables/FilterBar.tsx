@@ -38,6 +38,7 @@ function FilterBar({ activeFilter, onFilterChange, searchTerm, onSearchChange, c
         placeholder="Search apps..."
         value={searchTerm}
         onChange={(e) => onSearchChange(e.target.value)}
+        aria-label="Search apps"
         style={{ maxWidth: 220 }}
       />
     </div>
