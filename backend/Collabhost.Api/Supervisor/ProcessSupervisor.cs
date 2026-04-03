@@ -1,9 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 
-using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
-using Collabhost.Api.Data;
 using Collabhost.Api.Events;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
@@ -13,7 +11,7 @@ namespace Collabhost.Api.Supervisor;
 public class ProcessSupervisor
 (
     IManagedProcessRunner runner,
-    IDbContextFactory<AppDbContext> dbFactory,
+    AppStore appStore,
     IEventBus<ProcessStateChangedEvent> eventBus,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
@@ -21,8 +19,8 @@ public class ProcessSupervisor
     private readonly IManagedProcessRunner _runner = runner
         ?? throw new ArgumentNullException(nameof(runner));
 
-    private readonly IDbContextFactory<AppDbContext> _dbFactory = dbFactory
-        ?? throw new ArgumentNullException(nameof(dbFactory));
+    private readonly AppStore _appStore = appStore
+        ?? throw new ArgumentNullException(nameof(appStore));
 
     private readonly IEventBus<ProcessStateChangedEvent> _eventBus = eventBus
         ?? throw new ArgumentNullException(nameof(eventBus));
@@ -44,17 +42,13 @@ public class ProcessSupervisor
 
         try
         {
-            await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-
-            var apps = await db.Apps
-                .AsNoTracking()
-                    .ToListAsync(cancellationToken);
+            var apps = await _appStore.ListAsync(cancellationToken);
 
             foreach (var app in apps)
             {
-                var autoStartConfiguration = ResolveCapability<AutoStartConfiguration>
+                var autoStartConfiguration = await _appStore.ResolveCapabilityAsync<AutoStartConfiguration>
                 (
-                    db, app.Id, app.AppTypeId, "auto-start"
+                    app.AppTypeId, app.Id, "auto-start", cancellationToken
                 );
 
                 if (autoStartConfiguration is null || !autoStartConfiguration.Enabled)
@@ -62,12 +56,10 @@ public class ProcessSupervisor
                     continue;
                 }
 
-                var hasProcess = await db.CapabilityBindings
-                    .AnyAsync
-                    (
-                        b => b.AppTypeId == app.AppTypeId && b.CapabilitySlug == "process",
-                        cancellationToken
-                    );
+                var hasProcess = await _appStore.HasBindingAsync
+                (
+                    app.AppTypeId, "process", cancellationToken
+                );
 
                 if (!hasProcess)
                 {
@@ -239,29 +231,25 @@ public class ProcessSupervisor
             throw new InvalidOperationException("App is already running.");
         }
 
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-
-        var app = await db.Apps
-            .AsNoTracking()
-                .SingleOrDefaultAsync(a => a.Id == appId, ct)
+        var app = await _appStore.GetByIdAsync(appId, ct)
             ?? throw new InvalidOperationException("App not found.");
 
-        var hasProcess = await db.CapabilityBindings
-            .AnyAsync
-            (
-                b => b.AppTypeId == app.AppTypeId && b.CapabilitySlug == "process",
-                ct
-            );
+        var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
 
         if (!hasProcess)
         {
             throw new InvalidOperationException("This app type does not have a process capability.");
         }
 
-        var processConfiguration = ResolveCapability<ProcessConfiguration>(db, app.Id, app.AppTypeId, "process")
-            ?? throw new InvalidOperationException("Process capability configuration could not be resolved.");
+        var processConfiguration = await _appStore.ResolveCapabilityAsync<ProcessConfiguration>
+        (
+            app.AppTypeId, app.Id, "process", ct
+        ) ?? throw new InvalidOperationException("Process capability configuration could not be resolved.");
 
-        var artifactConfiguration = ResolveCapability<ArtifactConfiguration>(db, app.Id, app.AppTypeId, "artifact");
+        var artifactConfiguration = await _appStore.ResolveCapabilityAsync<ArtifactConfiguration>
+        (
+            app.AppTypeId, app.Id, "artifact", ct
+        );
 
         if (artifactConfiguration is null || string.IsNullOrWhiteSpace(artifactConfiguration.Location))
         {
@@ -284,9 +272,9 @@ public class ProcessSupervisor
 
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        var environmentConfiguration = ResolveCapability<EnvironmentConfiguration>
+        var environmentConfiguration = await _appStore.ResolveCapabilityAsync<EnvironmentConfiguration>
         (
-            db, app.Id, app.AppTypeId, "environment-defaults"
+            app.AppTypeId, app.Id, "environment-defaults", ct
         );
 
         if (environmentConfiguration?.Variables is not null)
@@ -299,9 +287,9 @@ public class ProcessSupervisor
 
         var managed = new ManagedProcess(app.Id, app.Slug, app.DisplayName);
 
-        var portInjectionConfiguration = ResolveCapability<PortInjectionConfiguration>
+        var portInjectionConfiguration = await _appStore.ResolveCapabilityAsync<PortInjectionConfiguration>
         (
-            db, app.Id, app.AppTypeId, "port-injection"
+            app.AppTypeId, app.Id, "port-injection", ct
         );
 
         if (portInjectionConfiguration is not null)
@@ -343,9 +331,9 @@ public class ProcessSupervisor
 
         PublishStateChanged(managed, previousState);
 
-        var restartConfiguration = ResolveCapability<RestartConfiguration>
+        var restartConfiguration = await _appStore.ResolveCapabilityAsync<RestartConfiguration>
         (
-            db, app.Id, app.AppTypeId, "restart"
+            app.AppTypeId, app.Id, "restart", ct
         );
 
         _restartPolicies[appId] = restartConfiguration?.Policy ?? RestartPolicy.Never;
@@ -500,17 +488,13 @@ public class ProcessSupervisor
 
         try
         {
-            await using var db = await _dbFactory.CreateDbContextAsync(CancellationToken.None);
-
-            var app = await db.Apps
-                .AsNoTracking()
-                    .SingleOrDefaultAsync(a => a.Id == appId, CancellationToken.None);
+            var app = await _appStore.GetByIdAsync(appId, CancellationToken.None);
 
             if (app is not null)
             {
-                var processConfiguration = ResolveCapability<ProcessConfiguration>
+                var processConfiguration = await _appStore.ResolveCapabilityAsync<ProcessConfiguration>
                 (
-                    db, app.Id, app.AppTypeId, "process"
+                    app.AppTypeId, app.Id, "process", CancellationToken.None
                 );
 
                 if (processConfiguration is not null)
@@ -668,40 +652,5 @@ public class ProcessSupervisor
         errorProcess.LogBuffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, errorMessage));
 
         _processes[appId] = errorProcess;
-    }
-
-    private static T? ResolveCapability<T>
-    (
-        AppDbContext db,
-        Ulid appId,
-        Ulid appTypeId,
-        string capabilitySlug
-    )
-        where T : class
-    {
-        var binding = db.CapabilityBindings
-            .AsNoTracking()
-                .SingleOrDefault
-                (
-                    b => b.AppTypeId == appTypeId && b.CapabilitySlug == capabilitySlug
-                );
-
-        if (binding is null)
-        {
-            return null;
-        }
-
-        var capabilityOverride = db.CapabilityOverrides
-            .AsNoTracking()
-                .SingleOrDefault
-                (
-                    o => o.AppId == appId && o.CapabilitySlug == capabilitySlug
-                );
-
-        return CapabilityResolver.Resolve<T>
-        (
-            binding.DefaultConfigurationJson,
-            capabilityOverride?.ConfigurationJson
-        );
     }
 }
