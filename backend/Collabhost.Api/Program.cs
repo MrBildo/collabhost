@@ -1,6 +1,7 @@
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
 using Collabhost.Api.Events;
+using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
@@ -22,6 +23,7 @@ builder.Services.AddRegistry();
 builder.Services.AddCapabilities();
 builder.Services.AddEventBus();
 builder.Services.AddSupervisor();
+builder.Services.AddProxy(builder.Configuration);
 
 // OpenAPI
 builder.Services.AddOpenApi();
@@ -41,6 +43,9 @@ if (app.Environment.IsDevelopment())
 
     await using var context = await db.CreateDbContextAsync();
     await context.Database.MigrateAsync();
+
+    var proxySeeder = scope.ServiceProvider.GetRequiredService<ProxyAppSeeder>();
+    await proxySeeder.SeedAsync(CancellationToken.None);
 
     app.MapOpenApi();
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());

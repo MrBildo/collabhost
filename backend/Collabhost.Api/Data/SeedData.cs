@@ -13,9 +13,19 @@ public static class SeedData
         SeedDotNetBindings(modelBuilder, appTypes.DotNet);
         SeedNodeJsBindings(modelBuilder, appTypes.NodeJs);
         SeedStaticSiteBindings(modelBuilder, appTypes.StaticSite);
+        SeedSystemServiceBindings(modelBuilder, appTypes.SystemService);
+        SeedExecutableBindings(modelBuilder, appTypes.Executable);
     }
 
-    private static (AppType DotNet, AppType NodeJs, AppType StaticSite) SeedAppTypes(ModelBuilder modelBuilder)
+    private static
+    (
+        AppType DotNet,
+        AppType NodeJs,
+        AppType StaticSite,
+        AppType SystemService,
+        AppType Executable
+    )
+    SeedAppTypes(ModelBuilder modelBuilder)
     {
         var dotnetApp = new AppType
         {
@@ -47,9 +57,36 @@ public static class SeedData
             MetadataJson = null
         };
 
-        modelBuilder.Entity<AppType>().HasData(dotnetApp, nodejsApp, staticSite);
+        var systemService = new AppType
+        {
+            Id = Ulid.Parse("01KNA0A0ZN42VV6T9GTEPS17CD"),
+            Slug = "system-service",
+            DisplayName = "System Service",
+            Description = "Infrastructure process with no routing or port injection",
+            IsBuiltIn = true,
+            MetadataJson = null
+        };
 
-        return (dotnetApp, nodejsApp, staticSite);
+        var executable = new AppType
+        {
+            Id = Ulid.Parse("01KNA0A0ZRZE6W7RPX9BRREKNQ"),
+            Slug = "executable",
+            DisplayName = "Executable",
+            Description = "Generic binary with port injection and reverse proxy routing",
+            IsBuiltIn = true,
+            MetadataJson = null
+        };
+
+        modelBuilder.Entity<AppType>().HasData
+        (
+            dotnetApp,
+            nodejsApp,
+            staticSite,
+            systemService,
+            executable
+        );
+
+        return (dotnetApp, nodejsApp, staticSite, systemService, executable);
     }
 
     private static void SeedDotNetBindings(ModelBuilder modelBuilder, AppType dotnetApp) =>
@@ -189,7 +226,87 @@ public static class SeedData
                 Id = Ulid.Parse("01KN8K1MRTETFY88Z8FTJGCBB5"),
                 AppTypeId = staticSite.Id,
                 CapabilitySlug = "routing",
-                DefaultConfigurationJson = """{"domainPattern":"{slug}.collab.internal","serveMode":"FileServer","spaFallback":true}"""
+                DefaultConfigurationJson = """{"domainPattern":"{slug}.collab.internal","serveMode":"FileServer","spaFallback":false}"""
+            }
+        );
+
+    private static void SeedSystemServiceBindings(ModelBuilder modelBuilder, AppType systemService) =>
+        modelBuilder.Entity<CapabilityBinding>().HasData
+        (
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZRKQQ4TJK7E2Z3RX4J"),
+                AppTypeId = systemService.Id,
+                CapabilitySlug = "artifact",
+                DefaultConfigurationJson = """{"location":""}"""
+            },
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZRDCSEHPT4E069WFQS"),
+                AppTypeId = systemService.Id,
+                CapabilitySlug = "process",
+                DefaultConfigurationJson = """{"discoveryStrategy":"Manual","gracefulShutdown":true,"shutdownTimeoutSeconds":10}"""
+            },
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZRFWXKV2HS4TS5ACA7"),
+                AppTypeId = systemService.Id,
+                CapabilitySlug = "restart",
+                DefaultConfigurationJson = """{"policy":"OnCrash"}"""
+            },
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZRYZN3ZPXS6ENHHHH5"),
+                AppTypeId = systemService.Id,
+                CapabilitySlug = "auto-start",
+                DefaultConfigurationJson = """{"enabled":true}"""
+            }
+        );
+
+    private static void SeedExecutableBindings(ModelBuilder modelBuilder, AppType executable) =>
+        modelBuilder.Entity<CapabilityBinding>().HasData
+        (
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZRD5350M0C0Y8AZ62V"),
+                AppTypeId = executable.Id,
+                CapabilitySlug = "artifact",
+                DefaultConfigurationJson = """{"location":""}"""
+            },
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZR0AAGHBHWGZND1C0J"),
+                AppTypeId = executable.Id,
+                CapabilitySlug = "process",
+                DefaultConfigurationJson = """{"discoveryStrategy":"Manual","gracefulShutdown":false,"shutdownTimeoutSeconds":10}"""
+            },
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZRVMFJBHFQ623KG0SM"),
+                AppTypeId = executable.Id,
+                CapabilitySlug = "port-injection",
+                DefaultConfigurationJson = """{"environmentVariableName":"PORT","portFormat":"{port}"}"""
+            },
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZR1VEJ6DCGFGS4M97Q"),
+                AppTypeId = executable.Id,
+                CapabilitySlug = "routing",
+                DefaultConfigurationJson = """{"domainPattern":"{slug}.collab.internal","serveMode":"ReverseProxy","spaFallback":false}"""
+            },
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZRY7GQTTCX8HY6S97W"),
+                AppTypeId = executable.Id,
+                CapabilitySlug = "restart",
+                DefaultConfigurationJson = """{"policy":"OnCrash"}"""
+            },
+            new CapabilityBinding
+            {
+                Id = Ulid.Parse("01KNA0A0ZR2V1V5VMMR6TR8BPC"),
+                AppTypeId = executable.Id,
+                CapabilitySlug = "auto-start",
+                DefaultConfigurationJson = """{"enabled":false}"""
             }
         );
 }
