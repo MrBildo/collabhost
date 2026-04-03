@@ -36,7 +36,7 @@ public static class ProxyEndpoints
         {
             var bindings = await store.GetBindingsAsync(app.AppTypeId, ct);
 
-            var routingBinding = bindings.FirstOrDefault
+            var routingBinding = bindings.SingleOrDefault
             (
                 b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
             );
@@ -72,15 +72,15 @@ public static class ProxyEndpoints
             (
                 new RouteListEntry
                 (
-                    AppExternalId: app.Id.ToString(),
-                    AppName: app.Slug,
-                    AppDisplayName: app.DisplayName,
-                    Domain: domain,
-                    Target: target,
-                    ProxyMode: routingConfiguration.ServeMode == ServeMode.ReverseProxy
+                    app.Id.ToString(),
+                    app.Slug,
+                    app.DisplayName,
+                    domain,
+                    target,
+                    routingConfiguration.ServeMode == ServeMode.ReverseProxy
                         ? "reverseProxy"
                         : "fileServer",
-                    Https: true
+                    true
                 )
             );
         }

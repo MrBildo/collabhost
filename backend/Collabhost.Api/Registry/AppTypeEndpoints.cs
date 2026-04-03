@@ -37,12 +37,12 @@ public static class AppTypeEndpoints
             (
                 t => new AppTypeListItem
                 (
-                    Id: t.Id.ToString(),
-                    Name: t.Slug,
-                    DisplayName: t.DisplayName,
-                    Description: t.Description,
-                    Tags: BuildTags(t),
-                    IsBuiltIn: t.IsBuiltIn
+                    t.Id.ToString(),
+                    t.Slug,
+                    t.DisplayName,
+                    t.Description,
+                    BuildTags(t),
+                    t.IsBuiltIn
                 )
             )
                 .ToList();
@@ -70,15 +70,15 @@ public static class AppTypeEndpoints
 
         var schema = new RegistrationSchema
         (
-            AppType: new RegistrationAppType
+            new RegistrationAppType
             (
                 appType.Id.ToString(),
                 appType.Slug,
                 appType.DisplayName,
                 appType.Description
             ),
-            Tags: tags,
-            Sections: sections
+            tags,
+            sections
         );
 
         return TypedResults.Ok(schema);
@@ -101,26 +101,26 @@ public static class AppTypeEndpoints
                         "displayName",
                         "Display Name",
                         "text",
-                        Required: true,
-                        DefaultValue: null,
-                        Placeholder: "My Application"
+                        true,
+                        null,
+                        "My Application"
                     ),
                     new RegistrationField
                     (
                         "name",
                         "Slug",
                         "text",
-                        Required: true,
-                        DefaultValue: null,
-                        Placeholder: "my-application",
-                        HelpText: "Used in the domain name and as a unique identifier. Cannot be changed later."
+                        true,
+                        null,
+                        "my-application",
+                        "Used in the domain name and as a unique identifier. Cannot be changed later."
                     )
                 ]
             )
         );
 
         // Artifact section (if the type has artifact capability)
-        var artifactBinding = appType.Bindings.FirstOrDefault
+        var artifactBinding = appType.Bindings.SingleOrDefault
         (
             b => string.Equals(b.CapabilitySlug, "artifact", StringComparison.Ordinal)
         );
@@ -139,8 +139,8 @@ public static class AppTypeEndpoints
                             "location",
                             "Application Directory",
                             "directory",
-                            Required: true,
-                            DefaultValue: null
+                            true,
+                            null
                         )
                     ]
                 )

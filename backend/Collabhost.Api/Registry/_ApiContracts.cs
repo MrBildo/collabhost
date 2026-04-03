@@ -4,10 +4,11 @@ namespace Collabhost.Api.Registry;
 
 // JSON-serialized DTOs -- List<T> and Dictionary<K,V> are practical for these response types
 #pragma warning disable MA0016
+#pragma warning disable MA0053 // API contract records are unsealed by convention -- no inheritance concern for DTOs
 
 // --- App List ---
 
-public sealed record AppListItem
+public record AppListItem
 (
     string Id,
     string Name,
@@ -21,13 +22,13 @@ public sealed record AppListItem
     AppListActions Actions
 );
 
-public sealed record AppTypeRef(string Name, string DisplayName);
+public record AppTypeRef(string Name, string DisplayName);
 
-public sealed record AppListActions(bool CanStart, bool CanStop);
+public record AppListActions(bool CanStart, bool CanStop);
 
 // --- App Detail ---
 
-public sealed record AppDetail
+public record AppDetail
 (
     string Id,
     string Name,
@@ -50,15 +51,15 @@ public sealed record AppDetail
     AppActions Actions
 );
 
-public sealed record AppTypeDetailRef(string Id, string Name, string DisplayName);
+public record AppTypeDetailRef(string Id, string Name, string DisplayName);
 
-public sealed record AppTag(string Label, string Group);
+public record AppTag(string Label, string Group);
 
-public sealed record AppResources(double? CpuPercent, double? MemoryMb, int? HandleCount);
+public record AppResources(double? CpuPercent, double? MemoryMb, int? HandleCount);
 
-public sealed record AppRoute(string Domain, string Target, bool Tls);
+public record AppRoute(string Domain, string Target, bool Tls);
 
-public sealed record AppActions
+public record AppActions
 (
     bool CanStart,
     bool CanStop,
@@ -69,7 +70,7 @@ public sealed record AppActions
 
 // --- App Settings ---
 
-public sealed record AppSettings
+public record AppSettings
 (
     string Id,
     string Name,
@@ -79,14 +80,14 @@ public sealed record AppSettings
     List<SettingsSection> Sections
 );
 
-public sealed record SettingsSection
+public record SettingsSection
 (
     string Key,
     string Title,
     List<SettingsField> Fields
 );
 
-public sealed record SettingsField
+public record SettingsField
 (
     string Key,
     string Label,
@@ -101,7 +102,7 @@ public sealed record SettingsField
 
 // --- Action Result ---
 
-public sealed record AppActionResult
+public record AppActionResult
 (
     string Id,
     string Status,
@@ -110,13 +111,13 @@ public sealed record AppActionResult
 
 // --- Logs ---
 
-public sealed record LogsResponse
+public record LogsResponse
 (
     List<LogEntryResponse> Entries,
     int TotalBuffered
 );
 
-public sealed record LogEntryResponse
+public record LogEntryResponse
 (
     string Timestamp,
     string Stream,
@@ -126,7 +127,7 @@ public sealed record LogEntryResponse
 
 // --- Create ---
 
-public sealed record CreateAppRequest
+public record CreateAppRequest
 (
     string Name,
     string DisplayName,
@@ -134,11 +135,11 @@ public sealed record CreateAppRequest
     Dictionary<string, Dictionary<string, JsonElement>>? Values
 );
 
-public sealed record CreateAppResponse(string Id);
+public record CreateAppResponse(string Id);
 
 // --- Update Settings ---
 
-public sealed record UpdateSettingsRequest
+public record UpdateSettingsRequest
 (
     Dictionary<string, Dictionary<string, JsonElement>> Changes
 );

@@ -60,7 +60,7 @@ public static class AppEndpoints
                 b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
             );
 
-            var routingBinding = bindings.FirstOrDefault
+            var routingBinding = bindings.SingleOrDefault
             (
                 b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
             );
@@ -92,19 +92,19 @@ public static class AppEndpoints
             (
                 new AppListItem
                 (
-                    Id: app.Id.ToString(),
-                    Name: app.Slug,
-                    DisplayName: app.DisplayName,
-                    AppType: new AppTypeRef(app.AppType.Slug, app.AppType.DisplayName),
-                    Status: status.ToApiString(),
-                    Domain: domain,
-                    DomainActive: domainActive,
-                    Port: process?.Port,
-                    UptimeSeconds: process?.UptimeSeconds,
-                    Actions: new AppListActions
+                    app.Id.ToString(),
+                    app.Slug,
+                    app.DisplayName,
+                    new AppTypeRef(app.AppType.Slug, app.AppType.DisplayName),
+                    status.ToApiString(),
+                    domain,
+                    domainActive,
+                    process?.Port,
+                    process?.UptimeSeconds,
+                    new AppListActions
                     (
-                        CanStart: hasProcess && status is ProcessState.Stopped or ProcessState.Crashed,
-                        CanStop: hasProcess && status == ProcessState.Running
+                        hasProcess && status is ProcessState.Stopped or ProcessState.Crashed,
+                        hasProcess && status == ProcessState.Running
                     )
                 )
             );
@@ -143,7 +143,7 @@ public static class AppEndpoints
             : ProcessState.Stopped;
 
         // Routing
-        var routingBinding = bindings.FirstOrDefault
+        var routingBinding = bindings.SingleOrDefault
         (
             b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
         );
@@ -170,7 +170,7 @@ public static class AppEndpoints
         // Restart policy + auto-start
         string? restartPolicyValue = null;
 
-        var restartBinding = bindings.FirstOrDefault
+        var restartBinding = bindings.SingleOrDefault
         (
             b => string.Equals(b.CapabilitySlug, "restart", StringComparison.Ordinal)
         );
@@ -193,7 +193,7 @@ public static class AppEndpoints
 
         bool? autoStartValue = null;
 
-        var autoStartBinding = bindings.FirstOrDefault
+        var autoStartBinding = bindings.SingleOrDefault
         (
             b => string.Equals(b.CapabilitySlug, "auto-start", StringComparison.Ordinal)
         );
@@ -226,37 +226,37 @@ public static class AppEndpoints
                     ? "file-server"
                     : "not-running";
 
-            route = new AppRoute(domain, target, Tls: true);
+            route = new AppRoute(domain, target, true);
         }
 
         var actions = BuildActions(hasProcess, status);
 
         var detail = new AppDetail
         (
-            Id: app.Id.ToString(),
-            Name: app.Slug,
-            DisplayName: app.DisplayName,
-            AppType: new AppTypeDetailRef
+            app.Id.ToString(),
+            app.Slug,
+            app.DisplayName,
+            new AppTypeDetailRef
             (
                 app.AppType.Id.ToString(),
                 app.AppType.Slug,
                 app.AppType.DisplayName
             ),
-            RegisteredAt: app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
-            Status: status.ToApiString(),
-            Pid: process?.Pid,
-            Port: process?.Port,
-            UptimeSeconds: process?.UptimeSeconds,
-            RestartCount: process?.RestartCount ?? 0,
-            RestartPolicy: restartPolicyValue,
-            AutoStart: autoStartValue,
-            Domain: domain,
-            DomainActive: domainActive,
-            HealthStatus: null,
-            Tags: tags,
-            Resources: null,
-            Route: route,
-            Actions: actions
+            app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
+            status.ToApiString(),
+            process?.Pid,
+            process?.Port,
+            process?.UptimeSeconds,
+            process?.RestartCount ?? 0,
+            restartPolicyValue,
+            autoStartValue,
+            domain,
+            domainActive,
+            null,
+            tags,
+            null,
+            route,
+            actions
         );
 
         return TypedResults.Ok(detail);
@@ -283,12 +283,12 @@ public static class AppEndpoints
 
         var settings = new AppSettings
         (
-            Id: app.Id.ToString(),
-            Name: app.Slug,
-            DisplayName: app.DisplayName,
-            AppTypeName: app.AppType.DisplayName,
-            RegisteredAt: app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
-            Sections: sections
+            app.Id.ToString(),
+            app.Slug,
+            app.DisplayName,
+            app.AppType.DisplayName,
+            app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
+            sections
         );
 
         return TypedResults.Ok(settings);
@@ -337,7 +337,7 @@ public static class AppEndpoints
                 continue;
             }
 
-            var binding = bindings.FirstOrDefault
+            var binding = bindings.SingleOrDefault
             (
                 b => string.Equals(b.CapabilitySlug, sectionKey, StringComparison.Ordinal)
             );
@@ -404,12 +404,12 @@ public static class AppEndpoints
 
         var settings = new AppSettings
         (
-            Id: freshApp!.Id.ToString(),
-            Name: freshApp.Slug,
-            DisplayName: freshApp.DisplayName,
-            AppTypeName: freshApp.AppType.DisplayName,
-            RegisteredAt: freshApp.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
-            Sections: sections
+            freshApp!.Id.ToString(),
+            freshApp.Slug,
+            freshApp.DisplayName,
+            freshApp.AppType.DisplayName,
+            freshApp.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
+            sections
         );
 
         return TypedResults.Ok(settings);
@@ -731,11 +731,11 @@ public static class AppEndpoints
     private static AppActions BuildActions(bool hasProcess, ProcessState status) =>
         new
         (
-            CanStart: hasProcess && status is ProcessState.Stopped or ProcessState.Crashed,
-            CanStop: hasProcess && status == ProcessState.Running,
-            CanRestart: hasProcess && status == ProcessState.Running,
-            CanKill: hasProcess && status is ProcessState.Running or ProcessState.Starting or ProcessState.Restarting,
-            CanUpdate: false
+            hasProcess && status is ProcessState.Stopped or ProcessState.Crashed,
+            hasProcess && status == ProcessState.Running,
+            hasProcess && status == ProcessState.Running,
+            hasProcess && status is ProcessState.Running or ProcessState.Starting or ProcessState.Restarting,
+            false
         );
 
     private static List<AppTag> BuildTags(AppType appType)
@@ -825,7 +825,7 @@ public static class AppEndpoints
         );
 
         // Capability sections
-        foreach (var binding in bindings.OrderBy(b => GetCapabilityOrder(b.CapabilitySlug)))
+        foreach (var binding in bindings.OrderBy(b => b.CapabilitySlug.GetCapabilityOrder()))
         {
             var definition = CapabilityCatalog.Get(binding.CapabilitySlug);
 
@@ -865,8 +865,8 @@ public static class AppEndpoints
 
             foreach (var fieldDescriptor in definition.Schema)
             {
-                var value = GetFieldValue(effectiveValues, fieldDescriptor.Key);
-                var defaultValue = GetFieldValue(defaultValues, fieldDescriptor.Key);
+                var value = effectiveValues.GetFieldValue(fieldDescriptor.Key);
+                var defaultValue = defaultValues.GetFieldValue(fieldDescriptor.Key);
 
                 fields.Add
                 (
@@ -879,7 +879,7 @@ public static class AppEndpoints
                         defaultValue,
                         fieldDescriptor.Editable,
                         Options: fieldDescriptor.Options?
-                            .Select(o => new FieldOption(ToCamelCase(o.Value), o.Label))
+                            .Select(o => new FieldOption(o.Value.ToCamelCase(), o.Label))
                                 .ToList(),
                         HelpText: fieldDescriptor.HelpText,
                         Unit: fieldDescriptor.Unit
@@ -900,38 +900,47 @@ public static class AppEndpoints
 
         return sections;
     }
-
-    private static object? GetFieldValue(JsonObject obj, string key) =>
-        !obj.TryGetPropertyValue(key, out var node) || node is null
-            ? null
-            : node.GetValueKind() switch
-            {
-                JsonValueKind.String => node.GetValue<string>(),
-                JsonValueKind.Number => node.GetValue<double>(),
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.Object => JsonSerializer.Deserialize<Dictionary<string, string>>(node),
-                _ => null
-            };
-
-    private static string ToCamelCase(string value) =>
-        string.IsNullOrEmpty(value)
-            ? value
-            : char.ToLowerInvariant(value[0]) + value[1..];
-
-    private static int GetCapabilityOrder(string slug) => slug switch
-    {
-        "process" => 0,
-        "port-injection" => 1,
-        "routing" => 2,
-        "health-check" => 3,
-        "restart" => 4,
-        "auto-start" => 5,
-        "environment-defaults" => 6,
-        "artifact" => 7,
-        _ => 99
-    };
 }
 #pragma warning restore MA0051
 #pragma warning restore MA0011
 #pragma warning restore MA0076
+
+file static class AppEndpointExtensions
+{
+    extension(JsonObject obj)
+    {
+        public object? GetFieldValue(string key) =>
+            !obj.TryGetPropertyValue(key, out var node) || node is null
+                ? null
+                : node.GetValueKind() switch
+                {
+                    JsonValueKind.String => node.GetValue<string>(),
+                    JsonValueKind.Number => node.GetValue<double>(),
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    JsonValueKind.Object => JsonSerializer.Deserialize<Dictionary<string, string>>(node),
+                    _ => null
+                };
+    }
+
+    extension(string value)
+    {
+        public string ToCamelCase() =>
+            string.IsNullOrEmpty(value)
+                ? value
+                : char.ToLowerInvariant(value[0]) + value[1..];
+
+        public int GetCapabilityOrder() => value switch
+        {
+            "process" => 0,
+            "port-injection" => 1,
+            "routing" => 2,
+            "health-check" => 3,
+            "restart" => 4,
+            "auto-start" => 5,
+            "environment-defaults" => 6,
+            "artifact" => 7,
+            _ => 99
+        };
+    }
+}

@@ -4,10 +4,11 @@ namespace Collabhost.Api.Registry;
 
 // JSON-serialized DTOs -- List<T> is practical for response types
 #pragma warning disable MA0016
+#pragma warning disable MA0053 // API contract records are unsealed by convention -- no inheritance concern for DTOs
 
 // --- App Type List ---
 
-public sealed record AppTypeListItem
+public record AppTypeListItem
 (
     string Id,
     string Name,
@@ -19,14 +20,14 @@ public sealed record AppTypeListItem
 
 // --- Registration Schema ---
 
-public sealed record RegistrationSchema
+public record RegistrationSchema
 (
     RegistrationAppType AppType,
     List<AppTag> Tags,
     List<RegistrationSection> Sections
 );
 
-public sealed record RegistrationAppType
+public record RegistrationAppType
 (
     string Id,
     string Name,
@@ -34,14 +35,14 @@ public sealed record RegistrationAppType
     string? Description
 );
 
-public sealed record RegistrationSection
+public record RegistrationSection
 (
     string Key,
     string Title,
     List<RegistrationField> Fields
 );
 
-public sealed record RegistrationField
+public record RegistrationField
 (
     string Key,
     string Label,
