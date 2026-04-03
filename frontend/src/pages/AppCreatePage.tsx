@@ -66,12 +66,11 @@ function AppCreatePage() {
     setSubmitError(null)
   }, [])
 
-  // Initialize form values when schema loads
-  const prevSchemaType = useState<string | null>(null)
-  if (schema && prevSchemaType[0] !== selectedType) {
-    prevSchemaType[1](selectedType)
-    const initial = buildInitialValues(schema.sections)
-    setFormValues(initial)
+  // Initialize form values when schema loads for a new type
+  const [initializedType, setInitializedType] = useState<string | null>(null)
+  if (schema && initializedType !== selectedType) {
+    setInitializedType(selectedType)
+    setFormValues(buildInitialValues(schema.sections))
   }
 
   const handleFieldChange = useCallback((sectionKey: string, fieldKey: string, value: unknown) => {
@@ -144,6 +143,7 @@ function AppCreatePage() {
 
   const handleBack = useCallback(() => {
     setSelectedType(null)
+    setInitializedType(null)
     setFormValues({})
     setFieldErrors({})
     setSubmitError(null)

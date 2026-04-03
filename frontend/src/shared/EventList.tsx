@@ -7,7 +7,7 @@ type EventListProps = {
   className?: string
 }
 
-const SEVERITY_STYLES: Record<string, string | undefined> = {
+const SEVERITY_STYLES: Record<DashboardEvent['severity'], string | undefined> = {
   error: 'var(--wm-red)',
   warning: 'var(--wm-yellow)',
   info: undefined,
@@ -33,7 +33,7 @@ function EventList({ events, className }: EventListProps) {
             // biome-ignore lint/suspicious/noArrayIndexKey: events lack unique IDs
             key={i}
             className="flex items-center gap-3 px-3.5 py-2"
-            style={{ borderBottom: i < events.length - 1 ? '1px solid rgba(42, 42, 42, 0.5)' : undefined }}
+            style={{ borderBottom: i < events.length - 1 ? '1px solid var(--wm-border-subtle)' : undefined }}
           >
             <span
               className="text-xs flex-shrink-0"

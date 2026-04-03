@@ -11,7 +11,7 @@ type StatsStripProps = {
   className?: string
 }
 
-const COLOR_STYLES: Record<string, string | undefined> = {
+const COLOR_STYLES: Record<NonNullable<StatItem['color']>, string | undefined> = {
   green: 'var(--wm-green)',
   red: 'var(--wm-red)',
   amber: 'var(--wm-amber)',

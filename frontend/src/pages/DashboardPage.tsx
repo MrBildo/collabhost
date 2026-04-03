@@ -101,7 +101,7 @@ function DashboardPage() {
         <span
           className="text-xs"
           style={{
-            color: app.domainActive ? 'var(--wm-text-dim)' : 'var(--wm-text-dim)',
+            color: 'var(--wm-text-dim)',
             opacity: app.domainActive ? 1 : 0.5,
           }}
         >

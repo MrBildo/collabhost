@@ -250,7 +250,7 @@ function AppSettingsPage() {
                 error={fieldErrors[section.key]?.[field.key]}
                 isEditing={isEditing}
                 onChange={(val) => handleFieldChange(section.key, field.key, val)}
-                className={i > 0 ? 'border-t border-[rgba(42,42,42,0.5)] pt-2' : ''}
+                className={i > 0 ? 'wm-settings-field-separator' : ''}
               />
             ))}
           </div>

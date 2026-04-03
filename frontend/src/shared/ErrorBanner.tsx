@@ -14,8 +14,9 @@ function ErrorBanner({ message, className, onDismiss }: ErrorBannerProps) {
       {onDismiss && (
         <button
           type="button"
-          className="wm-btn--ghost"
+          className="wm-btn wm-btn--ghost"
           onClick={onDismiss}
+          aria-label="Dismiss error"
           style={{ color: 'var(--wm-text-dim)', padding: 0 }}
         >
           x
