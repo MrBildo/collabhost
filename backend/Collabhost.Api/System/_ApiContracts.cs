@@ -1,6 +1,6 @@
 namespace Collabhost.Api.Platform;
 
-public sealed record SystemStatus
+public record SystemStatus
 (
     string Status,
     string Version,
