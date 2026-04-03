@@ -1,0 +1,85 @@
+/* Base styles — body, scrollbar, fonts, animations */
+
+body {
+  font-family: var(--wm-mono);
+  background: var(--wm-bg);
+  color: var(--wm-text);
+  line-height: 1.6;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbar — dark, minimal */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--wm-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--wm-border-active);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Selection */
+::selection {
+  background: var(--wm-amber-glow);
+  color: var(--wm-text-bright);
+}
+
+/* Focus visible — amber ring for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--wm-amber);
+  outline-offset: 2px;
+}
+
+/* Animations */
+@keyframes wm-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes wm-loading-slide {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+@keyframes wm-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes wm-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
