@@ -1,9 +1,19 @@
-import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { useSystemStatus } from '@/hooks/use-system-status'
 import { formatUptimeLong } from '@/lib/format'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { Spinner } from '@/shared/Spinner'
 import { StatusStrip } from '@/status/StatusStrip'
+
+function formatStatusLabel(value: string): string {
+  if (value === 'ok') return 'OK'
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function truncateVersion(version: string): string {
+  const plusIndex = version.indexOf('+')
+  if (plusIndex < 0) return version
+  return `${version.slice(0, plusIndex + 8)}…`
+}
 
 function SystemPage() {
   const statusQuery = useSystemStatus()
@@ -13,11 +23,11 @@ function SystemPage() {
     ? [
         {
           label: 'Status',
-          value: status.status,
+          value: formatStatusLabel(status.status),
           color: status.status === 'ok' ? ('green' as const) : ('red' as const),
         },
         { label: 'Hostname', value: status.hostname },
-        { label: 'Version', value: status.version, color: 'amber' as const },
+        { label: 'Version', value: truncateVersion(status.version), color: 'amber' as const },
         { label: 'Uptime', value: formatUptimeLong(status.uptimeSeconds) },
       ]
     : []
@@ -32,7 +42,14 @@ function SystemPage() {
 
   return (
     <div>
-      <Breadcrumbs segments={[{ label: 'System' }]} />
+      <div
+        className="flex items-baseline justify-between mb-5 pb-3"
+        style={{ borderBottom: '1px solid var(--wm-border)' }}
+      >
+        <h1 className="wm-section-title" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+          <span style={{ color: 'var(--wm-text-dim)' }}>{'// '}</span>System
+        </h1>
+      </div>
 
       {statusQuery.error && (
         <ErrorBanner
@@ -72,7 +89,7 @@ function SystemPage() {
                     className="text-xs"
                     style={{ color: status.status === 'ok' ? 'var(--wm-green)' : 'var(--wm-red)' }}
                   >
-                    {status.status}
+                    {formatStatusLabel(status.status)}
                   </td>
                 </tr>
                 <tr>

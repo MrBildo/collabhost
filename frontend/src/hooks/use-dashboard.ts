@@ -15,7 +15,7 @@ function useDashboardEvents(limit = 20) {
   return useQuery<DashboardEventsResponse>({
     queryKey: ['dashboard', 'events'],
     queryFn: () => getDashboardEvents(limit),
-    refetchInterval: POLL_INTERVALS.dashboard,
+    refetchInterval: (query) => (query.state.status === 'error' ? false : POLL_INTERVALS.dashboard),
   })
 }
 

@@ -25,6 +25,10 @@ describe('formatUptime', () => {
   test('formats days', () => {
     expect(formatUptime(172800)).toBe('2d')
   })
+
+  test('rounds fractional seconds', () => {
+    expect(formatUptime(13.7)).toBe('14s')
+  })
 })
 
 describe('formatUptimeLong', () => {
@@ -46,6 +50,14 @@ describe('formatUptimeLong', () => {
 
   test('formats seconds only', () => {
     expect(formatUptimeLong(45)).toBe('45s')
+  })
+
+  test('rounds fractional seconds', () => {
+    expect(formatUptimeLong(613.9)).toBe('10m 14s')
+  })
+
+  test('rounds sub-minute fractional seconds', () => {
+    expect(formatUptimeLong(13.7)).toBe('14s')
   })
 })
 

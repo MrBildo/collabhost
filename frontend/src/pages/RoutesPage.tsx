@@ -1,6 +1,5 @@
 import { ActionButton } from '@/actions/ActionButton'
 import type { RouteEntry } from '@/api/types'
-import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { useReloadProxy, useRoutes } from '@/hooks/use-routes'
 import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
@@ -86,14 +85,17 @@ function RoutesPage() {
 
   return (
     <div>
-      <Breadcrumbs
-        segments={[{ label: 'Routes' }]}
-        actions={
-          <ActionButton size="sm" onClick={() => reloadMutation.mutate()} disabled={reloadMutation.isPending}>
-            {reloadMutation.isPending ? 'Reloading...' : 'Reload Proxy'}
-          </ActionButton>
-        }
-      />
+      <div
+        className="flex items-baseline justify-between mb-5 pb-3"
+        style={{ borderBottom: '1px solid var(--wm-border)' }}
+      >
+        <h1 className="wm-section-title" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+          <span style={{ color: 'var(--wm-text-dim)' }}>{'// '}</span>Routes
+        </h1>
+        <ActionButton size="sm" onClick={() => reloadMutation.mutate()} disabled={reloadMutation.isPending}>
+          {reloadMutation.isPending ? 'Reloading...' : 'Reload Proxy'}
+        </ActionButton>
+      </div>
 
       {routesQuery.error && (
         <ErrorBanner
