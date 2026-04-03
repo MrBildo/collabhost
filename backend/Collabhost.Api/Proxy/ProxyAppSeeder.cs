@@ -55,13 +55,11 @@ public class ProxyAppSeeder
             return;
         }
 
-        // Find a suitable app type that has process + auto-start capabilities.
-        // The .NET app type works as a generic "system service" type for v2.
-        var appType = await _appStore.GetAppTypeBySlugAsync("dotnet-app", cancellationToken);
+        var appType = await _appStore.GetAppTypeBySlugAsync("system-service", cancellationToken);
 
         if (appType is null)
         {
-            _logger.LogWarning("No 'dotnet-app' app type found -- cannot seed proxy app");
+            _logger.LogWarning("No 'system-service' app type found -- cannot seed proxy app");
 
             return;
         }
