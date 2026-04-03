@@ -68,7 +68,8 @@ public static class CapabilityResolver
             return errors;
         }
 
-        var knownKeys = new HashSet<string>(
+        var knownKeys = new HashSet<string>
+        (
             schema.Select(f => f.Key),
             StringComparer.Ordinal
         );
@@ -81,7 +82,7 @@ public static class CapabilityResolver
                 continue;
             }
 
-            var field = schema.First(f => string.Equals(f.Key, property.Key, StringComparison.Ordinal));
+            var field = schema.Single(f => string.Equals(f.Key, property.Key, StringComparison.Ordinal));
 
             if (field.Editable is FieldEditableLocked locked)
             {

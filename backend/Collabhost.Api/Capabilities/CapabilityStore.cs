@@ -87,7 +87,8 @@ public class CapabilityStore
                 ? capabilityOverride.ConfigurationJson
                 : null;
 
-            result[binding.CapabilitySlug] = CapabilityResolver.ResolveJson(
+            result[binding.CapabilitySlug] = CapabilityResolver.ResolveJson
+            (
                 binding.DefaultConfigurationJson,
                 overrideJson
             );
@@ -105,25 +106,23 @@ public class CapabilityStore
         CancellationToken ct
     )
     {
-        var proposedOverrides = JsonNode.Parse(configurationJson)?.AsObject();
-
-        if (proposedOverrides is null)
-        {
-            throw new ArgumentException("Invalid JSON.", nameof(configurationJson));
-        }
+        var proposedOverrides = JsonNode.Parse(configurationJson)?.AsObject()
+            ?? throw new ArgumentException("Invalid JSON.", nameof(configurationJson));
 
         var errors = CapabilityResolver.ValidateEdits(capabilitySlug, proposedOverrides, isNewApp);
 
         if (errors.Count > 0)
         {
-            throw new InvalidOperationException(
+            throw new InvalidOperationException
+            (
                 $"Validation failed: {string.Join("; ", errors)}"
             );
         }
 
         await _appStore.SaveOverrideAsync(appId, capabilitySlug, configurationJson, ct);
 
-        _logger.LogInformation(
+        _logger.LogInformation
+        (
             "Saved override for {CapabilitySlug} on app {AppId}",
             capabilitySlug,
             appId
