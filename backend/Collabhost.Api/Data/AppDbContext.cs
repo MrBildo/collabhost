@@ -131,7 +131,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 #pragma warning disable CA1305, MA0011, MA0076 // Ulid.Parse/ToString are not locale-sensitive
     private static void SeedData(ModelBuilder modelBuilder)
     {
-        // App types with deterministic ULIDs for seed stability
+        var dotnetApp = SeedAppTypes(modelBuilder);
+        SeedDotNetBindings(modelBuilder, dotnetApp.DotNet);
+        SeedNodeJsBindings(modelBuilder, dotnetApp.NodeJs);
+        SeedStaticSiteBindings(modelBuilder, dotnetApp.StaticSite);
+    }
+
+    private static (AppType DotNet, AppType NodeJs, AppType StaticSite) SeedAppTypes(ModelBuilder modelBuilder)
+    {
         var dotnetApp = new AppType
         {
             Id = Ulid.Parse("01JQDZ000000000000000DNETA"),
@@ -164,9 +171,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         modelBuilder.Entity<AppType>().HasData(dotnetApp, nodejsApp, staticSite);
 
-        // Capability bindings per app type
+        return (dotnetApp, nodejsApp, staticSite);
+    }
 
-        // .NET App: all 8 capabilities
+    private static void SeedDotNetBindings(ModelBuilder modelBuilder, AppType dotnetApp) =>
         modelBuilder.Entity<CapabilityBinding>().HasData
         (
             new CapabilityBinding
@@ -227,7 +235,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             }
         );
 
-        // Node.js App: all 8 capabilities
+    private static void SeedNodeJsBindings(ModelBuilder modelBuilder, AppType nodejsApp) =>
         modelBuilder.Entity<CapabilityBinding>().HasData
         (
             new CapabilityBinding
@@ -288,7 +296,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             }
         );
 
-        // Static Site: artifact + routing only (no process)
+    private static void SeedStaticSiteBindings(ModelBuilder modelBuilder, AppType staticSite) =>
         modelBuilder.Entity<CapabilityBinding>().HasData
         (
             new CapabilityBinding
@@ -306,6 +314,5 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 DefaultConfigurationJson = """{"domainPattern":"{slug}.collab.internal","serveMode":"FileServer","spaFallback":true}"""
             }
         );
-    }
 #pragma warning restore CA1305, MA0011, MA0076
 }

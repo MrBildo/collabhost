@@ -9,12 +9,9 @@ public readonly partial record struct Slug
     public static Slug Create(string input)
     {
         var (isValid, error) = Validate(input);
-        if (!isValid)
-        {
-            throw new ArgumentException(error, nameof(input));
-        }
-
-        return new Slug(input.Trim().ToLowerInvariant());
+        return !isValid
+            ? throw new ArgumentException(error, nameof(input))
+            : new Slug(input.Trim().ToLowerInvariant());
     }
 
     public static (bool IsValid, string? Error) Validate(string? input)
