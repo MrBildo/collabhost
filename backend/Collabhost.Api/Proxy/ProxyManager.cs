@@ -70,7 +70,6 @@ public class ProxyManager
     public void RequestSync() =>
         _syncChannel.Writer.TryWrite(true);
 
-#pragma warning disable MA0051 // Long method justified -- startup with proxy app lookup, event subscription, and initial sync trigger
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _shutdownCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -113,7 +112,6 @@ public class ProxyManager
             RequestSync();
         }
     }
-#pragma warning restore MA0051
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
@@ -228,7 +226,6 @@ public class ProxyManager
         }
     }
 
-#pragma warning disable MA0051 // Long method justified -- loading routable apps with capability resolution and port lookup
     private async Task<List<RouteEntry>> LoadRoutableAppsAsync(CancellationToken ct)
     {
         var apps = await _appStore.ListAsync(ct);
@@ -309,7 +306,6 @@ public class ProxyManager
 
         return result;
     }
-#pragma warning restore MA0051
 
     public void Dispose()
     {

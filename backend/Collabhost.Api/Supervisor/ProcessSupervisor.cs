@@ -33,7 +33,6 @@ public class ProcessSupervisor
     private readonly SemaphoreSlim _lock = new(1, 1);
     private Timer? _graceTimer;
 
-#pragma warning disable MA0051 // Long method justified -- startup with auto-start capability resolution
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Process supervisor starting -- checking for auto-start apps");
@@ -90,7 +89,6 @@ public class ProcessSupervisor
 
         _logger.LogInformation("Process supervisor started");
     }
-#pragma warning restore MA0051
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
@@ -223,7 +221,6 @@ public class ProcessSupervisor
         return process;
     }
 
-#pragma warning disable MA0051 // Long method justified -- process start with full capability resolution
     private async Task<ManagedProcess> StartAppInternalAsync(Ulid appId, CancellationToken ct)
     {
         if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
@@ -355,9 +352,7 @@ public class ProcessSupervisor
 
         return managed;
     }
-#pragma warning restore MA0051
 
-#pragma warning disable MA0051 // Long method justified -- exit handler with restart policy evaluation and fire-and-forget restart
     private void OnProcessExited(Ulid appId, int exitCode)
     {
         if (!_processes.TryGetValue(appId, out var process))
@@ -479,7 +474,6 @@ public class ProcessSupervisor
         );
 #pragma warning restore VSTHRD110, MA0134
     }
-#pragma warning restore MA0051
 
     private async Task StopProcessWithShutdownPolicyAsync(Ulid appId, ManagedProcess process)
     {
@@ -532,7 +526,6 @@ public class ProcessSupervisor
         PublishStateChanged(process, previousState);
     }
 
-#pragma warning disable MA0051 // Long method justified -- graceful shutdown with timeout polling and fallback
     private async Task SendGracefulShutdownAsync(ManagedProcess process, int shutdownTimeoutSeconds)
     {
         _logger.LogInformation
@@ -600,7 +593,6 @@ public class ProcessSupervisor
 
         process.KillProcess();
     }
-#pragma warning restore MA0051
 
     private void CheckGracePeriods(object? state)
     {

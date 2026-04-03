@@ -1,6 +1,4 @@
 using System.Globalization;
-
-using Collabhost.Api.Capabilities;
 using Collabhost.Api.Registry;
 
 namespace Collabhost.Api.Data;

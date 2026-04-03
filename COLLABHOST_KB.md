@@ -336,7 +336,7 @@ All must pass before reporting done:
 
 ```powershell
 dotnet build                                      # 0 errors, 0 warnings (beyond known gentle-nudges)
-dotnet format --verify-no-changes --diagnostics IDE0055   # formatting clean
+dotnet format --verify-no-changes   # formatting clean
 dotnet test                                       # all pass (includes Aspire smoke tests)
 ```
 
@@ -423,9 +423,9 @@ npm run test           # Vitest — all pass
 A feature is done when ALL of the following pass:
 
 **Backend:**
-- `dotnet build` — 0 errors, 0 warnings
-- `dotnet format --verify-no-changes --diagnostics IDE0055` — clean
-- `dotnet test` — all pass
+- `dotnet build Collabhost.slnx --no-incremental` — 0 errors, 0 warnings. **MUST use `--no-incremental`** to match Visual Studio behavior (incremental builds skip compilation and hide warnings). **MUST build the solution**, not individual projects. **Read the FULL build output** — this includes CSC-level warnings, MSBuild warnings, and analyzer warnings, not just the summary line. ANY warning from ANY source must be surfaced and addressed.
+- `dotnet format --verify-no-changes` — clean
+- `dotnet test` — all pass. Same rule: read the full output, surface ANY warnings from the test run (build warnings appear here too).
 
 **Frontend:**
 - `npm run build` — typecheck + bundle clean
@@ -440,7 +440,7 @@ A feature is done when ALL of the following pass:
 - **Model:** Always use `model: "opus"` (Opus High)
 - **Skills:** MUST invoke `dotnet-dev` for C# tasks, `typescript-dev` for TypeScript tasks
 - **MUST read and follow this document** (`COLLABHOST_KB.md`) — all conventions apply
-- **Backend agents MUST run full verification:** `dotnet build`, `dotnet format --verify-no-changes --diagnostics IDE0055`, `dotnet test`
+- **Backend agents MUST run full verification:** `dotnet build`, `dotnet format --verify-no-changes`, `dotnet test`
 - **Frontend agents MUST run:** `npm run build`, `npm run lint`, `npm run format:check`, `npm run test`
 - **Never auto-fix lint errors** — report to user
 - **Never auto-fix test failures during analyzer work** — investigate failures as behavioral signals

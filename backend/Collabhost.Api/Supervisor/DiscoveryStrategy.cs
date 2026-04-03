@@ -53,13 +53,10 @@ public static class DiscoveryStrategyExecutor
 
         using var document = JsonDocument.Parse(File.ReadAllText(packageJsonPath));
 
-        if (!document.RootElement.TryGetProperty("scripts", out var scripts)
-            || !scripts.TryGetProperty("start", out _))
-        {
-            throw new InvalidOperationException("package.json has no scripts.start.");
-        }
-
-        return new DiscoveredProcess("npm", "start", directory);
+        return !document.RootElement.TryGetProperty("scripts", out var scripts)
+            || !scripts.TryGetProperty("start", out _)
+            ? throw new InvalidOperationException("package.json has no scripts.start.")
+            : new DiscoveredProcess("npm", "start", directory);
     }
 }
 
