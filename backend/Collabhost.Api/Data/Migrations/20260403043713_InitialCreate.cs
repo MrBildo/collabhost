@@ -97,9 +97,9 @@ namespace Collabhost.Api.Data.Migrations
                 columns: new[] { "Id", "CreatedAt", "Description", "DisplayName", "IsBuiltIn", "MetadataJson", "Slug" },
                 values: new object[,]
                 {
-                    { "01KN8K1MRQ0K06ADYJJ8VAXG5Y", new DateTime(2026, 4, 3, 2, 37, 13, 803, DateTimeKind.Utc).AddTicks(5489), "ASP.NET Core or .NET console application", ".NET Application", true, "{\"runtime\":{\"name\":\".NET\",\"version\":\"10\",\"targetFramework\":\"net10.0\"}}", "dotnet-app" },
-                    { "01KN8K1MRT26VCX65J1ZSVWESB", new DateTime(2026, 4, 3, 2, 37, 13, 804, DateTimeKind.Utc).AddTicks(2127), "Static files served by Caddy", "Static Site", true, null, "static-site" },
-                    { "01KN8K1MRT4XGXXW5BBQ8YZNN2", new DateTime(2026, 4, 3, 2, 37, 13, 804, DateTimeKind.Utc).AddTicks(2115), "Server-side JavaScript with npm", "Node.js Application", true, "{\"runtime\":{\"name\":\"Node.js\",\"version\":\"22\",\"packageManager\":\"npm\"}}", "nodejs-app" }
+                    { "01KN8K1MRQ0K06ADYJJ8VAXG5Y", new DateTime(2026, 4, 3, 4, 37, 12, 686, DateTimeKind.Utc).AddTicks(5749), "ASP.NET Core or .NET console application", ".NET Application", true, "{\"runtime\":{\"name\":\".NET\",\"version\":\"10\",\"targetFramework\":\"net10.0\"}}", "dotnet-app" },
+                    { "01KN8K1MRT26VCX65J1ZSVWESB", new DateTime(2026, 4, 3, 4, 37, 12, 687, DateTimeKind.Utc).AddTicks(2122), "Static files served by Caddy", "Static Site", true, null, "static-site" },
+                    { "01KN8K1MRT4XGXXW5BBQ8YZNN2", new DateTime(2026, 4, 3, 4, 37, 12, 687, DateTimeKind.Utc).AddTicks(2117), "Server-side JavaScript with npm", "Node.js Application", true, "{\"runtime\":{\"name\":\"Node.js\",\"version\":\"22\",\"packageManager\":\"npm\"}}", "nodejs-app" }
                 });
 
             migrationBuilder.InsertData(

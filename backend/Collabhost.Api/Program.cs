@@ -32,8 +32,9 @@ if (app.Environment.IsDevelopment())
 {
     await using var scope = app.Services.CreateAsyncScope();
     var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+
     await using var context = await db.CreateDbContextAsync();
-    await context.Database.EnsureCreatedAsync();
+    await context.Database.MigrateAsync();
 
     app.MapOpenApi();
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());

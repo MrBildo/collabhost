@@ -14,5 +14,5 @@ public class App
 
     public DateTime? ModifiedAt { get; set; }
 
-    public AppType? AppType { get; init; }
+    public AppType AppType { get; init; } = default!;
 }

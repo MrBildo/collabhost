@@ -1,5 +1,6 @@
 namespace Collabhost.Api.Registry;
 
+// partial required by [GeneratedRegex] source generator on SlugPattern
 public readonly partial record struct Slug
 {
     public string Value { get; }

@@ -278,7 +278,7 @@ namespace Collabhost.Api.Data.Migrations
                         new
                         {
                             Id = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
-                            CreatedAt = new DateTime(2026, 4, 3, 2, 37, 13, 803, DateTimeKind.Utc).AddTicks(5489),
+                            CreatedAt = new DateTime(2026, 4, 3, 4, 37, 12, 686, DateTimeKind.Utc).AddTicks(5749),
                             Description = "ASP.NET Core or .NET console application",
                             DisplayName = ".NET Application",
                             IsBuiltIn = true,
@@ -288,7 +288,7 @@ namespace Collabhost.Api.Data.Migrations
                         new
                         {
                             Id = "01KN8K1MRT4XGXXW5BBQ8YZNN2",
-                            CreatedAt = new DateTime(2026, 4, 3, 2, 37, 13, 804, DateTimeKind.Utc).AddTicks(2115),
+                            CreatedAt = new DateTime(2026, 4, 3, 4, 37, 12, 687, DateTimeKind.Utc).AddTicks(2117),
                             Description = "Server-side JavaScript with npm",
                             DisplayName = "Node.js Application",
                             IsBuiltIn = true,
@@ -298,7 +298,7 @@ namespace Collabhost.Api.Data.Migrations
                         new
                         {
                             Id = "01KN8K1MRT26VCX65J1ZSVWESB",
-                            CreatedAt = new DateTime(2026, 4, 3, 2, 37, 13, 804, DateTimeKind.Utc).AddTicks(2127),
+                            CreatedAt = new DateTime(2026, 4, 3, 4, 37, 12, 687, DateTimeKind.Utc).AddTicks(2122),
                             Description = "Static files served by Caddy",
                             DisplayName = "Static Site",
                             IsBuiltIn = true,
