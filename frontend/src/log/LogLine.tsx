@@ -21,7 +21,9 @@ function LogLine({ entry }: LogLineProps) {
     <div className="wm-log-line">
       <span className="wm-log-timestamp">{formatTimestamp(entry.timestamp)}</span>
       {entry.level && <span className={cn('wm-log-level', levelClass)}>{entry.level}</span>}
-      <span className="wm-log-msg">{entry.content}</span>
+      <span className="wm-log-msg" style={entry.stream === 'stderr' ? { color: 'var(--wm-red)' } : undefined}>
+        {entry.content}
+      </span>
     </div>
   )
 }
