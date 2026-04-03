@@ -1,6 +1,8 @@
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
+using Collabhost.Api.Events;
 using Collabhost.Api.Registry;
+using Collabhost.Api.Supervisor;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +20,8 @@ builder.Services.AddMemoryCache();
 // Subsystems
 builder.Services.AddRegistry();
 builder.Services.AddCapabilities();
+builder.Services.AddEventBus();
+builder.Services.AddSupervisor();
 
 // OpenAPI
 builder.Services.AddOpenApi();
