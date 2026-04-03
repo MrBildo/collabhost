@@ -9,7 +9,7 @@ import {
   useDetailStartApp,
   useDetailStopApp,
 } from '@/hooks/use-app-detail'
-import { formatDateTime, formatEnumLabel, formatHealthStatus, formatMemory, formatUptime } from '@/lib/format'
+import { formatDateTime, formatHealthStatus, formatMemory, formatUptime } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import type { LogStream } from '@/log/LogViewer'
 import { LogViewer } from '@/log/LogViewer'
@@ -19,7 +19,6 @@ import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
 import { TypeBadge } from '@/shared/TypeBadge'
 import { StatsStrip } from '@/status/StatsStrip'
-import { StatusDot } from '@/status/StatusDot'
 import { StatusText } from '@/status/StatusText'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -170,50 +169,35 @@ function AppDetailPage() {
         }
       />
 
-      {/* Identity header */}
-      <div className="flex items-center gap-3 mb-4">
-        <StatusDot status={app.status} size="md" />
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm" style={{ color: 'var(--wm-text-bright)', fontWeight: 700 }}>
-              {app.displayName}
-            </h1>
-            <TypeBadge label={app.appType.name} />
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <StatusText status={app.status} />
-            {app.domain && (
-              <>
-                <span style={{ color: 'var(--wm-text-dim)', opacity: 0.3 }}>|</span>
-                <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-                  {app.domain}
-                </span>
-              </>
-            )}
-            {app.restartPolicy && (
-              <>
-                <span style={{ color: 'var(--wm-text-dim)', opacity: 0.3 }}>|</span>
-                <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-                  Restart: {formatEnumLabel(app.restartPolicy)}
-                </span>
-              </>
-            )}
-          </div>
+      {/* Identity + actions row */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm" style={{ color: 'var(--wm-text-bright)', fontWeight: 700 }}>
+            {app.displayName}
+          </h1>
+          <TypeBadge label={app.appType.name} />
+          <StatusText status={app.status} />
+          {app.domain && (
+            <>
+              <span style={{ color: 'var(--wm-text-dim)', opacity: 0.3 }}>·</span>
+              <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
+                {app.domain}
+              </span>
+            </>
+          )}
         </div>
+        <ActionBar
+          actions={app.actions}
+          isTransitioning={isTransitioning}
+          onStart={() => startMutation.mutate(slug)}
+          onStop={() => stopMutation.mutate(slug)}
+          onRestart={() => restartMutation.mutate(slug)}
+          onKill={() => killMutation.mutate(slug)}
+          onUpdate={() => {
+            /* TODO: SSE update flow */
+          }}
+        />
       </div>
-
-      {/* Action bar */}
-      <ActionBar
-        actions={app.actions}
-        isTransitioning={isTransitioning}
-        onStart={() => startMutation.mutate(slug)}
-        onStop={() => stopMutation.mutate(slug)}
-        onRestart={() => restartMutation.mutate(slug)}
-        onKill={() => killMutation.mutate(slug)}
-        onUpdate={() => {
-          /* TODO: SSE update flow */
-        }}
-      />
 
       {/* Stats strip */}
       <StatsStrip items={statItems} className="mt-4 mb-4" />
