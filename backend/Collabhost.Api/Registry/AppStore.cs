@@ -166,6 +166,30 @@ public class AppStore
         return CapabilityResolver.Resolve<T>(binding.DefaultConfigurationJson, overrideJson);
     }
 
+    public async Task<AppType?> GetAppTypeByIdAsync(Ulid id, CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        return await db.AppTypes
+            .Include(t => t.Bindings)
+            .AsNoTracking()
+                .SingleOrDefaultAsync(t => t.Id == id, ct);
+    }
+
+    public async Task UpdateAppAsync(App app, CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        db.Apps.Attach(app);
+        db.Entry(app).Property(a => a.DisplayName).IsModified = true;
+        db.Entry(app).Property(a => a.ModifiedAt).IsModified = true;
+
+        await db.SaveChangesAsync(ct);
+
+        InvalidateAppCache(app.Slug);
+        _cache.Remove($"app:id:{app.Id}");
+    }
+
     public async Task<App> CreateAsync(App app, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);

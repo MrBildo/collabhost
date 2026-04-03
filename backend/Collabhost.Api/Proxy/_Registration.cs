@@ -28,4 +28,13 @@ public static class ProxyRegistration
             return services;
         }
     }
+
+    extension(IEndpointRouteBuilder routes)
+    {
+        public IEndpointRouteBuilder MapProxyEndpoints()
+        {
+            ProxyEndpoints.Map(routes);
+            return routes;
+        }
+    }
 }

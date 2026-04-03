@@ -1,6 +1,9 @@
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
+using Collabhost.Api.Dashboard;
 using Collabhost.Api.Data;
 using Collabhost.Api.Events;
+using Collabhost.Api.Platform;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
@@ -17,6 +20,12 @@ builder.Services.AddDataAccess(builder.Configuration);
 
 // Memory cache
 builder.Services.AddMemoryCache();
+
+// Auth
+using var earlyLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole());
+var earlyLogger = earlyLoggerFactory.CreateLogger("Startup");
+
+builder.Services.AddCollabhostAuthorization(builder.Configuration, earlyLogger);
 
 // Subsystems
 builder.Services.AddRegistry();
@@ -50,6 +59,15 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 }
+
+// Middleware
+app.UseCollabhostAuthorization();
+
+// Endpoints
+app.MapRegistryEndpoints();
+app.MapProxyEndpoints();
+app.MapDashboardEndpoints();
+app.MapSystemEndpoints();
 
 // SPA fallback
 app.UseStaticFiles();

@@ -10,4 +10,14 @@ public static class RegistryRegistration
             return services;
         }
     }
+
+    extension(IEndpointRouteBuilder routes)
+    {
+        public IEndpointRouteBuilder MapRegistryEndpoints()
+        {
+            AppEndpoints.Map(routes);
+            AppTypeEndpoints.Map(routes);
+            return routes;
+        }
+    }
 }
