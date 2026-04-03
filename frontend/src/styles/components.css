@@ -668,6 +668,24 @@
   color: var(--wm-text-bright);
 }
 
+.wm-status-cell__value--amber {
+  color: var(--wm-amber);
+}
+
+.wm-status-cell__value--green {
+  color: var(--wm-green);
+}
+
+.wm-status-cell__value--red {
+  color: var(--wm-red);
+}
+
+.wm-status-cell__detail {
+  font-size: 10px;
+  color: var(--wm-text-dim);
+  margin-top: 2px;
+}
+
 /* === Detail Card === */
 
 .wm-detail-card {
@@ -758,6 +776,11 @@
 
 .wm-log-level--ok {
   color: var(--wm-green);
+}
+
+.wm-log-msg {
+  color: var(--wm-text);
+  word-break: break-all;
 }
 
 /* === Empty State === */
