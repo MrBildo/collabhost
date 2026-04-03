@@ -159,39 +159,34 @@ public static class AppTypeEndpoints
             return tags;
         }
 
-        try
+        var metadata = appType.MetadataJson.TryDeserializeJson<AppTypeMetadata>(_jsonOptions);
+
+        if (metadata is null)
         {
-            var metadata = JsonSerializer.Deserialize<AppTypeMetadata>
-            (
-                appType.MetadataJson, _jsonOptions
-            );
+            return tags;
+        }
 
-            if (metadata?.Runtime is not null)
+        if (metadata.Runtime is not null)
+        {
+            var label = !string.IsNullOrWhiteSpace(metadata.Runtime.Version)
+                ? $"{metadata.Runtime.Name} {metadata.Runtime.Version}"
+                : metadata.Runtime.Name;
+
+            tags.Add(new AppTag(label, "runtime"));
+
+            if (!string.IsNullOrWhiteSpace(metadata.Runtime.PackageManager))
             {
-                var label = !string.IsNullOrWhiteSpace(metadata.Runtime.Version)
-                    ? $"{metadata.Runtime.Name} {metadata.Runtime.Version}"
-                    : metadata.Runtime.Name;
-
-                tags.Add(new AppTag(label, "runtime"));
-
-                if (!string.IsNullOrWhiteSpace(metadata.Runtime.PackageManager))
-                {
-                    tags.Add(new AppTag(metadata.Runtime.PackageManager, "tooling"));
-                }
-            }
-
-            if (metadata?.Framework is not null)
-            {
-                var label = !string.IsNullOrWhiteSpace(metadata.Framework.Version)
-                    ? $"{metadata.Framework.Name} {metadata.Framework.Version}"
-                    : metadata.Framework.Name;
-
-                tags.Add(new AppTag(label, "framework"));
+                tags.Add(new AppTag(metadata.Runtime.PackageManager, "tooling"));
             }
         }
-        catch (JsonException)
+
+        if (metadata.Framework is not null)
         {
-            // Malformed metadata -- skip tags
+            var label = !string.IsNullOrWhiteSpace(metadata.Framework.Version)
+                ? $"{metadata.Framework.Name} {metadata.Framework.Version}"
+                : metadata.Framework.Name;
+
+            tags.Add(new AppTag(label, "framework"));
         }
 
         return tags;
@@ -200,3 +195,20 @@ public static class AppTypeEndpoints
 #pragma warning restore MA0051
 #pragma warning restore MA0011
 #pragma warning restore MA0076
+
+// Encapsulates try/catch for JSON deserialization so callers use validation flow, not exception flow
+file static class JsonExtensions
+{
+    public static T? TryDeserializeJson<T>(this string json, JsonSerializerOptions? options = null)
+        where T : class
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, options);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+}
