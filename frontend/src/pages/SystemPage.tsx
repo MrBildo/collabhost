@@ -9,10 +9,10 @@ function formatStatusLabel(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-function truncateVersion(version: string): string {
+function displayVersion(version: string): string {
   const plusIndex = version.indexOf('+')
   if (plusIndex < 0) return version
-  return `${version.slice(0, plusIndex + 8)}…`
+  return version.slice(0, plusIndex)
 }
 
 function SystemPage() {
@@ -27,7 +27,7 @@ function SystemPage() {
           color: status.status === 'ok' ? ('green' as const) : ('red' as const),
         },
         { label: 'Hostname', value: status.hostname },
-        { label: 'Version', value: truncateVersion(status.version), color: 'amber' as const },
+        { label: 'Version', value: displayVersion(status.version), color: 'amber' as const },
         { label: 'Uptime', value: formatUptimeLong(status.uptimeSeconds) },
       ]
     : []
@@ -78,7 +78,7 @@ function SystemPage() {
                     Version
                   </td>
                   <td className="text-xs" style={{ color: 'var(--wm-text-bright)' }}>
-                    {status.version}
+                    {displayVersion(status.version)}
                   </td>
                 </tr>
                 <tr>
