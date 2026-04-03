@@ -369,7 +369,7 @@ public static class AppEndpoints
             {
                 return TypedResults.Problem
                 (
-                    detail: string.Join("; ", validationErrors),
+                    string.Join("; ", validationErrors),
                     statusCode: 400
                 );
             }
@@ -466,7 +466,7 @@ public static class AppEndpoints
         }
         catch (InvalidOperationException exception)
         {
-            return TypedResults.Problem(detail: exception.Message, statusCode: 409);
+            return TypedResults.Problem(exception.Message, statusCode: 409);
         }
     }
 
@@ -516,7 +516,7 @@ public static class AppEndpoints
         }
         catch (InvalidOperationException exception)
         {
-            return TypedResults.Problem(detail: exception.Message, statusCode: 409);
+            return TypedResults.Problem(exception.Message, statusCode: 409);
         }
     }
 
@@ -550,7 +550,7 @@ public static class AppEndpoints
         }
         catch (InvalidOperationException exception)
         {
-            return TypedResults.Problem(detail: exception.Message, statusCode: 409);
+            return TypedResults.Problem(exception.Message, statusCode: 409);
         }
     }
 
@@ -587,7 +587,7 @@ public static class AppEndpoints
         }
         catch (InvalidOperationException exception)
         {
-            return TypedResults.Problem(detail: exception.Message, statusCode: 409);
+            return TypedResults.Problem(exception.Message, statusCode: 409);
         }
     }
 
@@ -656,7 +656,7 @@ public static class AppEndpoints
 
         if (!isValid)
         {
-            return TypedResults.Problem(detail: error, statusCode: 400);
+            return TypedResults.Problem(error, statusCode: 400);
         }
 
         var exists = await store.ExistsBySlugAsync(request.Name, ct);
@@ -665,21 +665,21 @@ public static class AppEndpoints
         {
             return TypedResults.Problem
             (
-                detail: $"An app with slug '{request.Name}' already exists.",
+                $"An app with slug '{request.Name}' already exists.",
                 statusCode: 409
             );
         }
 
         if (!Ulid.TryParse(request.AppTypeId, out var appTypeId))
         {
-            return TypedResults.Problem(detail: "Invalid app type ID.", statusCode: 400);
+            return TypedResults.Problem("Invalid app type ID.", statusCode: 400);
         }
 
         var appType = await store.GetAppTypeByIdAsync(appTypeId, ct);
 
         if (appType is null)
         {
-            return TypedResults.Problem(detail: "App type not found.", statusCode: 404);
+            return TypedResults.Problem("App type not found.", statusCode: 404);
         }
 
         var app = new App
@@ -935,11 +935,11 @@ public static class AppEndpoints
                         value,
                         defaultValue,
                         fieldDescriptor.Editable,
-                        Options: fieldDescriptor.Options?
+                        fieldDescriptor.Options?
                             .Select(o => new FieldOption(o.Value.ToCamelCase(), o.Label))
                                 .ToList(),
-                        HelpText: fieldDescriptor.HelpText,
-                        Unit: fieldDescriptor.Unit
+                        fieldDescriptor.HelpText,
+                        fieldDescriptor.Unit
                     )
                 );
             }

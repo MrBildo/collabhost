@@ -74,18 +74,18 @@ public static class DashboardEndpoints
 
         var stats = new DashboardStats
         (
-            TotalApps: apps.Count,
-            Running: running,
-            Stopped: stopped,
-            Crashed: crashed,
-            Issues: crashed,
-            IssuesSummary: issuesSummary,
-            UptimePercent24h: null,
-            IncidentsThisWeek: 0,
-            MemoryUsedMb: null,
-            MemoryTotalMb: null,
-            RequestsPerMinute: null,
-            AppTypes: appTypes.Count
+            apps.Count,
+            running,
+            stopped,
+            crashed,
+            crashed,
+            issuesSummary,
+            null,
+            0,
+            null,
+            null,
+            null,
+            appTypes.Count
         );
 
         return TypedResults.Ok(stats);

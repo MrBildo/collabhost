@@ -26,11 +26,11 @@ public static class SystemEndpoints
 
         var status = new SystemStatus
         (
-            Status: "ok",
-            Version: version,
-            Hostname: Environment.MachineName,
-            UptimeSeconds: Math.Round(uptimeSeconds, 1),
-            Timestamp: DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
+            "ok",
+            version,
+            Environment.MachineName,
+            Math.Round(uptimeSeconds, 1),
+            DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
         );
 
         return TypedResults.Ok(status);
