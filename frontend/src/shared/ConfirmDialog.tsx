@@ -22,34 +22,45 @@ function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  const dialogRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
-    if (isOpen && dialogRef.current) {
-      const firstButton = dialogRef.current.querySelector('button')
-      firstButton?.focus()
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    if (isOpen && !dialog.open) {
+      dialog.showModal()
+    } else if (!isOpen && dialog.open) {
+      dialog.close()
     }
   }, [isOpen])
 
-  if (!isOpen) return null
+  function handleCancel(e: React.SyntheticEvent): void {
+    // Native cancel event fires on Escape — prevent default close
+    // so we route through onCancel for consistent behavior
+    e.preventDefault()
+    onCancel()
+  }
 
-  function handleOverlayClick(e: React.MouseEvent): void {
-    if (e.target === e.currentTarget) {
+  function handleClick(e: React.MouseEvent<HTMLDialogElement>): void {
+    // Click on the backdrop (the dialog element itself, not its children)
+    // closes the dialog. The ::backdrop pseudo-element doesn't receive
+    // click events directly, but clicks on it hit the dialog element.
+    if (e.target === dialogRef.current) {
       onCancel()
     }
   }
 
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: native dialog handles Escape via onCancel; onClick is for backdrop dismiss only
     <dialog
+      ref={dialogRef}
       className="wm-dialog-overlay"
-      onClick={handleOverlayClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onCancel()
-      }}
-      open
       aria-labelledby="confirm-dialog-title"
+      onCancel={handleCancel}
+      onClick={handleClick}
     >
-      <div className="wm-dialog" ref={dialogRef}>
+      <div className="wm-dialog">
         <div className="wm-dialog__title" id="confirm-dialog-title">
           {title}
         </div>

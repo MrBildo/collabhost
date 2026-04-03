@@ -918,23 +918,19 @@
 /* === Confirm Dialog === */
 
 dialog.wm-dialog-overlay {
-  /* Reset native dialog styles */
+  /* Reset native dialog styles for showModal() */
   border: none;
   padding: 0;
-  margin: 0;
+  margin: auto;
   max-width: none;
   max-height: none;
+  background: transparent;
   color: inherit;
+  overflow: visible;
 }
 
-.wm-dialog-overlay {
-  position: fixed;
-  inset: 0;
+dialog.wm-dialog-overlay::backdrop {
   background: rgba(0, 0, 0, 0.65);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
   animation: wm-fade-in 0.12s ease-out;
 }
 

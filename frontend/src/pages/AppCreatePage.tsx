@@ -98,11 +98,12 @@ function AppCreatePage() {
       return
     }
 
-    // Extract name and displayName from form values
-    const firstSectionKey = schema.sections[0]?.key
-    const basicsValues = formValues.basics ?? (firstSectionKey ? formValues[firstSectionKey] : undefined) ?? {}
-    const name = String(basicsValues.name ?? basicsValues.slug ?? '')
-    const displayName = String(basicsValues.displayName ?? basicsValues.display_name ?? name)
+    // The backend registration schema always emits a "basics" section
+    // with well-known field keys: "name" (slug) and "displayName".
+    // See AppTypeEndpoints.BuildRegistrationSections for the contract.
+    const basicsValues = formValues.basics ?? {}
+    const name = String(basicsValues.name ?? '')
+    const displayName = String(basicsValues.displayName ?? name)
 
     const request: CreateAppRequest = {
       name,
