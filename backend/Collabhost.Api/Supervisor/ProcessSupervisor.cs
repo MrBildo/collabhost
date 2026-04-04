@@ -30,7 +30,6 @@ public class ProcessSupervisor
 
     private readonly ConcurrentDictionary<Ulid, ManagedProcess> _processes = new();
     private readonly ConcurrentDictionary<Ulid, RestartPolicy> _restartPolicies = new();
-    private readonly SemaphoreSlim _lock = new(1, 1);
     private Timer? _graceTimer;
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -99,11 +98,14 @@ public class ProcessSupervisor
             await _graceTimer.DisposeAsync();
         }
 
-        await _lock.WaitAsync(cancellationToken);
-        try
-        {
-            foreach (var (appId, process) in _processes)
+        var stopTasks = _processes.Select
+        (
+            async kvp =>
             {
+                var (appId, process) = kvp;
+
+                await using var _ = await process.AcquireOperationLockAsync(cancellationToken);
+
                 if (process.IsRunning)
                 {
                     await StopProcessWithShutdownPolicyAsync(appId, process);
@@ -118,101 +120,80 @@ public class ProcessSupervisor
 
                 process.Dispose();
             }
+        );
 
-            _processes.Clear();
-            _restartPolicies.Clear();
-        }
-        finally
-        {
-            _lock.Release();
-        }
+        await Task.WhenAll(stopTasks);
+
+        _processes.Clear();
+        _restartPolicies.Clear();
 
         _logger.LogInformation("Process supervisor stopped");
     }
 
     public async Task<ManagedProcess> StartAppAsync(Ulid appId, CancellationToken ct = default)
     {
-        await _lock.WaitAsync(ct);
-        try
+        if (_processes.TryGetValue(appId, out var existing))
         {
+            await using var _ = await existing.AcquireOperationLockAsync(ct);
+
             return await StartAppInternalAsync(appId, ct);
         }
-        finally
-        {
-            _lock.Release();
-        }
+
+        return await StartAppInternalAsync(appId, ct);
     }
 
     public async Task<ManagedProcess> StopAppAsync(Ulid appId, CancellationToken ct = default)
     {
-        await _lock.WaitAsync(ct);
-        try
+        if (!_processes.TryGetValue(appId, out var process) || process.IsStopped)
         {
-            if (!_processes.TryGetValue(appId, out var process) || process.IsStopped)
-            {
-                throw new InvalidOperationException("App is already stopped.");
-            }
-
-            process.MarkStoppedByOperator();
-
-            await StopProcessWithShutdownPolicyAsync(appId, process);
-
-            _logger.LogInformation("Stopped app '{DisplayName}'", process.DisplayName);
-
-            return process;
+            throw new InvalidOperationException("App is already stopped.");
         }
-        finally
-        {
-            _lock.Release();
-        }
+
+        await using var _ = await process.AcquireOperationLockAsync(ct);
+
+        process.MarkStoppedByOperator();
+
+        await StopProcessWithShutdownPolicyAsync(appId, process);
+
+        _logger.LogInformation("Stopped app '{DisplayName}'", process.DisplayName);
+
+        return process;
     }
 
     public async Task<ManagedProcess> RestartAppAsync(Ulid appId, CancellationToken ct = default)
     {
-        await _lock.WaitAsync(ct);
-        try
+        if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
         {
-            if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
-            {
-                existing.ClearStoppedByOperator();
+            await using var operationLock = await existing.AcquireOperationLockAsync(ct);
 
-                await StopProcessWithShutdownPolicyAsync(appId, existing);
+            existing.ClearStoppedByOperator();
 
-                existing.Dispose();
-                _processes.TryRemove(appId, out _);
-            }
+            await StopProcessWithShutdownPolicyAsync(appId, existing);
 
-            return await StartAppInternalAsync(appId, ct);
+            existing.Dispose();
+            _processes.TryRemove(appId, out _);
         }
-        finally
-        {
-            _lock.Release();
-        }
+
+        return await StartAppInternalAsync(appId, ct);
     }
 
     public async Task KillAppAsync(Ulid appId, CancellationToken ct = default)
     {
-        await _lock.WaitAsync(ct);
-        try
+        if (!_processes.TryGetValue(appId, out var process))
         {
-            if (!_processes.TryGetValue(appId, out var process))
-            {
-                throw new InvalidOperationException("No managed process found for this app.");
-            }
-
-            process.MarkStoppedByOperator();
-            process.KillProcess();
-
-            var previous = process.MarkStopped();
-
-            PublishStateChanged(process, previous);
-
-            _logger.LogInformation("Killed app '{DisplayName}'", process.DisplayName);
+            throw new InvalidOperationException("No managed process found for this app.");
         }
-        finally
-        {
-            _lock.Release();
-        }
+
+        await using var _ = await process.AcquireOperationLockAsync(ct);
+
+        process.MarkStoppedByOperator();
+        process.KillProcess();
+
+        var previous = process.MarkStopped();
+
+        PublishStateChanged(process, previous);
+
+        _logger.LogInformation("Killed app '{DisplayName}'", process.DisplayName);
     }
 
     public ManagedProcess? GetProcess(Ulid appId)
@@ -446,18 +427,12 @@ public class ProcessSupervisor
                 {
                     await Task.Delay(delay, cancellation.Token);
 
-                    await _lock.WaitAsync(cancellation.Token);
-                    try
-                    {
-                        _processes.TryRemove(appId, out var stale);
-                        stale?.Dispose();
+                    await using var _ = await process.AcquireOperationLockAsync(cancellation.Token);
 
-                        await StartAppInternalAsync(appId, cancellation.Token);
-                    }
-                    finally
-                    {
-                        _lock.Release();
-                    }
+                    _processes.TryRemove(appId, out var stale);
+                    stale?.Dispose();
+
+                    await StartAppInternalAsync(appId, cancellation.Token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -627,7 +602,6 @@ public class ProcessSupervisor
     public void Dispose()
     {
         _graceTimer?.Dispose();
-        _lock.Dispose();
 
         foreach (var (_, process) in _processes)
         {
