@@ -224,4 +224,73 @@ public class ManagedProcessTests
 
         cancellation.IsCancellationRequested.ShouldBeTrue();
     }
+
+    [Fact]
+    public async Task AcquireOperationLockAsync_SecondCallBlocks_UntilFirstReleased()
+    {
+        var process = CreateProcess();
+        var secondAcquired = false;
+
+        var firstLock = await process.AcquireOperationLockAsync();
+
+        var secondTask = Task.Run(async () =>
+        {
+            await using var secondLock = await process.AcquireOperationLockAsync();
+            secondAcquired = true;
+        });
+
+        await Task.Delay(200);
+
+        secondAcquired.ShouldBeFalse();
+
+        await firstLock.DisposeAsync();
+
+        await secondTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        secondAcquired.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task AcquireOperationLockAsync_RespectsCancellation()
+    {
+        var process = CreateProcess();
+        using var alreadyCancelled = new CancellationTokenSource();
+        await alreadyCancelled.CancelAsync();
+
+        await using var firstLock = await process.AcquireOperationLockAsync(CancellationToken.None);
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => process.AcquireOperationLockAsync(alreadyCancelled.Token)
+        );
+    }
+
+    [Fact]
+    public async Task AcquireOperationLockAsync_DisposingRelease_AllowsNextAcquisition()
+    {
+        var process = CreateProcess();
+
+        var firstLock = await process.AcquireOperationLockAsync();
+
+        await firstLock.DisposeAsync();
+
+        var secondTask = process.AcquireOperationLockAsync();
+
+        var completed = await Task.WhenAny(secondTask, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        completed.ShouldBe(secondTask);
+
+        await using var secondLock = await secondTask;
+    }
+
+    [Fact]
+    public async Task Dispose_DisposesOperationLock()
+    {
+        var process = CreateProcess();
+
+        process.Dispose();
+
+        await Should.ThrowAsync<ObjectDisposedException>(
+            () => process.AcquireOperationLockAsync()
+        );
+    }
 }
