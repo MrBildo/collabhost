@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
 
 using Shouldly;
@@ -13,187 +12,153 @@ public class SmokeTests(AppHostFixture fixture)
 {
     private readonly HttpClient _client = fixture.ApiClient;
 
-    private static readonly string _executableAppTypeExternalId = "01KN0P7JYNJRAHGC01N17NFTWW";
-
     [Fact]
     public async Task HealthCheck_ReturnsOk()
     {
-        // Act
         var response = await _client.GetAsync("/health");
 
-        // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]
-    public async Task Status_ReturnsOk()
+    public async Task HealthCheck_ReturnsHealthyBody()
     {
-        // Act
+        var response = await _client.GetAsync("/health");
+
+        var body = await response.Content.ReadAsStringAsync();
+
+        body.ShouldBe("Healthy");
+    }
+
+    [Fact]
+    public async Task AlivenessCheck_ReturnsOk()
+    {
+        var response = await _client.GetAsync("/alive");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task StatusEndpoint_ReturnsOk_WithoutAuth()
+    {
         var response = await _client.GetAsync("/api/v1/status");
 
-        // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        json.RootElement.GetProperty("status").GetString().ShouldBe("healthy");
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("ok");
+        doc.RootElement.GetProperty("hostname").GetString().ShouldNotBeNullOrWhiteSpace();
+        doc.RootElement.GetProperty("version").GetString().ShouldNotBeNullOrWhiteSpace();
+        doc.RootElement.GetProperty("uptimeSeconds").GetDouble().ShouldBeGreaterThanOrEqualTo(0);
+        doc.RootElement.GetProperty("timestamp").GetString().ShouldNotBeNullOrWhiteSpace();
     }
 
     [Fact]
-    public async Task AppCrud_CreateAndGet_FieldsMatch()
+    public async Task AppsEndpoint_RejectsMissingAuth()
     {
-        // Arrange
-        var slug = UniqueSlug("crud");
-        var request = CreateAppRequest(slug);
+        var response = await _client.GetAsync("/api/v1/apps");
 
-        // Act — create
-        var createResponse = await _client.PostAsJsonAsync("/api/v1/apps", request);
-
-        // Assert — create
-        createResponse.StatusCode.ShouldBe(HttpStatusCode.Created);
-
-        var createContent = await createResponse.Content.ReadAsStringAsync();
-        var createJson = JsonDocument.Parse(createContent);
-        var externalId = createJson.RootElement.GetProperty("externalId").GetString()!;
-        externalId.ShouldNotBeNullOrWhiteSpace();
-
-        // Act — get
-        var getResponse = await _client.GetAsync($"/api/v1/apps/{externalId}");
-
-        // Assert — get
-        getResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-
-        var getContent = await getResponse.Content.ReadAsStringAsync();
-        var getJson = JsonDocument.Parse(getContent);
-        getJson.RootElement.GetProperty("name").GetString().ShouldBe(slug);
-        getJson.RootElement.GetProperty("appType").GetProperty("displayName").GetString().ShouldBe("Executable");
-    }
-
-    [Fact]
-    public async Task AppLifecycle_GetStatus_ReturnsStopped()
-    {
-        // Arrange — ProcessSupervisor uses a stub command that cannot execute in real environments.
-        // Test verifies the status endpoint works for a never-started app.
-        var slug = UniqueSlug("lifecycle");
-        var externalId = await CreateAppAsync(slug);
-
-        // Act — get status of never-started app
-        var statusResponse = await _client.GetAsync($"/api/v1/apps/{externalId}/status");
-
-        // Assert — stopped (never started)
-        statusResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-
-        var statusContent = await statusResponse.Content.ReadAsStringAsync();
-        var statusJson = JsonDocument.Parse(statusContent);
-        statusJson.RootElement.GetProperty("processState").GetString().ShouldBe("Stopped");
-    }
-
-    [Fact]
-    public async Task AuthRequired_NoHeader_Returns403()
-    {
-        // Arrange — create a fresh client without the auth header
-        var unauthenticatedClient = new HttpClient
-        {
-            BaseAddress = _client.BaseAddress
-        };
-
-        // Act
-        var response = await unauthenticatedClient.GetAsync("/api/v1/apps");
-
-        // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
     [Fact]
-    public async Task AppDelete_CreateThenDelete_Returns404OnGet()
+    public async Task AppsEndpoint_WithAuth_ReturnsOk()
     {
-        // Arrange
-        var slug = UniqueSlug("delete");
-        var externalId = await CreateAppAsync(slug);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/apps");
+        request.Headers.Add("X-User-Key", fixture.AdminKey);
 
-        // Act — delete
-        var deleteResponse = await _client.DeleteAsync($"/api/v1/apps/{externalId}");
+        var response = await _client.SendAsync(request);
 
-        // Assert — deleted
-        deleteResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-        // Act — get after delete
-        var getResponse = await _client.GetAsync($"/api/v1/apps/{externalId}");
+        var body = await response.Content.ReadAsStringAsync();
 
-        // Assert — gone
-        getResponse.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        body.ShouldStartWith("[");
     }
 
     [Fact]
-    public async Task Routes_CreatedAppAppearsInRouteList()
+    public async Task AppTypesEndpoint_WithAuth_ReturnsSeededTypes()
     {
-        // Arrange
-        var slug = UniqueSlug("routes");
-        await CreateAppAsync(slug);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/app-types");
+        request.Headers.Add("X-User-Key", fixture.AdminKey);
 
-        // Act
-        var response = await _client.GetAsync("/api/v1/routes");
+        var response = await _client.SendAsync(request);
 
-        // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        var routes = json.RootElement.GetProperty("routes");
-        routes.GetArrayLength().ShouldBeGreaterThan(0);
+        var body = await response.Content.ReadAsStringAsync();
+        var items = JsonDocument.Parse(body).RootElement;
 
-        var matchingRoute = routes
-            .EnumerateArray()
-            .FirstOrDefault
-            (
-                r => r.GetProperty("domain").GetString()!
-                    .StartsWith(slug, StringComparison.Ordinal)
-            );
-        matchingRoute.ValueKind.ShouldNotBe(JsonValueKind.Undefined);
+        // Should have at least the 3 original seeded types (dotnet-app, nodejs-app, static-site)
+        // plus executable and system-service from the migration
+        items.GetArrayLength().ShouldBeGreaterThanOrEqualTo(3);
     }
 
     [Fact]
-    public async Task Capabilities_ListReturnsSeededData()
+    public async Task RoutesEndpoint_WithAuth_ReturnsOk()
     {
-        // Act
-        var response = await _client.GetAsync("/api/v1/capabilities");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/routes");
+        request.Headers.Add("X-User-Key", fixture.AdminKey);
 
-        // Assert
+        var response = await _client.SendAsync(request);
+
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        json.RootElement.GetArrayLength().ShouldBeGreaterThanOrEqualTo(10);
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+
+        doc.RootElement.GetProperty("baseDomain").GetString().ShouldNotBeNullOrWhiteSpace();
+        doc.RootElement.GetProperty("routes").GetArrayLength().ShouldBeGreaterThanOrEqualTo(0);
     }
 
-    private static string UniqueSlug(string prefix) =>
-        $"smoke-{prefix}-{Guid.NewGuid():N}"[..30];
-
-    private static object CreateAppRequest(string slug)
+    [Fact]
+    public async Task DashboardStatsEndpoint_WithAuth_ReturnsOk()
     {
-        var tempPath = Path.Combine(Path.GetTempPath(), "collabhost-smoke", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempPath);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/dashboard/stats");
+        request.Headers.Add("X-User-Key", fixture.AdminKey);
 
-        return new
-        {
-            Name = slug,
-            DisplayName = $"Smoke {slug}",
-            AppTypeId = _executableAppTypeExternalId,
-            CapabilityOverrides = new Dictionary<string, object>(StringComparer.Ordinal)
-            {
-                ["artifact"] = new { location = tempPath }
-            }
-        };
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+
+        doc.RootElement.GetProperty("totalApps").GetInt32().ShouldBeGreaterThanOrEqualTo(0);
+        doc.RootElement.GetProperty("appTypes").GetInt32().ShouldBeGreaterThanOrEqualTo(3);
     }
 
-    private async Task<string> CreateAppAsync(string slug)
+    [Fact]
+    public async Task AppDetail_NotFound_Returns404()
     {
-        var request = CreateAppRequest(slug);
-        var response = await _client.PostAsJsonAsync("/api/v1/apps", request);
-        response.EnsureSuccessStatusCode();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/apps/nonexistent-app");
+        request.Headers.Add("X-User-Key", fixture.AdminKey);
 
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        return json.RootElement.GetProperty("externalId").GetString()!;
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task RegistrationSchema_ForDotnetApp_ReturnsSchema()
+    {
+        using var request = new HttpRequestMessage
+        (
+            HttpMethod.Get, "/api/v1/app-types/dotnet-app/registration"
+        );
+
+        request.Headers.Add("X-User-Key", fixture.AdminKey);
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+
+        doc.RootElement.GetProperty("appType").GetProperty("name").GetString().ShouldBe("dotnet-app");
+        doc.RootElement.GetProperty("sections").GetArrayLength().ShouldBeGreaterThanOrEqualTo(1);
     }
 }

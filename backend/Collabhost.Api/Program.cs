@@ -1,59 +1,43 @@
-using System.Reflection;
-
-using Collabhost.Api.Auth;
-
-// --version flag
-if (args.Contains("--version"))
-{
-    var version = Assembly
-        .GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-        ?.InformationalVersion ?? "0.1.0";
-    Console.WriteLine($"Collabhost {version}");
-    return;
-}
+using Collabhost.Api.Authorization;
+using Collabhost.Api.Capabilities;
+using Collabhost.Api.Dashboard;
+using Collabhost.Api.Data;
+using Collabhost.Api.Events;
+using Collabhost.Api.Platform;
+using Collabhost.Api.Proxy;
+using Collabhost.Api.Registry;
+using Collabhost.Api.Supervisor;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Local config overlay
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
-// Aspire service defaults (OpenTelemetry, health checks, service discovery)
+// Aspire service defaults
 builder.AddServiceDefaults();
 
 // Database
-builder.Services.AddCollabhostDatabase(builder.Configuration);
+builder.Services.AddDataAccess(builder.Configuration);
+
+// Memory cache
+builder.Services.AddMemoryCache();
 
 // Auth
-using var earlyLoggerFactory = LoggerFactory.Create(b => b.AddConsole());
-var earlyLogger = earlyLoggerFactory.CreateLogger("Collabhost.Startup");
-builder.Services.AddCollabhostAuth(builder.Configuration, earlyLogger);
+using var earlyLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole());
+var earlyLogger = earlyLoggerFactory.CreateLogger("Startup");
 
-// Feature modules (auto-discovered via reflection)
-builder.Services.AddFeatureModules(Assembly.GetExecutingAssembly());
+builder.Services.AddCollabhostAuthorization(builder.Configuration, earlyLogger);
 
-// Command dispatcher (auto-discovers ICommandHandler<,> implementations)
-builder.Services.AddCommandDispatcher();
-
-// Infrastructure services
-builder.Services.AddInfrastructureServices();
-
-// Platform services
-builder.Services.AddPlatformServices(builder.Configuration);
-
-// Proxy services
-builder.Services.AddProxyServices(builder.Configuration);
-
-// JSON serialization (UTC DateTime normalization)
-builder.Services.ConfigureHttpJsonOptions
-(
-    options => options.SerializerOptions.Converters.Add(new UtcDateTimeJsonConverter())
-);
+// Subsystems
+builder.Services.AddRegistry();
+builder.Services.AddCapabilities();
+builder.Services.AddEventBus();
+builder.Services.AddSupervisor();
+builder.Services.AddProxy(builder.Configuration);
 
 // OpenAPI
 builder.Services.AddOpenApi();
 
-// CORS (development only)
+// CORS (dev only)
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddCors();
@@ -61,48 +45,35 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// Ensure database is created (dev only -- use migrations in prod)
 if (app.Environment.IsDevelopment())
 {
     await using var scope = app.Services.CreateAsyncScope();
-    var db = scope.ServiceProvider.GetRequiredService<CollabhostDbContext>();
-    await db.Database.EnsureCreatedAsync();
-}
+    var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
 
-// Seed proxy app from configuration (idempotent)
-await SeedProxyAppAsync(app);
+    await using var context = await db.CreateDbContextAsync();
+    await context.Database.MigrateAsync();
 
-static async Task SeedProxyAppAsync(WebApplication application)
-{
-    await using var scope = application.Services.CreateAsyncScope();
-    var seeder = scope.ServiceProvider.GetRequiredService<IProxyAppSeeder>();
-    await seeder.SeedAsync(CancellationToken.None);
-}
+    var proxySeeder = scope.ServiceProvider.GetRequiredService<ProxyAppSeeder>();
+    await proxySeeder.SeedAsync(CancellationToken.None);
 
-// Development middleware
-if (app.Environment.IsDevelopment())
-{
     app.MapOpenApi();
-    app.UseCors
-    (
-        policy => policy
-            .AllowAnyOrigin()
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-    );
+    app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 }
 
-// Auth middleware
-app.UseCollabhostAuth();
+// Middleware
+app.UseCollabhostAuthorization();
 
-// Feature module endpoints (auto-discovered)
-app.MapFeatureModuleEndpoints();
+// Endpoints
+app.MapRegistryEndpoints();
+app.MapProxyEndpoints();
+app.MapDashboardEndpoints();
+app.MapSystemEndpoints();
 
 // SPA fallback
 app.UseStaticFiles();
 app.MapFallbackToFile("index.html");
 
-// Default health/alive endpoints (from ServiceDefaults)
+// Health
 app.MapDefaultEndpoints();
 
 await app.RunAsync();

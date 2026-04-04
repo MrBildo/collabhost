@@ -33,11 +33,13 @@ backend/Collabhost.Api/db/
 
 # IDE / editor
 .vscode/
-backend/.vs/
+.vs/
+.playwright-cli/
 
 # Secrets / env
 backend/**/Properties/launchSettings.json
 !backend/Collabhost.AppHost/Properties/launchSettings.json
+!backend/Collabhost.Api/Properties/launchSettings.json
 backend/**/appsettings.Development.json
 frontend/.env
 frontend/.env.*
