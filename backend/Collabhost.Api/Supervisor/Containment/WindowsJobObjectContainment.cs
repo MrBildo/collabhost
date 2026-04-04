@@ -11,8 +11,15 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
     private readonly ILogger<WindowsJobObjectContainment> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
+    private readonly bool _isHostInJob = DetectHostJobMembership(logger);
+
     public IContainmentHandle? CreateContainer(string name)
     {
+        if (_isHostInJob)
+        {
+            return null;
+        }
+
         var jobName = $"collabhost-{name}";
 
         var securityAttributes = new SecurityAttributes
@@ -69,7 +76,32 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
     }
 
     public bool IsSupported(ContainmentCapability capability) =>
-        capability == ContainmentCapability.KillOnClose;
+        capability == ContainmentCapability.KillOnClose && !_isHostInJob;
+
+    private static bool DetectHostJobMembership(ILogger logger)
+    {
+        try
+        {
+            var currentProcess = NativeMethods.GetCurrentProcess();
+
+            if (NativeMethods.IsProcessInJob(currentProcess, IntPtr.Zero, out var isInJob) && isInJob)
+            {
+                logger.LogInformation
+                (
+                    "Process containment unavailable: host process is already in a job object " +
+                    "(typical under Aspire/Visual Studio). Managed processes will not have orphan protection"
+                );
+
+                return true;
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Failed to detect host job object membership");
+        }
+
+        return false;
+    }
 
     // No subclasses expected -- private kernel handle wrapper
     private sealed class SafeJobHandle() : SafeHandleZeroOrMinusOneIsInvalid(ownsHandle: true)
@@ -221,5 +253,15 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr GetCurrentProcess();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsProcessInJob(
+            IntPtr processHandle,
+            IntPtr jobHandle,
+            [MarshalAs(UnmanagedType.Bool)] out bool result);
     }
 }
