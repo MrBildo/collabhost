@@ -84,16 +84,50 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
         {
             var currentProcess = NativeMethods.GetCurrentProcess();
 
-            if (NativeMethods.IsProcessInJob(currentProcess, IntPtr.Zero, out var isInJob) && isInJob)
+            if (!NativeMethods.IsProcessInJob(currentProcess, IntPtr.Zero, out var isInJob) || !isInJob)
+            {
+                return false;
+            }
+
+            // Host is in a job. On Windows 8+, nested jobs work by default -- they only
+            // fail when the parent job restricts it (e.g., Aspire's DCP). Probe by trying
+            // to assign the current process to a temporary job. If it fails, the parent job
+            // blocks nesting and containment will not work for child processes either.
+            var securityAttributes = new SecurityAttributes
+            {
+                Length = (uint)Marshal.SizeOf<SecurityAttributes>(),
+                SecurityDescriptor = IntPtr.Zero,
+                InheritHandle = false
+            };
+
+            using var probeJob = NativeMethods.CreateJobObject(ref securityAttributes, null);
+
+            if (probeJob.IsInvalid)
             {
                 logger.LogInformation
                 (
-                    "Process containment unavailable: host process is already in a job object " +
+                    "Process containment unavailable: could not create probe job object " +
                     "(typical under Aspire/Visual Studio). Managed processes will not have orphan protection"
                 );
 
                 return true;
             }
+
+            if (!NativeMethods.AssignProcessToJobObject(probeJob, currentProcess))
+            {
+                logger.LogInformation
+                (
+                    "Process containment unavailable: host process is in a restricted job object " +
+                    "(typical under Aspire/Visual Studio). Managed processes will not have orphan protection"
+                );
+
+                return true;
+            }
+
+            // Nested assignment succeeded -- containment will work normally.
+            // The probe job is disposed here. Since we did not set KILL_ON_JOB_CLOSE,
+            // the process continues normally and leaves the probe job when the handle closes.
+            return false;
         }
         catch (Exception exception)
         {
@@ -224,7 +258,11 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
     private static class NativeMethods
     {
         public const uint JobObjectLimitKillOnJobClose = 0x2000;
-        public const uint ProcessAssignProcess = 0x0001;
+
+        // AssignProcessToJobObject requires PROCESS_SET_QUOTA | PROCESS_TERMINATE
+        public const uint ProcessSetQuota = 0x0100;
+        public const uint ProcessTerminate = 0x0001;
+        public const uint ProcessAssignProcess = ProcessSetQuota | ProcessTerminate;
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern SafeJobHandle CreateJobObject(ref SecurityAttributes lpJobAttributes, string? lpName);
