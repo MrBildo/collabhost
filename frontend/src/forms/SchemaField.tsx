@@ -39,7 +39,8 @@ function formatReadValue(type: FieldType, value: unknown, options?: FieldOption[
   if (value == null) return '--'
   if (type === 'boolean') return value ? 'Yes' : 'No'
   if (type === 'select' && options) {
-    const match = options.find((o) => o.value === String(value))
+    const str = String(value)
+    const match = options.find((o) => o.value.toLowerCase() === str.toLowerCase())
     return match ? match.label : String(value)
   }
   return String(value)
@@ -74,10 +75,12 @@ function SchemaField({
     </>
   )
 
+  const isKeyValue = type === 'keyValue' || type === 'keyvalue'
+
   // Read mode or locked/derived fields -- show plain text
   if (!isEditing || isReadOnly) {
     // keyValue type gets its own read rendering
-    if (type === 'keyValue') {
+    if (isKeyValue) {
       const kvValue = (value as Record<string, string>) ?? {}
       return (
         <FormField label={label} helpText={helpText} error={error} badges={badges} className={className}>
@@ -171,6 +174,7 @@ function renderEditField(
       )
 
     case 'keyValue':
+    case 'keyvalue':
       return <KeyValueField value={(value as Record<string, string>) ?? {}} onChange={onChange} />
   }
 }

@@ -15,7 +15,7 @@ type AppTag = {
   group: 'runtime' | 'framework' | 'tooling'
 }
 
-type FieldType = 'text' | 'number' | 'boolean' | 'select' | 'directory' | 'keyValue'
+type FieldType = 'text' | 'number' | 'boolean' | 'select' | 'directory' | 'keyValue' | 'keyvalue'
 
 type FieldEditable = { mode: 'always' } | { mode: 'locked'; reason: string } | { mode: 'derived'; reason: string }
 

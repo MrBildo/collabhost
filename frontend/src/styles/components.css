@@ -573,7 +573,7 @@
 
 .wm-kv-row {
   display: grid;
-  grid-template-columns: 140px 1fr 32px;
+  grid-template-columns: minmax(140px, auto) 1fr 32px;
   border-bottom: 1px solid var(--wm-border-subtle);
   align-items: center;
 }

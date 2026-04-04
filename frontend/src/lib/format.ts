@@ -77,6 +77,26 @@ function formatMemory(mb: number | null | undefined): string {
   return `${Math.round(mb)} MB`
 }
 
+/**
+ * Derives a URL-safe slug from a display name.
+ * Rules match backend Slug validation: lowercase alphanumeric + hyphens,
+ * must start/end with alphanumeric, max 63 chars.
+ */
+function toSlug(displayName: string): string {
+  return (
+    displayName
+      .toLowerCase()
+      .replace(/[\s_]+/g, '-') // spaces and underscores → hyphens
+      .replace(/[^a-z0-9-]/g, '') // strip invalid chars
+      .replace(/-{2,}/g, '-') // collapse multiple hyphens
+      .replace(/^-+/, '') // trim leading hyphens
+      .replace(/-+$/, '') // trim trailing hyphens
+      .slice(0, 63) // max length
+      // ensure trailing char is alphanumeric after truncation
+      .replace(/-+$/, '')
+  )
+}
+
 export {
   formatUptime,
   formatUptimeLong,
@@ -86,4 +106,5 @@ export {
   formatDateTime,
   formatTimestamp,
   formatMemory,
+  toSlug,
 }

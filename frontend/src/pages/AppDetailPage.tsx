@@ -99,15 +99,6 @@ function AppDetailPage() {
     },
     { key: 'registered', label: 'Registered', value: formatDateTime(app.registeredAt) },
     {
-      key: 'domain',
-      label: 'Domain',
-      value: app.domain ? (
-        <span style={{ color: app.domainActive ? 'var(--wm-amber)' : 'var(--wm-text-dim)' }}>{app.domain}</span>
-      ) : (
-        '--'
-      ),
-    },
-    {
       key: 'tags',
       label: 'Tags',
       value:
@@ -128,7 +119,22 @@ function AppDetailPage() {
         {
           key: 'domain',
           label: 'Domain',
-          value: <span style={{ color: 'var(--wm-amber)', fontWeight: 500 }}>{app.route.domain}</span>,
+          value: (
+            <a
+              href={`${app.route.tls ? 'https' : 'http'}://${app.route.domain}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--wm-amber)', fontWeight: 500, textDecoration: 'none' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.textDecoration = 'underline'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.textDecoration = 'none'
+              }}
+            >
+              {app.route.domain}
+            </a>
+          ),
         },
         { key: 'target', label: 'Target', value: app.route.target },
         {
@@ -180,9 +186,21 @@ function AppDetailPage() {
           {app.domain && (
             <>
               <span style={{ color: 'var(--wm-text-dim)', opacity: 0.3 }}>·</span>
-              <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
+              <a
+                href={`${app.route?.tls ? 'https' : 'http'}://${app.domain}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs"
+                style={{ color: 'var(--wm-text-dim)', textDecoration: 'none' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--wm-amber)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--wm-text-dim)'
+                }}
+              >
                 {app.domain}
-              </span>
+              </a>
             </>
           )}
         </div>
