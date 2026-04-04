@@ -60,6 +60,8 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
 
     public bool HasProcessExited => _handle?.HasExited ?? true;
 
+    public int? HandleExitCode => _handle?.ExitCode;
+
     public async Task<IAsyncDisposable> AcquireOperationLockAsync(CancellationToken ct = default)
     {
         await _operationLock.WaitAsync(ct);

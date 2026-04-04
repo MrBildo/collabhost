@@ -807,7 +807,7 @@ public class ProcessSupervisor
 
     private void CheckGracePeriods(object? state)
     {
-        foreach (var (_, process) in _processes)
+        foreach (var (appId, process) in _processes)
         {
             if (process.ShouldResetRestartCount())
             {
@@ -818,6 +818,18 @@ public class ProcessSupervisor
                     "Reset restart count for '{DisplayName}' after grace period",
                     process.DisplayName
                 );
+            }
+
+            // Reconciliation: detect processes that died without the supervisor noticing
+            if (process.State == ProcessState.Running && process.HasProcessExited)
+            {
+                _logger.LogWarning
+                (
+                    "Reconciliation: process '{Slug}' is marked Running but has exited",
+                    process.AppSlug
+                );
+
+                OnProcessExited(appId, process.HandleExitCode ?? -1);
             }
         }
     }
