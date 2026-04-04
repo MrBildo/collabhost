@@ -363,7 +363,7 @@ public class ProcessSupervisor
             return;
         }
 
-        var previousState = process.MarkCrashed();
+        var previousState = process.MarkCrashed(exitCode);
 
         PublishStateChanged(process, previousState);
 

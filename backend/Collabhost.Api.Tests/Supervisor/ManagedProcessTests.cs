@@ -38,7 +38,7 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
+        process.MarkCrashed(1);
 
         process.IsCrashed.ShouldBeTrue();
         process.HasMaxRestartsExceeded(10).ShouldBeFalse();
@@ -51,7 +51,7 @@ public class ManagedProcessTests
 
         for (var i = 0; i < 10; i++)
         {
-            process.MarkCrashed();
+            process.MarkCrashed(1);
         }
 
         process.HasMaxRestartsExceeded(10).ShouldBeTrue();
@@ -62,7 +62,7 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
+        process.MarkCrashed(1);
 
         var delay = process.GetBackoffDelay();
 
@@ -74,8 +74,8 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
-        process.MarkCrashed();
+        process.MarkCrashed(1);
+        process.MarkCrashed(1);
 
         var delay = process.GetBackoffDelay();
 
@@ -89,7 +89,7 @@ public class ManagedProcessTests
 
         for (var i = 0; i < 20; i++)
         {
-            process.MarkCrashed();
+            process.MarkCrashed(1);
         }
 
         var delay = process.GetBackoffDelay();
@@ -191,9 +191,9 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
-        process.MarkCrashed();
-        process.MarkCrashed();
+        process.MarkCrashed(1);
+        process.MarkCrashed(1);
+        process.MarkCrashed(1);
 
         process.ResetRestartCount();
 
