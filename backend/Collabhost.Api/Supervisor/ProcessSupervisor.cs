@@ -5,12 +5,14 @@ using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Events;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
+using Collabhost.Api.Supervisor.Containment;
 
 namespace Collabhost.Api.Supervisor;
 
 public class ProcessSupervisor
 (
     IManagedProcessRunner runner,
+    IProcessContainment containment,
     AppStore appStore,
     IEventBus<ProcessStateChangedEvent> eventBus,
     ILogger<ProcessSupervisor> logger
@@ -18,6 +20,9 @@ public class ProcessSupervisor
 {
     private readonly IManagedProcessRunner _runner = runner
         ?? throw new ArgumentNullException(nameof(runner));
+
+    private readonly IProcessContainment _containment = containment
+        ?? throw new ArgumentNullException(nameof(containment));
 
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
@@ -304,6 +309,18 @@ public class ProcessSupervisor
         );
 
         var handle = _runner.Start(startConfiguration);
+
+        var container = _containment.CreateContainer(app.Slug);
+
+        if (container is not null)
+        {
+            if (!container.AssignProcess(handle.Pid))
+            {
+                _logger.LogWarning("Failed to assign process to containment for '{Slug}'", app.Slug);
+            }
+        }
+
+        managed.SetContainmentHandle(container);
 
         previousState = managed.MarkRunning(handle);
 

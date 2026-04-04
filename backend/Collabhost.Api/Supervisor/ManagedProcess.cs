@@ -1,5 +1,6 @@
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
+using Collabhost.Api.Supervisor.Containment;
 
 namespace Collabhost.Api.Supervisor;
 
@@ -8,6 +9,7 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
     private readonly SemaphoreSlim _operationLock = new(1, 1);
 
     private IProcessHandle? _handle;
+    private IContainmentHandle? _containmentHandle;
     private int _consecutiveFailures;
     private DateTime? _lastHealthyAt;
     private CancellationTokenSource? _restartDelayCancellation;
@@ -60,6 +62,8 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
     public void MarkStoppedByOperator() => StoppedByOperator = true;
 
     public void ClearStoppedByOperator() => StoppedByOperator = false;
+
+    public void SetContainmentHandle(IContainmentHandle? handle) => _containmentHandle = handle;
 
     public ProcessState MarkStarting()
     {
@@ -166,6 +170,7 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
     {
         CancelPendingRestart();
         _handle?.Dispose();
+        _containmentHandle?.Dispose();
         _operationLock.Dispose();
         GC.SuppressFinalize(this);
     }

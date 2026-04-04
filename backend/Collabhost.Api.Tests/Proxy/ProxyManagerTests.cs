@@ -2,6 +2,7 @@ using Collabhost.Api.Data;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
+using Collabhost.Api.Supervisor.Containment;
 
 using Microsoft.EntityFrameworkCore;
 
@@ -121,7 +122,7 @@ public class ProxyManagerTests
 
         var runner = new FakeManagedProcessRunner();
         var eventBus = new Collabhost.Api.Events.EventBus<Collabhost.Api.Events.ProcessStateChangedEvent>();
-        var supervisor = new ProcessSupervisor(runner, appStore, eventBus, NullLogger<ProcessSupervisor>.Instance);
+        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, eventBus, NullLogger<ProcessSupervisor>.Instance);
 
         return new ProxyManager
         (
