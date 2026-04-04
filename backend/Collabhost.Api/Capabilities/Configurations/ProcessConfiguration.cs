@@ -16,6 +16,10 @@ public class ProcessConfiguration
 
     public string? WorkingDirectory { get; set; }
 
+    public int StartupGracePeriodSeconds { get; set; } = 3;
+
+    public int MaxStartupRetries { get; set; } = 3;
+
     public static IReadOnlyList<FieldDescriptor> Schema =>
     [
         new
@@ -64,6 +68,23 @@ public class ProcessConfiguration
             FieldType.Number,
             new FieldEditableAlways(),
             Unit: "sec"
+        ),
+        new
+        (
+            "startupGracePeriodSeconds",
+            "Startup Grace Period",
+            FieldType.Number,
+            new FieldEditableAlways(),
+            Unit: "sec",
+            HelpText: "Seconds the process must survive before it counts as started"
+        ),
+        new
+        (
+            "maxStartupRetries",
+            "Max Startup Retries",
+            FieldType.Number,
+            new FieldEditableAlways(),
+            HelpText: "Number of startup failures before entering fatal state"
         ),
     ];
 

@@ -75,6 +75,12 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
 
     public void SetContainmentHandle(IContainmentHandle? handle) => _containmentHandle = handle;
 
+    public void SetHandle(IProcessHandle handle)
+    {
+        _handle = handle;
+        Pid = handle.Pid;
+    }
+
     public ProcessState MarkStarting()
     {
         var previous = State;
@@ -88,6 +94,18 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
 
         _handle = handle;
         Pid = handle.Pid;
+        StartedAt = DateTime.UtcNow;
+        State = ProcessState.Running;
+        _lastHealthyAt = DateTime.UtcNow;
+        StartupFailures = 0;
+
+        return previous;
+    }
+
+    public ProcessState MarkRunning()
+    {
+        var previous = State;
+
         StartedAt = DateTime.UtcNow;
         State = ProcessState.Running;
         _lastHealthyAt = DateTime.UtcNow;

@@ -322,9 +322,9 @@ public class ProcessSupervisor
 
         managed.SetContainmentHandle(container);
 
-        previousState = managed.MarkRunning(handle);
-
-        PublishStateChanged(managed, previousState);
+        // Store the handle and PID without transitioning to Running --
+        // the grace period task handles the Starting -> Running transition
+        managed.SetHandle(handle);
 
         var restartConfiguration = await _appStore.ResolveCapabilityAsync<RestartConfiguration>
         (
@@ -333,6 +333,7 @@ public class ProcessSupervisor
 
         _restartPolicies[appId] = restartConfiguration?.Policy ?? RestartPolicy.Never;
 
+        // Wire exit handler BEFORE registering the process -- so we catch exits during startup
         handle.Exited += exitCode => OnProcessExited(appId, exitCode);
 
         _processes.TryRemove(appId, out var old);
@@ -347,6 +348,50 @@ public class ProcessSupervisor
             handle.Pid,
             managed.Port?.ToString(CultureInfo.InvariantCulture) ?? "none"
         );
+
+        // Grace period: wait before promoting Starting -> Running.
+        // If the process exits during this window, OnProcessExited handles it as a startup failure.
+        var gracePeriodSeconds = processConfiguration.StartupGracePeriodSeconds;
+
+        // Grace period is intentionally fire-and-forget -- the task is self-contained
+        // with full error handling and acquires the per-process lock before mutating state.
+#pragma warning disable VSTHRD110, MA0134, CS4014, CA2016, MA0040
+        Task.Run
+        (
+            async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(gracePeriodSeconds), CancellationToken.None);
+
+                    await using var _ = await managed.AcquireOperationLockAsync(CancellationToken.None);
+
+                    if (!managed.HasProcessExited && managed.State == ProcessState.Starting)
+                    {
+                        var previous = managed.MarkRunning();
+
+                        PublishStateChanged(managed, previous);
+
+                        _logger.LogInformation
+                        (
+                            "App '{DisplayName}' passed startup grace period ({Seconds}s)",
+                            managed.DisplayName,
+                            gracePeriodSeconds
+                        );
+                    }
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError
+                    (
+                        exception,
+                        "Error during startup grace period for '{DisplayName}'",
+                        managed.DisplayName
+                    );
+                }
+            }
+        );
+#pragma warning restore VSTHRD110, MA0134, CS4014, CA2016, MA0040
 
         return managed;
     }
@@ -363,33 +408,210 @@ public class ProcessSupervisor
             return;
         }
 
+        if (process.StoppedByOperator)
+        {
+            var previous = process.MarkCrashed(exitCode);
+
+            PublishStateChanged(process, previous);
+
+            _logger.LogInformation
+            (
+                "App '{DisplayName}' was stopped by operator -- skipping restart (exit code: {ExitCode})",
+                process.DisplayName,
+                exitCode
+            );
+
+            return;
+        }
+
+        if (process.State == ProcessState.Starting)
+        {
+            OnStartupFailure(appId, process, exitCode);
+        }
+        else
+        {
+            OnRuntimeCrash(appId, process, exitCode);
+        }
+    }
+
+    // Called from synchronous Exited event callback -- sync-over-async is intentional
+#pragma warning disable VSTHRD002
+    private void OnStartupFailure(Ulid appId, ManagedProcess process, int exitCode)
+    {
+        var previousState = process.MarkBackoff(exitCode);
+
+        PublishStateChanged(process, previousState);
+
+        _logger.LogWarning
+        (
+            "App '{DisplayName}' failed to start (exit code: {ExitCode}, attempt: {Attempt})",
+            process.DisplayName,
+            exitCode,
+            process.StartupFailures
+        );
+
+        // Resolve max startup retries from config -- use default if unavailable
+        var maxStartupRetries = 3;
+
+        try
+        {
+            var app = _appStore.GetByIdAsync(appId, CancellationToken.None).GetAwaiter().GetResult();
+
+            if (app is not null)
+            {
+                var processConfiguration = _appStore.ResolveCapabilityAsync<ProcessConfiguration>
+                (
+                    app.AppTypeId, app.Id, "process", CancellationToken.None
+                ).GetAwaiter().GetResult();
+
+                if (processConfiguration is not null)
+                {
+                    maxStartupRetries = processConfiguration.MaxStartupRetries;
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning
+            (
+                exception,
+                "Failed to resolve startup config for '{DisplayName}' -- using default max retries",
+                process.DisplayName
+            );
+        }
+
+        if (process.HasMaxStartupRetriesExceeded(maxStartupRetries))
+        {
+            previousState = process.MarkFatal();
+
+            PublishStateChanged(process, previousState);
+
+            _logger.LogError
+            (
+                "App '{DisplayName}' failed to start {Attempts} times -- manual restart required",
+                process.DisplayName,
+                process.StartupFailures
+            );
+
+            return;
+        }
+
+        // Schedule startup retry with linear delay
+        var delay = process.GetStartupRetryDelay();
+
+        _logger.LogInformation
+        (
+            "App '{DisplayName}' will retry startup in {Delay}s",
+            process.DisplayName,
+            delay.TotalSeconds
+        );
+
+        var cancellation = new CancellationTokenSource();
+        process.SetRestartDelayCancellation(cancellation);
+
+        // Startup retry is intentionally fire-and-forget from a synchronous event callback (Exited event).
+        // The task is self-contained with full error handling and the CancellationTokenSource
+        // is tracked on ManagedProcess for cancellation on operator stop.
+#pragma warning disable VSTHRD110, MA0134
+        Task.Run
+        (
+            async () =>
+            {
+                try
+                {
+                    await Task.Delay(delay, cancellation.Token);
+
+                    await using var _ = await process.AcquireOperationLockAsync(cancellation.Token);
+
+                    _processes.TryRemove(appId, out var stale);
+                    stale?.Dispose();
+
+                    await StartAppInternalAsync(appId, cancellation.Token);
+                }
+                catch (OperationCanceledException)
+                {
+#pragma warning disable S6667 // OperationCanceledException is not a failure
+                    _logger.LogDebug("Startup retry cancelled for '{DisplayName}'", process.DisplayName);
+#pragma warning restore S6667
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError(exception, "Failed to retry startup for '{DisplayName}'", process.DisplayName);
+                }
+            },
+            cancellation.Token
+        );
+#pragma warning restore VSTHRD110, MA0134
+    }
+#pragma warning restore VSTHRD002
+
+    // Called from synchronous Exited event callback -- sync-over-async is intentional
+#pragma warning disable VSTHRD002
+    private void OnRuntimeCrash(Ulid appId, ManagedProcess process, int exitCode)
+    {
+        // Check if exit code is a success code (clean shutdown, not a crash)
+        var successExitCodes = new[] { 0 };
+
+        try
+        {
+            var app = _appStore.GetByIdAsync(appId, CancellationToken.None).GetAwaiter().GetResult();
+
+            if (app is not null)
+            {
+                var restartConfiguration = _appStore.ResolveCapabilityAsync<RestartConfiguration>
+                (
+                    app.AppTypeId, app.Id, "restart", CancellationToken.None
+                ).GetAwaiter().GetResult();
+
+                if (restartConfiguration?.SuccessExitCodes is not null)
+                {
+                    successExitCodes = restartConfiguration.SuccessExitCodes;
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning
+            (
+                exception,
+                "Failed to resolve restart config for '{DisplayName}' -- using default success exit codes",
+                process.DisplayName
+            );
+        }
+
+        if (successExitCodes.Contains(exitCode))
+        {
+            var previous = process.MarkStopped();
+
+            PublishStateChanged(process, previous);
+
+            _logger.LogInformation
+            (
+                "App '{DisplayName}' exited with success code {ExitCode}",
+                process.DisplayName,
+                exitCode
+            );
+
+            return;
+        }
+
         var previousState = process.MarkCrashed(exitCode);
 
         PublishStateChanged(process, previousState);
 
         _logger.LogWarning
         (
-            "App '{DisplayName}' exited with code {ExitCode}",
+            "App '{DisplayName}' crashed with exit code {ExitCode}",
             process.DisplayName,
             exitCode
         );
-
-        if (process.StoppedByOperator)
-        {
-            _logger.LogInformation
-            (
-                "App '{DisplayName}' was stopped by operator -- skipping restart",
-                process.DisplayName
-            );
-            return;
-        }
 
         _restartPolicies.TryGetValue(appId, out var restartPolicy);
 
         var shouldRestart = restartPolicy switch
         {
             RestartPolicy.Always => true,
-            RestartPolicy.OnCrash => exitCode != 0,
+            RestartPolicy.OnCrash => true,
             _ => false
         };
 
@@ -397,21 +619,26 @@ public class ProcessSupervisor
         {
             _logger.LogInformation
             (
-                "Restart policy '{RestartPolicy}' for '{DisplayName}' -- not restarting (exit code: {ExitCode})",
+                "Restart policy '{RestartPolicy}' for '{DisplayName}' -- not restarting",
                 restartPolicy,
-                process.DisplayName,
-                exitCode
+                process.DisplayName
             );
+
             return;
         }
 
         if (process.HasMaxRestartsExceeded())
         {
+            previousState = process.MarkFatal();
+
+            PublishStateChanged(process, previousState);
+
             _logger.LogError
             (
-                "App '{DisplayName}' has exceeded maximum restart count -- not restarting",
+                "App '{DisplayName}' has exceeded maximum restart count -- manual restart required",
                 process.DisplayName
             );
+
             return;
         }
 
@@ -466,6 +693,7 @@ public class ProcessSupervisor
         );
 #pragma warning restore VSTHRD110, MA0134
     }
+#pragma warning restore VSTHRD002
 
     private async Task StopProcessWithShutdownPolicyAsync(Ulid appId, ManagedProcess process)
     {
