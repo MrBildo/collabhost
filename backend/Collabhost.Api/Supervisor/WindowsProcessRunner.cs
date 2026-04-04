@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 
 using Collabhost.Api.Shared;
 
@@ -168,44 +167,21 @@ public class WindowsProcessRunner : IManagedProcessRunner
                 : (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
                     && TryGracefulShutdownUnix());
 
-        private bool TryGracefulShutdownWindows()
-        {
-            // All managed app types are console apps -- try Ctrl+C first.
-            // CloseMainWindow (WM_CLOSE) is a fallback for apps with a message loop.
-            try
-            {
-                FreeConsole();
-
-                if (AttachConsole((uint)_process.Id))
-                {
-                    SetConsoleCtrlHandler(null, true);
-
-                    var sent = GenerateConsoleCtrlEvent(_ctrlCEvent, 0);
-
-                    FreeConsole();
-                    AttachConsole(_attachParentProcess);
-                    SetConsoleCtrlHandler(null, false);
-
-                    if (sent)
-                    {
-                        return true;
-                    }
-                }
-                else
-                {
-                    AttachConsole(_attachParentProcess);
-                }
-            }
-            catch
-            {
-                FreeConsole();
-                AttachConsole(_attachParentProcess);
-                SetConsoleCtrlHandler(null, false);
-            }
-
-            // Ctrl+C failed or process has no console -- fall back to WM_CLOSE
-            return _process.CloseMainWindow();
-        }
+        // WM_CLOSE works for apps with a message loop (e.g., GUI apps).
+        // For console apps started with CreateNoWindow=true, this returns false
+        // and the caller falls through to hard kill.
+        //
+        // Note: the FreeConsole/AttachConsole/GenerateConsoleCtrlEvent approach
+        // is deliberately NOT used here. FreeConsole() is a process-wide operation
+        // that detaches ALL threads from the console, breaking logging and health
+        // checks when running under an orchestrator (Aspire, etc.). Since we start
+        // all managed processes with CreateNoWindow=true (no console allocated),
+        // AttachConsole(childPid) always fails anyway -- the entire Ctrl+C path
+        // was a no-op that caused collateral damage.
+        //
+        // Proper graceful shutdown on Windows requires CREATE_NEW_PROCESS_GROUP at
+        // process creation time, which is a separate piece of work.
+        private bool TryGracefulShutdownWindows() => _process.CloseMainWindow();
 
         private bool TryGracefulShutdownUnix()
         {
@@ -230,26 +206,5 @@ public class WindowsProcessRunner : IManagedProcessRunner
         }
 
         public void Dispose() => _process.Dispose();
-
-        private const uint _ctrlCEvent = 0;
-        private const uint _attachParentProcess = 0xFFFFFFFF;
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, uint dwProcessGroupId);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool FreeConsole();
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool AttachConsole(uint dwProcessId);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetConsoleCtrlHandler(ConsoleCtrlHandlerDelegate? handler, [MarshalAs(UnmanagedType.Bool)] bool add);
-
-        private delegate bool ConsoleCtrlHandlerDelegate(uint dwCtrlType);
     }
 }
