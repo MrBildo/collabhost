@@ -1,5 +1,6 @@
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
+using Collabhost.Api.Supervisor.Containment;
 
 using Shouldly;
 
@@ -293,4 +294,56 @@ public class ManagedProcessTests
             () => process.AcquireOperationLockAsync()
         );
     }
+
+    [Fact]
+    public void Dispose_DisposesContainmentHandle()
+    {
+        var process = CreateProcess();
+        var fakeHandle = new FakeContainmentHandle();
+
+        process.SetContainmentHandle(fakeHandle);
+
+        process.Dispose();
+
+        fakeHandle.IsDisposed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void SetContainmentHandle_AcceptsNull()
+    {
+        var process = CreateProcess();
+
+        process.SetContainmentHandle(null);
+
+        Should.NotThrow(() => process.Dispose());
+    }
+
+    [Fact]
+    public void SetContainmentHandle_ReplacesExistingHandle()
+    {
+        var process = CreateProcess();
+        var firstHandle = new FakeContainmentHandle();
+        var secondHandle = new FakeContainmentHandle();
+
+        process.SetContainmentHandle(firstHandle);
+        process.SetContainmentHandle(secondHandle);
+
+        process.Dispose();
+
+        // Only the most recently set handle is disposed by the process
+        firstHandle.IsDisposed.ShouldBeFalse();
+        secondHandle.IsDisposed.ShouldBeTrue();
+    }
+}
+
+// No subclasses expected -- test fake for containment handle
+file sealed class FakeContainmentHandle : IContainmentHandle
+{
+    public bool IsDisposed { get; private set; }
+
+    public bool AssignProcess(int processId) => true;
+
+    public void Terminate(uint exitCode) { }
+
+    public void Dispose() => IsDisposed = true;
 }
