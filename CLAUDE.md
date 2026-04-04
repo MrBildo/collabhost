@@ -21,9 +21,8 @@ When the KB and a skill conflict, the KB wins — it contains project-specific o
 
 **Mental model:**
 - **Caddy** = front door (edge reverse proxy, TLS, routing)
-- **ASP.NET Core** = control tower (app registry, process supervision, health, auth)
-- **Hangfire** = automation engine (scheduled/recurring/delayed jobs)
-- **React dashboard** = operator console (app cards, log tailing, route/job views)
+- **ASP.NET Core** = control tower (app registry, process supervision, auth)
+- **React dashboard** = operator console (War Machine design system)
 - **SQLite** = persistence (zero-config)
 
 ## Tech Stack
@@ -31,12 +30,14 @@ When the KB and a skill conflict, the KB wins — it contains project-specific o
 | Layer | Technology |
 |-------|-----------|
 | Backend | .NET 10 / C# (Minimal API, EF Core, SQLite) |
-| Frontend | React 18 + TypeScript, Vite, Tailwind, shadcn/ui |
-| Testing | xUnit + Shouldly, Arrange-Act-Assert |
+| Frontend | React 18 + TypeScript, Vite, Biome, War Machine design system |
+| Testing | xUnit + Shouldly (backend), Vitest (frontend) |
 | Orchestration | Aspire 13.3, OpenTelemetry |
-| Jobs | Hangfire (persistent, recurring, dashboard built-in) |
 | Reverse Proxy | Caddy (edge), managed by Collabhost via JSON API |
-| Agent protocol | MCP (HTTP transport) |
+
+## Active Branch
+
+Development is on `release/v2`. The v1 codebase is preserved on `v0-reference` for reference only.
 
 ## Structure
 
@@ -45,49 +46,51 @@ collabhost/
 ├── CLAUDE.md                  # This file
 ├── COLLABHOST_KB.md           # Coding conventions (source of truth for agents)
 ├── COLLABOARD.md              # Kanban board conventions
-├── README.md                  # Quick start
-├── LICENSE
 ├── .editorconfig              # Code style (tool-enforced)
 ├── nuget.config               # NuGet feed config (Aspire preview)
-├── .gitignore
-├── .mcp.json                  # MCP server config (gitignored)
-├── .agents.env                # Auth keys (gitignored)
-├── .claude/
-│   └── settings.local.json    # Tool permissions (gitignored)
 ├── .agents/                   # Instance-local workspace (gitignored)
-│   ├── roadmap/INDEX.md
-│   ├── specs/TEMPLATE.md
-│   ├── archive/
+│   ├── specs/                 # Architecture specs and feature specs
+│   ├── agents/{name}/         # Named agent workspaces (journal, TODO, archive)
 │   ├── research/
-│   ├── kb/
-│   └── temp/
+│   └── temp/                  # Design discussions, roundtable artifacts
 ├── backend/
 │   ├── Collabhost.slnx
+│   ├── Directory.Build.props  # Shared build config (analyzers, doc gen, NoWarn)
 │   ├── Collabhost.AppHost/    # Aspire orchestrator
 │   ├── Collabhost.ServiceDefaults/  # Shared telemetry/health
 │   ├── Collabhost.Api/        # Main API project
-│   │   ├── Common/            # Command dispatcher (_Commands.cs), auth (_Authorization.cs)
-│   │   ├── Features/          # Vertical slices grouped by domain (Apps/, Proxy/, System/)
-│   │   ├── Domain/            # Entities, lookups, value objects (consolidated _-prefixed files)
-│   │   ├── Data/              # EF Core DbContext (includes extensions)
-│   │   ├── Migrations/        # EF Core migrations
-│   │   ├── Services/          # Cross-cutting services + DI registration (_ServiceRegistration.cs)
-│   │   ├── db/                # SQLite database (gitignored)
-│   │   └── appsettings.json
+│   │   ├── Authorization/     # Auth middleware (X-User-Key header)
+│   │   ├── Capabilities/      # Catalog, config types, schemas, resolver
+│   │   ├── Dashboard/         # Dashboard stats endpoint
+│   │   ├── Data/              # EF Core DbContext, seed data, migrations
+│   │   ├── Events/            # Generic typed event bus
+│   │   ├── Proxy/             # ProxyManager, CaddyClient, config builder, seeder
+│   │   ├── Registry/          # App/AppType entities, AppStore, CRUD endpoints
+│   │   ├── Shared/            # RingBuffer, LogEntry
+│   │   ├── Supervisor/        # ProcessSupervisor, ManagedProcess, PortAllocator
+│   │   ├── System/            # Status endpoint
+│   │   └── Properties/        # launchSettings.json (required for Aspire)
 │   ├── Collabhost.Api.Tests/  # Integration tests (WebApplicationFactory + fakes)
-│   └── Collabhost.AppHost.Tests/  # Aspire smoke tests (real Kestrel)
+│   └── Collabhost.AppHost.Tests/  # Aspire smoke tests (real Kestrel + SQLite)
 ├── frontend/
 │   ├── package.json
+│   ├── biome.json             # Linting + formatting
 │   ├── vite.config.ts
-│   ├── tailwind.config.ts
-│   ├── src/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   ├── routes/
-│   │   ├── types/
-│   │   └── lib/
-│   └── public/
-└── docs/                      # Decision artifacts
+│   ├── vitest.config.ts
+│   └── src/
+│       ├── actions/           # ActionButton, ActionBar
+│       ├── api/               # Client, endpoints, types
+│       ├── chrome/            # Topbar, Layout, AuthGate, Breadcrumbs
+│       ├── forms/             # SchemaField, RegistrationField, form inputs
+│       ├── hooks/             # TanStack Query hooks per domain
+│       ├── log/               # LogViewer, LogLine
+│       ├── pages/             # All page components
+│       ├── shared/            # EmptyState, ErrorBanner, ConfirmDialog, etc.
+│       ├── status/            # StatusDot, StatusText, StatusStrip, StatsStrip
+│       ├── styles/            # War Machine tokens, components, reset
+│       └── tables/            # DataTable, FilterBar, app-columns
+└── tools/
+    └── generate-ids.cs        # ULID/GUID generator for seed data
 ```
 
 ## Build & Run
@@ -95,10 +98,10 @@ collabhost/
 ### Recommended: Aspire
 
 ```powershell
-dotnet run --project backend/Collabhost.AppHost
+aspire start
 ```
 
-This starts the API, frontend dev server, and Aspire dashboard with OpenTelemetry.
+This starts the API, frontend Vite dev server, and Aspire dashboard with OpenTelemetry. Use `aspire describe` to check resource status.
 
 ### Standalone
 
@@ -110,142 +113,154 @@ dotnet run --project backend/Collabhost.Api
 cd frontend && npm run dev
 ```
 
-### Tests
+### Tests & Verification
 
 ```powershell
-cd backend && dotnet test
-cd frontend && npm run test
+# Backend (MUST use solution build with --no-incremental)
+cd backend && dotnet build Collabhost.slnx --no-incremental
+cd backend && dotnet format --verify-no-changes
+cd backend && dotnet test   # Runs both Api.Tests (147) and AppHost.Tests (11)
+
+# Frontend
+cd frontend && npm run build
+cd frontend && npm run lint
+cd frontend && npm run format:check
+cd frontend && npm run test   # 54 tests
 ```
 
-`dotnet test` runs both test projects:
-- `Collabhost.Api.Tests` — in-memory integration tests with fakes (fast, no external deps)
-- `Collabhost.AppHost.Tests` — Aspire smoke tests against real Kestrel (boots the AppHost, real SQLite + process runner)
+## Core Subsystems
 
-## Core Modules
+### App Registry (`Registry/`)
+- `App`, `AppType` entities with ULID primary keys, slug-based identity
+- `AppStore` singleton with `IDbContextFactory<AppDbContext>` + `IMemoryCache`
+- 5 built-in app types: `dotnet-app`, `nodejs-app`, `static-site`, `executable`, `system-service`
+- Slug: unique, immutable, `[a-z0-9-]`, used in API routes and domain names
 
-### Command Dispatcher
-- `ICommand<TResult>` / `ICommandHandler<TCommand, TResult>` — unified command pattern for ALL operations (reads and writes)
-- `CommandDispatcher` with type-inferring `DispatchAsync` (resolves handlers via DI)
-- `AddCommandDispatcher()` extension — auto-scans assembly for handler registrations
-- `Empty` struct for void-result commands (`ICommand<Empty>`)
-- `CommandResult<T>` — result type with success/fail factory methods
-- All types in `Common/_Commands.cs` (dispatcher + result types + registration extension)
+### Capability System (`Capabilities/`)
+- 8 behavioral capabilities: process, port-injection, routing, health-check, environment-defaults, restart, auto-start, artifact
+- Static `CapabilityCatalog` (code-only, no DB table)
+- `CapabilityBinding` (type-level defaults) + `CapabilityOverride` (per-app overrides)
+- `CapabilityResolver.Resolve<T>()` — pure static function, JSON merge, no I/O
+- Schema-driven: co-located `Schema` static property on each config type drives form generation and validation
 
-### App Registry
-- App definitions: name (slug, used in domain), display name, type (Executable, NpmPackage, StaticSite), install directory, command, args, working directory, environment variables (separate table rows), port (auto-assigned via bind-to-zero), health endpoint, update command, update timeout (per-app, nullable, defaults 300s), auto-start, restart policy (Never/OnCrash/Always)
-- ULID primary keys
-
-### Process Supervisor
-- Start/stop/restart managed processes
-- Capture stdout/stderr into in-memory ring buffer per process
+### Process Supervisor (`Supervisor/`)
+- Singleton `IHostedService`, `ConcurrentDictionary<Ulid, ManagedProcess>`
+- Start/stop/restart/kill managed processes
+- Stdout/stderr capture into in-memory ring buffer
 - Crash detection + restart with exponential backoff
-- PID + uptime tracking, restart count with grace period
-- Env var injection at process launch
+- Discovery strategy via switch expression (DotNetRuntimeConfiguration, PackageJson, Manual)
+- Port allocation via bind-to-zero (`PortAllocator`)
 - Auto-start on Collabhost startup
-- StaticSite type: no process (Caddy serves directly)
+- Static sites: start/stop toggles Caddy routing (no process)
 
-### Scheduler (Hangfire) — post-MVP
-- Cron/interval recurring jobs
-- One-off delayed jobs
-- Job history + result logging
-- Built-in Hangfire dashboard
+### Event Bus (`Events/`)
+- Generic `IEventBus<T>` with in-memory implementation
+- `ProcessStateChangedEvent` published on state transitions
+- Proxy subsystem subscribes to sync routes on state changes
 
-### App Updates
-- `POST /api/v1/apps/{id}/update` — SSE-streamed orchestration
-- Flow: stop (if running) → run UpdateCommand via shell → start (if was running)
-- Real-time SSE events: `status` (phase changes), `log` (stdout/stderr lines), `result` (final outcome)
-- Per-app concurrency guard (`UpdateCoordinator` singleton, rejects 409)
-- Per-app `UpdateTimeoutSeconds` (nullable, defaults to 300s)
-- Shell wrapping: `cmd.exe /c` on Windows, `/bin/sh -c` on Linux
-- Channel-based ordered SSE delivery (not fire-and-forget)
-- `RunToCompletionAsync` on `IManagedProcessRunner` for one-shot commands
-
-### Dashboard API
-- Status overview
-- Log retrieval (ring buffer)
-- App config CRUD
-- Route listing
-- App update orchestration
-
-### Proxy Config (Caddy)
-- Collabhost manages Caddy as a supervised process
-- Config via Caddy JSON API at `localhost:2019` (not Caddyfile)
+### Proxy Management (`Proxy/`)
+- `ProxyManager` singleton `IHostedService`, subscribes to process state events
+- Channel-based sequential processor for ordered route syncs
+- `ProxyConfigurationBuilder.Build()` — pure function
+- `ICaddyClient` interface + `CaddyClient` (HttpClientFactory)
+- `ProxyAppSeeder` — seeds Caddy as a managed system-service app
 - `@id` tags on every route for direct CRUD
-- Route: `<app>.collab.internal` → `reverse_proxy localhost:<port>` or `file_server`
+- Route: `{slug}.collab.internal` → reverse_proxy or file_server
 - HTTPS via Caddy internal CA + `tls internal`
-- Base domain configurable (default `collab.internal`)
+- EnableRoute/DisableRoute for static site start/stop
 
-## Auth Model
+### Dashboard (`Dashboard/`)
+- `GET /dashboard/stats` — aggregated counts (total, running, stopped, crashed)
 
-Header-based: `X-User-Key` (ULID). Same pattern as Collaboard.
-
-- Roles: Administrator, HumanUser, AgentUser
-- No ASP.NET auth middleware — custom logic
-- Admin seed from config or generated key (logged on first run)
-- Use `Results.StatusCode(403)` not `Results.Forbid()`
+### Auth (`Authorization/`)
+- Header-based: `X-User-Key` (ULID)
+- Middleware skips `/health`, `/alive`, `/openapi`, `GET /status`
+- Admin key from config (`Auth:AdminKey`)
 
 ## API Surface
 
 REST API under `/api/v1/`:
 
 ```
-/api/v1/apps                # App registry CRUD
-/api/v1/apps/{id}/start     # Start app process
-/api/v1/apps/{id}/stop      # Stop app process
-/api/v1/apps/{id}/restart   # Restart app process
-/api/v1/apps/{id}/status    # Process state, PID, uptime
-/api/v1/apps/{id}/logs      # Log retrieval (ring buffer)
-/api/v1/apps/{id}/update    # Run update script (SSE-streamed)
-/api/v1/routes              # Proxy route listing
-/api/v1/proxy/reload        # Force proxy config regeneration
-/api/v1/status              # System status
-/health                     # Health check
+GET    /api/v1/apps                          # App list (AppListItem)
+GET    /api/v1/apps/{slug}                   # App detail (AppDetail)
+GET    /api/v1/apps/{slug}/settings          # Schema-driven settings (AppSettings)
+PUT    /api/v1/apps/{slug}/settings          # Save settings overrides
+POST   /api/v1/apps/{slug}/start             # Start app (process or route)
+POST   /api/v1/apps/{slug}/stop              # Stop app (process or route)
+POST   /api/v1/apps/{slug}/restart           # Restart (process-only)
+POST   /api/v1/apps/{slug}/kill              # Kill (process-only)
+POST   /api/v1/apps                          # Create app from registration
+DELETE /api/v1/apps/{slug}                   # Stop-then-delete (10s timeout)
+GET    /api/v1/apps/{slug}/logs              # Log snapshot (ring buffer)
+GET    /api/v1/app-types                     # App type list (AppTypeListItem)
+GET    /api/v1/app-types/{slug}/registration # Registration schema
+GET    /api/v1/routes                        # Proxy route listing
+POST   /api/v1/proxy/reload                  # Force proxy config regeneration
+GET    /api/v1/dashboard/stats               # Dashboard statistics
+GET    /api/v1/status                        # System status (public, no auth)
+GET    /health                               # Health check
+GET    /alive                                # Liveness check
 ```
 
-## Endpoint Structure (Vertical Slices)
+**Conventions:** Lowercase status strings (`"running"` not `"Running"`). Slug-based routes. Responses include both `id` and `slug`.
 
-Organized under `backend/Collabhost.Api/Features/`, grouped by domain (`Apps/`, `Proxy/`, `System/`). One file per operation (e.g., `Create.cs`, `GetAll.cs`, `Delete.cs`).
+## Frontend — War Machine Design System
 
-Each file (command or query) contains three top-level types:
-1. **Static endpoint class** — `Request`/`Response` records + `HandleAsync` (HTTP layer only, dispatches via `CommandDispatcher`)
-2. **Command record** — implements `ICommand<TResult>` (use `ICommand<Empty>` for void-result commands)
-3. **Handler class** — implements `ICommandHandler<TCommand, TResult>`, contains all business logic
+- CSS custom properties for design tokens (colors, typography, spacing)
+- IBM Plex Mono / Plex Sans fonts
+- Component classes (`wm-*`) for visual identity, layout via standard CSS
+- Biome for linting and formatting (not ESLint/Prettier)
+- TanStack Query for data fetching (polling-based, no SSE yet)
+- React Router with slug-based routes
 
-Each domain folder has a `_Module.cs` implementing `IFeatureModule` to map routes. `Program.cs` is a thin composition root — it wires services and auto-discovers feature modules.
+### Pages
+- **Dashboard** — stats strip, app table, events feed
+- **App List** — filter chips, search, sortable table, inline actions
+- **App Detail** — identity header, action bar, stats strip, log viewer, route display
+- **App Settings** — schema-driven fields, FieldEditable variants, danger zone
+- **App Registration** — two-step flow (type picker → schema-driven form)
+- **Routes** — route table, reload proxy button
+- **System** — hostname, version, uptime
 
-## Coding Conventions Reference
+## Named Agents
 
-All coding conventions (C#, TypeScript, general) are in **[[COLLABHOST_KB]]**. Do not duplicate them here.
+Four named agents with dedicated workspaces in `.agents/agents/{name}/`:
 
-## Plugin Model (v1)
+| Agent | Role | Specialty |
+|-------|------|-----------|
+| **Remy** | Backend lead | .NET, subsystem architecture, proxy, supervisor |
+| **Dana** | Frontend lead | React, War Machine design system, UX |
+| **Marcus** | Backend advisor | Architecture review, domain modeling |
+| **Kai** | Code reviewer | Simplification, challenging assumptions |
 
-Simple DI-based registration. No hot-loading.
+Agents sign commits with `Co-Authored-By: {Name} <{name}@collabot.dev>`.
 
-```csharp
-public interface IAppProvider { ... }
-public interface IJobProvider { ... }
-public interface IRouteContributor { ... }
-public interface IHealthContributor { ... }
-```
+## Deferred Features
 
-Modules register routes, processes, scheduled jobs, dashboard widgets, and health checks through standard .NET DI.
+See `v2-architecture.md` § Deferred Features for full list. Key items:
+- Health check execution (capability schema exists, no runtime logic)
+- App metadata probing (spec at `app-metadata-probing.md`, in-memory cache design decided)
+- SSE log streaming (card #71)
+- App updates / SSE deployment (deferred from v2)
+- Real-time push (SSE/WebSocket for dashboard)
 
-## What Collabhost Owns vs. Delegates
+## Known Issues
 
-**Owns:** App modeling, process supervision, dashboard UX, scheduling integration, proxy config generation, auth, plugin model.
+- **Card #82:** WindowsProcessRunner doesn't use Job Objects — child processes orphaned on API restart
+- **Card #83:** Caddy admin port hardcoded to 2019 — should be dynamically allocated
+- **Card #84:** ObjectDisposedException race condition in ProcessSupervisor restart logic
 
-**Delegates:** Raw HTTP serving (Kestrel), TLS termination (Caddy), reverse proxy transport (Caddy), cron parsing (Hangfire), log storage engine (future — Loki or similar).
+## Relationship to Other Projects
 
-## Dispatching Work
-
-Dispatch rules, sub-agent conventions, report format, and parallel dispatch rules are in **[[COLLABHOST_KB]]** §3. Key points:
-
-- **Spec first** — no dispatch without a spec in `.agents/specs/`
-- **Model:** Always `model: "opus"` for coding sub-agents
-- **Skills:** Sub-agents MUST use `dotnet-dev` for C# and `typescript-dev` for TypeScript
-- **KB mandate:** Every dispatch prompt MUST instruct the agent to read and follow `COLLABHOST_KB.md`
-- **Partition by resource** — if two agents could write to the same file, they must be the same agent
-- **Standardized report format** — see KB §3 for the template
+| Project | Path | Relationship |
+|---------|------|-------------|
+| **Collaboard** | `../collaboard` | Kanban tracking via MCP SSE. Work tracked on `collabhost` board. |
+| **Collabot** | `../collabot` | Agent platform. Will consume Collabhost for service orchestration. |
+| **Collabot TUI** | `../collabot-tui` | Terminal UI for Collabot. |
+| **Ecosystem** | `../ecosystem` | Shared tooling. Collabhost may consume ecosystem scripts. |
+| **Research Lab** | `../lab` | Research workspace. Architecture decisions researched here. |
+| **Knowledge Base** | `../kb` | Conventions and patterns. |
 
 ## Persistence Rules
 
@@ -260,17 +275,6 @@ See **[[COLLABHOST_KB]]** §3 Safety for the full list. Summary:
 3. **Ask, don't guess.** If uncertain about scope, intent, or approach, stop and ask.
 4. **On any issues, errors, or unexpected behavior — stop and ask.**
 5. **Max 3 follow-ups before escalation.**
-
-## Relationship to Other Projects
-
-| Project | Path | Relationship |
-|---------|------|-------------|
-| **Collaboard** | `../collaboard` | Kanban tracking via MCP SSE. Work tracked on `collabhost` board. |
-| **Collabot** | `../collabot` | Agent platform. Will consume Collabhost for service orchestration. |
-| **Collabot TUI** | `../collabot-tui` | Terminal UI for Collabot. |
-| **Ecosystem** | `../ecosystem` | Shared tooling. Collabhost may consume ecosystem scripts. |
-| **Research Lab** | `../lab` | Research workspace. Architecture decisions researched here. |
-| **Knowledge Base** | `../kb` | Conventions and patterns. |
 
 ## Git, Paths, and Context Window
 
