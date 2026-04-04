@@ -38,7 +38,7 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
+        process.MarkCrashed(1);
 
         process.IsCrashed.ShouldBeTrue();
         process.HasMaxRestartsExceeded(10).ShouldBeFalse();
@@ -51,7 +51,7 @@ public class ManagedProcessTests
 
         for (var i = 0; i < 10; i++)
         {
-            process.MarkCrashed();
+            process.MarkCrashed(1);
         }
 
         process.HasMaxRestartsExceeded(10).ShouldBeTrue();
@@ -62,7 +62,7 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
+        process.MarkCrashed(1);
 
         var delay = process.GetBackoffDelay();
 
@@ -74,8 +74,8 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
-        process.MarkCrashed();
+        process.MarkCrashed(1);
+        process.MarkCrashed(1);
 
         var delay = process.GetBackoffDelay();
 
@@ -89,7 +89,7 @@ public class ManagedProcessTests
 
         for (var i = 0; i < 20; i++)
         {
-            process.MarkCrashed();
+            process.MarkCrashed(1);
         }
 
         var delay = process.GetBackoffDelay();
@@ -191,9 +191,9 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
-        process.MarkCrashed();
-        process.MarkCrashed();
+        process.MarkCrashed(1);
+        process.MarkCrashed(1);
+        process.MarkCrashed(1);
 
         process.ResetRestartCount();
 
@@ -334,6 +334,160 @@ public class ManagedProcessTests
         firstHandle.IsDisposed.ShouldBeFalse();
         secondHandle.IsDisposed.ShouldBeTrue();
     }
+    // --- Backoff and Fatal state tests ---
+
+    [Fact]
+    public void MarkBackoff_IncrementsStartupFailures()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.StartupFailures.ShouldBe(1);
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.StartupFailures.ShouldBe(2);
+    }
+
+    [Fact]
+    public void MarkBackoff_RecordsExitCode()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+        process.MarkBackoff(42);
+
+        process.LastExitCode.ShouldBe(42);
+        process.LastExitAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void MarkFatal_SetsState()
+    {
+        var process = CreateProcess();
+
+        process.MarkFatal();
+
+        process.IsFatal.ShouldBeTrue();
+        process.State.ShouldBe(ProcessState.Fatal);
+    }
+
+    [Fact]
+    public void HasMaxStartupRetriesExceeded_ReturnsTrue_AfterMaxFailures()
+    {
+        var process = CreateProcess();
+
+        for (var i = 0; i < 3; i++)
+        {
+            process.MarkStarting();
+            process.MarkBackoff(1);
+        }
+
+        process.HasMaxStartupRetriesExceeded(3).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GetStartupRetryDelay_ReturnsLinearDelay()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.GetStartupRetryDelay().ShouldBe(TimeSpan.FromSeconds(1));
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.GetStartupRetryDelay().ShouldBe(TimeSpan.FromSeconds(2));
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.GetStartupRetryDelay().ShouldBe(TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public void MarkRunning_ResetsStartupFailures()
+    {
+        var process = CreateProcess();
+        var handle = new FakeProcessHandle();
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+        process.MarkBackoff(1);
+
+        process.StartupFailures.ShouldBe(2);
+
+        process.MarkRunning(handle);
+
+        process.StartupFailures.ShouldBe(0);
+    }
+
+    [Fact]
+    public void MarkCrashed_RecordsExitCodeAndTime()
+    {
+        var process = CreateProcess();
+        var handle = new FakeProcessHandle();
+
+        process.MarkRunning(handle);
+
+        var before = DateTime.UtcNow;
+
+        process.MarkCrashed(137);
+
+        process.LastExitCode.ShouldBe(137);
+        process.LastExitAt.ShouldNotBeNull();
+        process.LastExitAt!.Value.ShouldBeGreaterThanOrEqualTo(before);
+    }
+
+    [Fact]
+    public void MarkStopped_ResetsStartupFailures()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+        process.MarkBackoff(1);
+
+        process.StartupFailures.ShouldBe(2);
+
+        process.MarkStopped();
+
+        process.StartupFailures.ShouldBe(0);
+    }
+
+    [Fact]
+    public void MarkBackoff_TransitionsFromStarting()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+
+        var previous = process.MarkBackoff(1);
+
+        previous.ShouldBe(ProcessState.Starting);
+        process.IsBackoff.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MarkFatal_OnlyExitsVia_MarkStarting()
+    {
+        var process = CreateProcess();
+
+        process.MarkFatal();
+
+        process.IsFatal.ShouldBeTrue();
+
+        // MarkStarting is the exit path from Fatal (operator manual restart)
+        var previous = process.MarkStarting();
+
+        previous.ShouldBe(ProcessState.Fatal);
+        process.State.ShouldBe(ProcessState.Starting);
+    }
 }
 
 // No subclasses expected -- test fake for containment handle
@@ -346,4 +500,24 @@ file sealed class FakeContainmentHandle : IContainmentHandle
     public void Terminate(uint exitCode) { }
 
     public void Dispose() => IsDisposed = true;
+}
+
+// No subclasses expected -- test fake for process handle
+file sealed class FakeProcessHandle : IProcessHandle
+{
+    public int Pid => 12345;
+
+    public bool HasExited => false;
+
+    public int? ExitCode => null;
+
+    public event Action<int>? Exited;
+
+    public bool TryGracefulShutdown() => false;
+
+    public void Kill() => _ = this;
+
+    public void Dispose() =>
+        // Suppress unused event warning
+        _ = Exited;
 }

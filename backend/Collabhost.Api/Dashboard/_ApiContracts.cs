@@ -6,6 +6,8 @@ public record DashboardStats
     int Running,
     int Stopped,
     int Crashed,
+    int Backoff,
+    int Fatal,
     int Issues,
     string? IssuesSummary,
     double? UptimePercent24h,

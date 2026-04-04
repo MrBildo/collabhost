@@ -27,7 +27,9 @@ public static class DashboardEndpoints
         var running = 0;
         var stopped = 0;
         var crashed = 0;
-        string? lastCrashedSlug = null;
+        var backoff = 0;
+        var fatal = 0;
+        string? lastIssuedSlug = null;
 
         foreach (var app in apps)
         {
@@ -60,16 +62,29 @@ public static class DashboardEndpoints
                     break;
                 case ProcessState.Crashed:
                     crashed++;
-                    lastCrashedSlug = app.Slug;
+                    lastIssuedSlug = app.Slug;
                     break;
-                default:
+                case ProcessState.Backoff:
+                    backoff++;
+                    lastIssuedSlug ??= app.Slug;
+                    break;
+                case ProcessState.Fatal:
+                    fatal++;
+                    lastIssuedSlug = app.Slug;
+                    break;
+                case ProcessState.Stopped:
+                case ProcessState.Starting:
+                case ProcessState.Stopping:
+                case ProcessState.Restarting:
                     stopped++;
                     break;
             }
         }
 
-        var issuesSummary = lastCrashedSlug is not null
-            ? $"{lastCrashedSlug} crashed"
+        var issues = crashed + backoff + fatal;
+
+        var issuesSummary = lastIssuedSlug is not null
+            ? $"{lastIssuedSlug} {(fatal > 0 ? "fatal" : crashed > 0 ? "crashed" : "backoff")}"
             : null;
 
         var stats = new DashboardStats
@@ -78,7 +93,9 @@ public static class DashboardEndpoints
             running,
             stopped,
             crashed,
-            crashed,
+            backoff,
+            fatal,
+            issues,
             issuesSummary,
             null,
             0,

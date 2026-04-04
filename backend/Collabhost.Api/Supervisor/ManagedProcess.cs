@@ -34,6 +34,12 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
 
     public bool StoppedByOperator { get; private set; }
 
+    public int? LastExitCode { get; private set; }
+
+    public DateTime? LastExitAt { get; private set; }
+
+    public int StartupFailures { get; private set; }
+
     public RingBuffer<LogEntry> LogBuffer { get; } = new(1000);
 
     public bool IsRunning => State == ProcessState.Running;
@@ -43,6 +49,10 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
     public bool IsCrashed => State == ProcessState.Crashed;
 
     public bool IsRestarting => State == ProcessState.Restarting;
+
+    public bool IsBackoff => State == ProcessState.Backoff;
+
+    public bool IsFatal => State == ProcessState.Fatal;
 
     public double? UptimeSeconds => StartedAt.HasValue && IsRunning
         ? (DateTime.UtcNow - StartedAt.Value).TotalSeconds
@@ -65,6 +75,12 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
 
     public void SetContainmentHandle(IContainmentHandle? handle) => _containmentHandle = handle;
 
+    public void SetHandle(IProcessHandle handle)
+    {
+        _handle = handle;
+        Pid = handle.Pid;
+    }
+
     public ProcessState MarkStarting()
     {
         var previous = State;
@@ -81,6 +97,19 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
         StartedAt = DateTime.UtcNow;
         State = ProcessState.Running;
         _lastHealthyAt = DateTime.UtcNow;
+        StartupFailures = 0;
+
+        return previous;
+    }
+
+    public ProcessState MarkRunning()
+    {
+        var previous = State;
+
+        StartedAt = DateTime.UtcNow;
+        State = ProcessState.Running;
+        _lastHealthyAt = DateTime.UtcNow;
+        StartupFailures = 0;
 
         return previous;
     }
@@ -102,22 +131,44 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
         Port = null;
         StartedAt = null;
         _consecutiveFailures = 0;
+        StartupFailures = 0;
 
         CancelPendingRestart();
 
         return previous;
     }
 
-    public ProcessState MarkCrashed()
+    public ProcessState MarkCrashed(int exitCode)
     {
         var previous = State;
 
         State = ProcessState.Crashed;
         _consecutiveFailures++;
+        LastExitCode = exitCode;
+        LastExitAt = DateTime.UtcNow;
         Pid = null;
         Port = null;
         StartedAt = null;
 
+        return previous;
+    }
+
+    public ProcessState MarkBackoff(int exitCode)
+    {
+        var previous = State;
+
+        State = ProcessState.Backoff;
+        StartupFailures++;
+        LastExitCode = exitCode;
+        LastExitAt = DateTime.UtcNow;
+
+        return previous;
+    }
+
+    public ProcessState MarkFatal()
+    {
+        var previous = State;
+        State = ProcessState.Fatal;
         return previous;
     }
 
@@ -151,6 +202,12 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
 
     public bool HasMaxRestartsExceeded(int maxRestarts = 10) =>
         _consecutiveFailures >= maxRestarts;
+
+    public bool HasMaxStartupRetriesExceeded(int max) =>
+        StartupFailures >= max;
+
+    public TimeSpan GetStartupRetryDelay() =>
+        TimeSpan.FromSeconds(StartupFailures);
 
     public void SetRestartDelayCancellation(CancellationTokenSource cancellation) =>
         _restartDelayCancellation = cancellation;

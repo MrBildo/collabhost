@@ -146,6 +146,16 @@
   animation: wm-pulse 1s infinite;
 }
 
+.wm-status-dot--backoff {
+  background: var(--wm-amber);
+  animation: wm-pulse 1s infinite;
+}
+
+.wm-status-dot--fatal {
+  background: var(--wm-red);
+  box-shadow: 0 0 6px var(--wm-red-glow), 0 0 12px var(--wm-red-glow);
+}
+
 .wm-status-dot--healthy {
   background: var(--wm-green);
   box-shadow: 0 0 6px var(--wm-green-glow);
@@ -188,6 +198,14 @@
 
 .wm-status-text--restarting {
   color: var(--wm-amber);
+}
+
+.wm-status-text--backoff {
+  color: var(--wm-amber);
+}
+
+.wm-status-text--fatal {
+  color: var(--wm-red);
 }
 
 /* === Form Inputs === */

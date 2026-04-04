@@ -6,6 +6,8 @@ public class RestartConfiguration
 {
     public RestartPolicy Policy { get; set; } = RestartPolicy.Never;
 
+    public int[] SuccessExitCodes { get; set; } = [0];
+
     public static IReadOnlyList<FieldDescriptor> Schema =>
     [
         new
@@ -16,6 +18,14 @@ public class RestartConfiguration
             new FieldEditableAlways(),
             Options: [.. Enum.GetValues<RestartPolicy>()
                 .Select(v => new FieldOption(v.ToString(), FormatPolicy(v)))]
+        ),
+        new
+        (
+            "successExitCodes",
+            "Success Exit Codes",
+            FieldType.Text,
+            new FieldEditableAlways(),
+            HelpText: "Comma-separated exit codes that indicate a clean shutdown (e.g. 0,130)"
         ),
     ];
 
