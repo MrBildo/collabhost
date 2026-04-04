@@ -6,8 +6,6 @@ public class ProcessConfiguration
 {
     public DiscoveryStrategy DiscoveryStrategy { get; set; } = DiscoveryStrategy.Manual;
 
-    public bool GracefulShutdown { get; set; }
-
     public int ShutdownTimeoutSeconds { get; set; } = 10;
 
     public string? Command { get; set; }
@@ -52,13 +50,6 @@ public class ProcessConfiguration
             "workingDirectory",
             "Working Directory",
             FieldType.Text,
-            new FieldEditableAlways()
-        ),
-        new
-        (
-            "gracefulShutdown",
-            "Graceful Shutdown",
-            FieldType.Boolean,
             new FieldEditableAlways()
         ),
         new

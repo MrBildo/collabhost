@@ -697,7 +697,6 @@ public class ProcessSupervisor
 
     private async Task StopProcessWithShutdownPolicyAsync(Ulid appId, ManagedProcess process)
     {
-        var gracefulShutdown = false;
         var shutdownTimeoutSeconds = 10;
 
         try
@@ -713,7 +712,6 @@ public class ProcessSupervisor
 
                 if (processConfiguration is not null)
                 {
-                    gracefulShutdown = processConfiguration.GracefulShutdown;
                     shutdownTimeoutSeconds = processConfiguration.ShutdownTimeoutSeconds;
                 }
             }
@@ -723,7 +721,7 @@ public class ProcessSupervisor
             _logger.LogWarning
             (
                 exception,
-                "Failed to resolve shutdown config for '{DisplayName}' -- falling back to hard kill",
+                "Failed to resolve shutdown config for '{DisplayName}' -- using default timeout",
                 process.DisplayName
             );
         }
@@ -732,14 +730,7 @@ public class ProcessSupervisor
 
         PublishStateChanged(process, previousState);
 
-        if (gracefulShutdown)
-        {
-            await SendGracefulShutdownAsync(process, shutdownTimeoutSeconds);
-        }
-        else
-        {
-            process.KillProcess();
-        }
+        await SendGracefulShutdownAsync(process, shutdownTimeoutSeconds);
 
         previousState = process.MarkStopped();
 

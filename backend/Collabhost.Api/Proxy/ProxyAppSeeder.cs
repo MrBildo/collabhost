@@ -91,7 +91,6 @@ public class ProxyAppSeeder
                 command = resolvedPath,
                 arguments = """run --config ""  """,
                 workingDirectory = Path.GetDirectoryName(resolvedPath),
-                gracefulShutdown = true,
                 shutdownTimeoutSeconds = 10
             },
             _jsonOptions
