@@ -783,7 +783,7 @@ public static class AppEndpoints
                 : ProcessState.Stopped;
 
     private static bool CanStart(bool hasProcess, bool hasRouting, ProcessState status) =>
-        (hasProcess || hasRouting) && status is ProcessState.Stopped or ProcessState.Crashed;
+        (hasProcess || hasRouting) && status is ProcessState.Stopped or ProcessState.Crashed or ProcessState.Fatal;
 
     private static bool CanStop(bool hasProcess, bool hasRouting, ProcessState status) =>
         (hasProcess || hasRouting) && status == ProcessState.Running;

@@ -156,7 +156,9 @@ public static class ProcessStateExtensions
             ProcessState.Stopping => "stopping",
             ProcessState.Crashed => "crashed",
             ProcessState.Restarting => "restarting",
-            _ => state.ToString().ToLowerInvariant()
+            ProcessState.Backoff => "backoff",
+            ProcessState.Fatal => "fatal",
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Unknown ProcessState value"),
         };
     }
 }

@@ -7,7 +7,9 @@ public enum ProcessState
     Running,
     Stopping,
     Crashed,
-    Restarting
+    Restarting,
+    Backoff,
+    Fatal
 }
 
 public enum RestartPolicy

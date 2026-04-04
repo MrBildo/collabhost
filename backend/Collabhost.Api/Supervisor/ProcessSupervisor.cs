@@ -358,7 +358,7 @@ public class ProcessSupervisor
             return;
         }
 
-        if (process.State is ProcessState.Stopping or ProcessState.Stopped)
+        if (process.State is ProcessState.Stopping or ProcessState.Stopped or ProcessState.Fatal)
         {
             return;
         }

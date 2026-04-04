@@ -44,6 +44,10 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
 
     public bool IsRestarting => State == ProcessState.Restarting;
 
+    public bool IsBackoff => State == ProcessState.Backoff;
+
+    public bool IsFatal => State == ProcessState.Fatal;
+
     public double? UptimeSeconds => StartedAt.HasValue && IsRunning
         ? (DateTime.UtcNow - StartedAt.Value).TotalSeconds
         : null;
@@ -118,6 +122,20 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
         Port = null;
         StartedAt = null;
 
+        return previous;
+    }
+
+    public ProcessState MarkBackoff()
+    {
+        var previous = State;
+        State = ProcessState.Backoff;
+        return previous;
+    }
+
+    public ProcessState MarkFatal()
+    {
+        var previous = State;
+        State = ProcessState.Fatal;
         return previous;
     }
 
