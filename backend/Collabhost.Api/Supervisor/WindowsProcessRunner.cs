@@ -170,40 +170,41 @@ public class WindowsProcessRunner : IManagedProcessRunner
 
         private bool TryGracefulShutdownWindows()
         {
-            if (_process.CloseMainWindow())
-            {
-                return true;
-            }
-
-            // For console apps started with CreateNoWindow=true + redirected I/O,
-            // CloseMainWindow() returns false. Use GenerateConsoleCtrlEvent as fallback.
+            // All managed app types are console apps -- try Ctrl+C first.
+            // CloseMainWindow (WM_CLOSE) is a fallback for apps with a message loop.
             try
             {
                 FreeConsole();
 
-                if (!AttachConsole((uint)_process.Id))
+                if (AttachConsole((uint)_process.Id))
+                {
+                    SetConsoleCtrlHandler(null, true);
+
+                    var sent = GenerateConsoleCtrlEvent(_ctrlCEvent, 0);
+
+                    FreeConsole();
+                    AttachConsole(_attachParentProcess);
+                    SetConsoleCtrlHandler(null, false);
+
+                    if (sent)
+                    {
+                        return true;
+                    }
+                }
+                else
                 {
                     AttachConsole(_attachParentProcess);
-                    return false;
                 }
-
-                SetConsoleCtrlHandler(null, true);
-
-                var sent = GenerateConsoleCtrlEvent(_ctrlCEvent, 0);
-
-                FreeConsole();
-                AttachConsole(_attachParentProcess);
-                SetConsoleCtrlHandler(null, false);
-
-                return sent;
             }
             catch
             {
                 FreeConsole();
                 AttachConsole(_attachParentProcess);
                 SetConsoleCtrlHandler(null, false);
-                return false;
             }
+
+            // Ctrl+C failed or process has no console -- fall back to WM_CLOSE
+            return _process.CloseMainWindow();
         }
 
         private bool TryGracefulShutdownUnix()

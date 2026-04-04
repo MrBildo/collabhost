@@ -488,6 +488,82 @@ public class ManagedProcessTests
         previous.ShouldBe(ProcessState.Fatal);
         process.State.ShouldBe(ProcessState.Starting);
     }
+
+    // --- Reconciliation property tests ---
+
+    [Fact]
+    public void HandleExitCode_NoHandle_ReturnsNull()
+    {
+        var process = CreateProcess();
+
+        process.HandleExitCode.ShouldBeNull();
+    }
+
+    [Fact]
+    public void HandleExitCode_ProcessExited_ReturnsExitCode()
+    {
+        var process = CreateProcess();
+        var handle = new FakeExitedProcessHandle(exitCode: 42);
+
+        process.SetHandle(handle);
+
+        process.HandleExitCode.ShouldBe(42);
+    }
+
+    [Fact]
+    public void HasProcessExited_ProcessStillRunning_ReturnsFalse()
+    {
+        var process = CreateProcess();
+        var handle = new FakeProcessHandle();
+
+        process.SetHandle(handle);
+
+        process.HasProcessExited.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasProcessExited_ProcessExited_ReturnsTrue()
+    {
+        var process = CreateProcess();
+        var handle = new FakeExitedProcessHandle(exitCode: 0);
+
+        process.SetHandle(handle);
+
+        process.HasProcessExited.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ReconciliationCondition_RunningButExited_Detected()
+    {
+        var process = CreateProcess();
+        var handle = new FakeExitedProcessHandle(exitCode: 137);
+
+        process.MarkStarting();
+        process.SetHandle(handle);
+
+        // Simulate passing startup grace period by marking Running
+        process.MarkRunning();
+
+        // The reconciliation condition: Running + HasProcessExited
+        process.IsRunning.ShouldBeTrue();
+        process.HasProcessExited.ShouldBeTrue();
+        process.HandleExitCode.ShouldBe(137);
+    }
+
+    [Fact]
+    public void ReconciliationCondition_RunningAndAlive_NotDetected()
+    {
+        var process = CreateProcess();
+        var handle = new FakeProcessHandle();
+
+        process.MarkStarting();
+        process.SetHandle(handle);
+        process.MarkRunning();
+
+        // Running process that is still alive -- reconciliation should not trigger
+        process.IsRunning.ShouldBeTrue();
+        process.HasProcessExited.ShouldBeFalse();
+    }
 }
 
 // No subclasses expected -- test fake for containment handle
@@ -510,6 +586,26 @@ file sealed class FakeProcessHandle : IProcessHandle
     public bool HasExited => false;
 
     public int? ExitCode => null;
+
+    public event Action<int>? Exited;
+
+    public bool TryGracefulShutdown() => false;
+
+    public void Kill() => _ = this;
+
+    public void Dispose() =>
+        // Suppress unused event warning
+        _ = Exited;
+}
+
+// No subclasses expected -- test fake for a process handle that has already exited
+file sealed class FakeExitedProcessHandle(int exitCode) : IProcessHandle
+{
+    public int Pid => 99999;
+
+    public bool HasExited => true;
+
+    public int? ExitCode => exitCode;
 
     public event Action<int>? Exited;
 

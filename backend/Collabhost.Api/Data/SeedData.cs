@@ -112,7 +112,7 @@ public static class SeedData
                 Id = Ulid.Parse("01KN8K1MRTJD1NCG0J9R4364MJ"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "process",
-                DefaultConfigurationJson = """{"discoveryStrategy":"DotNetRuntimeConfiguration","gracefulShutdown":true,"shutdownTimeoutSeconds":30}"""
+                DefaultConfigurationJson = """{"discoveryStrategy":"DotNetRuntimeConfiguration","shutdownTimeoutSeconds":30}"""
             },
             new CapabilityBinding
             {
@@ -173,7 +173,7 @@ public static class SeedData
                 Id = Ulid.Parse("01KN8K1MRT9RES6FCWSNFYNXGK"),
                 AppTypeId = nodejsApp.Id,
                 CapabilitySlug = "process",
-                DefaultConfigurationJson = """{"discoveryStrategy":"PackageJson","gracefulShutdown":true,"shutdownTimeoutSeconds":15}"""
+                DefaultConfigurationJson = """{"discoveryStrategy":"PackageJson","shutdownTimeoutSeconds":15}"""
             },
             new CapabilityBinding
             {
@@ -253,7 +253,7 @@ public static class SeedData
                 Id = Ulid.Parse("01KNA0A0ZRDCSEHPT4E069WFQS"),
                 AppTypeId = systemService.Id,
                 CapabilitySlug = "process",
-                DefaultConfigurationJson = """{"discoveryStrategy":"Manual","gracefulShutdown":true,"shutdownTimeoutSeconds":10}"""
+                DefaultConfigurationJson = """{"discoveryStrategy":"Manual","shutdownTimeoutSeconds":10}"""
             },
             new CapabilityBinding
             {
@@ -286,7 +286,7 @@ public static class SeedData
                 Id = Ulid.Parse("01KNA0A0ZR0AAGHBHWGZND1C0J"),
                 AppTypeId = executable.Id,
                 CapabilitySlug = "process",
-                DefaultConfigurationJson = """{"discoveryStrategy":"Manual","gracefulShutdown":false,"shutdownTimeoutSeconds":10}"""
+                DefaultConfigurationJson = """{"discoveryStrategy":"Manual","shutdownTimeoutSeconds":10}"""
             },
             new CapabilityBinding
             {
