@@ -61,10 +61,12 @@ function SchemaField({
   onChange,
   className,
 }: SchemaFieldProps) {
+  const isKeyValue = type === 'keyValue' || type === 'keyvalue'
   const isLocked = editable.mode === 'locked'
   const isDerived = editable.mode === 'derived'
   const isReadOnly = isLocked || isDerived
-  const hasOverride = isOverridden(value, defaultValue)
+  // keyValue fields are inherently customized per-app — override badge is noise
+  const hasOverride = !isKeyValue && isOverridden(value, defaultValue)
   const fieldId = `field-${fieldKey}`
 
   const badges = (
@@ -74,8 +76,6 @@ function SchemaField({
       {hasOverride && !isReadOnly && <OverrideBadge />}
     </>
   )
-
-  const isKeyValue = type === 'keyValue' || type === 'keyvalue'
 
   // Read mode or locked/derived fields -- show plain text
   if (!isEditing || isReadOnly) {

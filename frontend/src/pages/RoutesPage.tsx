@@ -17,15 +17,33 @@ function RoutesPage() {
   const routes = routesQuery.data?.routes ?? []
   const baseDomain = routesQuery.data?.baseDomain ?? ''
 
+  const modeLabels: Record<string, string> = {
+    reverseproxy: 'Reverse Proxy',
+    fileserver: 'File Server',
+  }
+
   const columns: Column<RouteEntry>[] = [
     {
       key: 'domain',
       header: 'Domain',
       sortFn: (a, b) => a.domain.localeCompare(b.domain),
       render: (route) => (
-        <span className="text-xs" style={{ color: 'var(--wm-text-bright)', fontWeight: 600 }}>
+        <a
+          href={`${route.https ? 'https' : 'http'}://${route.domain}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs"
+          style={{ color: 'var(--wm-text-bright)', fontWeight: 600, textDecoration: 'none' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--wm-amber)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--wm-text-bright)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
           {route.domain}
-        </span>
+        </a>
       ),
     },
     {
@@ -42,7 +60,7 @@ function RoutesPage() {
       header: 'Mode',
       render: (route) => (
         <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-          {route.proxyMode}
+          {modeLabels[route.proxyMode.toLowerCase()] ?? route.proxyMode}
         </span>
       ),
     },

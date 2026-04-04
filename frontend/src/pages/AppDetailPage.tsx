@@ -136,7 +136,18 @@ function AppDetailPage() {
             </a>
           ),
         },
-        { key: 'target', label: 'Target', value: app.route.target },
+        {
+          key: 'target',
+          label: 'Target',
+          value:
+            !app.route.target || app.route.target === 'not-running' ? (
+              <span style={{ color: 'var(--wm-text-dim)' }}>--</span>
+            ) : app.route.target === 'file-server' ? (
+              'File Server'
+            ) : (
+              app.route.target
+            ),
+        },
         {
           key: 'tls',
           label: 'TLS',

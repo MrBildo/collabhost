@@ -252,7 +252,7 @@ function AppSettingsPage() {
           <div className="wm-danger-zone__title">{'// Danger Zone'}</div>
           <p className="mb-3" style={{ fontSize: '11px', color: 'var(--wm-text-dim)', lineHeight: 1.6 }}>
             {
-              'Deleting this app will remove it from Collabhost, stop its process, and remove its Caddy route. The application files on disk will not be deleted.'
+              'Deleting this app will remove it from Collabhost, stop its process, and remove its route. The application files on disk will not be deleted.'
             }
           </p>
           <ActionButton variant="danger" onClick={() => setIsDeleteOpen(true)}>
@@ -264,7 +264,7 @@ function AppSettingsPage() {
       {/* Delete confirmation dialog */}
       <ConfirmDialog
         title="Delete Application"
-        message={`Are you sure you want to delete "${settings.displayName}"? This will stop the process, remove the Caddy route, and unregister the app. Application files on disk will not be deleted.`}
+        message={`Are you sure you want to delete "${settings.displayName}"? This will stop the process, remove the route, and unregister the app. Application files on disk will not be deleted.`}
         confirmLabel="Delete App"
         confirmVariant="danger"
         isOpen={isDeleteOpen}

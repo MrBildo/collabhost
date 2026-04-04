@@ -105,11 +105,29 @@ function domainColumn(): Column<AppListItem> {
   return {
     key: 'domain',
     header: 'Domain',
-    render: (app) => (
-      <span className="text-xs" style={{ color: 'var(--wm-text-dim)', opacity: app.domainActive ? 1 : 0.5 }}>
-        {app.domain ?? '--'}
-      </span>
-    ),
+    render: (app) =>
+      app.domain ? (
+        <a
+          href={`${app.domainActive ? 'https' : 'http'}://${app.domain}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs"
+          style={{ color: 'var(--wm-text-dim)', opacity: app.domainActive ? 1 : 0.5, textDecoration: 'none' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--wm-amber)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--wm-text-dim)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {app.domain}
+        </a>
+      ) : (
+        <span className="text-xs" style={{ color: 'var(--wm-text-dim)', opacity: 0.5 }}>
+          --
+        </span>
+      ),
   }
 }
 
