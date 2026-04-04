@@ -6,7 +6,7 @@
 
 // --- Shared ---
 
-type AppStatus = 'running' | 'stopped' | 'crashed' | 'starting' | 'stopping' | 'restarting'
+type AppStatus = 'running' | 'stopped' | 'crashed' | 'starting' | 'stopping' | 'restarting' | 'backoff' | 'fatal'
 
 type HealthStatus = 'healthy' | 'unhealthy' | 'degraded' | 'unknown'
 
@@ -169,6 +169,8 @@ type DashboardStats = {
   running: number
   stopped: number
   crashed: number
+  backoff: number
+  fatal: number
   issues: number
   issuesSummary: string | null
   uptimePercent24h: number | null

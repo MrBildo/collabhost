@@ -69,6 +69,8 @@ describe('formatStatus', () => {
     expect(formatStatus('starting')).toBe('Starting')
     expect(formatStatus('stopping')).toBe('Stopping')
     expect(formatStatus('restarting')).toBe('Restarting')
+    expect(formatStatus('backoff')).toBe('Backoff')
+    expect(formatStatus('fatal')).toBe('Fatal')
   })
 })
 
