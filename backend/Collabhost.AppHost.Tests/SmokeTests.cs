@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 
 using Shouldly;
@@ -160,5 +161,74 @@ public class SmokeTests(AppHostFixture fixture)
 
         doc.RootElement.GetProperty("appType").GetProperty("name").GetString().ShouldBe("dotnet-app");
         doc.RootElement.GetProperty("sections").GetArrayLength().ShouldBeGreaterThanOrEqualTo(1);
+    }
+
+    [Fact]
+    public async Task StartTwoApps_Concurrently_BothComplete()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var slugA = $"smoke-parallel-a-{suffix}";
+        var slugB = $"smoke-parallel-b-{suffix}";
+
+        var jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        try
+        {
+            // Register two test apps
+            var createA = new { name = slugA, displayName = "Parallel A", appTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y" };
+            var createB = new { name = slugB, displayName = "Parallel B", appTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y" };
+
+            using var createRequestA = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
+            createRequestA.Headers.Add("X-User-Key", fixture.AdminKey);
+            createRequestA.Content = JsonContent.Create(createA, options: jsonOptions);
+
+            using var createRequestB = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
+            createRequestB.Headers.Add("X-User-Key", fixture.AdminKey);
+            createRequestB.Content = JsonContent.Create(createB, options: jsonOptions);
+
+            var createResponseA = await _client.SendAsync(createRequestA);
+            var createResponseB = await _client.SendAsync(createRequestB);
+
+            createResponseA.StatusCode.ShouldBe(HttpStatusCode.Created);
+            createResponseB.StatusCode.ShouldBe(HttpStatusCode.Created);
+
+            // Fire both start requests concurrently
+            using var startRequestA = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/apps/{slugA}/start");
+            startRequestA.Headers.Add("X-User-Key", fixture.AdminKey);
+
+            using var startRequestB = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/apps/{slugB}/start");
+            startRequestB.Headers.Add("X-User-Key", fixture.AdminKey);
+
+            var startTaskA = _client.SendAsync(startRequestA);
+            var startTaskB = _client.SendAsync(startRequestB);
+
+            // Both should complete within 5 seconds -- deadlock would cause timeout
+            var bothCompleted = Task.WhenAll(startTaskA, startTaskB);
+            var completedTask = await Task.WhenAny(bothCompleted, Task.Delay(TimeSpan.FromSeconds(5)));
+
+            completedTask.ShouldBe(bothCompleted, "Concurrent start requests deadlocked behind a global lock");
+
+            // Both requests completed (may be errors since no actual executable, but they didn't deadlock)
+            var responseA = await startTaskA;
+            var responseB = await startTaskB;
+
+            responseA.ShouldNotBeNull();
+            responseB.ShouldNotBeNull();
+        }
+        finally
+        {
+            // Clean up: delete both test apps
+            using var deleteA = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/apps/{slugA}");
+            deleteA.Headers.Add("X-User-Key", fixture.AdminKey);
+
+            using var deleteB = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/apps/{slugB}");
+            deleteB.Headers.Add("X-User-Key", fixture.AdminKey);
+
+            await _client.SendAsync(deleteA);
+            await _client.SendAsync(deleteB);
+        }
     }
 }

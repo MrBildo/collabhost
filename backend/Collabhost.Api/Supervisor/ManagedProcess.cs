@@ -5,6 +5,8 @@ namespace Collabhost.Api.Supervisor;
 
 public class ManagedProcess(Ulid appId, string appSlug, string displayName) : IDisposable
 {
+    private readonly SemaphoreSlim _operationLock = new(1, 1);
+
     private IProcessHandle? _handle;
     private int _consecutiveFailures;
     private DateTime? _lastHealthyAt;
@@ -45,6 +47,13 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
         : null;
 
     public bool HasProcessExited => _handle?.HasExited ?? true;
+
+    public async Task<IAsyncDisposable> AcquireOperationLockAsync(CancellationToken ct = default)
+    {
+        await _operationLock.WaitAsync(ct);
+
+        return new OperationLockRelease(_operationLock);
+    }
 
     public void AssignPort(int port) => Port = port;
 
@@ -157,6 +166,17 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
     {
         CancelPendingRestart();
         _handle?.Dispose();
+        _operationLock.Dispose();
         GC.SuppressFinalize(this);
+    }
+}
+
+file record struct OperationLockRelease(SemaphoreSlim Semaphore) : IAsyncDisposable
+{
+    public ValueTask DisposeAsync()
+    {
+        Semaphore.Release();
+
+        return ValueTask.CompletedTask;
     }
 }
