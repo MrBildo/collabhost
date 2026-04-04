@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { formatEnumLabel, formatMemory, formatStatus, formatUptime, formatUptimeLong } from './format'
+import { formatEnumLabel, formatMemory, formatStatus, formatUptime, formatUptimeLong, toSlug } from './format'
 
 describe('formatUptime', () => {
   test('returns -- for null', () => {
@@ -25,6 +25,10 @@ describe('formatUptime', () => {
   test('formats days', () => {
     expect(formatUptime(172800)).toBe('2d')
   })
+
+  test('rounds fractional seconds', () => {
+    expect(formatUptime(13.7)).toBe('14s')
+  })
 })
 
 describe('formatUptimeLong', () => {
@@ -46,6 +50,14 @@ describe('formatUptimeLong', () => {
 
   test('formats seconds only', () => {
     expect(formatUptimeLong(45)).toBe('45s')
+  })
+
+  test('rounds fractional seconds', () => {
+    expect(formatUptimeLong(613.9)).toBe('10m 14s')
+  })
+
+  test('rounds sub-minute fractional seconds', () => {
+    expect(formatUptimeLong(13.7)).toBe('14s')
   })
 })
 
@@ -86,5 +98,49 @@ describe('formatMemory', () => {
 
   test('formats gigabytes', () => {
     expect(formatMemory(2048)).toBe('2.0 GB')
+  })
+})
+
+describe('toSlug', () => {
+  test('lowercases and replaces spaces with hyphens', () => {
+    expect(toSlug('My Cool App')).toBe('my-cool-app')
+  })
+
+  test('replaces underscores with hyphens', () => {
+    expect(toSlug('my_cool_app')).toBe('my-cool-app')
+  })
+
+  test('strips special characters', () => {
+    expect(toSlug("Bill's App (v2)")).toBe('bills-app-v2')
+  })
+
+  test('collapses multiple hyphens', () => {
+    expect(toSlug('my - - app')).toBe('my-app')
+  })
+
+  test('trims leading and trailing hyphens', () => {
+    expect(toSlug('--my-app--')).toBe('my-app')
+  })
+
+  test('handles empty string', () => {
+    expect(toSlug('')).toBe('')
+  })
+
+  test('handles all-special-characters input', () => {
+    expect(toSlug('!@#$%')).toBe('')
+  })
+
+  test('truncates to 63 characters', () => {
+    const long = 'a'.repeat(100)
+    expect(toSlug(long)).toBe('a'.repeat(63))
+  })
+
+  test('strips trailing hyphen after truncation', () => {
+    const input = `${'a'.repeat(62)}-bcd`
+    expect(toSlug(input).endsWith('-')).toBe(false)
+  })
+
+  test('handles mixed case with numbers', () => {
+    expect(toSlug('Collabhost V2 API')).toBe('collabhost-v2-api')
   })
 })

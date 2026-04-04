@@ -9,7 +9,7 @@ import {
   useDetailStartApp,
   useDetailStopApp,
 } from '@/hooks/use-app-detail'
-import { formatDateTime, formatEnumLabel, formatHealthStatus, formatMemory, formatUptime } from '@/lib/format'
+import { formatDateTime, formatHealthStatus, formatMemory, formatUptime } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import type { LogStream } from '@/log/LogViewer'
 import { LogViewer } from '@/log/LogViewer'
@@ -19,7 +19,6 @@ import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
 import { TypeBadge } from '@/shared/TypeBadge'
 import { StatsStrip } from '@/status/StatsStrip'
-import { StatusDot } from '@/status/StatusDot'
 import { StatusText } from '@/status/StatusText'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -96,23 +95,9 @@ function AppDetailPage() {
     {
       key: 'type',
       label: 'Type',
-      value: (
-        <span className="flex items-center gap-2">
-          <TypeBadge label={app.appType.name} />
-          <span style={{ color: 'var(--wm-text-dim)' }}>{app.appType.displayName}</span>
-        </span>
-      ),
+      value: <TypeBadge label={app.appType.name} />,
     },
     { key: 'registered', label: 'Registered', value: formatDateTime(app.registeredAt) },
-    {
-      key: 'domain',
-      label: 'Domain',
-      value: app.domain ? (
-        <span style={{ color: app.domainActive ? 'var(--wm-amber)' : 'var(--wm-text-dim)' }}>{app.domain}</span>
-      ) : (
-        '--'
-      ),
-    },
     {
       key: 'tags',
       label: 'Tags',
@@ -134,9 +119,35 @@ function AppDetailPage() {
         {
           key: 'domain',
           label: 'Domain',
-          value: <span style={{ color: 'var(--wm-amber)', fontWeight: 500 }}>{app.route.domain}</span>,
+          value: (
+            <a
+              href={`${app.route.tls ? 'https' : 'http'}://${app.route.domain}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--wm-amber)', fontWeight: 500, textDecoration: 'none' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.textDecoration = 'underline'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.textDecoration = 'none'
+              }}
+            >
+              {app.route.domain}
+            </a>
+          ),
         },
-        { key: 'target', label: 'Target', value: app.route.target },
+        {
+          key: 'target',
+          label: 'Target',
+          value:
+            !app.route.target || app.route.target === 'not-running' ? (
+              <span style={{ color: 'var(--wm-text-dim)' }}>--</span>
+            ) : app.route.target === 'file-server' ? (
+              'File Server'
+            ) : (
+              app.route.target
+            ),
+        },
         {
           key: 'tls',
           label: 'TLS',
@@ -175,50 +186,47 @@ function AppDetailPage() {
         }
       />
 
-      {/* Identity header */}
-      <div className="flex items-center gap-3 mb-4">
-        <StatusDot status={app.status} size="md" />
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm" style={{ color: 'var(--wm-text-bright)', fontWeight: 700 }}>
-              {app.displayName}
-            </h1>
-            <TypeBadge label={app.appType.name} />
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <StatusText status={app.status} />
-            {app.domain && (
-              <>
-                <span style={{ color: 'var(--wm-text-dim)', opacity: 0.3 }}>|</span>
-                <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-                  {app.domain}
-                </span>
-              </>
-            )}
-            {app.restartPolicy && (
-              <>
-                <span style={{ color: 'var(--wm-text-dim)', opacity: 0.3 }}>|</span>
-                <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-                  Restart: {formatEnumLabel(app.restartPolicy)}
-                </span>
-              </>
-            )}
-          </div>
+      {/* Identity + actions row */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm" style={{ color: 'var(--wm-text-bright)', fontWeight: 700 }}>
+            {app.displayName}
+          </h1>
+          <TypeBadge label={app.appType.name} />
+          <StatusText status={app.status} />
+          {app.domain && (
+            <>
+              <span style={{ color: 'var(--wm-text-dim)', opacity: 0.3 }}>·</span>
+              <a
+                href={`${app.route?.tls ? 'https' : 'http'}://${app.domain}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs"
+                style={{ color: 'var(--wm-text-dim)', textDecoration: 'none' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--wm-amber)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--wm-text-dim)'
+                }}
+              >
+                {app.domain}
+              </a>
+            </>
+          )}
         </div>
+        <ActionBar
+          actions={app.actions}
+          isTransitioning={isTransitioning}
+          onStart={() => startMutation.mutate(slug)}
+          onStop={() => stopMutation.mutate(slug)}
+          onRestart={() => restartMutation.mutate(slug)}
+          onKill={() => killMutation.mutate(slug)}
+          onUpdate={() => {
+            /* TODO: SSE update flow */
+          }}
+        />
       </div>
-
-      {/* Action bar */}
-      <ActionBar
-        actions={app.actions}
-        isTransitioning={isTransitioning}
-        onStart={() => startMutation.mutate(slug)}
-        onStop={() => stopMutation.mutate(slug)}
-        onRestart={() => restartMutation.mutate(slug)}
-        onKill={() => killMutation.mutate(slug)}
-        onUpdate={() => {
-          /* TODO: SSE update flow */
-        }}
-      />
 
       {/* Stats strip */}
       <StatsStrip items={statItems} className="mt-4 mb-4" />

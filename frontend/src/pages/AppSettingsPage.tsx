@@ -219,17 +219,6 @@ function AppSettingsPage() {
       {/* Save error */}
       {saveError && <ErrorBanner message={saveError} className="mb-4" onDismiss={() => setSaveError(null)} />}
 
-      {/* Settings title */}
-      <h2
-        className="mb-1"
-        style={{ fontFamily: 'var(--wm-sans)', fontSize: '18px', fontWeight: 700, color: 'var(--wm-text-bright)' }}
-      >
-        {settings.displayName} Settings
-      </h2>
-      <p className="mb-6" style={{ fontSize: '11px', color: 'var(--wm-text-dim)' }}>
-        {`Configure this app's identity, process behavior, routing, and environment.`}
-      </p>
-
       {/* Sections */}
       {settings.sections.map((section) => (
         <div key={section.key} className="mb-7">
@@ -257,23 +246,25 @@ function AppSettingsPage() {
         </div>
       ))}
 
-      {/* Danger Zone */}
-      <div className="wm-danger-zone mt-10">
-        <div className="wm-danger-zone__title">{'// Danger Zone'}</div>
-        <p className="mb-3" style={{ fontSize: '11px', color: 'var(--wm-text-dim)', lineHeight: 1.6 }}>
-          {
-            'Deleting this app will remove it from Collabhost, stop its process, and remove its Caddy route. The application files on disk will not be deleted.'
-          }
-        </p>
-        <ActionButton variant="danger" onClick={() => setIsDeleteOpen(true)}>
-          Delete App
-        </ActionButton>
-      </div>
+      {/* Danger Zone — only visible in edit mode */}
+      {isEditing && (
+        <div className="wm-danger-zone mt-10">
+          <div className="wm-danger-zone__title">{'// Danger Zone'}</div>
+          <p className="mb-3" style={{ fontSize: '11px', color: 'var(--wm-text-dim)', lineHeight: 1.6 }}>
+            {
+              'Deleting this app will remove it from Collabhost, stop its process, and remove its route. The application files on disk will not be deleted.'
+            }
+          </p>
+          <ActionButton variant="danger" onClick={() => setIsDeleteOpen(true)}>
+            Delete App
+          </ActionButton>
+        </div>
+      )}
 
       {/* Delete confirmation dialog */}
       <ConfirmDialog
         title="Delete Application"
-        message={`Are you sure you want to delete "${settings.displayName}"? This will stop the process, remove the Caddy route, and unregister the app. Application files on disk will not be deleted.`}
+        message={`Are you sure you want to delete "${settings.displayName}"? This will stop the process, remove the route, and unregister the app. Application files on disk will not be deleted.`}
         confirmLabel="Delete App"
         confirmVariant="danger"
         isOpen={isDeleteOpen}

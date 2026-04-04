@@ -1,6 +1,5 @@
 import { ActionButton } from '@/actions/ActionButton'
 import type { RouteEntry } from '@/api/types'
-import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { useReloadProxy, useRoutes } from '@/hooks/use-routes'
 import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
@@ -18,15 +17,33 @@ function RoutesPage() {
   const routes = routesQuery.data?.routes ?? []
   const baseDomain = routesQuery.data?.baseDomain ?? ''
 
+  const modeLabels: Record<string, string> = {
+    reverseproxy: 'Reverse Proxy',
+    fileserver: 'File Server',
+  }
+
   const columns: Column<RouteEntry>[] = [
     {
       key: 'domain',
       header: 'Domain',
       sortFn: (a, b) => a.domain.localeCompare(b.domain),
       render: (route) => (
-        <span className="text-xs" style={{ color: 'var(--wm-text-bright)', fontWeight: 600 }}>
+        <a
+          href={`${route.https ? 'https' : 'http'}://${route.domain}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs"
+          style={{ color: 'var(--wm-text-bright)', fontWeight: 600, textDecoration: 'none' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--wm-amber)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--wm-text-bright)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
           {route.domain}
-        </span>
+        </a>
       ),
     },
     {
@@ -43,7 +60,7 @@ function RoutesPage() {
       header: 'Mode',
       render: (route) => (
         <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-          {route.proxyMode}
+          {modeLabels[route.proxyMode.toLowerCase()] ?? route.proxyMode}
         </span>
       ),
     },
@@ -86,14 +103,17 @@ function RoutesPage() {
 
   return (
     <div>
-      <Breadcrumbs
-        segments={[{ label: 'Routes' }]}
-        actions={
-          <ActionButton size="sm" onClick={() => reloadMutation.mutate()} disabled={reloadMutation.isPending}>
-            {reloadMutation.isPending ? 'Reloading...' : 'Reload Proxy'}
-          </ActionButton>
-        }
-      />
+      <div
+        className="flex items-baseline justify-between mb-5 pb-3"
+        style={{ borderBottom: '1px solid var(--wm-border)' }}
+      >
+        <h1 className="wm-section-title" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+          <span style={{ color: 'var(--wm-text-dim)' }}>{'// '}</span>Routes
+        </h1>
+        <ActionButton size="sm" onClick={() => reloadMutation.mutate()} disabled={reloadMutation.isPending}>
+          {reloadMutation.isPending ? 'Reloading...' : 'Reload Proxy'}
+        </ActionButton>
+      </div>
 
       {routesQuery.error && (
         <ErrorBanner

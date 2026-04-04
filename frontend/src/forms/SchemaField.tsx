@@ -39,7 +39,8 @@ function formatReadValue(type: FieldType, value: unknown, options?: FieldOption[
   if (value == null) return '--'
   if (type === 'boolean') return value ? 'Yes' : 'No'
   if (type === 'select' && options) {
-    const match = options.find((o) => o.value === String(value))
+    const str = String(value)
+    const match = options.find((o) => o.value.toLowerCase() === str.toLowerCase())
     return match ? match.label : String(value)
   }
   return String(value)
@@ -60,10 +61,12 @@ function SchemaField({
   onChange,
   className,
 }: SchemaFieldProps) {
+  const isKeyValue = type === 'keyValue' || type === 'keyvalue'
   const isLocked = editable.mode === 'locked'
   const isDerived = editable.mode === 'derived'
   const isReadOnly = isLocked || isDerived
-  const hasOverride = isOverridden(value, defaultValue)
+  // keyValue fields are inherently customized per-app — override badge is noise
+  const hasOverride = !isKeyValue && isOverridden(value, defaultValue)
   const fieldId = `field-${fieldKey}`
 
   const badges = (
@@ -77,7 +80,7 @@ function SchemaField({
   // Read mode or locked/derived fields -- show plain text
   if (!isEditing || isReadOnly) {
     // keyValue type gets its own read rendering
-    if (type === 'keyValue') {
+    if (isKeyValue) {
       const kvValue = (value as Record<string, string>) ?? {}
       return (
         <FormField label={label} helpText={helpText} error={error} badges={badges} className={className}>
@@ -171,6 +174,7 @@ function renderEditField(
       )
 
     case 'keyValue':
+    case 'keyvalue':
       return <KeyValueField value={(value as Record<string, string>) ?? {}} onChange={onChange} />
   }
 }

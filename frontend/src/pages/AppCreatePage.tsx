@@ -4,12 +4,13 @@ import type { CreateAppRequest, RegistrationField as RegistrationFieldType, Regi
 import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { RegistrationField } from '@/forms/RegistrationField'
 import { useAppTypes, useCreateApp, useRegistrationSchema } from '@/hooks/use-app-create'
+import { toSlug } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
 import { TypeCard } from '@/shared/TypeCard'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 type FormValues = Record<string, Record<string, unknown>>
@@ -59,11 +60,17 @@ function AppCreatePage() {
   const schemaQuery = useRegistrationSchema(selectedType ?? '')
   const schema = schemaQuery.data
 
+  // Track whether the user has manually edited the slug field.
+  // Once touched, display name changes no longer auto-derive the slug.
+  // Uses a ref to avoid stale closures in handleFieldChange.
+  const slugLockedRef = useRef(false)
+
   const handleTypeSelect = useCallback((typeSlug: string) => {
     setSelectedType(typeSlug)
     setFormValues({})
     setFieldErrors({})
     setSubmitError(null)
+    slugLockedRef.current = false
   }, [])
 
   // Initialize form values when schema loads for a new type
@@ -74,13 +81,31 @@ function AppCreatePage() {
   }
 
   const handleFieldChange = useCallback((sectionKey: string, fieldKey: string, value: unknown) => {
-    setFormValues((prev) => ({
-      ...prev,
-      [sectionKey]: {
-        ...prev[sectionKey],
-        [fieldKey]: value,
-      },
-    }))
+    // If the user directly edits the slug field, lock it so display name
+    // changes no longer auto-derive. This stays locked until type change or back.
+    if (sectionKey === 'basics' && fieldKey === 'name') {
+      slugLockedRef.current = true
+    }
+
+    setFormValues((prev) => {
+      const next = {
+        ...prev,
+        [sectionKey]: {
+          ...prev[sectionKey],
+          [fieldKey]: value,
+        },
+      }
+
+      // Auto-derive slug from display name when the slug hasn't been manually edited
+      if (sectionKey === 'basics' && fieldKey === 'displayName' && !slugLockedRef.current) {
+        next.basics = {
+          ...next.basics,
+          name: toSlug(String(value ?? '')),
+        }
+      }
+
+      return next
+    })
     setFieldErrors((prev) => {
       const sectionErrors = { ...prev[sectionKey] }
       delete sectionErrors[fieldKey]
@@ -148,6 +173,7 @@ function AppCreatePage() {
     setFormValues({})
     setFieldErrors({})
     setSubmitError(null)
+    slugLockedRef.current = false
   }, [])
 
   // Step state

@@ -20,7 +20,7 @@ function Topbar() {
     <nav className="wm-topbar" aria-label="Main navigation">
       <div className="flex items-center h-full px-4 mx-auto max-w-screen-xl w-full">
         {/* Brand */}
-        <NavLink to={ROUTES.dashboard} className="wm-topbar__brand flex items-center gap-2 mr-6">
+        <NavLink to={ROUTES.dashboard} className="wm-topbar__brand flex items-center gap-2">
           <StatusDot status="running" />
           Collabhost
         </NavLink>
@@ -33,7 +33,7 @@ function Topbar() {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) =>
-                cn('wm-topbar__link flex items-center px-3.5', isActive && 'wm-topbar__link--active')
+                cn('wm-topbar__link flex items-center', isActive && 'wm-topbar__link--active')
               }
             >
               {item.label}

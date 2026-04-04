@@ -42,7 +42,7 @@ function DashboardPage() {
           label: '24h Uptime',
           value: stats.uptimePercent24h != null ? `${stats.uptimePercent24h}%` : '--',
           detail: `${stats.incidentsThisWeek} incidents this week`,
-          color: 'amber' as const,
+          color: stats.uptimePercent24h != null ? ('amber' as const) : ('default' as const),
         },
         {
           label: 'Memory',
@@ -53,7 +53,7 @@ function DashboardPage() {
           label: 'Req/min',
           value: stats.requestsPerMinute ?? '--',
           detail: 'across all apps',
-          color: 'amber' as const,
+          color: stats.requestsPerMinute != null ? ('amber' as const) : ('default' as const),
         },
       ]
     : []
