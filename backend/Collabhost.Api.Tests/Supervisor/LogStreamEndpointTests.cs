@@ -380,6 +380,36 @@ public class LogStreamEndpointTests(ApiFixture fixture)
         }
     }
 
+    [Fact]
+    public async Task DeleteApp_CleansUpLogBuffer()
+    {
+        var slug = await RegisterTestAppAsync();
+
+        try
+        {
+            var appId = await GetAppIdAsync(slug);
+            var supervisor = fixture.Services.GetRequiredService<ProcessSupervisor>();
+            var buffer = supervisor.GetOrCreateLogBuffer(appId);
+
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "should be cleaned up"));
+
+            buffer.Count.ShouldBe(1);
+
+            await DeleteTestAppAsync(slug);
+
+            // After deletion, GetOrCreateLogBuffer returns a fresh empty buffer
+            var freshBuffer = supervisor.GetOrCreateLogBuffer(appId);
+
+            freshBuffer.Count.ShouldBe(0);
+        }
+        catch
+        {
+            // Cleanup in case test fails before delete
+            await DeleteTestAppAsync(slug);
+            throw;
+        }
+    }
+
     private async Task<string> RegisterTestAppAsync()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];

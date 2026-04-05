@@ -840,6 +840,8 @@ public static class AppEndpoints
 
         await store.DeleteAppAsync(app.Id, ct);
 
+        supervisor.CleanupDeletedApp(app.Id);
+
         return TypedResults.NoContent();
     }
 

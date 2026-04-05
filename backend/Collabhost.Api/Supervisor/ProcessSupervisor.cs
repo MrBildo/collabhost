@@ -216,6 +216,17 @@ public class ProcessSupervisor
     public RingBuffer<LogEntry> GetOrCreateLogBuffer(Ulid appId) =>
         _logBuffers.GetOrAdd(appId, _ => new RingBuffer<LogEntry>(1000));
 
+    public void CleanupDeletedApp(Ulid appId)
+    {
+        _logBuffers.TryRemove(appId, out _);
+        _restartPolicies.TryRemove(appId, out _);
+
+        if (_processes.TryRemove(appId, out var process))
+        {
+            process.Dispose();
+        }
+    }
+
     private async Task<ManagedProcess> StartAppInternalAsync(Ulid appId, CancellationToken ct)
     {
         if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
