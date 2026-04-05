@@ -67,6 +67,9 @@ public class ProxyManager
     public bool IsRouteEnabled(string slug) =>
         !_routeStates.TryGetValue(slug, out var enabled) || enabled;
 
+    public bool IsRouteExplicitlyEnabled(string slug) =>
+        _routeStates.TryGetValue(slug, out var enabled) && enabled;
+
     public void RequestSync() =>
         _syncChannel.Writer.TryWrite(true);
 

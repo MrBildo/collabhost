@@ -88,7 +88,11 @@ public static class AppEndpoints
 
             var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-            var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
+            // For routing-only apps, use explicit check so newly registered static sites start as Stopped
+            var routeExplicitlyEnabled = routingConfiguration is not null
+                && proxy.IsRouteExplicitlyEnabled(app.Slug);
+
+            var status = ResolveStatus(hasProcess, process, hasRouting, routeExplicitlyEnabled);
 
             items.Add
             (
@@ -170,7 +174,11 @@ public static class AppEndpoints
 
         var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-        var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
+        // For routing-only apps, use explicit check so newly registered static sites start as Stopped
+        var routeExplicitlyEnabled = routingConfiguration is not null
+            && proxy.IsRouteExplicitlyEnabled(app.Slug);
+
+        var status = ResolveStatus(hasProcess, process, hasRouting, routeExplicitlyEnabled);
 
         // Restart policy + auto-start
         string? restartPolicyValue = null;
