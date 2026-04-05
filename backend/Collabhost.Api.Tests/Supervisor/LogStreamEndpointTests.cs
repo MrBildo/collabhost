@@ -381,6 +381,20 @@ public class LogStreamEndpointTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task QueryParamAuth_NonSseEndpoint_Returns403()
+    {
+        using var request = new HttpRequestMessage
+        (
+            HttpMethod.Get,
+            $"/api/v1/apps?key={ApiFixture.AdminKey}"
+        );
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task DeleteApp_CleansUpLogBuffer()
     {
         var slug = await RegisterTestAppAsync();
