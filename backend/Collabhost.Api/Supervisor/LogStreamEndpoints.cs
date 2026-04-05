@@ -85,14 +85,19 @@ public static class LogStreamEndpoints
 
                 await httpContext.Response.Body.FlushAsync(ct);
 
-                // Live loop
+                // Live loop — keepalive task created once, renewed only after completion
+                // to avoid PeriodicTimer.WaitForNextTickAsync concurrent call crash
                 using var keepaliveTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+
+                Task<bool> WaitForKeepaliveAsync() =>
+                    keepaliveTimer.WaitForNextTickAsync(ct).AsTask();
+
+                var keepaliveTask = WaitForKeepaliveAsync();
 
                 while (!ct.IsCancellationRequested)
                 {
                     var logTask = logReader.WaitToReadAsync(ct).AsTask();
                     var statusTask = statusChannel.Reader.WaitToReadAsync(ct).AsTask();
-                    var keepaliveTask = keepaliveTimer.WaitForNextTickAsync(ct).AsTask();
 
                     await Task.WhenAny(logTask, statusTask, keepaliveTask);
 
@@ -121,10 +126,11 @@ public static class LogStreamEndpoints
                         );
                     }
 
-                    // Keepalive fires every 30s regardless of other activity
+                    // Only renew keepalive task after it completes
                     if (keepaliveTask.IsCompletedSuccessfully)
                     {
                         await SseWriter.WriteKeepaliveAsync(httpContext.Response, ct);
+                        keepaliveTask = WaitForKeepaliveAsync();
                     }
                 }
             }
