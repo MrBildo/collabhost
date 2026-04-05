@@ -177,7 +177,7 @@ public class ProcessSupervisor
         {
             await using var operationLock = await existing.AcquireOperationLockAsync(ct);
 
-            existing.ClearStoppedByOperator();
+            existing.MarkStoppedByOperator();
 
             await StopProcessWithShutdownPolicyAsync(appId, existing);
 
