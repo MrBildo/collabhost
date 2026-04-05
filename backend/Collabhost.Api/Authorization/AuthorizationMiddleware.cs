@@ -42,7 +42,8 @@ public class AuthorizationMiddleware
             return;
         }
 
-        var userKey = context.Request.Headers["X-User-Key"].FirstOrDefault();
+        var userKey = context.Request.Headers["X-User-Key"].FirstOrDefault()
+            ?? context.Request.Query["key"].FirstOrDefault();
         var adminKey = _authorizationSettings.CurrentValue.AdminKey;
 
         if (adminKey is null || userKey != adminKey)
