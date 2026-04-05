@@ -22,6 +22,10 @@ public static partial class LogLevelParser
     [GeneratedRegex(@"(?:^|\d{2}:\d{2}(?::\d{2})?\s+|\]\s*)(?<level>INFO|WARN|WARNING|ERROR|DEBUG|CRITICAL|FATAL)\b", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture | RegexOptions.NonBacktracking)]
     private static partial Regex GenericPattern { get; }
 
+    // ANSI escape sequences: CSI (e.g., \x1b[32m) and OSC (e.g., \x1b]0;title\x07)
+    [GeneratedRegex(@"\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?(?:\x07|\x1b\\)", RegexOptions.NonBacktracking)]
+    private static partial Regex AnsiEscapePattern { get; }
+
     public static string? ParseLevel(string? line)
     {
         if (string.IsNullOrWhiteSpace(line))
@@ -29,8 +33,18 @@ public static partial class LogLevelParser
             return null;
         }
 
+        // Strip ANSI escape sequences before level extraction.
+        // .NET's console logger wraps level text in ANSI codes (e.g., \x1b[32minfo\x1b[0m:)
+        // when ANSI is enabled, which would otherwise break the regex matches.
+        var cleanLine = AnsiEscapePattern.Replace(line, string.Empty);
+
+        if (string.IsNullOrWhiteSpace(cleanLine))
+        {
+            return null;
+        }
+
         // 1. .NET Microsoft.Extensions.Logging
-        var microsoftMatch = MicrosoftLoggingPattern.Match(line);
+        var microsoftMatch = MicrosoftLoggingPattern.Match(cleanLine);
 
         if (microsoftMatch.Success)
         {
@@ -38,7 +52,7 @@ public static partial class LogLevelParser
         }
 
         // 2. Serilog bracket format
-        var serilogMatch = SerilogPattern.Match(line);
+        var serilogMatch = SerilogPattern.Match(cleanLine);
 
         if (serilogMatch.Success)
         {
@@ -46,7 +60,7 @@ public static partial class LogLevelParser
         }
 
         // 3. Generic (Node, Python, plain text)
-        var genericMatch = GenericPattern.Match(line);
+        var genericMatch = GenericPattern.Match(cleanLine);
 
         return genericMatch.Success ? NormalizeGenericLevel(genericMatch.Groups["level"].Value) : null;
     }

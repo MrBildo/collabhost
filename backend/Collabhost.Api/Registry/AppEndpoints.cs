@@ -608,15 +608,9 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var process = supervisor.GetProcess(app.Id);
-
-        if (process is null)
-        {
-            return TypedResults.Ok(new LogsResponse([], 0));
-        }
-
+        var buffer = supervisor.GetOrCreateLogBuffer(app.Id);
         var lineCount = lines ?? 200;
-        var allEntries = process.LogBuffer.GetLast(lineCount);
+        var allEntries = buffer.GetLast(lineCount);
 
         LogStream? filterStream = stream?.ToLowerInvariant() switch
         {
@@ -642,7 +636,7 @@ public static class AppEndpoints
                 )
                     .ToList();
 
-        return TypedResults.Ok(new LogsResponse(entries, process.LogBuffer.Count));
+        return TypedResults.Ok(new LogsResponse(entries, buffer.Count));
     }
 
     private static async Task<IResult> CreateAppAsync

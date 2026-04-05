@@ -1,5 +1,4 @@
 using Collabhost.Api.Registry;
-using Collabhost.Api.Shared;
 using Collabhost.Api.Supervisor.Containment;
 
 namespace Collabhost.Api.Supervisor;
@@ -39,8 +38,6 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
     public DateTime? LastExitAt { get; private set; }
 
     public int StartupFailures { get; private set; }
-
-    public RingBuffer<LogEntry> LogBuffer { get; } = new(1000);
 
     public bool IsRunning => State == ProcessState.Running;
 
