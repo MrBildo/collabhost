@@ -10,6 +10,8 @@ const LEVEL_CLASSES: Record<string, string> = {
   INF: 'wm-log-level--info',
   WRN: 'wm-log-level--warn',
   ERR: 'wm-log-level--error',
+  DBG: 'wm-log-level--debug',
+  FTL: 'wm-log-level--fatal',
   HLT: 'wm-log-level--ok',
   UPD: 'wm-log-level--ok',
 }

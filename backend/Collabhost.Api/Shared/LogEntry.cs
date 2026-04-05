@@ -6,4 +6,4 @@ public enum LogStream
     StdErr
 }
 
-public record LogEntry(DateTime Timestamp, LogStream Stream, string Content);
+public record LogEntry(DateTime Timestamp, LogStream Stream, string Content, string? Level = null);
