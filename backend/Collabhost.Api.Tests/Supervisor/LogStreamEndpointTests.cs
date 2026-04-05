@@ -381,6 +381,131 @@ public class LogStreamEndpointTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task GetLogs_ReturnsEntriesWithIds()
+    {
+        var slug = await RegisterTestAppAsync();
+
+        try
+        {
+            var appId = await GetAppIdAsync(slug);
+            var supervisor = fixture.Services.GetRequiredService<ProcessSupervisor>();
+            var buffer = supervisor.GetOrCreateLogBuffer(appId);
+
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "line one", "INF"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, "line two", "ERR"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "line three", "INF"));
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{slug}/logs");
+            request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            var response = await _client.SendAsync(request);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var body = await response.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(body);
+            var entries = doc.RootElement.GetProperty("entries");
+
+            entries.GetArrayLength().ShouldBe(3);
+
+            var id1 = entries[0].GetProperty("id").GetInt64();
+            var id2 = entries[1].GetProperty("id").GetInt64();
+            var id3 = entries[2].GetProperty("id").GetInt64();
+
+            id1.ShouldBeGreaterThan(0);
+            id2.ShouldBeGreaterThan(id1);
+            id3.ShouldBeGreaterThan(id2);
+
+            entries[0].GetProperty("content").GetString().ShouldBe("line one");
+            entries[0].GetProperty("stream").GetString().ShouldBe("stdout");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task GetLogs_FilterByStream_ReturnsFilteredWithIds()
+    {
+        var slug = await RegisterTestAppAsync();
+
+        try
+        {
+            var appId = await GetAppIdAsync(slug);
+            var supervisor = fixture.Services.GetRequiredService<ProcessSupervisor>();
+            var buffer = supervisor.GetOrCreateLogBuffer(appId);
+
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "stdout line", "INF"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, "stderr line", "ERR"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "another stdout", "INF"));
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{slug}/logs?stream=stdout");
+            request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            var response = await _client.SendAsync(request);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var body = await response.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(body);
+            var entries = doc.RootElement.GetProperty("entries");
+
+            entries.GetArrayLength().ShouldBe(2);
+
+            entries[0].GetProperty("stream").GetString().ShouldBe("stdout");
+            entries[1].GetProperty("stream").GetString().ShouldBe("stdout");
+
+            var id1 = entries[0].GetProperty("id").GetInt64();
+            var id2 = entries[1].GetProperty("id").GetInt64();
+
+            id1.ShouldBeGreaterThan(0);
+            id2.ShouldBeGreaterThan(id1);
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task GetLogs_EmptyBuffer_ReturnsEmptyList()
+    {
+        var slug = await RegisterTestAppAsync();
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{slug}/logs");
+            request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            var response = await _client.SendAsync(request);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var body = await response.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(body);
+
+            doc.RootElement.GetProperty("entries").GetArrayLength().ShouldBe(0);
+            doc.RootElement.GetProperty("totalBuffered").GetInt32().ShouldBe(0);
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task GetLogs_AppNotFound_Returns404()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/apps/nonexistent-slug/logs");
+        request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task QueryParamAuth_NonSseEndpoint_Returns403()
     {
         using var request = new HttpRequestMessage
