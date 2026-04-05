@@ -664,6 +664,10 @@
   cursor: pointer;
 }
 
+.wm-table tbody tr.wm-table-row--disabled {
+  opacity: 0.45;
+}
+
 /* === Breadcrumbs === */
 
 .wm-breadcrumb {

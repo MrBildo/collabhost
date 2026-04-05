@@ -5,6 +5,7 @@ import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { Spinner } from '@/shared/Spinner'
+import { StatusDot } from '@/status/StatusDot'
 import type { Column } from '@/tables/DataTable'
 import { DataTable } from '@/tables/DataTable'
 import { useNavigate } from 'react-router-dom'
@@ -23,6 +24,12 @@ function RoutesPage() {
   }
 
   const columns: Column<RouteEntry>[] = [
+    {
+      key: 'status',
+      header: '',
+      width: '32px',
+      render: (route) => <StatusDot status={route.enabled ? 'running' : 'stopped'} />,
+    },
     {
       key: 'domain',
       header: 'Domain',
@@ -147,7 +154,12 @@ function RoutesPage() {
           description="Routes are created automatically when apps with domains are registered."
         />
       ) : (
-        <DataTable columns={columns} data={routes} keyFn={(route) => route.appExternalId} />
+        <DataTable
+          columns={columns}
+          data={routes}
+          keyFn={(route) => route.appExternalId}
+          rowClassName={(route) => (!route.enabled ? 'wm-table-row--disabled' : undefined)}
+        />
       )}
     </div>
   )
