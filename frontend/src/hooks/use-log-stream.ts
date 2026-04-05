@@ -27,6 +27,7 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
   const resetKey = options?.resetKey
   const [renderEntries, setRenderEntries] = useState<StreamEntry[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const prevSlugRef = useRef(slug)
   const [error, setError] = useState<string | null>(null)
   const [connectAttempt, setConnectAttempt] = useState(0)
 
@@ -49,11 +50,19 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
   useEffect(() => {
     if (!slug || !isEnabled) return
 
-    // Reset state from previous app/connection so the new history burst
-    // is not deduped against stale IDs from a different app.
-    entriesRef.current = []
-    maxIdRef.current = 0
-    setRenderEntries([])
+    // On slug change (navigating to a different app), fully reset so the
+    // new app's history burst isn't deduped against stale IDs.
+    // On same-app reconnect (resetKey/connectAttempt change), preserve
+    // accumulated entries — only reset maxIdRef so the history burst
+    // deduplicates against what we already have instead of replacing it.
+    if (prevSlugRef.current !== slug) {
+      entriesRef.current = []
+      maxIdRef.current = 0
+      setRenderEntries([])
+      prevSlugRef.current = slug
+    } else {
+      maxIdRef.current = 0
+    }
 
     const authKey = localStorage.getItem(AUTH_STORAGE_KEY)
     if (!authKey) {

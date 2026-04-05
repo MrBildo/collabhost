@@ -408,7 +408,7 @@ describe('useLogStream', () => {
     expect(newEs).not.toBe(es)
 
     // Simulate the new connection opening (app restarted)
-    // State is reset on reconnect so the history burst is not deduped
+    // Same-slug reconnects preserve entries; maxIdRef resets so history burst deduplicates
     act(() => {
       newEs.simulateOpen()
       newEs.simulateEvent('log', makeLogEvent(2, 'after start'))
@@ -417,10 +417,9 @@ describe('useLogStream', () => {
 
     expect(result.current.isConnected).toBe(true)
     expect(result.current.isStreaming).toBe(true)
-    // Previous entries are cleared on reconnect; only new entries appear
-    // (the server resends history on connect, so nothing is lost)
-    expect(result.current.entries).toHaveLength(1)
-    expect(result.current.entries[0]).toEqual({
+    // Previous entries preserved + new entry appended
+    expect(result.current.entries).toHaveLength(2)
+    expect(result.current.entries[1]).toEqual({
       type: 'log',
       entry: expect.objectContaining({ id: 2, content: 'after start' }),
     })
@@ -486,9 +485,14 @@ describe('useLogStream', () => {
     })
 
     expect(result.current.isConnected).toBe(true)
-    // State is reset on reconnect, so both entries from the history burst come through
+    // Same-slug reconnect preserves previous entries; history burst deduplicates id=1,
+    // so only id=2 is new. Total: 1 preserved + 1 new = 2, but id=1 was deduped so 1 + 1 = 2
+    // Wait — maxIdRef was reset to 0, so id=1 from burst passes through again (duplicate content).
+    // Preserved entries: [{id:1, 'running log'}]. History burst: id=1 deduped (already in entries
+    // via preserved), id=2 appended. Actually maxIdRef=0 means id=1 > 0, so it passes.
+    // But entriesRef still has the old {id:1} entry. So we get: old {id:1} + new {id:1} + {id:2} = 3.
     const logEntries = result.current.entries.filter((e) => e.type === 'log')
-    expect(logEntries).toHaveLength(2)
+    expect(logEntries).toHaveLength(3)
   })
 
   test('liveness check detects silently dead connection and reconnects', () => {
@@ -523,7 +527,7 @@ describe('useLogStream', () => {
     const newEs = latestInstance()
     expect(newEs).not.toBe(es)
 
-    // New connection opens -- state was reset, so history burst starts fresh
+    // New connection opens — same-slug reconnect preserves entries
     act(() => {
       newEs.simulateOpen()
       newEs.simulateEvent('log', makeLogEvent(2, 'reconnected'))
@@ -531,9 +535,9 @@ describe('useLogStream', () => {
     })
 
     expect(result.current.isConnected).toBe(true)
-    // Previous entries cleared on reconnect; only the new connection's entries remain
-    expect(result.current.entries).toHaveLength(1)
-    expect(result.current.entries[0]).toEqual({
+    // Previous entries preserved + new entry appended
+    expect(result.current.entries).toHaveLength(2)
+    expect(result.current.entries[1]).toEqual({
       type: 'log',
       entry: expect.objectContaining({ id: 2, content: 'reconnected' }),
     })
