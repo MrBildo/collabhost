@@ -1,3 +1,6 @@
+using Collabhost.Api.Capabilities;
+using Collabhost.Api.Capabilities.Configurations;
+
 namespace Collabhost.Api.Registry;
 
 #pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
@@ -139,7 +142,53 @@ public static class AppTypeEndpoints
             );
         }
 
+        // Routing options section (for file-server types that support SPA fallback)
+        var routingBinding = appType.Bindings.SingleOrDefault
+        (
+            b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
+        );
+
+        if (routingBinding is not null && IsFileServerRouting(routingBinding))
+        {
+            sections.Add
+            (
+                new RegistrationSection
+                (
+                    "routing",
+                    "Routing Options",
+                    [
+                        new RegistrationField
+                        (
+                            "spaFallback",
+                            "SPA Fallback",
+                            "boolean",
+                            false,
+                            false,
+                            HelpText: "Route all paths to index.html for single-page applications (React, Vue, etc.)"
+                        )
+                    ]
+                )
+            );
+        }
+
         return sections;
+    }
+
+    private static bool IsFileServerRouting(CapabilityBinding routingBinding)
+    {
+        try
+        {
+            var configuration = JsonSerializer.Deserialize<RoutingConfiguration>
+            (
+                routingBinding.DefaultConfigurationJson, _jsonOptions
+            );
+
+            return configuration?.ServeMode == ServeMode.FileServer;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static List<AppTag> BuildTags(AppType appType)
