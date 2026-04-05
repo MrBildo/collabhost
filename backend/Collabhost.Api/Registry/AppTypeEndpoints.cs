@@ -142,6 +142,55 @@ public static class AppTypeEndpoints
             );
         }
 
+        // Discovery strategy section (if the type has process capability)
+        var processBinding = appType.Bindings.SingleOrDefault
+        (
+            b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
+        );
+
+        if (processBinding is not null)
+        {
+            var processConfiguration = JsonSerializer.Deserialize<ProcessConfiguration>
+            (
+                processBinding.DefaultConfigurationJson, _jsonOptions
+            );
+
+            var defaultStrategy = processConfiguration?.DiscoveryStrategy ?? DiscoveryStrategy.Manual;
+
+            var validStrategies = GetValidStrategiesForAppType(appType.Slug);
+
+            sections.Add
+            (
+                new RegistrationSection
+                (
+                    "discovery",
+                    "How to Run",
+                    [
+                        new RegistrationField
+                        (
+                            "discoveryStrategy",
+                            "Discovery Strategy",
+                            "select",
+                            false,
+                            FormatStrategyName(defaultStrategy),
+                            HelpText: "How Collabhost finds and launches this application",
+                            Options:
+                            [
+                                .. validStrategies.Select
+                                (
+                                    v => new FieldOption
+                                    (
+                                        FormatStrategyName(v),
+                                        FormatDiscoveryStrategyLabel(v)
+                                    )
+                                )
+                            ]
+                        )
+                    ]
+                )
+            );
+        }
+
         // Routing options section (for file-server types that support SPA fallback)
         var routingBinding = appType.Bindings.SingleOrDefault
         (
@@ -232,6 +281,42 @@ public static class AppTypeEndpoints
 
         return tags;
     }
+
+    private static IReadOnlyList<DiscoveryStrategy> GetValidStrategiesForAppType(string appTypeSlug) =>
+        appTypeSlug switch
+        {
+            "dotnet-app" =>
+            [
+                DiscoveryStrategy.DotNetRuntimeConfiguration,
+                DiscoveryStrategy.DotNetProject,
+                DiscoveryStrategy.Manual
+            ],
+            "nodejs-app" =>
+            [
+                DiscoveryStrategy.PackageJson,
+                DiscoveryStrategy.Manual
+            ],
+            _ =>
+            [
+                .. Enum.GetValues<DiscoveryStrategy>()
+            ]
+        };
+
+    private static string FormatStrategyName(DiscoveryStrategy strategy)
+    {
+        var name = strategy.ToString();
+
+        return char.ToLowerInvariant(name[0]) + name[1..];
+    }
+
+    private static string FormatDiscoveryStrategyLabel(DiscoveryStrategy value) => value switch
+    {
+        DiscoveryStrategy.DotNetRuntimeConfiguration => ".NET Runtime Config",
+        DiscoveryStrategy.DotNetProject => ".NET Project (source)",
+        DiscoveryStrategy.PackageJson => "Package JSON",
+        DiscoveryStrategy.Manual => "Manual",
+        _ => value.ToString()
+    };
 }
 #pragma warning restore MA0011
 #pragma warning restore MA0076

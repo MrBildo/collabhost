@@ -689,8 +689,24 @@ public static class AppEndpoints
         // Apply registration values as capability overrides
         if (request.Values is not null)
         {
+            // Collect process overrides from both the "process" section and the "discovery" virtual section
+            JsonObject? processOverrides = null;
+
             foreach (var (sectionKey, sectionValues) in request.Values)
             {
+                // The "discovery" section is a registration-only concept that maps to the "process" capability
+                if (string.Equals(sectionKey, "discovery", StringComparison.Ordinal))
+                {
+                    processOverrides ??= [];
+
+                    foreach (var (fieldKey, fieldValue) in sectionValues)
+                    {
+                        processOverrides[fieldKey] = JsonNode.Parse(fieldValue.GetRawText());
+                    }
+
+                    continue;
+                }
+
                 var overrideObject = new JsonObject();
 
                 foreach (var (fieldKey, fieldValue) in sectionValues)
@@ -712,11 +728,50 @@ public static class AppEndpoints
                     );
                 }
 
+                // If this is the process section, merge with any discovery overrides
+                if (string.Equals(sectionKey, "process", StringComparison.Ordinal))
+                {
+                    processOverrides ??= [];
+
+                    foreach (var property in overrideObject)
+                    {
+                        processOverrides[property.Key] = property.Value?.DeepClone();
+                    }
+
+                    continue;
+                }
+
                 await store.SaveOverrideAsync
                 (
                     app.Id,
                     sectionKey,
                     overrideObject.ToJsonString(_jsonOptions),
+                    ct
+                );
+            }
+
+            // Save merged process overrides if any were collected
+            if (processOverrides is not null)
+            {
+                var processErrors = CapabilityResolver.ValidateEdits
+                (
+                    "process", processOverrides, isNewApp: true
+                );
+
+                if (processErrors.Count > 0)
+                {
+                    return TypedResults.Problem
+                    (
+                        string.Join("; ", processErrors),
+                        statusCode: 400
+                    );
+                }
+
+                await store.SaveOverrideAsync
+                (
+                    app.Id,
+                    "process",
+                    processOverrides.ToJsonString(_jsonOptions),
                     ct
                 );
             }

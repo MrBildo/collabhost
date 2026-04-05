@@ -120,6 +120,63 @@ public class DiscoveryStrategyTests : IDisposable
     }
 
     [Fact]
+    public void Discover_DotNetProject_FindsSingleCsproj()
+    {
+        File.WriteAllText
+        (
+            Path.Combine(_tempDirectory, "MyApp.csproj"),
+            "<Project />"
+        );
+
+        var configuration = new ProcessConfiguration
+        {
+            DiscoveryStrategy = DiscoveryStrategy.DotNetProject
+        };
+
+        var result = DiscoveryStrategyExecutor.Discover(configuration, _tempDirectory);
+
+        result.Command.ShouldBe("dotnet");
+        result.Arguments.ShouldBe("run --project MyApp.csproj");
+        result.WorkingDirectory.ShouldBe(_tempDirectory);
+    }
+
+    [Fact]
+    public void Discover_DotNetProject_MultipleCsproj_Throws()
+    {
+        File.WriteAllText(Path.Combine(_tempDirectory, "App1.csproj"), "<Project />");
+        File.WriteAllText(Path.Combine(_tempDirectory, "App2.csproj"), "<Project />");
+
+        var configuration = new ProcessConfiguration
+        {
+            DiscoveryStrategy = DiscoveryStrategy.DotNetProject
+        };
+
+        var exception = Should.Throw<InvalidOperationException>
+        (
+            () => DiscoveryStrategyExecutor.Discover(configuration, _tempDirectory)
+        );
+
+        exception.Message.ShouldContain("Multiple");
+        exception.Message.ShouldContain("App1.csproj");
+        exception.Message.ShouldContain("App2.csproj");
+    }
+
+    [Fact]
+    public void Discover_DotNetProject_NoCsproj_Throws()
+    {
+        var configuration = new ProcessConfiguration
+        {
+            DiscoveryStrategy = DiscoveryStrategy.DotNetProject
+        };
+
+        Should.Throw<InvalidOperationException>
+        (
+            () => DiscoveryStrategyExecutor.Discover(configuration, _tempDirectory)
+        )
+            .Message.ShouldContain(".csproj");
+    }
+
+    [Fact]
     public void Discover_Manual_UsesConfiguredValues()
     {
         var configuration = new ProcessConfiguration

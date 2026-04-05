@@ -13,6 +13,7 @@ public static class DiscoveryStrategyExecutor
         configuration.DiscoveryStrategy switch
         {
             DiscoveryStrategy.DotNetRuntimeConfiguration => DiscoverDotNetApplication(workingDirectory),
+            DiscoveryStrategy.DotNetProject => DiscoverDotNetProject(workingDirectory),
             DiscoveryStrategy.PackageJson => DiscoverNodeApplication(workingDirectory),
             DiscoveryStrategy.Manual => new DiscoveredProcess
             (
@@ -40,6 +41,34 @@ public static class DiscoveryStrategyExecutor
             .Replace(".runtimeconfig", "", StringComparison.Ordinal) + ".dll";
 
         return new DiscoveredProcess("dotnet", dllName, directory);
+    }
+
+    private static DiscoveredProcess DiscoverDotNetProject(string directory)
+    {
+        var projects = Directory.GetFiles(directory, "*.csproj");
+
+        if (projects.Length == 0)
+        {
+            throw new InvalidOperationException($"No *.csproj found in '{directory}'.");
+        }
+
+        if (projects.Length > 1)
+        {
+            var names = string.Join
+            (
+                ", ", projects.Select(p => Path.GetFileName(p))
+            );
+
+            throw new InvalidOperationException
+            (
+                $"Multiple *.csproj files found in '{directory}': {names}. "
+                + "Use Manual strategy or specify the project file explicitly."
+            );
+        }
+
+        var projectFile = Path.GetFileName(projects[0]);
+
+        return new DiscoveredProcess("dotnet", $"run --project {projectFile}", directory);
     }
 
     private static DiscoveredProcess DiscoverNodeApplication(string directory)
