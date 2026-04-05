@@ -7,6 +7,7 @@ import { KeyValueField } from './KeyValueField'
 import { LockBadge } from './LockBadge'
 import { NumberField } from './NumberField'
 import { OverrideBadge } from './OverrideBadge'
+import { RestartBadge } from './RestartBadge'
 import { SelectField } from './SelectField'
 import { TextField } from './TextField'
 
@@ -17,6 +18,7 @@ type SchemaFieldProps = {
   value: unknown
   defaultValue: unknown
   editable: FieldEditable
+  requiresRestart?: boolean
   options?: FieldOption[]
   helpText?: string
   unit?: string
@@ -53,6 +55,7 @@ function SchemaField({
   value,
   defaultValue,
   editable,
+  requiresRestart = false,
   options,
   helpText,
   unit,
@@ -68,12 +71,15 @@ function SchemaField({
   // keyValue fields are inherently customized per-app — override badge is noise
   const hasOverride = !isKeyValue && isOverridden(value, defaultValue)
   const fieldId = `field-${fieldKey}`
+  // Restart badge only shows in edit mode for editable fields
+  const showRestartBadge = requiresRestart && isEditing && !isReadOnly
 
   const badges = (
     <>
       {isLocked && <LockBadge reason={editable.mode === 'locked' ? editable.reason : ''} />}
       {isDerived && <LockBadge reason={editable.mode === 'derived' ? editable.reason : ''} />}
       {hasOverride && !isReadOnly && <OverrideBadge />}
+      {showRestartBadge && <RestartBadge />}
     </>
   )
 

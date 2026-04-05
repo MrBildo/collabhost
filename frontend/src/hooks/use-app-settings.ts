@@ -1,5 +1,5 @@
-import { deleteApp, getAppSettings, updateAppSettings } from '@/api/endpoints'
-import type { AppSettings, UpdateSettingsRequest } from '@/api/types'
+import { deleteApp, getAppSettings, restartApp, updateAppSettings } from '@/api/endpoints'
+import type { ActionResult, AppSettings, UpdateSettingsRequest } from '@/api/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 function useAppSettings(slug: string) {
@@ -35,4 +35,18 @@ function useDeleteApp() {
   })
 }
 
-export { useAppSettings, useSaveSettings, useDeleteApp }
+function useSettingsRestartApp(slug: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation<ActionResult, Error, void>({
+    mutationFn: () => restartApp(slug),
+    onSuccess: (result) => {
+      queryClient.setQueryData(['apps', slug], (old: unknown) =>
+        old && typeof old === 'object' ? { ...old, status: result.status, actions: result.actions } : old,
+      )
+      queryClient.invalidateQueries({ queryKey: ['apps'] })
+    },
+  })
+}
+
+export { useAppSettings, useSaveSettings, useDeleteApp, useSettingsRestartApp }
