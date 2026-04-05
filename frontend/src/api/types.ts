@@ -157,11 +157,19 @@ type LogsResponse = {
 }
 
 type LogEntry = {
+  id?: number
   timestamp: string
   stream: 'stdout' | 'stderr'
   content: string
   level?: string
 }
+
+// --- SSE Log Stream ---
+
+type StreamEntry =
+  | { type: 'log'; entry: LogEntry }
+  | { type: 'status'; state: AppStatus; timestamp: string }
+  | { type: 'gap' }
 
 // --- Dashboard ---
 
@@ -276,28 +284,6 @@ type SystemStatus = {
   timestamp: string
 }
 
-// --- SSE Update Events ---
-
-type UpdateStatusEvent = {
-  type: 'status'
-  phase: string
-}
-
-type UpdateLogEvent = {
-  type: 'log'
-  stream: 'stdout' | 'stderr'
-  line: string
-}
-
-type UpdateResultEvent = {
-  type: 'result'
-  success: boolean
-  exitCode: number
-  timedOut: boolean
-}
-
-type UpdateEvent = UpdateStatusEvent | UpdateLogEvent | UpdateResultEvent
-
 // --- Filesystem Browse ---
 
 type FilesystemBrowseResponse = {
@@ -334,6 +320,7 @@ export type {
   ActionResult,
   LogsResponse,
   LogEntry,
+  StreamEntry,
   DashboardStats,
   DashboardEventsResponse,
   DashboardEvent,
@@ -347,10 +334,6 @@ export type {
   RouteListResponse,
   RouteEntry,
   SystemStatus,
-  UpdateStatusEvent,
-  UpdateLogEvent,
-  UpdateResultEvent,
-  UpdateEvent,
   FilesystemBrowseResponse,
   DirectoryEntry,
 }

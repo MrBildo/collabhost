@@ -1,5 +1,6 @@
 import { ActionBar } from '@/actions/ActionBar'
 import { ActionButton } from '@/actions/ActionButton'
+import type { StreamEntry } from '@/api/types'
 import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import {
   useAppDetail,
@@ -9,6 +10,7 @@ import {
   useDetailStartApp,
   useDetailStopApp,
 } from '@/hooks/use-app-detail'
+import { useLogStream } from '@/hooks/use-log-stream'
 import { formatDateTime, formatHealthStatus, formatMemory, formatUptime } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import type { LogStream } from '@/log/LogViewer'
@@ -28,7 +30,14 @@ function AppDetailPage() {
   const [logStream, setLogStream] = useState<LogStream>('all')
 
   const detailQuery = useAppDetail(slug ?? '')
-  const logsQuery = useAppLogs(slug ?? '', { stream: logStream === 'all' ? undefined : logStream })
+
+  const logStream$ = useLogStream(slug ?? '')
+  const isUsingSSE = logStream$.isStreaming && !logStream$.error
+
+  const logsQuery = useAppLogs(slug ?? '', {
+    stream: logStream === 'all' ? undefined : logStream,
+    enabled: !isUsingSSE,
+  })
 
   const startMutation = useDetailStartApp()
   const stopMutation = useDetailStopApp()
@@ -36,7 +45,14 @@ function AppDetailPage() {
   const killMutation = useDetailKillApp()
 
   const app = detailQuery.data
-  const logs = logsQuery.data
+
+  const logEntries: StreamEntry[] = isUsingSSE
+    ? logStream$.entries
+    : (logsQuery.data?.entries ?? []).map((entry) => ({ type: 'log' as const, entry }))
+
+  const totalBuffered = isUsingSSE
+    ? logStream$.entries.filter((e) => e.type === 'log').length
+    : (logsQuery.data?.totalBuffered ?? 0)
 
   const isTransitioning =
     startMutation.isPending ||
@@ -260,8 +276,8 @@ function AppDetailPage() {
       {/* Logs */}
       <SectionDivider label="Logs" className="mb-2" />
       <LogViewer
-        entries={logs?.entries ?? []}
-        totalBuffered={logs?.totalBuffered ?? 0}
+        entries={logEntries}
+        totalBuffered={totalBuffered}
         stream={logStream}
         onStreamChange={setLogStream}
         className="flex-1"

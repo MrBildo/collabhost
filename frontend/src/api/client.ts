@@ -40,14 +40,4 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-async function requestRaw(path: string, options?: RequestInit): Promise<Response> {
-  return fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      ...getAuthHeaders(),
-      ...options?.headers,
-    },
-  })
-}
-
-export { request, requestRaw, ApiError }
+export { request, ApiError }
