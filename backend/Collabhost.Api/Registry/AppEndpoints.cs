@@ -86,13 +86,12 @@ public static class AppEndpoints
             var domain = routingConfiguration?.DomainPattern
                 .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
 
-            var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
+            // Routing-only apps (e.g. static sites) must be explicitly started to enable their route.
+            // Process-based apps default to enabled so their route appears when the process starts.
+            var routeEnabled = routingConfiguration is not null
+                && (hasProcess ? proxy.IsRouteEnabled(app.Slug) : proxy.IsRouteExplicitlyEnabled(app.Slug));
 
-            // For routing-only apps, use explicit check so newly registered static sites start as Stopped
-            var routeExplicitlyEnabled = routingConfiguration is not null
-                && proxy.IsRouteExplicitlyEnabled(app.Slug);
-
-            var status = ResolveStatus(hasProcess, process, hasRouting, routeExplicitlyEnabled);
+            var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
             items.Add
             (
@@ -172,13 +171,12 @@ public static class AppEndpoints
         var domain = routingConfiguration?.DomainPattern
             .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
 
-        var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
+        // Routing-only apps (e.g. static sites) must be explicitly started to enable their route.
+        // Process-based apps default to enabled so their route appears when the process starts.
+        var routeEnabled = routingConfiguration is not null
+            && (hasProcess ? proxy.IsRouteEnabled(app.Slug) : proxy.IsRouteExplicitlyEnabled(app.Slug));
 
-        // For routing-only apps, use explicit check so newly registered static sites start as Stopped
-        var routeExplicitlyEnabled = routingConfiguration is not null
-            && proxy.IsRouteExplicitlyEnabled(app.Slug);
-
-        var status = ResolveStatus(hasProcess, process, hasRouting, routeExplicitlyEnabled);
+        var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
         // Restart policy + auto-start
         string? restartPolicyValue = null;

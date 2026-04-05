@@ -269,6 +269,7 @@ public class ProxyManager
                 continue;
             }
 
+            var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
             int? port = null;
 
             if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
@@ -303,7 +304,11 @@ public class ProxyManager
                 }
             }
 
-            var enabled = IsRouteEnabled(app.Slug);
+            // Routing-only apps (e.g. static sites) must be explicitly started to enable their route.
+            // Process-based apps default to enabled so their route appears when the process starts.
+            var enabled = hasProcess
+                ? IsRouteEnabled(app.Slug)
+                : IsRouteExplicitlyEnabled(app.Slug);
 
             result.Add
             (
