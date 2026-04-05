@@ -73,14 +73,40 @@ public static class LogStreamEndpoints
 
             try
             {
-                // History burst
+                // Parse resume point from Last-Event-ID header (browser auto-reconnect)
+                // or lastEventId query param (manual reconnect -- EventSource cannot set headers)
+                long? lastEventId = null;
+
+                var headerValue = httpContext.Request.Headers["Last-Event-ID"].FirstOrDefault();
+
+                if (headerValue is not null
+                    && long.TryParse(headerValue, CultureInfo.InvariantCulture, out var parsedHeader))
+                {
+                    lastEventId = parsedHeader;
+                }
+
+                if (lastEventId is null)
+                {
+                    var queryValue = httpContext.Request.Query["lastEventId"].FirstOrDefault();
+
+                    if (queryValue is not null
+                        && long.TryParse(queryValue, CultureInfo.InvariantCulture, out var parsedQuery))
+                    {
+                        lastEventId = parsedQuery;
+                    }
+                }
+
+                // History burst -- send entries after the resume point, or full burst on fresh connect
                 var history = buffer.GetLastWithIds(200);
-                var lastSentId = 0L;
+                var lastSentId = lastEventId ?? 0L;
 
                 foreach (var (id, entry) in history)
                 {
-                    await SseWriter.WriteLogEventAsync(httpContext.Response, id, entry, ct);
-                    lastSentId = id;
+                    if (id > lastSentId)
+                    {
+                        await SseWriter.WriteLogEventAsync(httpContext.Response, id, entry, ct);
+                        lastSentId = id;
+                    }
                 }
 
                 await httpContext.Response.Body.FlushAsync(ct);

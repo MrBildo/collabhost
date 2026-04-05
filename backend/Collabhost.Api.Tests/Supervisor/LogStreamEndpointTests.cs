@@ -381,6 +381,164 @@ public class LogStreamEndpointTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task StreamLogs_LastEventIdHeader_SkipsOlderEntries()
+    {
+        var slug = await RegisterTestAppAsync();
+
+        try
+        {
+            var appId = await GetAppIdAsync(slug);
+            var supervisor = fixture.Services.GetRequiredService<ProcessSupervisor>();
+            var buffer = supervisor.GetOrCreateLogBuffer(appId);
+
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry one"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry two"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry three"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry four"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry five"));
+
+            var withIds = buffer.GetLastWithIds(5);
+            var resumeAfterId = withIds[2].Id;
+
+            using var request = new HttpRequestMessage
+            (
+                HttpMethod.Get,
+                $"/api/v1/apps/{slug}/logs/stream"
+            );
+
+            request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+            request.Headers.Add("Last-Event-ID", resumeAfterId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            using var response = await _client.SendAsync
+            (
+                request, HttpCompletionOption.ResponseHeadersRead, cts.Token
+            );
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            var events = await SseTestHelper.ReadEventsAsync(stream, 2, TimeSpan.FromSeconds(5));
+
+            events.Count.ShouldBe(2);
+
+            var payload1 = JsonDocument.Parse(events[0].Data);
+            var payload2 = JsonDocument.Parse(events[1].Data);
+
+            payload1.RootElement.GetProperty("content").GetString().ShouldBe("entry four");
+            payload2.RootElement.GetProperty("content").GetString().ShouldBe("entry five");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task StreamLogs_LastEventIdQueryParam_SkipsOlderEntries()
+    {
+        var slug = await RegisterTestAppAsync();
+
+        try
+        {
+            var appId = await GetAppIdAsync(slug);
+            var supervisor = fixture.Services.GetRequiredService<ProcessSupervisor>();
+            var buffer = supervisor.GetOrCreateLogBuffer(appId);
+
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry one"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry two"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry three"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry four"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "entry five"));
+
+            var withIds = buffer.GetLastWithIds(5);
+            var resumeAfterId = withIds[2].Id;
+
+            using var request = new HttpRequestMessage
+            (
+                HttpMethod.Get,
+                $"/api/v1/apps/{slug}/logs/stream?key={ApiFixture.AdminKey}&lastEventId={resumeAfterId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            );
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            using var response = await _client.SendAsync
+            (
+                request, HttpCompletionOption.ResponseHeadersRead, cts.Token
+            );
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            var events = await SseTestHelper.ReadEventsAsync(stream, 2, TimeSpan.FromSeconds(5));
+
+            events.Count.ShouldBe(2);
+
+            var payload1 = JsonDocument.Parse(events[0].Data);
+            var payload2 = JsonDocument.Parse(events[1].Data);
+
+            payload1.RootElement.GetProperty("content").GetString().ShouldBe("entry four");
+            payload2.RootElement.GetProperty("content").GetString().ShouldBe("entry five");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task StreamLogs_NoLastEventId_SendsFullBurst()
+    {
+        var slug = await RegisterTestAppAsync();
+
+        try
+        {
+            var appId = await GetAppIdAsync(slug);
+            var supervisor = fixture.Services.GetRequiredService<ProcessSupervisor>();
+            var buffer = supervisor.GetOrCreateLogBuffer(appId);
+
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "first"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "second"));
+            buffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdOut, "third"));
+
+            using var request = new HttpRequestMessage
+            (
+                HttpMethod.Get,
+                $"/api/v1/apps/{slug}/logs/stream"
+            );
+
+            request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            using var response = await _client.SendAsync
+            (
+                request, HttpCompletionOption.ResponseHeadersRead, cts.Token
+            );
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            var events = await SseTestHelper.ReadEventsAsync(stream, 3, TimeSpan.FromSeconds(5));
+
+            events.Count.ShouldBe(3);
+
+            var payload1 = JsonDocument.Parse(events[0].Data);
+            var payload2 = JsonDocument.Parse(events[1].Data);
+            var payload3 = JsonDocument.Parse(events[2].Data);
+
+            payload1.RootElement.GetProperty("content").GetString().ShouldBe("first");
+            payload2.RootElement.GetProperty("content").GetString().ShouldBe("second");
+            payload3.RootElement.GetProperty("content").GetString().ShouldBe("third");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
     public async Task GetLogs_ReturnsEntriesWithIds()
     {
         var slug = await RegisterTestAppAsync();
