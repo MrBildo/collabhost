@@ -392,6 +392,22 @@
   letter-spacing: 0.04em;
 }
 
+.wm-restart-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  color: var(--wm-text-dim);
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: var(--wm-radius-sm);
+  background: var(--wm-bg-inset);
+  border: 1px solid var(--wm-border);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-style: italic;
+}
+
 /* === Panels & Cards === */
 
 .wm-panel {

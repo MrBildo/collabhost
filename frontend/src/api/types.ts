@@ -123,6 +123,7 @@ type SettingsField = {
   value: unknown
   defaultValue: unknown
   editable: FieldEditable
+  requiresRestart?: boolean
   options?: FieldOption[]
   helpText?: string
   unit?: string
