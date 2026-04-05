@@ -93,6 +93,7 @@ public record SettingsField
     object? Value,
     object? DefaultValue,
     FieldEditable Editable,
+    bool RequiresRestart = false,
     List<FieldOption>? Options = null,
     string? HelpText = null,
     string? Unit = null

@@ -12,7 +12,8 @@ public class ArtifactConfiguration
             "Application Directory",
             FieldType.Directory,
             new FieldEditableAlways(),
-            Required: true
+            Required: true,
+            RequiresRestart: true
         ),
     ];
 }

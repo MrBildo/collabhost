@@ -943,6 +943,7 @@ public static class AppEndpoints
                         value,
                         defaultValue,
                         fieldDescriptor.Editable,
+                        fieldDescriptor.RequiresRestart,
                         fieldDescriptor.Options?
                             .Select(o => new FieldOption(o.Value.ToCamelCase(), o.Label))
                                 .ToList(),
