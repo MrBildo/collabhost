@@ -89,7 +89,7 @@ function latestInstance(): MockEventSource {
 let rafCallbacks: Array<() => void> = []
 
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
   MockEventSource.instances = []
   vi.stubGlobal('EventSource', MockEventSource)
   localStorage.setItem('collabhost-user-key', 'test-key-123')
@@ -446,6 +446,132 @@ describe('useLogStream', () => {
     })
 
     // Only the original EventSource should exist
+    expect(MockEventSource.instances).toHaveLength(1)
+  })
+
+  test('resetKey change forces EventSource reconnect', () => {
+    const { result, rerender } = renderHook(
+      ({ resetKey }: { resetKey: string }) => useLogStream('my-app', { resetKey }),
+      { initialProps: { resetKey: 'running' } },
+    )
+    const firstEs = latestInstance()
+
+    act(() => {
+      firstEs.simulateOpen()
+      firstEs.simulateEvent('log', makeLogEvent(1, 'running log'))
+      flushRaf()
+    })
+
+    expect(result.current.entries).toHaveLength(1)
+    expect(result.current.isConnected).toBe(true)
+
+    // Simulate polled status changing to 'stopped'
+    rerender({ resetKey: 'stopped' })
+
+    // Old EventSource should be closed
+    expect(firstEs.readyState).toBe(2)
+
+    // A new EventSource should have been created
+    const secondEs = latestInstance()
+    expect(secondEs).not.toBe(firstEs)
+
+    // New connection opens, gets history burst
+    act(() => {
+      secondEs.simulateOpen()
+      secondEs.simulateEvent('log', makeLogEvent(1, 'running log'))
+      secondEs.simulateEvent('log', makeLogEvent(2, 'new log after restart'))
+      flushRaf()
+    })
+
+    expect(result.current.isConnected).toBe(true)
+    // Entry with id=1 is deduped (already in entriesRef), only id=2 is new
+    const logEntries = result.current.entries.filter((e) => e.type === 'log')
+    expect(logEntries).toHaveLength(2)
+  })
+
+  test('liveness check detects silently dead connection and reconnects', () => {
+    const { result } = renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+      es.simulateEvent('log', makeLogEvent(1, 'hello'))
+      flushRaf()
+    })
+
+    expect(result.current.isConnected).toBe(true)
+
+    // Simulate time passing without any events (connection silently dead).
+    // The liveness check runs every 10s with a 45s timeout.
+    // Advance 50s to trigger at least one check past the timeout.
+    act(() => {
+      vi.advanceTimersByTime(50_000)
+    })
+
+    // The liveness check should have closed the old EventSource
+    expect(es.readyState).toBe(2)
+    expect(result.current.isConnected).toBe(false)
+
+    // After reconnect delay, a new EventSource is created
+    act(() => {
+      vi.advanceTimersByTime(3_000)
+    })
+
+    expect(MockEventSource.instances.length).toBeGreaterThan(1)
+    const newEs = latestInstance()
+    expect(newEs).not.toBe(es)
+
+    // New connection opens
+    act(() => {
+      newEs.simulateOpen()
+      newEs.simulateEvent('log', makeLogEvent(2, 'reconnected'))
+      flushRaf()
+    })
+
+    expect(result.current.isConnected).toBe(true)
+    expect(result.current.entries).toHaveLength(2)
+  })
+
+  test('liveness check does not fire when events are flowing', () => {
+    renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+    })
+
+    // Send events periodically, keeping the connection alive
+    for (let i = 1; i <= 5; i++) {
+      act(() => {
+        vi.advanceTimersByTime(10_000)
+        es.simulateEvent('log', makeLogEvent(i))
+        flushRaf()
+      })
+    }
+
+    // After 50 seconds of regular events, only one EventSource should exist
+    expect(MockEventSource.instances).toHaveLength(1)
+    expect(es.readyState).toBe(1)
+  })
+
+  test('liveness interval cleaned up on unmount', () => {
+    const { unmount } = renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+      es.simulateEvent('log', makeLogEvent(1))
+      flushRaf()
+    })
+
+    unmount()
+
+    // Advance time well past the liveness timeout
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
+
+    // No new EventSource instances should have been created after unmount
     expect(MockEventSource.instances).toHaveLength(1)
   })
 })

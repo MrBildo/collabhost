@@ -31,7 +31,7 @@ function AppDetailPage() {
 
   const detailQuery = useAppDetail(slug ?? '')
 
-  const logStream$ = useLogStream(slug ?? '')
+  const logStream$ = useLogStream(slug ?? '', { resetKey: detailQuery.data?.status })
   const isUsingSSE = logStream$.entries.length > 0 || logStream$.isConnected
 
   const logsQuery = useAppLogs(slug ?? '', {

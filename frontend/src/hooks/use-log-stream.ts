@@ -3,6 +3,17 @@ import { API_BASE, AUTH_STORAGE_KEY, LOG_BUFFER_CAP } from '@/lib/constants'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const RECONNECT_DELAY_MS = 3_000
+const LIVENESS_CHECK_INTERVAL_MS = 10_000
+const LIVENESS_TIMEOUT_MS = 45_000
+
+type UseLogStreamOptions = {
+  enabled?: boolean
+  /** When this value changes, the EventSource is closed and reopened.
+   *  Useful for forcing a reconnect when the app status changes via polling
+   *  (e.g., the polled status transitions from 'stopping' to 'stopped' to 'running'
+   *  while the SSE connection is silently dead). */
+  resetKey?: string | number | undefined
+}
 
 type UseLogStreamResult = {
   entries: StreamEntry[]
@@ -11,8 +22,9 @@ type UseLogStreamResult = {
   error: string | null
 }
 
-function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStreamResult {
+function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStreamResult {
   const isEnabled = options?.enabled ?? true
+  const resetKey = options?.resetKey
   const [renderEntries, setRenderEntries] = useState<StreamEntry[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -23,6 +35,7 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
   const rafScheduledRef = useRef(false)
   const rafIdRef = useRef<number>(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const lastEventTimeRef = useRef<number>(0)
 
   const scheduleReconnect = useCallback(() => {
     if (reconnectTimerRef.current !== undefined) return
@@ -32,7 +45,7 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
     }, RECONNECT_DELAY_MS)
   }, [])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: connectAttempt is an intentional re-trigger signal for reconnection after the EventSource is permanently closed
+  // biome-ignore lint/correctness/useExhaustiveDependencies: connectAttempt is an intentional re-trigger signal; resetKey forces reconnect on external state change
   useEffect(() => {
     if (!slug || !isEnabled) return
 
@@ -57,6 +70,10 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
       })
     }
 
+    function markActivity(): void {
+      lastEventTimeRef.current = Date.now()
+    }
+
     es.addEventListener('log', (e: MessageEvent) => {
       const data = JSON.parse(e.data) as {
         id: number
@@ -65,6 +82,8 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
         content: string
         level: string | null
       }
+
+      markActivity()
 
       // Dedup: skip events we already have
       if (data.id <= maxIdRef.current) return
@@ -96,6 +115,7 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
 
     es.addEventListener('status', (e: MessageEvent) => {
       const data = JSON.parse(e.data) as { state: string; timestamp: string }
+      markActivity()
       entriesRef.current.push({
         type: 'status',
         state: data.state as AppStatus,
@@ -111,6 +131,7 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
     })
 
     es.onopen = () => {
+      markActivity()
       setIsConnected(true)
       setError(null)
     }
@@ -122,16 +143,36 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
         setError('Connection lost')
         scheduleReconnect()
       }
-      // CONNECTING state: browser is auto-reconnecting — don't update
+      // CONNECTING state: browser is auto-reconnecting -- don't update
       // isConnected to avoid UI flicker between SSE and polling modes
     }
 
+    // Liveness check: detect silently dead connections.
+    // When the backend crashes (e.g., PeriodicTimer bug during app stop),
+    // the proxy may keep the browser-side connection alive indefinitely.
+    // EventSource never fires onerror, so the hook has no signal that the
+    // connection is dead. This interval detects the gap and forces a reconnect.
+    // The resetKey mechanism handles most cases quickly (within one poll cycle),
+    // but this is a safety net for edge cases where polling doesn't catch it.
+    const livenessInterval = setInterval(() => {
+      if (
+        es.readyState === EventSource.OPEN &&
+        lastEventTimeRef.current > 0 &&
+        Date.now() - lastEventTimeRef.current > LIVENESS_TIMEOUT_MS
+      ) {
+        es.close()
+        setIsConnected(false)
+        scheduleReconnect()
+      }
+    }, LIVENESS_CHECK_INTERVAL_MS)
+
     return () => {
       es.close()
+      clearInterval(livenessInterval)
       cancelAnimationFrame(rafIdRef.current)
       rafScheduledRef.current = false
     }
-  }, [slug, isEnabled, connectAttempt, scheduleReconnect])
+  }, [slug, isEnabled, resetKey, connectAttempt, scheduleReconnect])
 
   // Clean up reconnect timer on unmount or when disabled
   useEffect(() => {
