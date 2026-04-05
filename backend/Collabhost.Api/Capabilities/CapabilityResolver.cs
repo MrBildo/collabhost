@@ -87,7 +87,7 @@ public static partial class CapabilityResolver
 
             var field = schema.Single(f => string.Equals(f.Key, property.Key, StringComparison.Ordinal));
 
-            if (field.Editable is FieldEditableLocked locked)
+            if (field.Editable is FieldEditableLocked locked && !isNewApp)
             {
                 errors.Add($"{capabilitySlug}.{property.Key}: {locked.Reason}");
             }
