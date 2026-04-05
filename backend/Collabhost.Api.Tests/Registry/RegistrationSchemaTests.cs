@@ -47,6 +47,77 @@ public class RegistrationSchemaTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task DotNetAppRegistration_IncludesDiscoverySection()
+    {
+        using var request = new HttpRequestMessage
+        (
+            HttpMethod.Get, "/api/v1/app-types/dotnet-app/registration"
+        );
+        request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var schema = JsonDocument.Parse(body).RootElement;
+
+        var sections = schema.GetProperty("sections");
+        var discoverySection = FindByKey(sections, "discovery");
+
+        discoverySection.ShouldNotBeNull("dotnet-app registration should include a discovery section");
+
+        discoverySection.Value.GetProperty("title").GetString().ShouldBe("How to Run");
+
+        var fields = discoverySection.Value.GetProperty("fields");
+        var strategyField = FindByKey(fields, "discoveryStrategy");
+
+        strategyField.ShouldNotBeNull("Discovery section should include discoveryStrategy field");
+        strategyField.Value.GetProperty("type").GetString().ShouldBe("select");
+
+        // Should include DotNetProject as an option
+        var options = strategyField.Value.GetProperty("options");
+        var hasProjectOption = false;
+
+        foreach (var option in options.EnumerateArray())
+        {
+            if (string.Equals
+            (
+                option.GetProperty("value").GetString(),
+                "dotNetProject",
+                StringComparison.Ordinal
+            ))
+            {
+                hasProjectOption = true;
+            }
+        }
+
+        hasProjectOption.ShouldBeTrue("dotnet-app should include DotNetProject as a strategy option");
+    }
+
+    [Fact]
+    public async Task StaticSiteRegistration_DoesNotIncludeDiscoverySection()
+    {
+        using var request = new HttpRequestMessage
+        (
+            HttpMethod.Get, "/api/v1/app-types/static-site/registration"
+        );
+        request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var schema = JsonDocument.Parse(body).RootElement;
+
+        var sections = schema.GetProperty("sections");
+        var discoverySection = FindByKey(sections, "discovery");
+
+        discoverySection.ShouldBeNull("static-site should not include a discovery section");
+    }
+
+    [Fact]
     public async Task DotNetAppRegistration_DoesNotIncludeSpaFallback()
     {
         using var request = new HttpRequestMessage

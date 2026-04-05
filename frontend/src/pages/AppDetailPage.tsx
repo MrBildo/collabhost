@@ -11,6 +11,7 @@ import {
   useDetailStopApp,
 } from '@/hooks/use-app-detail'
 import { useLogStream } from '@/hooks/use-log-stream'
+import { LOG_BUFFER_CAP } from '@/lib/constants'
 import { formatDateTime, formatHealthStatus, formatMemory, formatUptime } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import type { LogStream } from '@/log/LogViewer'
@@ -46,9 +47,13 @@ function AppDetailPage() {
 
   const app = detailQuery.data
 
+  const polledEntries = logsQuery.data?.entries ?? []
+  const cappedPolledEntries =
+    polledEntries.length > LOG_BUFFER_CAP ? polledEntries.slice(-LOG_BUFFER_CAP) : polledEntries
+
   const logEntries: StreamEntry[] = isUsingSSE
     ? logStream$.entries
-    : (logsQuery.data?.entries ?? []).map((entry) => ({ type: 'log' as const, entry }))
+    : cappedPolledEntries.map((entry) => ({ type: 'log' as const, entry }))
 
   const totalBuffered = isUsingSSE
     ? logStream$.entries.filter((e) => e.type === 'log').length
@@ -194,7 +199,7 @@ function AppDetailPage() {
     : []
 
   return (
-    <div className="flex flex-col" style={{ minHeight: 'calc(100vh - var(--wm-topbar-height) - 48px)' }}>
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Breadcrumbs */}
       <Breadcrumbs
         segments={[{ label: 'Apps', to: ROUTES.apps }, { label: app.displayName }]}

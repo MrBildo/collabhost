@@ -1,7 +1,7 @@
 import type { AppStatus, StreamEntry } from '@/api/types'
 import { cn } from '@/lib/cn'
 import { FilterChip } from '@/shared/FilterChip'
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { LogLine } from './LogLine'
 
 type LogStream = 'all' | 'stdout' | 'stderr'
@@ -45,27 +45,46 @@ function LogGapMarker() {
 function LogViewer({ entries, totalBuffered, stream, onStreamChange, className }: LogViewerProps) {
   const [isFollowing, setIsFollowing] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const prevEntryCount = useRef(entries.length)
+  const userScrolledRef = useRef(false)
 
   const filteredEntries =
     stream === 'all' ? entries : entries.filter((item) => item.type !== 'log' || item.entry.stream === stream)
 
-  useEffect(() => {
-    if (isFollowing && scrollRef.current && filteredEntries.length > prevEntryCount.current) {
+  // useLayoutEffect runs after DOM mutations but before paint, so the
+  // scroll container already has the new elements measured. When Follow
+  // is on, pin to bottom every time entries change.
+  //
+  // We depend on the `entries` prop reference (not length) because the
+  // log stream hook creates a new array reference on each flush. Using
+  // length breaks at buffer cap: eviction keeps length at ~1000 so the
+  // effect never re-fires. The entries reference changes exactly when
+  // new data arrives, which is the right trigger regardless of eviction.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: entries reference is an intentional re-trigger signal for auto-scroll on new data
+  useLayoutEffect(() => {
+    if (isFollowing && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-    prevEntryCount.current = filteredEntries.length
-  }, [filteredEntries.length, isFollowing])
+  }, [entries, isFollowing])
 
   function handleScroll(): void {
     if (!scrollRef.current) return
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
     const isAtBottom = scrollHeight - scrollTop - clientHeight < 40
-    setIsFollowing(isAtBottom)
+
+    // Only auto-update follow state from user-initiated scrolls, not
+    // from our programmatic scrollTop assignment in the layout effect.
+    if (userScrolledRef.current) {
+      setIsFollowing(isAtBottom)
+      userScrolledRef.current = false
+    }
+  }
+
+  function handleWheel(): void {
+    userScrolledRef.current = true
   }
 
   return (
-    <div className={cn('flex flex-col', className)}>
+    <div className={cn('flex flex-col min-h-0', className)}>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
           {STREAMS.map((s) => (
@@ -90,7 +109,13 @@ function LogViewer({ entries, totalBuffered, stream, onStreamChange, className }
           </button>
         </div>
       </div>
-      <div ref={scrollRef} className="wm-log-viewer flex-1" style={{ minHeight: 300 }} onScroll={handleScroll}>
+      <div
+        ref={scrollRef}
+        className="wm-log-viewer flex-1"
+        style={{ minHeight: 0 }}
+        onScroll={handleScroll}
+        onWheel={handleWheel}
+      >
         {filteredEntries.length === 0 ? (
           <div className="text-xs py-4 text-center" style={{ color: 'var(--wm-text-dim)' }}>
             No log entries

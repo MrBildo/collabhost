@@ -9,6 +9,7 @@ import type {
   CreateAppResponse,
   DashboardEventsResponse,
   DashboardStats,
+  DetectStrategyResponse,
   FilesystemBrowseResponse,
   LogsResponse,
   RegistrationSchema,
@@ -125,6 +126,11 @@ function browseFilesystem(path: string): Promise<FilesystemBrowseResponse> {
   return request(`/filesystem/browse?path=${encodeURIComponent(path)}`)
 }
 
+function detectStrategy(path: string, appTypeSlug: string): Promise<DetectStrategyResponse> {
+  const params = new URLSearchParams({ path, appTypeSlug })
+  return request(`/filesystem/detect-strategy?${params.toString()}`)
+}
+
 export {
   getApps,
   getAppDetail,
@@ -145,4 +151,5 @@ export {
   reloadProxy,
   getSystemStatus,
   browseFilesystem,
+  detectStrategy,
 }

@@ -407,7 +407,9 @@ describe('useLogStream', () => {
     const newEs = latestInstance()
     expect(newEs).not.toBe(es)
 
-    // Simulate the new connection opening (app restarted)
+    // Simulate the new connection opening (app restarted).
+    // Same-slug reconnects preserve both entries and maxIdRef, so the
+    // history burst is properly deduped against existing entries.
     act(() => {
       newEs.simulateOpen()
       newEs.simulateEvent('log', makeLogEvent(2, 'after start'))
@@ -416,8 +418,13 @@ describe('useLogStream', () => {
 
     expect(result.current.isConnected).toBe(true)
     expect(result.current.isStreaming).toBe(true)
-    // Previous entries are preserved, new entries appended
+    // Previous entry (id=1) preserved, new entry (id=2) appended.
+    // maxIdRef stayed at 1, so the history burst's id=1 was deduped.
     expect(result.current.entries).toHaveLength(2)
+    expect(result.current.entries[0]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 1, content: 'before stop' }),
+    })
     expect(result.current.entries[1]).toEqual({
       type: 'log',
       entry: expect.objectContaining({ id: 2, content: 'after start' }),
@@ -475,7 +482,7 @@ describe('useLogStream', () => {
     const secondEs = latestInstance()
     expect(secondEs).not.toBe(firstEs)
 
-    // New connection opens, gets history burst
+    // New connection opens, gets history burst that overlaps with existing entries
     act(() => {
       secondEs.simulateOpen()
       secondEs.simulateEvent('log', makeLogEvent(1, 'running log'))
@@ -484,9 +491,19 @@ describe('useLogStream', () => {
     })
 
     expect(result.current.isConnected).toBe(true)
-    // Entry with id=1 is deduped (already in entriesRef), only id=2 is new
+    // Same-slug reconnect preserves both entries and maxIdRef (which is 1).
+    // History burst: id=1 is deduped (1 <= 1), id=2 passes (2 > 1).
+    // Total: 1 preserved + 1 new = 2 entries. No duplicates.
     const logEntries = result.current.entries.filter((e) => e.type === 'log')
     expect(logEntries).toHaveLength(2)
+    expect(logEntries[0]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 1, content: 'running log' }),
+    })
+    expect(logEntries[1]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 2, content: 'new log after restart' }),
+    })
   })
 
   test('liveness check detects silently dead connection and reconnects', () => {
@@ -521,7 +538,7 @@ describe('useLogStream', () => {
     const newEs = latestInstance()
     expect(newEs).not.toBe(es)
 
-    // New connection opens
+    // New connection opens — same-slug reconnect preserves entries and maxIdRef
     act(() => {
       newEs.simulateOpen()
       newEs.simulateEvent('log', makeLogEvent(2, 'reconnected'))
@@ -529,7 +546,17 @@ describe('useLogStream', () => {
     })
 
     expect(result.current.isConnected).toBe(true)
+    // Previous entry (id=1) preserved, new entry (id=2) appended.
+    // maxIdRef stayed at 1, so id=2 passes dedup naturally.
     expect(result.current.entries).toHaveLength(2)
+    expect(result.current.entries[0]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 1, content: 'hello' }),
+    })
+    expect(result.current.entries[1]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 2, content: 'reconnected' }),
+    })
   })
 
   test('liveness check does not fire when events are flowing', () => {

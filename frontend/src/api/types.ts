@@ -284,7 +284,12 @@ type SystemStatus = {
   timestamp: string
 }
 
-// --- Filesystem Browse ---
+// --- Filesystem ---
+
+type DetectStrategyResponse = {
+  suggestedStrategy: string
+  evidence: string[]
+}
 
 type FilesystemBrowseResponse = {
   currentPath: string
@@ -334,6 +339,7 @@ export type {
   RouteListResponse,
   RouteEntry,
   SystemStatus,
+  DetectStrategyResponse,
   FilesystemBrowseResponse,
   DirectoryEntry,
 }

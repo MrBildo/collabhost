@@ -4,13 +4,14 @@ import type { CreateAppRequest, RegistrationField as RegistrationFieldType, Regi
 import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { RegistrationField } from '@/forms/RegistrationField'
 import { useAppTypes, useCreateApp, useRegistrationSchema } from '@/hooks/use-app-create'
+import { useDetectStrategy } from '@/hooks/use-detect-strategy'
 import { toSlug } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
 import { TypeCard } from '@/shared/TypeCard'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 type FormValues = Record<string, Record<string, unknown>>
@@ -60,17 +61,52 @@ function AppCreatePage() {
   const schemaQuery = useRegistrationSchema(selectedType ?? '')
   const schema = schemaQuery.data
 
+  // Discovery strategy auto-detect: evidence hint shown below the strategy field
+  const [strategyHint, setStrategyHint] = useState<string | null>(null)
+  // Track whether the user has manually selected a strategy to suppress auto-suggest
+  const strategyLockedRef = useRef(false)
+
   // Track whether the user has manually edited the slug field.
   // Once touched, display name changes no longer auto-derive the slug.
   // Uses a ref to avoid stale closures in handleFieldChange.
   const slugLockedRef = useRef(false)
+
+  // Discovery strategy auto-detect: call detect-strategy when directory changes.
+  // Only fires for app types that have a discovery section (process-capable types).
+  const artifactLocation = String(formValues.artifact?.location ?? '')
+  const hasDiscoverySection = schema?.sections.some((s) => s.key === 'discovery') ?? false
+  const detectPath = hasDiscoverySection ? artifactLocation : ''
+  const detectQuery = useDetectStrategy(detectPath, selectedType ?? '')
+
+  // Apply auto-detected strategy when detection results arrive
+  useEffect(() => {
+    if (!detectQuery.data || strategyLockedRef.current) return
+
+    const { suggestedStrategy, evidence } = detectQuery.data
+    // Don't auto-fill if the suggestion is manual -- keep whatever default is set
+    if (suggestedStrategy === 'manual') return
+
+    setFormValues((prev) => ({
+      ...prev,
+      discovery: {
+        ...prev.discovery,
+        discoveryStrategy: suggestedStrategy,
+      },
+    }))
+
+    if (evidence.length > 0) {
+      setStrategyHint(`Detected: ${evidence.join(', ')}`)
+    }
+  }, [detectQuery.data])
 
   const handleTypeSelect = useCallback((typeSlug: string) => {
     setSelectedType(typeSlug)
     setFormValues({})
     setFieldErrors({})
     setSubmitError(null)
+    setStrategyHint(null)
     slugLockedRef.current = false
+    strategyLockedRef.current = false
   }, [])
 
   // Initialize form values when schema loads for a new type
@@ -85,6 +121,20 @@ function AppCreatePage() {
     // changes no longer auto-derive. This stays locked until type change or back.
     if (sectionKey === 'basics' && fieldKey === 'name') {
       slugLockedRef.current = true
+    }
+
+    // If the user manually picks a discovery strategy, lock it so detection
+    // results no longer override their choice.
+    if (sectionKey === 'discovery' && fieldKey === 'discoveryStrategy') {
+      strategyLockedRef.current = true
+      setStrategyHint(null)
+    }
+
+    // If the directory changes, unlock auto-suggest so the next detection
+    // can update the strategy field again.
+    if (sectionKey === 'artifact' && fieldKey === 'location') {
+      strategyLockedRef.current = false
+      setStrategyHint(null)
     }
 
     setFormValues((prev) => {
@@ -173,7 +223,9 @@ function AppCreatePage() {
     setFormValues({})
     setFieldErrors({})
     setSubmitError(null)
+    setStrategyHint(null)
     slugLockedRef.current = false
+    strategyLockedRef.current = false
   }, [])
 
   // Step state
@@ -289,21 +341,25 @@ function AppCreatePage() {
               {schema.sections.map((section) => (
                 <div key={section.key} className="mb-6">
                   <SectionDivider label={section.title} className="mb-3" />
-                  {section.fields.map((field: RegistrationFieldType) => (
-                    <RegistrationField
-                      key={field.key}
-                      fieldKey={`${section.key}-${field.key}`}
-                      label={field.label}
-                      type={field.type}
-                      value={formValues[section.key]?.[field.key] ?? field.defaultValue}
-                      required={field.required}
-                      placeholder={field.placeholder}
-                      helpText={field.helpText}
-                      options={field.options}
-                      error={fieldErrors[section.key]?.[field.key]}
-                      onChange={(val) => handleFieldChange(section.key, field.key, val)}
-                    />
-                  ))}
+                  {section.fields.map((field: RegistrationFieldType) => {
+                    const isStrategyField = section.key === 'discovery' && field.key === 'discoveryStrategy'
+                    return (
+                      <RegistrationField
+                        key={field.key}
+                        fieldKey={`${section.key}-${field.key}`}
+                        label={field.label}
+                        type={field.type}
+                        value={formValues[section.key]?.[field.key] ?? field.defaultValue}
+                        required={field.required}
+                        placeholder={field.placeholder}
+                        helpText={field.helpText}
+                        hint={isStrategyField ? (strategyHint ?? undefined) : undefined}
+                        options={field.options}
+                        error={fieldErrors[section.key]?.[field.key]}
+                        onChange={(val) => handleFieldChange(section.key, field.key, val)}
+                      />
+                    )
+                  })}
                 </div>
               ))}
 

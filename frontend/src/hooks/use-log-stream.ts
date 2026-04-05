@@ -27,6 +27,7 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
   const resetKey = options?.resetKey
   const [renderEntries, setRenderEntries] = useState<StreamEntry[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const prevSlugRef = useRef(slug)
   const [error, setError] = useState<string | null>(null)
   const [connectAttempt, setConnectAttempt] = useState(0)
 
@@ -48,6 +49,20 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
   // biome-ignore lint/correctness/useExhaustiveDependencies: connectAttempt is an intentional re-trigger signal; resetKey forces reconnect on external state change
   useEffect(() => {
     if (!slug || !isEnabled) return
+
+    // On slug change (navigating to a different app), fully reset so the
+    // new app's history burst isn't deduped against stale IDs.
+    // On same-app reconnect (resetKey/connectAttempt change), preserve
+    // BOTH entriesRef AND maxIdRef — the history burst naturally deduplicates
+    // because incoming entries with id <= maxIdRef are skipped. Only genuinely
+    // new entries (id > maxIdRef) get appended. This prevents the duplicate
+    // entry inflation that occurs when maxIdRef is reset to 0.
+    if (prevSlugRef.current !== slug) {
+      entriesRef.current = []
+      maxIdRef.current = 0
+      setRenderEntries([])
+      prevSlugRef.current = slug
+    }
 
     const authKey = localStorage.getItem(AUTH_STORAGE_KEY)
     if (!authKey) {
