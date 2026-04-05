@@ -15,6 +15,7 @@ public class ProcessSupervisor
     IProcessContainment containment,
     AppStore appStore,
     IEventBus<ProcessStateChangedEvent> eventBus,
+    IEnumerable<IProcessArgumentProvider> argumentProviders,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
 {
@@ -29,6 +30,9 @@ public class ProcessSupervisor
 
     private readonly IEventBus<ProcessStateChangedEvent> _eventBus = eventBus
         ?? throw new ArgumentNullException(nameof(eventBus));
+
+    private readonly IProcessArgumentProvider[] _argumentProviders =
+        [.. (argumentProviders ?? throw new ArgumentNullException(nameof(argumentProviders)))];
 
     private readonly ILogger<ProcessSupervisor> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -253,6 +257,20 @@ public class ProcessSupervisor
 
         var discoveredProcess = DiscoveryStrategyExecutor.Discover(processConfiguration, effectiveWorkingDirectory);
 
+        // Allow subsystems to augment process arguments at start time.
+        // This is how the proxy subsystem injects the dynamic admin port into Caddy's arguments.
+        var augmentedArguments = discoveredProcess.Arguments;
+
+        foreach (var provider in _argumentProviders)
+        {
+            augmentedArguments = provider.AugmentArguments(app.Slug, augmentedArguments);
+        }
+
+        if (!string.Equals(augmentedArguments, discoveredProcess.Arguments, StringComparison.Ordinal))
+        {
+            discoveredProcess = discoveredProcess with { Arguments = augmentedArguments };
+        }
+
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
 
         var environmentConfiguration = await _appStore.ResolveCapabilityAsync<EnvironmentConfiguration>
@@ -305,7 +323,7 @@ public class ProcessSupervisor
             discoveredProcess.Arguments,
             discoveredProcess.WorkingDirectory,
             environmentVariables,
-            (line, stream) => managed.LogBuffer.Add(new LogEntry(DateTime.UtcNow, stream, line))
+            (line, stream) => managed.LogBuffer.Add(new LogEntry(DateTime.UtcNow, stream, line, LogLevelParser.ParseLevel(line)))
         );
 
         var handle = _runner.Start(startConfiguration);
@@ -364,6 +382,13 @@ public class ProcessSupervisor
                 {
                     await Task.Delay(TimeSpan.FromSeconds(gracePeriodSeconds), CancellationToken.None);
 
+                    // The ManagedProcess may have been disposed by a startup retry or operator stop
+                    // between the delay and now. If so, this grace period task is stale -- bail out.
+                    if (!_processes.TryGetValue(appId, out var current) || !ReferenceEquals(current, managed))
+                    {
+                        return;
+                    }
+
                     await using var _ = await managed.AcquireOperationLockAsync(CancellationToken.None);
 
                     if (!managed.HasProcessExited && managed.State == ProcessState.Starting)
@@ -379,6 +404,11 @@ public class ProcessSupervisor
                             gracePeriodSeconds
                         );
                     }
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The ManagedProcess was disposed by a retry or restart -- this grace period
+                    // task is stale and should silently exit
                 }
                 catch (Exception exception)
                 {
@@ -521,9 +551,10 @@ public class ProcessSupervisor
                 {
                     await Task.Delay(delay, cancellation.Token);
 
-                    await using var _ = await process.AcquireOperationLockAsync(cancellation.Token);
-
+                    // Remove the old process BEFORE disposing it -- dispose invalidates
+                    // the semaphore, so we must not hold its lock during disposal.
                     _processes.TryRemove(appId, out var stale);
+
                     stale?.Dispose();
 
                     await StartAppInternalAsync(appId, cancellation.Token);
@@ -671,9 +702,10 @@ public class ProcessSupervisor
                 {
                     await Task.Delay(delay, cancellation.Token);
 
-                    await using var _ = await process.AcquireOperationLockAsync(cancellation.Token);
-
+                    // Remove the old process BEFORE disposing it -- dispose invalidates
+                    // the semaphore, so we must not hold its lock during disposal.
                     _processes.TryRemove(appId, out var stale);
+
                     stale?.Dispose();
 
                     await StartAppInternalAsync(appId, cancellation.Token);

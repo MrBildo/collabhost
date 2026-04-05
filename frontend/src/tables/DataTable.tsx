@@ -18,10 +18,11 @@ type DataTableProps<T> = {
   data: T[]
   keyFn: (item: T) => string
   onRowClick?: (item: T) => void
+  rowClassName?: (item: T) => string | undefined
   className?: string
 }
 
-function DataTable<T>({ columns, data, keyFn, onRowClick, className }: DataTableProps<T>) {
+function DataTable<T>({ columns, data, keyFn, onRowClick, rowClassName, className }: DataTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<SortDirection>('asc')
 
@@ -75,7 +76,7 @@ function DataTable<T>({ columns, data, keyFn, onRowClick, className }: DataTable
           {sortedData.map((item) => (
             <tr
               key={keyFn(item)}
-              className={onRowClick ? 'wm-table-row--clickable' : undefined}
+              className={cn(onRowClick && 'wm-table-row--clickable', rowClassName?.(item))}
               onClick={onRowClick ? () => onRowClick(item) : undefined}
               onKeyDown={
                 onRowClick

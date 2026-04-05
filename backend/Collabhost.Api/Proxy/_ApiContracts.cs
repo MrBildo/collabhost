@@ -16,5 +16,6 @@ public record RouteListEntry
     string Domain,
     string Target,
     string ProxyMode,
-    bool Https
+    bool Https,
+    bool Enabled
 );

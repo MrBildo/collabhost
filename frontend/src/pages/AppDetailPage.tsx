@@ -119,7 +119,7 @@ function AppDetailPage() {
         {
           key: 'domain',
           label: 'Domain',
-          value: (
+          value: app.domainActive ? (
             <a
               href={`${app.route.tls ? 'https' : 'http'}://${app.route.domain}`}
               target="_blank"
@@ -134,6 +134,11 @@ function AppDetailPage() {
             >
               {app.route.domain}
             </a>
+          ) : (
+            <span style={{ color: 'var(--wm-text-dim)', opacity: 0.5 }}>
+              {app.route.domain}
+              <span style={{ marginLeft: 6, fontSize: 9, letterSpacing: '0.04em' }}>(disabled)</span>
+            </span>
           ),
         },
         {
@@ -197,21 +202,28 @@ function AppDetailPage() {
           {app.domain && (
             <>
               <span style={{ color: 'var(--wm-text-dim)', opacity: 0.3 }}>·</span>
-              <a
-                href={`${app.route?.tls ? 'https' : 'http'}://${app.domain}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs"
-                style={{ color: 'var(--wm-text-dim)', textDecoration: 'none' }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = 'var(--wm-amber)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = 'var(--wm-text-dim)'
-                }}
-              >
-                {app.domain}
-              </a>
+              {app.domainActive ? (
+                <a
+                  href={`${app.route?.tls ? 'https' : 'http'}://${app.domain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs"
+                  style={{ color: 'var(--wm-text-dim)', textDecoration: 'none' }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = 'var(--wm-amber)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = 'var(--wm-text-dim)'
+                  }}
+                >
+                  {app.domain}
+                </a>
+              ) : (
+                <span className="text-xs" style={{ color: 'var(--wm-text-dim)', opacity: 0.5 }}>
+                  {app.domain}
+                  <span style={{ marginLeft: 6, fontSize: 9, letterSpacing: '0.04em' }}>(disabled)</span>
+                </span>
+              )}
             </>
           )}
         </div>

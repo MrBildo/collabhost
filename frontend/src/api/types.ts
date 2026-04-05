@@ -262,6 +262,7 @@ type RouteEntry = {
   target: string
   proxyMode: string
   https: boolean
+  enabled: boolean
 }
 
 // --- System ---

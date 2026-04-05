@@ -1,4 +1,5 @@
 using System.Diagnostics;
+
 using Collabhost.Api.Registry;
 
 namespace Collabhost.Api.Proxy;
@@ -82,14 +83,17 @@ public class ProxyAppSeeder
         CancellationToken cancellationToken
     )
     {
-        // Process capability override: manual discovery, caddy binary as command
+        // Process capability override: manual discovery, caddy binary as command.
+        // Only the "run" subcommand is seeded here -- the ProxyArgumentProvider injects
+        // the bootstrap config (--config) at process start time with the session-scoped
+        // admin port. Do NOT add --config or --admin here; they are session-scoped.
         var processOverride = JsonSerializer.Serialize
         (
             new
             {
                 discoveryStrategy = "Manual",
                 command = resolvedPath,
-                arguments = """run --config ""  """,
+                arguments = "run",
                 workingDirectory = Path.GetDirectoryName(resolvedPath),
                 shutdownTimeoutSeconds = 10
             },

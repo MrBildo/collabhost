@@ -14,11 +14,11 @@ public class ProxyConfigurationBuilderTests
     private static readonly ProxySettings _defaultSettings = new()
     {
         BaseDomain = "collab.internal",
-        AdminApiUrl = "http://localhost:2019",
         BinaryPath = "caddy",
         ListenAddress = ":443",
         CertLifetime = "168h",
-        SelfPort = 58400
+        SelfPort = 58400,
+        AdminPort = 2019
     };
 
     [Fact]
@@ -202,12 +202,22 @@ public class ProxyConfigurationBuilderTests
     }
 
     [Fact]
-    public void Build_AdminConfig_ListensOnLocalhost2019()
+    public void Build_AdminConfig_UsesAllocatedAdminPort()
     {
-        var config = ProxyConfigurationBuilder.Build([], _defaultSettings);
+        var settings = new ProxySettings
+        {
+            BaseDomain = "collab.internal",
+            BinaryPath = "caddy",
+            ListenAddress = ":443",
+            CertLifetime = "168h",
+            SelfPort = 58400,
+            AdminPort = 9876
+        };
+
+        var config = ProxyConfigurationBuilder.Build([], settings);
 
         var adminListen = config["admin"]!["listen"]!.GetValue<string>();
-        adminListen.ShouldBe("localhost:2019");
+        adminListen.ShouldBe("localhost:9876");
     }
 
     [Fact]
@@ -216,11 +226,11 @@ public class ProxyConfigurationBuilderTests
         var settings = new ProxySettings
         {
             BaseDomain = "mylab.local",
-            AdminApiUrl = "http://localhost:2019",
             BinaryPath = "caddy",
             ListenAddress = ":443",
             CertLifetime = "168h",
-            SelfPort = 9000
+            SelfPort = 9000,
+            AdminPort = 2019
         };
 
         var routes = new List<RouteEntry>
@@ -282,11 +292,11 @@ public class ProxyConfigurationBuilderTests
         var settings = new ProxySettings
         {
             BaseDomain = "collab.internal",
-            AdminApiUrl = "http://localhost:2019",
             BinaryPath = "caddy",
             ListenAddress = ":443",
             CertLifetime = "720h",
-            SelfPort = 58400
+            SelfPort = 58400,
+            AdminPort = 2019
         };
 
         var config = ProxyConfigurationBuilder.Build([], settings);

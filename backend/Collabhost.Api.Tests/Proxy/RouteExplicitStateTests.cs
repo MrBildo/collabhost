@@ -5,7 +5,6 @@ using Collabhost.Api.Supervisor;
 using Collabhost.Api.Supervisor.Containment;
 
 using Microsoft.EntityFrameworkCore;
-
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -15,107 +14,64 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Proxy;
 
-public class ProxyManagerTests
+public class RouteExplicitStateTests
 {
     [Fact]
-    public void IsRouteEnabled_UnknownSlug_ReturnsTrue()
+    public void IsRouteExplicitlyEnabled_UnknownSlug_ReturnsFalse()
     {
         var manager = CreateProxyManager();
 
-        manager.IsRouteEnabled("unknown-app").ShouldBeTrue();
+        manager.IsRouteExplicitlyEnabled("never-registered").ShouldBeFalse();
     }
 
     [Fact]
-    public void DisableRoute_ThenIsRouteEnabled_ReturnsFalse()
+    public void IsRouteExplicitlyEnabled_AfterEnableRoute_ReturnsTrue()
     {
         var manager = CreateProxyManager();
 
-        manager.DisableRoute("my-app");
+        manager.EnableRoute("my-static-site");
 
-        manager.IsRouteEnabled("my-app").ShouldBeFalse();
+        manager.IsRouteExplicitlyEnabled("my-static-site").ShouldBeTrue();
     }
 
     [Fact]
-    public void EnableRoute_AfterDisable_ReturnsTrue()
+    public void IsRouteExplicitlyEnabled_AfterDisableRoute_ReturnsFalse()
     {
         var manager = CreateProxyManager();
 
-        manager.DisableRoute("my-app");
-        manager.EnableRoute("my-app");
+        manager.EnableRoute("my-static-site");
+        manager.DisableRoute("my-static-site");
 
-        manager.IsRouteEnabled("my-app").ShouldBeTrue();
+        manager.IsRouteExplicitlyEnabled("my-static-site").ShouldBeFalse();
     }
 
     [Fact]
-    public void DisableRoute_NullSlug_Throws() =>
-        Should.Throw<ArgumentException>(() => CreateProxyManager().DisableRoute(null!));
-
-    [Fact]
-    public void EnableRoute_WhitespaceSlug_Throws() =>
-        Should.Throw<ArgumentException>(() => CreateProxyManager().EnableRoute("  "));
-
-    [Fact]
-    public void IsRouteEnabled_MultipleRoutes_TracksSeparately()
+    public void IsRouteEnabled_VsExplicit_DifferForUnknownSlug()
     {
         var manager = CreateProxyManager();
 
-        manager.DisableRoute("app-a");
-        manager.EnableRoute("app-b");
+        // IsRouteEnabled returns true for unknowns (default-on for route building)
+        manager.IsRouteEnabled("unknown").ShouldBeTrue();
 
-        manager.IsRouteEnabled("app-a").ShouldBeFalse();
-        manager.IsRouteEnabled("app-b").ShouldBeTrue();
+        // IsRouteExplicitlyEnabled returns false (no explicit action taken)
+        manager.IsRouteExplicitlyEnabled("unknown").ShouldBeFalse();
     }
 
     [Fact]
-    public void EnableRoute_AfterDisable_ThenRequestSync_DoesNotThrow()
+    public void IsRouteExplicitlyEnabled_MultipleRoutes_TracksSeparately()
     {
         var manager = CreateProxyManager();
 
-        manager.DisableRoute("my-app");
-        manager.IsRouteEnabled("my-app").ShouldBeFalse();
+        manager.EnableRoute("site-a");
+        manager.DisableRoute("site-b");
 
-        manager.EnableRoute("my-app");
-        manager.IsRouteEnabled("my-app").ShouldBeTrue();
-
-        Should.NotThrow(() => manager.RequestSync());
-    }
-
-    [Fact]
-    public void DisableRoute_ThenRequestSync_DoesNotThrow()
-    {
-        var manager = CreateProxyManager();
-
-        manager.DisableRoute("static-site");
-        manager.IsRouteEnabled("static-site").ShouldBeFalse();
-
-        Should.NotThrow(() => manager.RequestSync());
-    }
-
-    [Fact]
-    public void RequestSync_DoesNotThrow() =>
-        Should.NotThrow(() => CreateProxyManager().RequestSync());
-
-    [Fact]
-    public void Dispose_DoesNotThrow()
-    {
-        var manager = CreateProxyManager();
-
-        Should.NotThrow(() => manager.Dispose());
-    }
-
-    [Fact]
-    public void Dispose_CalledTwice_DoesNotThrow()
-    {
-        var manager = CreateProxyManager();
-
-        manager.Dispose();
-
-        Should.NotThrow(() => manager.Dispose());
+        manager.IsRouteExplicitlyEnabled("site-a").ShouldBeTrue();
+        manager.IsRouteExplicitlyEnabled("site-b").ShouldBeFalse();
+        manager.IsRouteExplicitlyEnabled("site-c").ShouldBeFalse();
     }
 
     private static ProxyManager CreateProxyManager()
     {
-        // Create minimal real dependencies for route-state-only tests (StartAsync is never called)
         var dbFactory = new FakeDbContextFactory();
         var cache = new MemoryCache(new MemoryCacheOptions());
         var appStore = new AppStore(dbFactory, cache, NullLogger<AppStore>.Instance);

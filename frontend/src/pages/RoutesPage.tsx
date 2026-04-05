@@ -5,6 +5,7 @@ import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { Spinner } from '@/shared/Spinner'
+import { StatusDot } from '@/status/StatusDot'
 import type { Column } from '@/tables/DataTable'
 import { DataTable } from '@/tables/DataTable'
 import { useNavigate } from 'react-router-dom'
@@ -24,27 +25,38 @@ function RoutesPage() {
 
   const columns: Column<RouteEntry>[] = [
     {
+      key: 'status',
+      header: '',
+      width: '32px',
+      render: (route) => <StatusDot status={route.enabled ? 'running' : 'stopped'} />,
+    },
+    {
       key: 'domain',
       header: 'Domain',
       sortFn: (a, b) => a.domain.localeCompare(b.domain),
-      render: (route) => (
-        <a
-          href={`${route.https ? 'https' : 'http'}://${route.domain}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs"
-          style={{ color: 'var(--wm-text-bright)', fontWeight: 600, textDecoration: 'none' }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = 'var(--wm-amber)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'var(--wm-text-bright)'
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {route.domain}
-        </a>
-      ),
+      render: (route) =>
+        route.enabled ? (
+          <a
+            href={`${route.https ? 'https' : 'http'}://${route.domain}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs"
+            style={{ color: 'var(--wm-text-bright)', fontWeight: 600, textDecoration: 'none' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--wm-amber)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--wm-text-bright)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {route.domain}
+          </a>
+        ) : (
+          <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
+            {route.domain}
+          </span>
+        ),
     },
     {
       key: 'target',
@@ -60,7 +72,7 @@ function RoutesPage() {
       header: 'Mode',
       render: (route) => (
         <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-          {modeLabels[route.proxyMode.toLowerCase()] ?? route.proxyMode}
+          {route.enabled ? (modeLabels[route.proxyMode.toLowerCase()] ?? route.proxyMode) : 'Disabled'}
         </span>
       ),
     },
@@ -147,7 +159,12 @@ function RoutesPage() {
           description="Routes are created automatically when apps with domains are registered."
         />
       ) : (
-        <DataTable columns={columns} data={routes} keyFn={(route) => route.appExternalId} />
+        <DataTable
+          columns={columns}
+          data={routes}
+          keyFn={(route) => route.appExternalId}
+          rowClassName={(route) => (!route.enabled ? 'wm-table-row--disabled' : undefined)}
+        />
       )}
     </div>
   )

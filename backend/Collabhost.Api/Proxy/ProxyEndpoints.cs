@@ -23,6 +23,7 @@ public static class ProxyEndpoints
     (
         AppStore store,
         ProcessSupervisor supervisor,
+        ProxyManager proxy,
         ProxySettings settings,
         CancellationToken ct
     )
@@ -79,7 +80,8 @@ public static class ProxyEndpoints
                     routingConfiguration.ServeMode == ServeMode.ReverseProxy
                         ? "reverseProxy"
                         : "fileServer",
-                    true
+                    true,
+                    proxy.IsRouteEnabled(app.Slug)
                 )
             );
         }

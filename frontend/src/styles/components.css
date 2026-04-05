@@ -664,6 +664,10 @@
   cursor: pointer;
 }
 
+.wm-table tbody tr.wm-table-row--disabled {
+  opacity: 0.45;
+}
+
 /* === Breadcrumbs === */
 
 .wm-breadcrumb {
@@ -825,6 +829,15 @@
 
 .wm-log-level--error {
   color: var(--wm-red);
+}
+
+.wm-log-level--debug {
+  color: var(--wm-text-dim);
+}
+
+.wm-log-level--fatal {
+  color: #f472b6;
+  text-shadow: 0 0 6px rgba(244, 114, 182, 0.5);
 }
 
 .wm-log-level--ok {
