@@ -53,12 +53,18 @@ function LogViewer({ entries, totalBuffered, stream, onStreamChange, className }
   // useLayoutEffect runs after DOM mutations but before paint, so the
   // scroll container already has the new elements measured. When Follow
   // is on, pin to bottom every time entries change.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: filteredEntries.length is an intentional re-trigger signal for auto-scroll on new entries
+  //
+  // We depend on the `entries` prop reference (not length) because the
+  // log stream hook creates a new array reference on each flush. Using
+  // length breaks at buffer cap: eviction keeps length at ~1000 so the
+  // effect never re-fires. The entries reference changes exactly when
+  // new data arrives, which is the right trigger regardless of eviction.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: entries reference is an intentional re-trigger signal for auto-scroll on new data
   useLayoutEffect(() => {
     if (isFollowing && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [filteredEntries.length, isFollowing])
+  }, [entries, isFollowing])
 
   function handleScroll(): void {
     if (!scrollRef.current) return
