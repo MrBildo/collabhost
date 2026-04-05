@@ -408,6 +408,7 @@ describe('useLogStream', () => {
     expect(newEs).not.toBe(es)
 
     // Simulate the new connection opening (app restarted)
+    // State is reset on reconnect so the history burst is not deduped
     act(() => {
       newEs.simulateOpen()
       newEs.simulateEvent('log', makeLogEvent(2, 'after start'))
@@ -416,9 +417,10 @@ describe('useLogStream', () => {
 
     expect(result.current.isConnected).toBe(true)
     expect(result.current.isStreaming).toBe(true)
-    // Previous entries are preserved, new entries appended
-    expect(result.current.entries).toHaveLength(2)
-    expect(result.current.entries[1]).toEqual({
+    // Previous entries are cleared on reconnect; only new entries appear
+    // (the server resends history on connect, so nothing is lost)
+    expect(result.current.entries).toHaveLength(1)
+    expect(result.current.entries[0]).toEqual({
       type: 'log',
       entry: expect.objectContaining({ id: 2, content: 'after start' }),
     })
@@ -484,7 +486,7 @@ describe('useLogStream', () => {
     })
 
     expect(result.current.isConnected).toBe(true)
-    // Entry with id=1 is deduped (already in entriesRef), only id=2 is new
+    // State is reset on reconnect, so both entries from the history burst come through
     const logEntries = result.current.entries.filter((e) => e.type === 'log')
     expect(logEntries).toHaveLength(2)
   })
@@ -521,7 +523,7 @@ describe('useLogStream', () => {
     const newEs = latestInstance()
     expect(newEs).not.toBe(es)
 
-    // New connection opens
+    // New connection opens -- state was reset, so history burst starts fresh
     act(() => {
       newEs.simulateOpen()
       newEs.simulateEvent('log', makeLogEvent(2, 'reconnected'))
@@ -529,7 +531,12 @@ describe('useLogStream', () => {
     })
 
     expect(result.current.isConnected).toBe(true)
-    expect(result.current.entries).toHaveLength(2)
+    // Previous entries cleared on reconnect; only the new connection's entries remain
+    expect(result.current.entries).toHaveLength(1)
+    expect(result.current.entries[0]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 2, content: 'reconnected' }),
+    })
   })
 
   test('liveness check does not fire when events are flowing', () => {

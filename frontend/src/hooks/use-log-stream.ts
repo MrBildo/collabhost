@@ -49,6 +49,12 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
   useEffect(() => {
     if (!slug || !isEnabled) return
 
+    // Reset state from previous app/connection so the new history burst
+    // is not deduped against stale IDs from a different app.
+    entriesRef.current = []
+    maxIdRef.current = 0
+    setRenderEntries([])
+
     const authKey = localStorage.getItem(AUTH_STORAGE_KEY)
     if (!authKey) {
       setError('No auth key')
