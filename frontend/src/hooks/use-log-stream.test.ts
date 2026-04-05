@@ -8,6 +8,9 @@ type EventSourceListener = (e: MessageEvent) => void
 
 class MockEventSource {
   static instances: MockEventSource[] = []
+  static readonly CONNECTING = 0
+  static readonly OPEN = 1
+  static readonly CLOSED = 2
 
   url: string
   readyState = 0
@@ -86,6 +89,7 @@ function latestInstance(): MockEventSource {
 let rafCallbacks: Array<() => void> = []
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   MockEventSource.instances = []
   vi.stubGlobal('EventSource', MockEventSource)
   localStorage.setItem('collabhost-user-key', 'test-key-123')
@@ -100,6 +104,7 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear()
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
@@ -354,12 +359,93 @@ describe('useLogStream', () => {
 
     expect(result.current.error).toBe('Connection lost')
 
-    // Simulate reconnect
+    // Advance past reconnect delay to create a new EventSource
     act(() => {
-      es.simulateOpen()
+      vi.advanceTimersByTime(3000)
+    })
+
+    const newEs = latestInstance()
+    expect(newEs).not.toBe(es)
+
+    act(() => {
+      newEs.simulateOpen()
     })
 
     expect(result.current.error).toBeNull()
     expect(result.current.isConnected).toBe(true)
+  })
+
+  test('reconnects after closed event and resumes streaming', () => {
+    const { result } = renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    // Initial connection with some log entries
+    act(() => {
+      es.simulateOpen()
+      es.simulateEvent('log', makeLogEvent(1, 'before stop'))
+      flushRaf()
+    })
+
+    expect(result.current.entries).toHaveLength(1)
+    expect(result.current.isStreaming).toBe(true)
+
+    // Backend sends closed event (app stopped)
+    act(() => {
+      es.simulateEvent('closed', { reason: 'stopped' })
+    })
+
+    expect(result.current.isConnected).toBe(false)
+    expect(es.readyState).toBe(2)
+
+    // Advance past reconnect delay
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+
+    // A new EventSource should have been created
+    expect(MockEventSource.instances).toHaveLength(2)
+    const newEs = latestInstance()
+    expect(newEs).not.toBe(es)
+
+    // Simulate the new connection opening (app restarted)
+    act(() => {
+      newEs.simulateOpen()
+      newEs.simulateEvent('log', makeLogEvent(2, 'after start'))
+      flushRaf()
+    })
+
+    expect(result.current.isConnected).toBe(true)
+    expect(result.current.isStreaming).toBe(true)
+    // Previous entries are preserved, new entries appended
+    expect(result.current.entries).toHaveLength(2)
+    expect(result.current.entries[1]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 2, content: 'after start' }),
+    })
+  })
+
+  test('reconnect timer cleaned up on unmount', () => {
+    const { unmount } = renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+    })
+
+    // Trigger a closed event to schedule reconnect
+    act(() => {
+      es.simulateEvent('closed', { reason: 'stopped' })
+    })
+
+    // Unmount before the reconnect timer fires
+    unmount()
+
+    // Advance timers - should not create new EventSource
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+
+    // Only the original EventSource should exist
+    expect(MockEventSource.instances).toHaveLength(1)
   })
 })

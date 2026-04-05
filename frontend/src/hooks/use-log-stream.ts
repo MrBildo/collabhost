@@ -1,6 +1,8 @@
 import type { AppStatus, StreamEntry } from '@/api/types'
 import { API_BASE, AUTH_STORAGE_KEY, LOG_BUFFER_CAP } from '@/lib/constants'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+const RECONNECT_DELAY_MS = 3_000
 
 type UseLogStreamResult = {
   entries: StreamEntry[]
@@ -14,12 +16,23 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
   const [renderEntries, setRenderEntries] = useState<StreamEntry[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [connectAttempt, setConnectAttempt] = useState(0)
 
   const entriesRef = useRef<StreamEntry[]>([])
   const maxIdRef = useRef<number>(0)
   const rafScheduledRef = useRef(false)
   const rafIdRef = useRef<number>(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
+  const scheduleReconnect = useCallback(() => {
+    if (reconnectTimerRef.current !== undefined) return
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = undefined
+      setConnectAttempt((n) => n + 1)
+    }, RECONNECT_DELAY_MS)
+  }, [])
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: connectAttempt is an intentional re-trigger signal for reconnection after the EventSource is permanently closed
   useEffect(() => {
     if (!slug || !isEnabled) return
 
@@ -94,6 +107,7 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
     es.addEventListener('closed', () => {
       es.close()
       setIsConnected(false)
+      scheduleReconnect()
     })
 
     es.onopen = () => {
@@ -102,8 +116,15 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
     }
 
     es.onerror = () => {
-      setIsConnected(false)
-      setError('Connection lost')
+      // EventSource with readyState CLOSED will not auto-reconnect
+      if (es.readyState === EventSource.CLOSED) {
+        setIsConnected(false)
+        setError('Connection lost')
+        scheduleReconnect()
+      } else {
+        // CONNECTING state: browser is auto-reconnecting, just update status
+        setIsConnected(false)
+      }
     }
 
     return () => {
@@ -111,7 +132,19 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
       cancelAnimationFrame(rafIdRef.current)
       rafScheduledRef.current = false
     }
-  }, [slug, isEnabled])
+  }, [slug, isEnabled, connectAttempt, scheduleReconnect])
+
+  // Clean up reconnect timer on unmount or when disabled
+  useEffect(() => {
+    if (!isEnabled) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = undefined
+    }
+    return () => {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = undefined
+    }
+  }, [isEnabled])
 
   const isStreaming = isConnected && !error
 
