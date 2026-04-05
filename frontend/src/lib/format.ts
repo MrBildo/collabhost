@@ -29,6 +29,8 @@ const STATUS_LABELS: Record<AppStatus, string> = {
   starting: 'Starting',
   stopping: 'Stopping',
   restarting: 'Restarting',
+  backoff: 'Backoff',
+  fatal: 'Fatal',
 }
 
 function formatStatus(status: AppStatus): string {

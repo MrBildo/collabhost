@@ -6,8 +6,6 @@ public class ProcessConfiguration
 {
     public DiscoveryStrategy DiscoveryStrategy { get; set; } = DiscoveryStrategy.Manual;
 
-    public bool GracefulShutdown { get; set; }
-
     public int ShutdownTimeoutSeconds { get; set; } = 10;
 
     public string? Command { get; set; }
@@ -15,6 +13,10 @@ public class ProcessConfiguration
     public string? Arguments { get; set; }
 
     public string? WorkingDirectory { get; set; }
+
+    public int StartupGracePeriodSeconds { get; set; } = 3;
+
+    public int MaxStartupRetries { get; set; } = 3;
 
     public static IReadOnlyList<FieldDescriptor> Schema =>
     [
@@ -52,18 +54,28 @@ public class ProcessConfiguration
         ),
         new
         (
-            "gracefulShutdown",
-            "Graceful Shutdown",
-            FieldType.Boolean,
-            new FieldEditableAlways()
-        ),
-        new
-        (
             "shutdownTimeoutSeconds",
             "Shutdown Timeout",
             FieldType.Number,
             new FieldEditableAlways(),
             Unit: "sec"
+        ),
+        new
+        (
+            "startupGracePeriodSeconds",
+            "Startup Grace Period",
+            FieldType.Number,
+            new FieldEditableAlways(),
+            Unit: "sec",
+            HelpText: "Seconds the process must survive before it counts as started"
+        ),
+        new
+        (
+            "maxStartupRetries",
+            "Max Startup Retries",
+            FieldType.Number,
+            new FieldEditableAlways(),
+            HelpText: "Number of startup failures before entering fatal state"
         ),
     ];
 

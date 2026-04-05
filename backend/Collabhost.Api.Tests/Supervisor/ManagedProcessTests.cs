@@ -1,5 +1,6 @@
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
+using Collabhost.Api.Supervisor.Containment;
 
 using Shouldly;
 
@@ -37,7 +38,7 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
+        process.MarkCrashed(1);
 
         process.IsCrashed.ShouldBeTrue();
         process.HasMaxRestartsExceeded(10).ShouldBeFalse();
@@ -50,7 +51,7 @@ public class ManagedProcessTests
 
         for (var i = 0; i < 10; i++)
         {
-            process.MarkCrashed();
+            process.MarkCrashed(1);
         }
 
         process.HasMaxRestartsExceeded(10).ShouldBeTrue();
@@ -61,7 +62,7 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
+        process.MarkCrashed(1);
 
         var delay = process.GetBackoffDelay();
 
@@ -73,8 +74,8 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
-        process.MarkCrashed();
+        process.MarkCrashed(1);
+        process.MarkCrashed(1);
 
         var delay = process.GetBackoffDelay();
 
@@ -88,7 +89,7 @@ public class ManagedProcessTests
 
         for (var i = 0; i < 20; i++)
         {
-            process.MarkCrashed();
+            process.MarkCrashed(1);
         }
 
         var delay = process.GetBackoffDelay();
@@ -190,9 +191,9 @@ public class ManagedProcessTests
     {
         var process = CreateProcess();
 
-        process.MarkCrashed();
-        process.MarkCrashed();
-        process.MarkCrashed();
+        process.MarkCrashed(1);
+        process.MarkCrashed(1);
+        process.MarkCrashed(1);
 
         process.ResetRestartCount();
 
@@ -224,4 +225,395 @@ public class ManagedProcessTests
 
         cancellation.IsCancellationRequested.ShouldBeTrue();
     }
+
+    [Fact]
+    public async Task AcquireOperationLockAsync_SecondCallBlocks_UntilFirstReleased()
+    {
+        var process = CreateProcess();
+        var secondAcquired = false;
+
+        var firstLock = await process.AcquireOperationLockAsync();
+
+        var secondTask = Task.Run(async () =>
+        {
+            await using var secondLock = await process.AcquireOperationLockAsync();
+            secondAcquired = true;
+        });
+
+        await Task.Delay(200);
+
+        secondAcquired.ShouldBeFalse();
+
+        await firstLock.DisposeAsync();
+
+        await secondTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        secondAcquired.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task AcquireOperationLockAsync_RespectsCancellation()
+    {
+        var process = CreateProcess();
+        using var alreadyCancelled = new CancellationTokenSource();
+        await alreadyCancelled.CancelAsync();
+
+        await using var firstLock = await process.AcquireOperationLockAsync(CancellationToken.None);
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => process.AcquireOperationLockAsync(alreadyCancelled.Token)
+        );
+    }
+
+    [Fact]
+    public async Task AcquireOperationLockAsync_DisposingRelease_AllowsNextAcquisition()
+    {
+        var process = CreateProcess();
+
+        var firstLock = await process.AcquireOperationLockAsync();
+
+        await firstLock.DisposeAsync();
+
+        var secondTask = process.AcquireOperationLockAsync();
+
+        var completed = await Task.WhenAny(secondTask, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        completed.ShouldBe(secondTask);
+
+        await using var secondLock = await secondTask;
+    }
+
+    [Fact]
+    public async Task Dispose_DisposesOperationLock()
+    {
+        var process = CreateProcess();
+
+        process.Dispose();
+
+        await Should.ThrowAsync<ObjectDisposedException>(
+            () => process.AcquireOperationLockAsync()
+        );
+    }
+
+    [Fact]
+    public void Dispose_DisposesContainmentHandle()
+    {
+        var process = CreateProcess();
+        var fakeHandle = new FakeContainmentHandle();
+
+        process.SetContainmentHandle(fakeHandle);
+
+        process.Dispose();
+
+        fakeHandle.IsDisposed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void SetContainmentHandle_AcceptsNull()
+    {
+        var process = CreateProcess();
+
+        process.SetContainmentHandle(null);
+
+        Should.NotThrow(() => process.Dispose());
+    }
+
+    [Fact]
+    public void SetContainmentHandle_ReplacesExistingHandle()
+    {
+        var process = CreateProcess();
+        var firstHandle = new FakeContainmentHandle();
+        var secondHandle = new FakeContainmentHandle();
+
+        process.SetContainmentHandle(firstHandle);
+        process.SetContainmentHandle(secondHandle);
+
+        process.Dispose();
+
+        // Only the most recently set handle is disposed by the process
+        firstHandle.IsDisposed.ShouldBeFalse();
+        secondHandle.IsDisposed.ShouldBeTrue();
+    }
+    // --- Backoff and Fatal state tests ---
+
+    [Fact]
+    public void MarkBackoff_IncrementsStartupFailures()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.StartupFailures.ShouldBe(1);
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.StartupFailures.ShouldBe(2);
+    }
+
+    [Fact]
+    public void MarkBackoff_RecordsExitCode()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+        process.MarkBackoff(42);
+
+        process.LastExitCode.ShouldBe(42);
+        process.LastExitAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void MarkFatal_SetsState()
+    {
+        var process = CreateProcess();
+
+        process.MarkFatal();
+
+        process.IsFatal.ShouldBeTrue();
+        process.State.ShouldBe(ProcessState.Fatal);
+    }
+
+    [Fact]
+    public void HasMaxStartupRetriesExceeded_ReturnsTrue_AfterMaxFailures()
+    {
+        var process = CreateProcess();
+
+        for (var i = 0; i < 3; i++)
+        {
+            process.MarkStarting();
+            process.MarkBackoff(1);
+        }
+
+        process.HasMaxStartupRetriesExceeded(3).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GetStartupRetryDelay_ReturnsLinearDelay()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.GetStartupRetryDelay().ShouldBe(TimeSpan.FromSeconds(1));
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.GetStartupRetryDelay().ShouldBe(TimeSpan.FromSeconds(2));
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+
+        process.GetStartupRetryDelay().ShouldBe(TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public void MarkRunning_ResetsStartupFailures()
+    {
+        var process = CreateProcess();
+        var handle = new FakeProcessHandle();
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+        process.MarkBackoff(1);
+
+        process.StartupFailures.ShouldBe(2);
+
+        process.MarkRunning(handle);
+
+        process.StartupFailures.ShouldBe(0);
+    }
+
+    [Fact]
+    public void MarkCrashed_RecordsExitCodeAndTime()
+    {
+        var process = CreateProcess();
+        var handle = new FakeProcessHandle();
+
+        process.MarkRunning(handle);
+
+        var before = DateTime.UtcNow;
+
+        process.MarkCrashed(137);
+
+        process.LastExitCode.ShouldBe(137);
+        process.LastExitAt.ShouldNotBeNull();
+        process.LastExitAt!.Value.ShouldBeGreaterThanOrEqualTo(before);
+    }
+
+    [Fact]
+    public void MarkStopped_ResetsStartupFailures()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+        process.MarkBackoff(1);
+        process.MarkBackoff(1);
+
+        process.StartupFailures.ShouldBe(2);
+
+        process.MarkStopped();
+
+        process.StartupFailures.ShouldBe(0);
+    }
+
+    [Fact]
+    public void MarkBackoff_TransitionsFromStarting()
+    {
+        var process = CreateProcess();
+
+        process.MarkStarting();
+
+        var previous = process.MarkBackoff(1);
+
+        previous.ShouldBe(ProcessState.Starting);
+        process.IsBackoff.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MarkFatal_OnlyExitsVia_MarkStarting()
+    {
+        var process = CreateProcess();
+
+        process.MarkFatal();
+
+        process.IsFatal.ShouldBeTrue();
+
+        // MarkStarting is the exit path from Fatal (operator manual restart)
+        var previous = process.MarkStarting();
+
+        previous.ShouldBe(ProcessState.Fatal);
+        process.State.ShouldBe(ProcessState.Starting);
+    }
+
+    // --- Reconciliation property tests ---
+
+    [Fact]
+    public void HandleExitCode_NoHandle_ReturnsNull()
+    {
+        var process = CreateProcess();
+
+        process.HandleExitCode.ShouldBeNull();
+    }
+
+    [Fact]
+    public void HandleExitCode_ProcessExited_ReturnsExitCode()
+    {
+        var process = CreateProcess();
+        var handle = new FakeExitedProcessHandle(exitCode: 42);
+
+        process.SetHandle(handle);
+
+        process.HandleExitCode.ShouldBe(42);
+    }
+
+    [Fact]
+    public void HasProcessExited_ProcessStillRunning_ReturnsFalse()
+    {
+        var process = CreateProcess();
+        var handle = new FakeProcessHandle();
+
+        process.SetHandle(handle);
+
+        process.HasProcessExited.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HasProcessExited_ProcessExited_ReturnsTrue()
+    {
+        var process = CreateProcess();
+        var handle = new FakeExitedProcessHandle(exitCode: 0);
+
+        process.SetHandle(handle);
+
+        process.HasProcessExited.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ReconciliationCondition_RunningButExited_Detected()
+    {
+        var process = CreateProcess();
+        var handle = new FakeExitedProcessHandle(exitCode: 137);
+
+        process.MarkStarting();
+        process.SetHandle(handle);
+
+        // Simulate passing startup grace period by marking Running
+        process.MarkRunning();
+
+        // The reconciliation condition: Running + HasProcessExited
+        process.IsRunning.ShouldBeTrue();
+        process.HasProcessExited.ShouldBeTrue();
+        process.HandleExitCode.ShouldBe(137);
+    }
+
+    [Fact]
+    public void ReconciliationCondition_RunningAndAlive_NotDetected()
+    {
+        var process = CreateProcess();
+        var handle = new FakeProcessHandle();
+
+        process.MarkStarting();
+        process.SetHandle(handle);
+        process.MarkRunning();
+
+        // Running process that is still alive -- reconciliation should not trigger
+        process.IsRunning.ShouldBeTrue();
+        process.HasProcessExited.ShouldBeFalse();
+    }
+}
+
+// No subclasses expected -- test fake for containment handle
+file sealed class FakeContainmentHandle : IContainmentHandle
+{
+    public bool IsDisposed { get; private set; }
+
+    public bool AssignProcess(int processId) => true;
+
+    public void Terminate(uint exitCode) { }
+
+    public void Dispose() => IsDisposed = true;
+}
+
+// No subclasses expected -- test fake for process handle
+file sealed class FakeProcessHandle : IProcessHandle
+{
+    public int Pid => 12345;
+
+    public bool HasExited => false;
+
+    public int? ExitCode => null;
+
+    public event Action<int>? Exited;
+
+    public bool TryGracefulShutdown() => false;
+
+    public void Kill() => _ = this;
+
+    public void Dispose() =>
+        // Suppress unused event warning
+        _ = Exited;
+}
+
+// No subclasses expected -- test fake for a process handle that has already exited
+file sealed class FakeExitedProcessHandle(int exitCode) : IProcessHandle
+{
+    public int Pid => 99999;
+
+    public bool HasExited => true;
+
+    public int? ExitCode => exitCode;
+
+    public event Action<int>? Exited;
+
+    public bool TryGracefulShutdown() => false;
+
+    public void Kill() => _ = this;
+
+    public void Dispose() =>
+        // Suppress unused event warning
+        _ = Exited;
 }

@@ -210,19 +210,31 @@ public class ProxyManager
 
     private void HandleProxyAppStateChange(ProcessStateChangedEvent processEvent)
     {
-        if (processEvent.NewState == ProcessState.Running)
+        switch (processEvent.NewState)
         {
-            _logger.LogInformation("Proxy process is running -- triggering route sync");
+            case ProcessState.Running:
+                _logger.LogInformation("Proxy process is running -- triggering route sync");
+                RequestSync();
+                break;
 
-            RequestSync();
-        }
-        else if (processEvent.NewState == ProcessState.Crashed)
-        {
-            _logger.LogWarning("Proxy process crashed -- admin API is unavailable");
-        }
-        else if (processEvent.NewState == ProcessState.Stopped)
-        {
-            _logger.LogInformation("Proxy process stopped -- admin API is unavailable");
+            case ProcessState.Crashed:
+                _logger.LogWarning("Proxy process crashed -- admin API is unavailable");
+                break;
+
+            case ProcessState.Fatal:
+                _logger.LogError("Proxy process entered fatal state -- admin API is unavailable");
+                break;
+
+            case ProcessState.Stopped:
+                _logger.LogInformation("Proxy process stopped -- admin API is unavailable");
+                break;
+
+            // Backoff, Starting, Stopping, Restarting -- no route action needed
+            case ProcessState.Backoff:
+            case ProcessState.Starting:
+            case ProcessState.Stopping:
+            case ProcessState.Restarting:
+                break;
         }
     }
 
