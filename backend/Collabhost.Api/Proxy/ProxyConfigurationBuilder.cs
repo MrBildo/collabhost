@@ -102,6 +102,8 @@ public static class ProxyConfigurationBuilder
                 new JsonObject
                 {
                     ["handler"] = "reverse_proxy",
+                    // Flush immediately -- required for SSE log streaming through the proxy
+                    ["flush_interval"] = -1,
                     ["upstreams"] = new JsonArray
                     {
                         new JsonObject

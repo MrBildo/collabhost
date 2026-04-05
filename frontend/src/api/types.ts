@@ -157,7 +157,7 @@ type LogsResponse = {
 }
 
 type LogEntry = {
-  id?: number
+  id: number
   timestamp: string
   stream: 'stdout' | 'stderr'
   content: string

@@ -34,6 +34,18 @@ public class ProxyConfigurationBuilderTests
     }
 
     [Fact]
+    public void Build_SelfRoute_HasFlushInterval()
+    {
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings);
+
+        var selfRoute = GetRoutes(config)![0]!;
+
+        var handler = selfRoute["handle"]![0]!;
+
+        handler["flush_interval"]!.GetValue<int>().ShouldBe(-1);
+    }
+
+    [Fact]
     public void Build_SelfRoute_HasCorrectHostAndDial()
     {
         var config = ProxyConfigurationBuilder.Build([], _defaultSettings);

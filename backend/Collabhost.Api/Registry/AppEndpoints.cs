@@ -610,7 +610,7 @@ public static class AppEndpoints
 
         var buffer = supervisor.GetOrCreateLogBuffer(app.Id);
         var lineCount = lines ?? 200;
-        var allEntries = buffer.GetLast(lineCount);
+        var allEntries = buffer.GetLastWithIds(lineCount);
 
         LogStream? filterStream = stream?.ToLowerInvariant() switch
         {
@@ -620,7 +620,7 @@ public static class AppEndpoints
         };
 
         var filtered = filterStream.HasValue
-            ? allEntries.Where(e => e.Stream == filterStream.Value)
+            ? allEntries.Where(e => e.Item.Stream == filterStream.Value)
             : allEntries;
 
         var entries = filtered
@@ -628,10 +628,11 @@ public static class AppEndpoints
                 (
                     e => new LogEntryResponse
                     (
-                        e.Timestamp.ToString("o", CultureInfo.InvariantCulture),
-                        e.Stream == LogStream.StdOut ? "stdout" : "stderr",
-                        e.Content,
-                        e.Level
+                        e.Id,
+                        e.Item.Timestamp.ToString("o", CultureInfo.InvariantCulture),
+                        e.Item.Stream == LogStream.StdOut ? "stdout" : "stderr",
+                        e.Item.Content,
+                        e.Item.Level
                     )
                 )
                     .ToList();
@@ -839,6 +840,8 @@ public static class AppEndpoints
         }
 
         await store.DeleteAppAsync(app.Id, ct);
+
+        supervisor.CleanupDeletedApp(app.Id);
 
         return TypedResults.NoContent();
     }

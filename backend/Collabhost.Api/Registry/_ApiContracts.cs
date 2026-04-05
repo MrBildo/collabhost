@@ -118,6 +118,7 @@ public record LogsResponse
 
 public record LogEntryResponse
 (
+    long Id,
     string Timestamp,
     string Stream,
     string Content,

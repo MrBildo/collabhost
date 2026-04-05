@@ -127,6 +127,61 @@ describe('useLogStream', () => {
     expect(es.url).toBe('/api/v1/apps/my-app/logs/stream?key=test-key-123')
   })
 
+  test('reconnect URL includes lastEventId when events have been received', () => {
+    renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    // Receive some events to advance maxIdRef
+    act(() => {
+      es.simulateOpen()
+      es.simulateEvent('log', makeLogEvent(1))
+      es.simulateEvent('log', makeLogEvent(2))
+      es.simulateEvent('log', makeLogEvent(3))
+      flushRaf()
+    })
+
+    // Trigger reconnect via closed event
+    act(() => {
+      es.simulateEvent('closed', { reason: 'stopped' })
+    })
+
+    // Advance past reconnect delay to create a new EventSource
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+
+    const newEs = latestInstance()
+    expect(newEs).not.toBe(es)
+    expect(newEs.url).toBe('/api/v1/apps/my-app/logs/stream?key=test-key-123&lastEventId=3')
+  })
+
+  test('reconnect URL omits lastEventId on first connection (no prior events)', () => {
+    renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+    expect(es.url).toBe('/api/v1/apps/my-app/logs/stream?key=test-key-123')
+  })
+
+  test('slug change resets lastEventId in reconnect URL', () => {
+    const { rerender } = renderHook(({ slug }: { slug: string }) => useLogStream(slug), {
+      initialProps: { slug: 'app-a' },
+    })
+    const firstEs = latestInstance()
+
+    // Receive events on app-a
+    act(() => {
+      firstEs.simulateOpen()
+      firstEs.simulateEvent('log', makeLogEvent(5))
+      flushRaf()
+    })
+
+    // Navigate to app-b (slug change resets maxIdRef to 0)
+    rerender({ slug: 'app-b' })
+
+    const secondEs = latestInstance()
+    // No lastEventId because maxIdRef was reset to 0 on slug change
+    expect(secondEs.url).toBe('/api/v1/apps/app-b/logs/stream?key=test-key-123')
+  })
+
   test('log events parsed and accumulated', () => {
     const { result } = renderHook(() => useLogStream('my-app'))
     const es = latestInstance()
@@ -503,6 +558,62 @@ describe('useLogStream', () => {
     expect(logEntries[1]).toEqual({
       type: 'log',
       entry: expect.objectContaining({ id: 2, content: 'new log after restart' }),
+    })
+  })
+
+  test('resetKey change from undefined to value preserves initial history burst', () => {
+    // Regression: on first visit, detailQuery.data is undefined so resetKey
+    // starts as undefined. SSE connects and receives the history burst. Before
+    // the rAF flush fires, detailQuery resolves and resetKey changes to
+    // 'running'. The cleanup cancels the pending rAF, and the second connection's
+    // burst is deduped — resulting in zero entries rendered.
+    const { result, rerender } = renderHook(
+      ({ resetKey }: { resetKey: string | undefined }) => useLogStream('my-app', { resetKey }),
+      { initialProps: { resetKey: undefined as string | undefined } },
+    )
+    const firstEs = latestInstance()
+
+    // SSE connects and sends history burst — but rAF is NOT flushed yet
+    act(() => {
+      firstEs.simulateOpen()
+      firstEs.simulateEvent('log', makeLogEvent(1, 'line one'))
+      firstEs.simulateEvent('log', makeLogEvent(2, 'line two'))
+      firstEs.simulateEvent('log', makeLogEvent(3, 'line three'))
+      // Intentionally NO flushRaf() — simulating the rAF being pending
+      // when the resetKey change triggers effect cleanup
+    })
+
+    // detailQuery resolves, resetKey changes from undefined to 'running'
+    rerender({ resetKey: 'running' })
+
+    // The cleanup should have flushed the pending entries synchronously.
+    // The second connection's history burst should be deduped (all ids <= 3).
+    const secondEs = latestInstance()
+    expect(secondEs).not.toBe(firstEs)
+
+    act(() => {
+      secondEs.simulateOpen()
+      // Same history burst — all entries deduped because maxIdRef is 3
+      secondEs.simulateEvent('log', makeLogEvent(1, 'line one'))
+      secondEs.simulateEvent('log', makeLogEvent(2, 'line two'))
+      secondEs.simulateEvent('log', makeLogEvent(3, 'line three'))
+      flushRaf()
+    })
+
+    // All 3 entries from the first burst should be present (flushed by cleanup)
+    const logEntries = result.current.entries.filter((e) => e.type === 'log')
+    expect(logEntries).toHaveLength(3)
+    expect(logEntries[0]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 1, content: 'line one' }),
+    })
+    expect(logEntries[1]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 2, content: 'line two' }),
+    })
+    expect(logEntries[2]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 3, content: 'line three' }),
     })
   })
 

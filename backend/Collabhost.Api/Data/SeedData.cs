@@ -154,7 +154,7 @@ public static class SeedData
                 Id = Ulid.Parse("01KN8K1MRT0B5TF2TTXV68DAFJ"),
                 AppTypeId = dotnetApp.Id,
                 CapabilitySlug = "environment-defaults",
-                DefaultConfigurationJson = """{"variables":{"ASPNETCORE_ENVIRONMENT":"Production","DOTNET_ENVIRONMENT":"Production","DOTNET_NOLOGO":"1"}}"""
+                DefaultConfigurationJson = """{"variables":{"ASPNETCORE_ENVIRONMENT":"Production","DOTNET_ENVIRONMENT":"Production","DOTNET_NOLOGO":"1","DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION":"true"}}"""
             }
         );
 
