@@ -32,7 +32,7 @@ function AppDetailPage() {
   const detailQuery = useAppDetail(slug ?? '')
 
   const logStream$ = useLogStream(slug ?? '')
-  const isUsingSSE = logStream$.isStreaming && !logStream$.error
+  const isUsingSSE = logStream$.entries.length > 0 || logStream$.isConnected
 
   const logsQuery = useAppLogs(slug ?? '', {
     stream: logStream === 'all' ? undefined : logStream,

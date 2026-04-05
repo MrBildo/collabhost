@@ -121,10 +121,9 @@ function useLogStream(slug: string, options?: { enabled?: boolean }): UseLogStre
         setIsConnected(false)
         setError('Connection lost')
         scheduleReconnect()
-      } else {
-        // CONNECTING state: browser is auto-reconnecting, just update status
-        setIsConnected(false)
       }
+      // CONNECTING state: browser is auto-reconnecting — don't update
+      // isConnected to avoid UI flicker between SSE and polling modes
     }
 
     return () => {
