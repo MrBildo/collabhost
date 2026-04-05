@@ -105,6 +105,10 @@ public class ProxyManager
             _proxyAppSlug
         );
 
+        // Enable routes for routing-only apps (e.g. static sites) that have auto-start enabled.
+        // Process-based apps are handled by ProcessSupervisor; routing-only apps need route enabling here.
+        await EnableAutoStartRoutesAsync(cancellationToken);
+
         // Check if the proxy process is already running (auto-started before we subscribed)
         var managed = _processSupervisor.GetProcess(proxyApp.Id);
 
@@ -269,7 +273,6 @@ public class ProxyManager
                 continue;
             }
 
-            var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
             int? port = null;
 
             if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
@@ -304,11 +307,7 @@ public class ProxyManager
                 }
             }
 
-            // Routing-only apps (e.g. static sites) must be explicitly started to enable their route.
-            // Process-based apps default to enabled so their route appears when the process starts.
-            var enabled = hasProcess
-                ? IsRouteEnabled(app.Slug)
-                : IsRouteExplicitlyEnabled(app.Slug);
+            var enabled = IsRouteEnabled(app.Slug);
 
             result.Add
             (
@@ -325,6 +324,46 @@ public class ProxyManager
         }
 
         return result;
+    }
+
+    private async Task EnableAutoStartRoutesAsync(CancellationToken ct)
+    {
+        var apps = await _appStore.ListAsync(ct);
+
+        foreach (var app in apps)
+        {
+            var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
+
+            if (hasProcess)
+            {
+                continue;
+            }
+
+            var hasRouting = await _appStore.HasBindingAsync(app.AppTypeId, "routing", ct);
+
+            if (!hasRouting)
+            {
+                continue;
+            }
+
+            var autoStartConfiguration = await _appStore.ResolveCapabilityAsync<AutoStartConfiguration>
+            (
+                app.AppTypeId, app.Id, "auto-start", ct
+            );
+
+            if (autoStartConfiguration is null || !autoStartConfiguration.Enabled)
+            {
+                continue;
+            }
+
+            _logger.LogInformation
+            (
+                "Auto-start enabling route for routing-only app '{DisplayName}'",
+                app.DisplayName
+            );
+
+            EnableRoute(app.Slug);
+        }
     }
 
     public void Dispose()

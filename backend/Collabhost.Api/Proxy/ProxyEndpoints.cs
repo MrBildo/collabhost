@@ -46,11 +46,6 @@ public static class ProxyEndpoints
                 continue;
             }
 
-            var hasProcess = bindings.Any
-            (
-                b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
-            );
-
             var overrides = await store.GetOverridesAsync(app.Id, ct);
 
             var overrideJson = overrides.TryGetValue("routing", out var routingOverride)
@@ -73,11 +68,6 @@ public static class ProxyEndpoints
                     : "not-running"
                 : "file-server";
 
-            // Routing-only apps (e.g. static sites) must be explicitly started to enable their route
-            var routeEnabled = hasProcess
-                ? proxy.IsRouteEnabled(app.Slug)
-                : proxy.IsRouteExplicitlyEnabled(app.Slug);
-
             entries.Add
             (
                 new RouteListEntry
@@ -91,7 +81,7 @@ public static class ProxyEndpoints
                         ? "reverseProxy"
                         : "fileServer",
                     true,
-                    routeEnabled
+                    proxy.IsRouteEnabled(app.Slug)
                 )
             );
         }

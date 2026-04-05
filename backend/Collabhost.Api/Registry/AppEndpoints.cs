@@ -86,10 +86,7 @@ public static class AppEndpoints
             var domain = routingConfiguration?.DomainPattern
                 .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
 
-            // Routing-only apps (e.g. static sites) must be explicitly started to enable their route.
-            // Process-based apps default to enabled so their route appears when the process starts.
-            var routeEnabled = routingConfiguration is not null
-                && (hasProcess ? proxy.IsRouteEnabled(app.Slug) : proxy.IsRouteExplicitlyEnabled(app.Slug));
+            var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
             var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
@@ -171,10 +168,7 @@ public static class AppEndpoints
         var domain = routingConfiguration?.DomainPattern
             .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
 
-        // Routing-only apps (e.g. static sites) must be explicitly started to enable their route.
-        // Process-based apps default to enabled so their route appears when the process starts.
-        var routeEnabled = routingConfiguration is not null
-            && (hasProcess ? proxy.IsRouteEnabled(app.Slug) : proxy.IsRouteExplicitlyEnabled(app.Slug));
+        var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
         var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
@@ -655,6 +649,7 @@ public static class AppEndpoints
     (
         CreateAppRequest request,
         AppStore store,
+        ProxyManager proxy,
         CancellationToken ct
     )
     {
@@ -731,6 +726,16 @@ public static class AppEndpoints
                     ct
                 );
             }
+        }
+
+        // Routing-only apps (e.g. static sites) start with their route disabled.
+        // Process-based apps have routes tied to process state, so no explicit disable needed.
+        var hasRouting = await store.HasBindingAsync(appTypeId, "routing", ct);
+        var hasProcess = await store.HasBindingAsync(appTypeId, "process", ct);
+
+        if (hasRouting && !hasProcess)
+        {
+            proxy.DisableRoute(app.Slug);
         }
 
         return TypedResults.Created
