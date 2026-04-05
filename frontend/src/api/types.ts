@@ -300,7 +300,8 @@ type UpdateEvent = UpdateStatusEvent | UpdateLogEvent | UpdateResultEvent
 // --- Filesystem Browse ---
 
 type FilesystemBrowseResponse = {
-  path: string
+  currentPath: string
+  parent: string | null
   directories: DirectoryEntry[]
 }
 
