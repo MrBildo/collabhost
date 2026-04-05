@@ -711,6 +711,20 @@ public static class AppEndpoints
                     overrideObject[fieldKey] = JsonNode.Parse(fieldValue.GetRawText());
                 }
 
+                var validationErrors = CapabilityResolver.ValidateEdits
+                (
+                    sectionKey, overrideObject, isNewApp: true
+                );
+
+                if (validationErrors.Count > 0)
+                {
+                    return TypedResults.Problem
+                    (
+                        string.Join("; ", validationErrors),
+                        statusCode: 400
+                    );
+                }
+
                 await store.SaveOverrideAsync
                 (
                     app.Id,
