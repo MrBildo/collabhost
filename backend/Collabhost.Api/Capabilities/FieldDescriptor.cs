@@ -7,6 +7,7 @@ public record FieldDescriptor
     FieldType Type,
     FieldEditable Editable,
     bool Required = false,
+    bool RequiresRestart = false,
     string? HelpText = null,
     string? Unit = null,
     IReadOnlyList<FieldOption>? Options = null,

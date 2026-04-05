@@ -161,6 +161,47 @@ public class CapabilityResolverTests
     }
 
     [Fact]
+    public void ValidateEdits_LockedField_AllowedForNewApp()
+    {
+        var overrides = new JsonObject
+        {
+            ["domainPattern"] = "custom.example.com"
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, isNewApp: true);
+
+        errors.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void ValidateEdits_LockedArtifactLocation_AllowedDuringRegistration()
+    {
+        var overrides = new JsonObject
+        {
+            ["location"] = "C:\\Projects\\my-site"
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("artifact", overrides, isNewApp: true);
+
+        errors.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void ValidateEdits_LockedArtifactLocation_RejectedAfterRegistration()
+    {
+        var overrides = new JsonObject
+        {
+            ["location"] = "C:\\Projects\\my-site"
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("artifact", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("location");
+        errors[0].ShouldContain("Set during registration");
+    }
+
+    [Fact]
     public void ValidateEdits_DerivedField_AllowedForNewApp()
     {
         var overrides = new JsonObject
@@ -197,4 +238,77 @@ public class CapabilityResolverTests
         Should.Throw<JsonException>(
             () => CapabilityResolver.MergeJson("""{"key":"value"}""", "not-json")
         );
+
+    [Theory]
+    [InlineData("NODE_ENV")]
+    [InlineData("_PRIVATE")]
+    [InlineData("A")]
+    [InlineData("myVar123")]
+    [InlineData("__double_underscore")]
+    public void ValidateEdits_ValidEnvironmentVariableKey_ReturnsNoError(string key)
+    {
+        var overrides = new JsonObject
+        {
+            ["variables"] = new JsonObject { [key] = "value" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("MY VAR")]
+    [InlineData("1STARTS_WITH_DIGIT")]
+    [InlineData("key=value")]
+    [InlineData("with\"quotes")]
+    [InlineData("path/var")]
+    [InlineData("has-dash")]
+    [InlineData("has.dot")]
+    public void ValidateEdits_InvalidEnvironmentVariableKey_ReturnsError(string key)
+    {
+        var overrides = new JsonObject
+        {
+            ["variables"] = new JsonObject { [key] = "value" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("Invalid key");
+        errors[0].ShouldContain(key);
+    }
+
+    [Fact]
+    public void ValidateEdits_MultipleInvalidKeys_ReturnsMultipleErrors()
+    {
+        var overrides = new JsonObject
+        {
+            ["variables"] = new JsonObject
+            {
+                ["VALID_KEY"] = "ok",
+                ["bad key"] = "not ok",
+                ["123invalid"] = "not ok"
+            }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void ValidateEdits_EnvironmentVariableKeys_ValidatedDuringRegistration()
+    {
+        var overrides = new JsonObject
+        {
+            ["variables"] = new JsonObject { ["bad key"] = "value" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, isNewApp: true);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("Invalid key");
+    }
 }

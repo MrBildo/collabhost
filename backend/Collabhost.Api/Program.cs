@@ -3,6 +3,7 @@ using Collabhost.Api.Capabilities;
 using Collabhost.Api.Dashboard;
 using Collabhost.Api.Data;
 using Collabhost.Api.Events;
+using Collabhost.Api.Filesystem;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
@@ -67,6 +68,7 @@ app.UseCollabhostAuthorization();
 app.MapRegistryEndpoints();
 app.MapProxyEndpoints();
 app.MapDashboardEndpoints();
+app.MapFilesystemEndpoints();
 app.MapSystemEndpoints();
 
 // SPA fallback

@@ -1,6 +1,6 @@
 namespace Collabhost.Api.Capabilities;
 
-public static class CapabilityResolver
+public static partial class CapabilityResolver
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -8,6 +8,9 @@ public static class CapabilityResolver
         PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
+
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.None, matchTimeoutMilliseconds: 100)]
+    private static partial Regex EnvironmentVariableKeyPattern { get; }
 
     public static T Resolve<T>(string defaultConfigurationJson, string? overrideConfigurationJson)
         where T : class
@@ -84,13 +87,29 @@ public static class CapabilityResolver
 
             var field = schema.Single(f => string.Equals(f.Key, property.Key, StringComparison.Ordinal));
 
-            if (field.Editable is FieldEditableLocked locked)
+            if (field.Editable is FieldEditableLocked locked && !isNewApp)
             {
                 errors.Add($"{capabilitySlug}.{property.Key}: {locked.Reason}");
             }
             else if (field.Editable is FieldEditableDerived derived && !isNewApp)
             {
                 errors.Add($"{capabilitySlug}.{property.Key}: {derived.Reason}");
+            }
+
+            // Validate key-value field keys (e.g. environment variables must be valid POSIX identifiers)
+            if (field.Type == FieldType.KeyValue && property.Value is JsonObject keyValueObject)
+            {
+                foreach (var entry in keyValueObject)
+                {
+                    if (!EnvironmentVariableKeyPattern.IsMatch(entry.Key))
+                    {
+                        errors.Add
+                        (
+                            $"{capabilitySlug}.{property.Key}: Invalid key '{entry.Key}'. "
+                            + "Keys must start with a letter or underscore and contain only letters, digits, and underscores."
+                        );
+                    }
+                }
             }
         }
 

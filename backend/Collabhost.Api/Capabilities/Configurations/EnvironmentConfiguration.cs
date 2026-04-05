@@ -11,7 +11,8 @@ public class EnvironmentConfiguration
             "variables",
             "Environment Variables",
             FieldType.KeyValue,
-            new FieldEditableAlways()
+            new FieldEditableAlways(),
+            RequiresRestart: true
         ),
     ];
 }

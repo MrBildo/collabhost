@@ -17,7 +17,8 @@ public class RoutingConfiguration
             "domainPattern",
             "Domain Pattern",
             FieldType.Text,
-            new FieldEditableLocked("Set during registration")
+            new FieldEditableLocked("Set during registration"),
+            RequiresRestart: true
         ),
         new
         (
@@ -25,6 +26,7 @@ public class RoutingConfiguration
             "Serve Mode",
             FieldType.Select,
             new FieldEditableLocked("Determined by app type"),
+            RequiresRestart: true,
             Options: [.. Enum.GetValues<ServeMode>()
                 .Select(v => new FieldOption(v.ToString(), FormatServeMode(v)))]
         ),
@@ -34,6 +36,7 @@ public class RoutingConfiguration
             "SPA Fallback",
             FieldType.Boolean,
             new FieldEditableAlways(),
+            RequiresRestart: true,
             DependsOn: new FieldDependency("serveMode", ServeMode.FileServer.ToString())
         ),
     ];

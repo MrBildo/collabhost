@@ -88,11 +88,7 @@ public static class AppEndpoints
 
             var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-            // For routing-only apps, use explicit check so newly registered static sites start as Stopped
-            var routeExplicitlyEnabled = routingConfiguration is not null
-                && proxy.IsRouteExplicitlyEnabled(app.Slug);
-
-            var status = ResolveStatus(hasProcess, process, hasRouting, routeExplicitlyEnabled);
+            var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
             items.Add
             (
@@ -174,11 +170,7 @@ public static class AppEndpoints
 
         var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-        // For routing-only apps, use explicit check so newly registered static sites start as Stopped
-        var routeExplicitlyEnabled = routingConfiguration is not null
-            && proxy.IsRouteExplicitlyEnabled(app.Slug);
-
-        var status = ResolveStatus(hasProcess, process, hasRouting, routeExplicitlyEnabled);
+        var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
         // Restart policy + auto-start
         string? restartPolicyValue = null;
@@ -657,6 +649,7 @@ public static class AppEndpoints
     (
         CreateAppRequest request,
         AppStore store,
+        ProxyManager proxy,
         CancellationToken ct
     )
     {
@@ -711,6 +704,20 @@ public static class AppEndpoints
                     overrideObject[fieldKey] = JsonNode.Parse(fieldValue.GetRawText());
                 }
 
+                var validationErrors = CapabilityResolver.ValidateEdits
+                (
+                    sectionKey, overrideObject, isNewApp: true
+                );
+
+                if (validationErrors.Count > 0)
+                {
+                    return TypedResults.Problem
+                    (
+                        string.Join("; ", validationErrors),
+                        statusCode: 400
+                    );
+                }
+
                 await store.SaveOverrideAsync
                 (
                     app.Id,
@@ -719,6 +726,16 @@ public static class AppEndpoints
                     ct
                 );
             }
+        }
+
+        // Routing-only apps (e.g. static sites) start with their route disabled.
+        // Process-based apps have routes tied to process state, so no explicit disable needed.
+        var hasRouting = await store.HasBindingAsync(appTypeId, "routing", ct);
+        var hasProcess = await store.HasBindingAsync(appTypeId, "process", ct);
+
+        if (hasRouting && !hasProcess)
+        {
+            proxy.DisableRoute(app.Slug);
         }
 
         return TypedResults.Created
@@ -943,6 +960,7 @@ public static class AppEndpoints
                         value,
                         defaultValue,
                         fieldDescriptor.Editable,
+                        fieldDescriptor.RequiresRestart,
                         fieldDescriptor.Options?
                             .Select(o => new FieldOption(o.Value.ToCamelCase(), o.Label))
                                 .ToList(),

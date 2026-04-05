@@ -392,6 +392,22 @@
   letter-spacing: 0.04em;
 }
 
+.wm-restart-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  color: var(--wm-text-dim);
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: var(--wm-radius-sm);
+  background: var(--wm-bg-inset);
+  border: 1px solid var(--wm-border);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-style: italic;
+}
+
 /* === Panels & Cards === */
 
 .wm-panel {
@@ -1098,4 +1114,158 @@ dialog.wm-dialog-overlay::backdrop {
 
 .wm-field-value--dim {
   color: var(--wm-text-dim);
+}
+
+/* === Directory Browser === */
+
+.wm-directory-browser {
+  width: min(760px, 95vw);
+  display: flex;
+  flex-direction: column;
+}
+
+.wm-directory-browser__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--wm-bg-inset);
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-sm);
+  margin-bottom: 12px;
+  min-height: 34px;
+  overflow-x: auto;
+}
+
+.wm-directory-browser__up-btn {
+  font-family: var(--wm-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--wm-amber);
+  background: none;
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.12s ease;
+}
+
+.wm-directory-browser__up-btn:hover:not(:disabled) {
+  border-color: var(--wm-amber-border);
+}
+
+.wm-directory-browser__up-btn:disabled {
+  color: var(--wm-text-dim);
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.wm-directory-browser__breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  font-family: var(--wm-mono);
+  font-size: 11px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.wm-directory-browser__crumb-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.wm-directory-browser__separator {
+  color: var(--wm-text-dim);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.wm-directory-browser__crumb {
+  color: var(--wm-text);
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: var(--wm-radius-sm);
+  font-family: inherit;
+  font-size: inherit;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.wm-directory-browser__crumb:hover {
+  color: var(--wm-amber);
+  background: var(--wm-bg-hover);
+}
+
+.wm-directory-browser__current {
+  font-family: var(--wm-mono);
+  font-size: 11px;
+  color: var(--wm-text-dim);
+}
+
+.wm-directory-browser__list {
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-sm);
+  background: var(--wm-bg);
+  min-height: 200px;
+  max-height: 340px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.wm-directory-browser__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+.wm-directory-browser__error {
+  font-family: var(--wm-mono);
+  font-size: 11px;
+  color: var(--wm-red);
+  padding: 16px;
+  text-align: center;
+}
+
+.wm-directory-browser__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--wm-border-subtle);
+  font-family: var(--wm-mono);
+  font-size: 12px;
+  color: var(--wm-text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.wm-directory-browser__item:last-child {
+  border-bottom: none;
+}
+
+.wm-directory-browser__item:hover {
+  background: var(--wm-bg-hover);
+  color: var(--wm-text-bright);
+}
+
+.wm-directory-browser__folder-icon {
+  color: var(--wm-amber);
+  font-weight: 700;
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+}
+
+.wm-directory-browser__item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
