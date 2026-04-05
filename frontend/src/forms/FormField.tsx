@@ -13,7 +13,7 @@ type FormFieldProps = {
 
 function FormField({ label, htmlFor, helpText, error, badges, children, className }: FormFieldProps) {
   return (
-    <div className={cn('grid gap-x-4', className)} style={{ gridTemplateColumns: '160px 1fr' }}>
+    <div className={cn('grid gap-x-4', className)} style={{ gridTemplateColumns: '200px 1fr' }}>
       <div className="flex items-start" style={{ paddingTop: '6px' }}>
         <label
           htmlFor={htmlFor}
@@ -29,12 +29,12 @@ function FormField({ label, htmlFor, helpText, error, badges, children, classNam
           {badges && <div className="flex gap-1 flex-wrap">{badges}</div>}
         </div>
         {helpText && !error && (
-          <span className="text-xs" style={{ color: 'var(--wm-text-dim)', fontSize: '10px' }}>
+          <span className="text-xs" style={{ color: 'var(--wm-text-dim)', fontSize: '12px' }}>
             {helpText}
           </span>
         )}
         {error && (
-          <span className="text-xs" style={{ color: 'var(--wm-red)', fontSize: '10px' }}>
+          <span className="text-xs" style={{ color: 'var(--wm-red)', fontSize: '12px' }}>
             {error}
           </span>
         )}

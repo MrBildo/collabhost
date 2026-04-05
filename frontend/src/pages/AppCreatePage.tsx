@@ -240,7 +240,7 @@ function AppCreatePage() {
       {/* Page title */}
       <h2
         className="mb-5"
-        style={{ fontFamily: 'var(--wm-sans)', fontSize: '18px', fontWeight: 700, color: 'var(--wm-text-bright)' }}
+        style={{ fontFamily: 'var(--wm-sans)', fontSize: '22px', fontWeight: 700, color: 'var(--wm-text-bright)' }}
       >
         Add App
       </h2>
@@ -266,7 +266,7 @@ function AppCreatePage() {
           <div
             className="mb-2.5"
             style={{
-              fontSize: '10px',
+              fontSize: '12px',
               fontWeight: 600,
               color: 'var(--wm-text-dim)',
               textTransform: 'uppercase',
@@ -316,7 +316,7 @@ function AppCreatePage() {
                   borderRadius: 'var(--wm-radius-md)',
                 }}
               >
-                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--wm-amber)' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--wm-amber)' }}>
                   {selectedTypeData.displayName}
                 </span>
               </div>
@@ -371,7 +371,7 @@ function AppCreatePage() {
                 <ActionButton onClick={() => navigate(ROUTES.apps)} disabled={createMutation.isPending}>
                   Cancel
                 </ActionButton>
-                <span className="ml-auto" style={{ fontSize: '10px', color: 'var(--wm-text-dim)' }}>
+                <span className="ml-auto" style={{ fontSize: '12px', color: 'var(--wm-text-dim)' }}>
                   Everything else can be configured in Settings after creation.
                 </span>
               </div>

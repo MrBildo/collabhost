@@ -5,7 +5,7 @@ const BASE_DOMAIN = 'collab.internal'
 const POLL_INTERVALS = {
   apps: 5_000,
   appDetail: 3_000,
-  dashboard: 10_000,
+  dashboard: 5_000,
   logs: 2_000,
   system: 30_000,
 } as const

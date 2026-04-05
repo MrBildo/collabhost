@@ -65,6 +65,13 @@
   --wm-mono: "IBM Plex Mono", "Cascadia Code", monospace;
   --wm-sans: "IBM Plex Sans", -apple-system, sans-serif;
 
+  /* Font sizes */
+  --wm-font-2xs: 10px;
+  --wm-font-xs: 12px;
+  --wm-font-sm: 14px;
+  --wm-font-base: 15px;
+  --wm-font-md: 16px;
+
   /* Spacing scale */
   --wm-space-xs: 4px;
   --wm-space-sm: 8px;
@@ -80,5 +87,5 @@
   --wm-radius-md: 4px;
 
   /* Topbar height */
-  --wm-topbar-height: 42px;
+  --wm-topbar-height: 48px;
 }

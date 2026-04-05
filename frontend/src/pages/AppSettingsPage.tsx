@@ -264,7 +264,7 @@ function AppSettingsPage() {
   }
 
   return (
-    <div className="flex flex-col" style={{ maxWidth: '720px' }}>
+    <div className="flex flex-col">
       {/* Breadcrumbs with edit/save actions */}
       <Breadcrumbs
         segments={[
@@ -325,7 +325,7 @@ function AppSettingsPage() {
       {isEditing && (
         <div className="wm-danger-zone mt-10">
           <div className="wm-danger-zone__title">{'// Danger Zone'}</div>
-          <p className="mb-3" style={{ fontSize: '11px', color: 'var(--wm-text-dim)', lineHeight: 1.6 }}>
+          <p className="mb-3" style={{ fontSize: '14px', color: 'var(--wm-text-dim)', lineHeight: 1.6 }}>
             {
               'Deleting this app will remove it from Collabhost, stop its process, and remove its route. The application files on disk will not be deleted.'
             }
