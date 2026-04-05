@@ -59,7 +59,7 @@ collabhost/
 │   ├── Collabhost.AppHost/    # Aspire orchestrator
 │   ├── Collabhost.ServiceDefaults/  # Shared telemetry/health
 │   ├── Collabhost.Api/        # Main API project
-│   │   ├── Authorization/     # Auth middleware (X-User-Key header)
+│   │   ├── Authorization/     # Auth middleware (X-User-Key header, ?key= for SSE only)
 │   │   ├── Capabilities/      # Catalog, config types, schemas, resolver
 │   │   ├── Dashboard/         # Dashboard stats endpoint
 │   │   ├── Data/              # EF Core DbContext, seed data, migrations
@@ -119,13 +119,13 @@ cd frontend && npm run dev
 # Backend (MUST use solution build with --no-incremental)
 cd backend && dotnet build Collabhost.slnx --no-incremental
 cd backend && dotnet format --verify-no-changes
-cd backend && dotnet test   # Runs both Api.Tests (147) and AppHost.Tests (11)
+cd backend && dotnet test   # Runs both Api.Tests (320) and AppHost.Tests (12)
 
 # Frontend
 cd frontend && npm run build
 cd frontend && npm run lint
 cd frontend && npm run format:check
-cd frontend && npm run test   # 54 tests
+cd frontend && npm run test   # 129 tests
 ```
 
 ## Core Subsystems
@@ -174,6 +174,7 @@ cd frontend && npm run test   # 54 tests
 
 ### Auth (`Authorization/`)
 - Header-based: `X-User-Key` (ULID)
+- Query param `?key=` fallback scoped to SSE endpoint (`/logs/stream`) only
 - Middleware skips `/health`, `/alive`, `/openapi`, `GET /status`
 - Admin key from config (`Auth:AdminKey`)
 
@@ -192,7 +193,8 @@ POST   /api/v1/apps/{slug}/restart           # Restart (process-only)
 POST   /api/v1/apps/{slug}/kill              # Kill (process-only)
 POST   /api/v1/apps                          # Create app from registration
 DELETE /api/v1/apps/{slug}                   # Stop-then-delete (10s timeout)
-GET    /api/v1/apps/{slug}/logs              # Log snapshot (ring buffer)
+GET    /api/v1/apps/{slug}/logs              # Log snapshot (ring buffer, entries include id)
+GET    /api/v1/apps/{slug}/logs/stream       # SSE log stream (?key= auth, ?lastEventId= resume)
 GET    /api/v1/app-types                     # App type list (AppTypeListItem)
 GET    /api/v1/app-types/{slug}/registration # Registration schema
 GET    /api/v1/routes                        # Proxy route listing
@@ -241,15 +243,14 @@ Agents sign commits with `Co-Authored-By: {Name} <{name}@collabot.dev>`.
 See `v2-architecture.md` § Deferred Features for full list. Key items:
 - Health check execution (capability schema exists, no runtime logic)
 - App metadata probing (spec at `app-metadata-probing.md`, in-memory cache design decided)
-- SSE log streaming (card #71)
 - App updates / SSE deployment (deferred from v2)
 - Real-time push (SSE/WebSocket for dashboard)
+- Action error feedback for failed mutations (card #101)
 
 ## Known Issues
 
 - **Card #82:** WindowsProcessRunner doesn't use Job Objects — child processes orphaned on API restart
 - **Card #83:** Caddy admin port hardcoded to 2019 — should be dynamically allocated
-- **Card #84:** ObjectDisposedException race condition in ProcessSupervisor restart logic
 
 ## Relationship to Other Projects
 
