@@ -53,15 +53,15 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
     // On slug change (navigating to a different app), fully reset so the
     // new app's history burst isn't deduped against stale IDs.
     // On same-app reconnect (resetKey/connectAttempt change), preserve
-    // accumulated entries — only reset maxIdRef so the history burst
-    // deduplicates against what we already have instead of replacing it.
+    // BOTH entriesRef AND maxIdRef — the history burst naturally deduplicates
+    // because incoming entries with id <= maxIdRef are skipped. Only genuinely
+    // new entries (id > maxIdRef) get appended. This prevents the duplicate
+    // entry inflation that occurs when maxIdRef is reset to 0.
     if (prevSlugRef.current !== slug) {
       entriesRef.current = []
       maxIdRef.current = 0
       setRenderEntries([])
       prevSlugRef.current = slug
-    } else {
-      maxIdRef.current = 0
     }
 
     const authKey = localStorage.getItem(AUTH_STORAGE_KEY)
