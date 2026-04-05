@@ -86,6 +86,7 @@ public class ProcessConfiguration
     private static string FormatDiscoveryStrategy(DiscoveryStrategy value) => value switch
     {
         DiscoveryStrategy.DotNetRuntimeConfiguration => ".NET Runtime Config",
+        DiscoveryStrategy.DotNetProject => ".NET Project (source)",
         DiscoveryStrategy.PackageJson => "Package JSON",
         DiscoveryStrategy.Manual => "Manual",
         _ => value.ToString()

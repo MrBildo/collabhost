@@ -18,6 +18,10 @@ public class ApiFixture : IAsyncLifetime
 
     public HttpClient Client { get; private set; } = null!;
 
+    public IServiceProvider Services => _factory.Services;
+
+    public HttpClient CreateClient() => _factory.CreateClient();
+
     public Task InitializeAsync()
     {
         _dbDirectory = Path.Combine

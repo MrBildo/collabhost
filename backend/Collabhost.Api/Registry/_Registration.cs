@@ -1,3 +1,5 @@
+using Collabhost.Api.Supervisor;
+
 namespace Collabhost.Api.Registry;
 
 public static class RegistryRegistration
@@ -17,6 +19,7 @@ public static class RegistryRegistration
         {
             AppEndpoints.Map(routes);
             AppTypeEndpoints.Map(routes);
+            LogStreamEndpoints.Map(routes);
             return routes;
         }
     }
