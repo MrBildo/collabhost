@@ -382,6 +382,13 @@ public class ProcessSupervisor
                 {
                     await Task.Delay(TimeSpan.FromSeconds(gracePeriodSeconds), CancellationToken.None);
 
+                    // The ManagedProcess may have been disposed by a startup retry or operator stop
+                    // between the delay and now. If so, this grace period task is stale -- bail out.
+                    if (!_processes.TryGetValue(appId, out var current) || !ReferenceEquals(current, managed))
+                    {
+                        return;
+                    }
+
                     await using var _ = await managed.AcquireOperationLockAsync(CancellationToken.None);
 
                     if (!managed.HasProcessExited && managed.State == ProcessState.Starting)
@@ -397,6 +404,11 @@ public class ProcessSupervisor
                             gracePeriodSeconds
                         );
                     }
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The ManagedProcess was disposed by a retry or restart -- this grace period
+                    // task is stale and should silently exit
                 }
                 catch (Exception exception)
                 {
@@ -539,9 +551,10 @@ public class ProcessSupervisor
                 {
                     await Task.Delay(delay, cancellation.Token);
 
-                    await using var _ = await process.AcquireOperationLockAsync(cancellation.Token);
-
+                    // Remove the old process BEFORE disposing it -- dispose invalidates
+                    // the semaphore, so we must not hold its lock during disposal.
                     _processes.TryRemove(appId, out var stale);
+
                     stale?.Dispose();
 
                     await StartAppInternalAsync(appId, cancellation.Token);
@@ -689,9 +702,10 @@ public class ProcessSupervisor
                 {
                     await Task.Delay(delay, cancellation.Token);
 
-                    await using var _ = await process.AcquireOperationLockAsync(cancellation.Token);
-
+                    // Remove the old process BEFORE disposing it -- dispose invalidates
+                    // the semaphore, so we must not hold its lock during disposal.
                     _processes.TryRemove(appId, out var stale);
+
                     stale?.Dispose();
 
                     await StartAppInternalAsync(appId, cancellation.Token);

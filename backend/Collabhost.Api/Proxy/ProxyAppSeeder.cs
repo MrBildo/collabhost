@@ -84,15 +84,16 @@ public class ProxyAppSeeder
     )
     {
         // Process capability override: manual discovery, caddy binary as command.
-        // The --admin flag is NOT included here -- the admin port is session-scoped
-        // (allocated fresh each boot) and injected at process start time by ProxyArgumentProvider.
+        // Only the "run" subcommand is seeded here -- the ProxyArgumentProvider injects
+        // the bootstrap config (--config) at process start time with the session-scoped
+        // admin port. Do NOT add --config or --admin here; they are session-scoped.
         var processOverride = JsonSerializer.Serialize
         (
             new
             {
                 discoveryStrategy = "Manual",
                 command = resolvedPath,
-                arguments = """run --config "" """,
+                arguments = "run",
                 workingDirectory = Path.GetDirectoryName(resolvedPath),
                 shutdownTimeoutSeconds = 10
             },

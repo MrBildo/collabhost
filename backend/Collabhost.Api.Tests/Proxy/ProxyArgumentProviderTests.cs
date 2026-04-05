@@ -8,8 +8,10 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Proxy;
 
-public class ProxyArgumentProviderTests
+public class ProxyArgumentProviderTests : IDisposable
 {
+    private readonly string _tempDirectory = Path.Combine(Path.GetTempPath(), "collabhost");
+
     [Fact]
     public void AugmentArguments_NonProxySlug_ReturnsUnchanged()
     {
@@ -21,14 +23,22 @@ public class ProxyArgumentProviderTests
     }
 
     [Fact]
-    public void AugmentArguments_ProxySlug_InjectsAdminPort()
+    public void AugmentArguments_ProxySlug_InjectsBootstrapConfig()
     {
         var provider = CreateProvider(adminPort: 54321);
 
-        var result = provider.AugmentArguments("proxy", """run --config "" """);
+        var result = provider.AugmentArguments("proxy", "run");
 
         result.ShouldNotBeNull();
-        result.ShouldContain("--admin localhost:54321");
+        result.ShouldContain("--config");
+        result.ShouldContain("caddy-bootstrap.json");
+
+        // Verify the bootstrap file contains the correct admin port
+        var bootstrapPath = Path.Combine(_tempDirectory, "caddy-bootstrap.json");
+        File.Exists(bootstrapPath).ShouldBeTrue();
+
+        var bootstrapContent = File.ReadAllText(bootstrapPath);
+        bootstrapContent.ShouldContain("localhost:54321");
     }
 
     [Fact]
@@ -36,43 +46,104 @@ public class ProxyArgumentProviderTests
     {
         var provider = CreateProvider(adminPort: 54321);
 
-        var result = provider.AugmentArguments("proxy", """run --config "" --admin localhost:99999""");
+        var result = provider.AugmentArguments("proxy", "run --admin localhost:99999");
 
         result.ShouldNotBeNull();
-        result.ShouldContain("--admin localhost:54321");
+        result.ShouldNotContain("--admin");
         result.ShouldNotContain("99999");
+        result.ShouldContain("--config");
     }
 
     [Fact]
-    public void AugmentArguments_ProxySlugNullArguments_ReturnsAdminOnly()
+    public void AugmentArguments_ProxySlug_StripsStaleConfigFlag()
+    {
+        var provider = CreateProvider(adminPort: 54321);
+
+        var result = provider.AugmentArguments("proxy", """run --config "" """);
+
+        result.ShouldNotBeNull();
+        result.ShouldNotContain("""--config "" """);
+        result.ShouldContain("caddy-bootstrap.json");
+    }
+
+    [Fact]
+    public void AugmentArguments_ProxySlugNullArguments_ReturnsConfigOnly()
     {
         var provider = CreateProvider(adminPort: 54321);
 
         var result = provider.AugmentArguments("proxy", null);
 
-        result.ShouldBe("--admin localhost:54321");
+        result.ShouldNotBeNull();
+        result.ShouldContain("--config");
+        result.ShouldContain("caddy-bootstrap.json");
     }
 
     [Fact]
-    public void AugmentArguments_ProxySlugEmptyArguments_ReturnsAdminOnly()
+    public void AugmentArguments_ProxySlugEmptyArguments_ReturnsConfigOnly()
     {
         var provider = CreateProvider(adminPort: 54321);
 
         var result = provider.AugmentArguments("proxy", "");
 
-        result.ShouldBe("--admin localhost:54321");
+        result.ShouldNotBeNull();
+        result.ShouldContain("--config");
+        result.ShouldContain("caddy-bootstrap.json");
     }
 
     [Fact]
-    public void AugmentArguments_ProxySlug_PreservesOtherArguments()
+    public void AugmentArguments_ProxySlug_PreservesRunSubcommand()
     {
         var provider = CreateProvider(adminPort: 12345);
 
-        var result = provider.AugmentArguments("proxy", """run --config "" """);
+        var result = provider.AugmentArguments("proxy", "run");
 
         result.ShouldNotBeNull();
-        result.ShouldStartWith("run --config");
-        result.ShouldEndWith("--admin localhost:12345");
+        result.ShouldStartWith("run");
+        result.ShouldContain("--config");
+    }
+
+    [Fact]
+    public void AugmentArguments_ProxySlug_BootstrapConfigIsValidJson()
+    {
+        var provider = CreateProvider(adminPort: 54321);
+
+        provider.AugmentArguments("proxy", "run");
+
+        var bootstrapPath = Path.Combine(_tempDirectory, "caddy-bootstrap.json");
+
+        var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(bootstrapPath));
+        var adminListen = document.RootElement
+            .GetProperty("admin")
+            .GetProperty("listen")
+            .GetString();
+
+        adminListen.ShouldBe("localhost:54321");
+    }
+
+    [Fact]
+    public void AugmentArguments_ProxySlug_StripsStaleAdminAndConfig()
+    {
+        var provider = CreateProvider(adminPort: 54321);
+
+        var result = provider.AugmentArguments("proxy", """run --config "" --admin localhost:99999""");
+
+        result.ShouldNotBeNull();
+        result.ShouldNotContain("--admin");
+        result.ShouldNotContain("99999");
+        result.ShouldStartWith("run");
+        result.ShouldContain("caddy-bootstrap.json");
+    }
+
+    public void Dispose()
+    {
+        var bootstrapPath = Path.Combine(_tempDirectory, "caddy-bootstrap.json");
+
+        if (File.Exists(bootstrapPath))
+        {
+            File.Delete(bootstrapPath);
+        }
+
+        GC.SuppressFinalize(this);
     }
 
     private static ProxyArgumentProvider CreateProvider(int adminPort) =>
