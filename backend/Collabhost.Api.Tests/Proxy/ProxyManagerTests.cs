@@ -133,11 +133,11 @@ public class ProxyManagerTests
             new ProxySettings
             {
                 BaseDomain = "collab.internal",
-                AdminApiUrl = "http://localhost:2019",
                 BinaryPath = "caddy",
                 ListenAddress = ":443",
                 CertLifetime = "168h",
-                SelfPort = 58400
+                SelfPort = 58400,
+                AdminPort = 2019
             },
             NullLogger<ProxyManager>.Instance
         );
