@@ -1,9 +1,16 @@
 import type { LogEntry } from '@/api/types'
 import { cn } from '@/lib/cn'
 import { formatTimestamp } from '@/lib/format'
+import type { AnsiSegment } from './parse-ansi'
+import { parseAnsiToSegments } from './parse-ansi'
 
 type LogLineProps = {
   entry: LogEntry
+}
+
+type LogContentProps = {
+  content: string
+  isStderr: boolean
 }
 
 const LEVEL_CLASSES: Record<string, string> = {
@@ -16,13 +23,36 @@ const LEVEL_CLASSES: Record<string, string> = {
   UPD: 'wm-log-level--ok',
 }
 
-// Strip ANSI escape sequences (terminal color codes, cursor movement, etc.)
-// These appear in raw stdout from tools like .NET's console logger.
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape codes use control characters by definition
-const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?(?:\x07|\x1b\\)/g
+function LogContent({ content, isStderr }: LogContentProps) {
+  const segments: AnsiSegment[] = parseAnsiToSegments(content)
+  const isPlain = segments.every((s) => !s.color && !s.bold && !s.dim)
 
-function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, '')
+  if (isPlain) {
+    const text = segments.map((s) => s.text).join('')
+    return (
+      <span className="wm-log-msg" style={isStderr ? { color: 'var(--wm-red)' } : undefined}>
+        {text}
+      </span>
+    )
+  }
+
+  return (
+    <span className="wm-log-msg">
+      {segments.map((seg, i) => (
+        <span
+          // biome-ignore lint/suspicious/noArrayIndexKey: ANSI segments are positional, no stable key available
+          key={i}
+          style={{
+            color: seg.color ? `var(${seg.color})` : isStderr ? 'var(--wm-red)' : undefined,
+            fontWeight: seg.bold ? 700 : undefined,
+            opacity: seg.dim ? 0.6 : undefined,
+          }}
+        >
+          {seg.text}
+        </span>
+      ))}
+    </span>
+  )
 }
 
 function LogLine({ entry }: LogLineProps) {
@@ -32,9 +62,7 @@ function LogLine({ entry }: LogLineProps) {
     <div className="wm-log-line">
       <span className="wm-log-timestamp">{formatTimestamp(entry.timestamp)}</span>
       {entry.level && <span className={cn('wm-log-level', levelClass)}>{entry.level}</span>}
-      <span className="wm-log-msg" style={entry.stream === 'stderr' ? { color: 'var(--wm-red)' } : undefined}>
-        {stripAnsi(entry.content)}
-      </span>
+      <LogContent content={entry.content} isStderr={entry.stream === 'stderr'} />
     </div>
   )
 }
