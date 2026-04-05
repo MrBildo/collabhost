@@ -123,7 +123,7 @@ function LogViewer({ entries, totalBuffered, stream, onStreamChange, className }
         ) : (
           filteredEntries.map((item, i) => {
             if (item.type === 'log') {
-              return <LogLine key={item.entry.id ?? i} entry={item.entry} />
+              return <LogLine key={item.entry.id} entry={item.entry} />
             }
             if (item.type === 'status') {
               return <LogStatusMarker key={`status-${item.timestamp}`} state={item.state} />
