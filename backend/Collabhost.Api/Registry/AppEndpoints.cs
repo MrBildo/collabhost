@@ -637,7 +637,7 @@ public static class AppEndpoints
                         e.Timestamp.ToString("o", CultureInfo.InvariantCulture),
                         e.Stream == LogStream.StdOut ? "stdout" : "stderr",
                         e.Content,
-                        null
+                        e.Level
                     )
                 )
                     .ToList();

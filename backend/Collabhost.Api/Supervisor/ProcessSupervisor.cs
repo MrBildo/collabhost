@@ -305,7 +305,7 @@ public class ProcessSupervisor
             discoveredProcess.Arguments,
             discoveredProcess.WorkingDirectory,
             environmentVariables,
-            (line, stream) => managed.LogBuffer.Add(new LogEntry(DateTime.UtcNow, stream, line))
+            (line, stream) => managed.LogBuffer.Add(new LogEntry(DateTime.UtcNow, stream, line, LogLevelParser.ParseLevel(line)))
         );
 
         var handle = _runner.Start(startConfiguration);
