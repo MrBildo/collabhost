@@ -19,7 +19,7 @@ public static partial class LogLevelParser
 
     // Generic/Node/Python level keywords at line start or after timestamp-like prefix
     // Matches: "INFO ...", "2024-01-15 10:30:00 ERROR ...", "WARNING: ...", "DEBUG ..."
-    [GeneratedRegex(@"(?:^|\d{2}:\d{2}(?:\d{2})?\s+|\]\s*)(?<level>INFO|WARN|WARNING|ERROR|DEBUG|CRITICAL|FATAL)\b", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture | RegexOptions.NonBacktracking)]
+    [GeneratedRegex(@"(?:^|\d{2}:\d{2}(?::\d{2})?\s+|\]\s*)(?<level>INFO|WARN|WARNING|ERROR|DEBUG|CRITICAL|FATAL)\b", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture | RegexOptions.NonBacktracking)]
     private static partial Regex GenericPattern { get; }
 
     public static string? ParseLevel(string? line)
