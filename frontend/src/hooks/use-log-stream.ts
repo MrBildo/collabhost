@@ -185,8 +185,21 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
     return () => {
       es.close()
       clearInterval(livenessInterval)
-      cancelAnimationFrame(rafIdRef.current)
-      rafScheduledRef.current = false
+      // If a RAF flush is pending, perform it synchronously before cancelling.
+      // Without this, a resetKey change (e.g., undefined -> 'running' when
+      // detailQuery resolves on first visit) cancels the RAF that would flush
+      // the initial history burst. The next connection's burst is then deduped
+      // against maxIdRef, resulting in zero entries rendered.
+      if (rafScheduledRef.current) {
+        cancelAnimationFrame(rafIdRef.current)
+        rafScheduledRef.current = false
+        if (entriesRef.current.length > LOG_BUFFER_CAP) {
+          entriesRef.current = entriesRef.current.slice(-LOG_BUFFER_CAP)
+        }
+        setRenderEntries([...entriesRef.current])
+      } else {
+        cancelAnimationFrame(rafIdRef.current)
+      }
     }
   }, [slug, isEnabled, resetKey, connectAttempt, scheduleReconnect])
 

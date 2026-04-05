@@ -561,6 +561,62 @@ describe('useLogStream', () => {
     })
   })
 
+  test('resetKey change from undefined to value preserves initial history burst', () => {
+    // Regression: on first visit, detailQuery.data is undefined so resetKey
+    // starts as undefined. SSE connects and receives the history burst. Before
+    // the rAF flush fires, detailQuery resolves and resetKey changes to
+    // 'running'. The cleanup cancels the pending rAF, and the second connection's
+    // burst is deduped — resulting in zero entries rendered.
+    const { result, rerender } = renderHook(
+      ({ resetKey }: { resetKey: string | undefined }) => useLogStream('my-app', { resetKey }),
+      { initialProps: { resetKey: undefined as string | undefined } },
+    )
+    const firstEs = latestInstance()
+
+    // SSE connects and sends history burst — but rAF is NOT flushed yet
+    act(() => {
+      firstEs.simulateOpen()
+      firstEs.simulateEvent('log', makeLogEvent(1, 'line one'))
+      firstEs.simulateEvent('log', makeLogEvent(2, 'line two'))
+      firstEs.simulateEvent('log', makeLogEvent(3, 'line three'))
+      // Intentionally NO flushRaf() — simulating the rAF being pending
+      // when the resetKey change triggers effect cleanup
+    })
+
+    // detailQuery resolves, resetKey changes from undefined to 'running'
+    rerender({ resetKey: 'running' })
+
+    // The cleanup should have flushed the pending entries synchronously.
+    // The second connection's history burst should be deduped (all ids <= 3).
+    const secondEs = latestInstance()
+    expect(secondEs).not.toBe(firstEs)
+
+    act(() => {
+      secondEs.simulateOpen()
+      // Same history burst — all entries deduped because maxIdRef is 3
+      secondEs.simulateEvent('log', makeLogEvent(1, 'line one'))
+      secondEs.simulateEvent('log', makeLogEvent(2, 'line two'))
+      secondEs.simulateEvent('log', makeLogEvent(3, 'line three'))
+      flushRaf()
+    })
+
+    // All 3 entries from the first burst should be present (flushed by cleanup)
+    const logEntries = result.current.entries.filter((e) => e.type === 'log')
+    expect(logEntries).toHaveLength(3)
+    expect(logEntries[0]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 1, content: 'line one' }),
+    })
+    expect(logEntries[1]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 2, content: 'line two' }),
+    })
+    expect(logEntries[2]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 3, content: 'line three' }),
+    })
+  })
+
   test('liveness check detects silently dead connection and reconnects', () => {
     const { result } = renderHook(() => useLogStream('my-app'))
     const es = latestInstance()
