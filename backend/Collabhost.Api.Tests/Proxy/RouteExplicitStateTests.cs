@@ -78,7 +78,7 @@ public class RouteExplicitStateTests
 
         var runner = new FakeManagedProcessRunner();
         var eventBus = new Collabhost.Api.Events.EventBus<Collabhost.Api.Events.ProcessStateChangedEvent>();
-        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, eventBus, NullLogger<ProcessSupervisor>.Instance);
+        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, eventBus, [], NullLogger<ProcessSupervisor>.Instance);
 
         return new ProxyManager
         (
@@ -89,11 +89,11 @@ public class RouteExplicitStateTests
             new ProxySettings
             {
                 BaseDomain = "collab.internal",
-                AdminApiUrl = "http://localhost:2019",
                 BinaryPath = "caddy",
                 ListenAddress = ":443",
                 CertLifetime = "168h",
-                SelfPort = 58400
+                SelfPort = 58400,
+                AdminPort = 2019
             },
             NullLogger<ProxyManager>.Instance
         );

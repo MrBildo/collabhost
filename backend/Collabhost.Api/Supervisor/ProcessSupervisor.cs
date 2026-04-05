@@ -15,6 +15,7 @@ public class ProcessSupervisor
     IProcessContainment containment,
     AppStore appStore,
     IEventBus<ProcessStateChangedEvent> eventBus,
+    IEnumerable<IProcessArgumentProvider> argumentProviders,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
 {
@@ -29,6 +30,9 @@ public class ProcessSupervisor
 
     private readonly IEventBus<ProcessStateChangedEvent> _eventBus = eventBus
         ?? throw new ArgumentNullException(nameof(eventBus));
+
+    private readonly IProcessArgumentProvider[] _argumentProviders =
+        [.. (argumentProviders ?? throw new ArgumentNullException(nameof(argumentProviders)))];
 
     private readonly ILogger<ProcessSupervisor> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -252,6 +256,20 @@ public class ProcessSupervisor
             : artifactConfiguration.Location;
 
         var discoveredProcess = DiscoveryStrategyExecutor.Discover(processConfiguration, effectiveWorkingDirectory);
+
+        // Allow subsystems to augment process arguments at start time.
+        // This is how the proxy subsystem injects the dynamic admin port into Caddy's arguments.
+        var augmentedArguments = discoveredProcess.Arguments;
+
+        foreach (var provider in _argumentProviders)
+        {
+            augmentedArguments = provider.AugmentArguments(app.Slug, augmentedArguments);
+        }
+
+        if (!string.Equals(augmentedArguments, discoveredProcess.Arguments, StringComparison.Ordinal))
+        {
+            discoveredProcess = discoveredProcess with { Arguments = augmentedArguments };
+        }
 
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
 

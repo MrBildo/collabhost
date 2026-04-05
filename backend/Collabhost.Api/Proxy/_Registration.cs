@@ -35,6 +35,7 @@ public static class ProxyRegistration
             );
 
             services.AddSingleton<ProxyAppSeeder>();
+            services.AddSingleton<IProcessArgumentProvider, ProxyArgumentProvider>();
             services.AddSingleton<ProxyManager>();
             services.AddHostedService(provider => provider.GetRequiredService<ProxyManager>());
 

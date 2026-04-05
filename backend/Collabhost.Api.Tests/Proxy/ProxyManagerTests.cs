@@ -122,7 +122,7 @@ public class ProxyManagerTests
 
         var runner = new FakeManagedProcessRunner();
         var eventBus = new Collabhost.Api.Events.EventBus<Collabhost.Api.Events.ProcessStateChangedEvent>();
-        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, eventBus, NullLogger<ProcessSupervisor>.Instance);
+        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, eventBus, [], NullLogger<ProcessSupervisor>.Instance);
 
         return new ProxyManager
         (
