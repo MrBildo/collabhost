@@ -111,4 +111,23 @@ public class LogLevelParserTests
     [Fact]
     public void ParseLevel_GenericFATAL_ReturnsFTL() =>
         LogLevelParser.ParseLevel("FATAL Unrecoverable error in worker").ShouldBe("FTL");
+
+    // --- Pattern priority ---
+
+    [Fact]
+    public void ParseLevel_MultiplePatternMatch_MicrosoftWinsBecauseCheckedFirst() =>
+        // "info:" matches Microsoft, "[INF]" matches Serilog — Microsoft is checked first
+        LogLevelParser.ParseLevel("info: [INF] Starting").ShouldBe("INF");
+
+    // --- Embedded keyword false-positives ---
+
+    [Fact]
+    public void ParseLevel_EmbeddedKeywordINFORMATION_ReturnsNull() =>
+        // "INFORMATION" contains "INFO" but \b boundary prevents matching mid-word
+        LogLevelParser.ParseLevel("INFORMATION service started").ShouldBeNull();
+
+    [Fact]
+    public void ParseLevel_EmbeddedKeywordWARNING_LEVEL_ReturnsNull() =>
+        // "WARNING_LEVEL" — underscore is a word character, so \b prevents matching
+        LogLevelParser.ParseLevel("WARNING_LEVEL is set").ShouldBeNull();
 }
