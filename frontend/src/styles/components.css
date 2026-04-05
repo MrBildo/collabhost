@@ -1119,7 +1119,7 @@ dialog.wm-dialog-overlay::backdrop {
 /* === Directory Browser === */
 
 .wm-directory-browser {
-  max-width: 540px;
+  max-width: 760px;
   width: 95%;
   display: flex;
   flex-direction: column;
