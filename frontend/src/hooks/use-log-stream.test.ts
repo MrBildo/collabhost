@@ -127,6 +127,61 @@ describe('useLogStream', () => {
     expect(es.url).toBe('/api/v1/apps/my-app/logs/stream?key=test-key-123')
   })
 
+  test('reconnect URL includes lastEventId when events have been received', () => {
+    renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    // Receive some events to advance maxIdRef
+    act(() => {
+      es.simulateOpen()
+      es.simulateEvent('log', makeLogEvent(1))
+      es.simulateEvent('log', makeLogEvent(2))
+      es.simulateEvent('log', makeLogEvent(3))
+      flushRaf()
+    })
+
+    // Trigger reconnect via closed event
+    act(() => {
+      es.simulateEvent('closed', { reason: 'stopped' })
+    })
+
+    // Advance past reconnect delay to create a new EventSource
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+
+    const newEs = latestInstance()
+    expect(newEs).not.toBe(es)
+    expect(newEs.url).toBe('/api/v1/apps/my-app/logs/stream?key=test-key-123&lastEventId=3')
+  })
+
+  test('reconnect URL omits lastEventId on first connection (no prior events)', () => {
+    renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+    expect(es.url).toBe('/api/v1/apps/my-app/logs/stream?key=test-key-123')
+  })
+
+  test('slug change resets lastEventId in reconnect URL', () => {
+    const { rerender } = renderHook(({ slug }: { slug: string }) => useLogStream(slug), {
+      initialProps: { slug: 'app-a' },
+    })
+    const firstEs = latestInstance()
+
+    // Receive events on app-a
+    act(() => {
+      firstEs.simulateOpen()
+      firstEs.simulateEvent('log', makeLogEvent(5))
+      flushRaf()
+    })
+
+    // Navigate to app-b (slug change resets maxIdRef to 0)
+    rerender({ slug: 'app-b' })
+
+    const secondEs = latestInstance()
+    // No lastEventId because maxIdRef was reset to 0 on slug change
+    expect(secondEs.url).toBe('/api/v1/apps/app-b/logs/stream?key=test-key-123')
+  })
+
   test('log events parsed and accumulated', () => {
     const { result } = renderHook(() => useLogStream('my-app'))
     const es = latestInstance()

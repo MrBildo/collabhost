@@ -70,7 +70,8 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
       return
     }
 
-    const url = `${API_BASE}/apps/${slug}/logs/stream?key=${authKey}`
+    const lastId = maxIdRef.current > 0 ? `&lastEventId=${maxIdRef.current}` : ''
+    const url = `${API_BASE}/apps/${slug}/logs/stream?key=${authKey}${lastId}`
     const es = new EventSource(url)
 
     function scheduleFlush(): void {
