@@ -41,10 +41,8 @@ function Topbar() {
           ))}
         </div>
 
-        {/* Right side: hostname + shortcut hint */}
-        <div className="ml-auto flex items-center gap-4">
-          <kbd className="wm-kbd">Ctrl+K</kbd>
-        </div>
+        {/* Right side: reserved for command palette */}
+        <div className="ml-auto flex items-center gap-4" />
       </div>
     </nav>
   )

@@ -158,7 +158,7 @@ function AppDetailPage() {
           ) : (
             <span style={{ color: 'var(--wm-text-dim)', opacity: 0.5 }}>
               {app.route.domain}
-              <span style={{ marginLeft: 6, fontSize: 9, letterSpacing: '0.04em' }}>(disabled)</span>
+              <span style={{ marginLeft: 6, fontSize: 11, letterSpacing: '0.04em' }}>(disabled)</span>
             </span>
           ),
         },
@@ -169,7 +169,7 @@ function AppDetailPage() {
             !app.route.target || app.route.target === 'not-running' ? (
               <span style={{ color: 'var(--wm-text-dim)' }}>--</span>
             ) : app.route.target === 'file-server' ? (
-              'File Server'
+              'Static Files'
             ) : (
               app.route.target
             ),
@@ -242,7 +242,7 @@ function AppDetailPage() {
               ) : (
                 <span className="text-xs" style={{ color: 'var(--wm-text-dim)', opacity: 0.5 }}>
                   {app.domain}
-                  <span style={{ marginLeft: 6, fontSize: 9, letterSpacing: '0.04em' }}>(disabled)</span>
+                  <span style={{ marginLeft: 6, fontSize: 11, letterSpacing: '0.04em' }}>(disabled)</span>
                 </span>
               )}
             </>

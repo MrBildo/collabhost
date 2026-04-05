@@ -1,11 +1,10 @@
 import { ActionButton } from '@/actions/ActionButton'
 import { useApps, useStartApp, useStopApp } from '@/hooks/use-apps'
-import { useDashboardEvents, useDashboardStats } from '@/hooks/use-dashboard'
+import { useDashboardStats } from '@/hooks/use-dashboard'
 import { formatMemory } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
 import { ErrorBanner } from '@/shared/ErrorBanner'
-import { EventList } from '@/shared/EventList'
 import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
 import { StatusStrip } from '@/status/StatusStrip'
@@ -16,13 +15,11 @@ import { Link, useNavigate } from 'react-router-dom'
 function DashboardPage() {
   const navigate = useNavigate()
   const statsQuery = useDashboardStats()
-  const eventsQuery = useDashboardEvents()
   const appsQuery = useApps()
   const startMutation = useStartApp()
   const stopMutation = useStopApp()
 
   const stats = statsQuery.data
-  const events = eventsQuery.data?.events ?? []
   const apps = appsQuery.data ?? []
 
   const isLoading = statsQuery.isLoading || appsQuery.isLoading
@@ -81,9 +78,6 @@ function DashboardPage() {
         <h1 className="wm-section-title" style={{ borderBottom: 'none', paddingBottom: 0 }}>
           <span style={{ color: 'var(--wm-text-dim)' }}>{'// '}</span>System Overview
         </h1>
-        <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-          auto-refresh 10s
-        </span>
       </div>
 
       {error && (
@@ -121,10 +115,6 @@ function DashboardPage() {
           className="mb-5"
         />
       )}
-
-      <SectionDivider label="Recent Events" className="mb-3" />
-
-      {eventsQuery.isLoading ? <Spinner /> : <EventList events={events} />}
     </div>
   )
 }

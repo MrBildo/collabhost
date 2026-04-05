@@ -28,7 +28,7 @@ function AppListPage() {
     if (statusFilter !== 'all') {
       result = result.filter((app) => app.status === statusFilter)
     }
-    if (searchTerm) {
+    if (searchTerm.length >= 2) {
       const term = searchTerm.toLowerCase()
       result = result.filter(
         (app) =>

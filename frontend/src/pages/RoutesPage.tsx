@@ -63,7 +63,11 @@ function RoutesPage() {
       header: 'Target',
       render: (route) => (
         <span className="text-xs" style={{ color: 'var(--wm-text-dim)', fontVariantNumeric: 'tabular-nums' }}>
-          {route.target}
+          {route.target === 'file-server'
+            ? 'Static Files'
+            : route.target === 'not-running'
+              ? 'Not Running'
+              : route.target}
         </span>
       ),
     },

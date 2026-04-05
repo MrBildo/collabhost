@@ -34,7 +34,7 @@ function FilterBar({ activeFilter, onFilterChange, searchTerm, onSearchChange, c
       </div>
       <input
         type="text"
-        className="wm-input"
+        className="wm-input wm-input--inline"
         placeholder="Search apps..."
         value={searchTerm}
         onChange={(e) => onSearchChange(e.target.value)}

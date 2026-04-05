@@ -7,7 +7,7 @@
 
 .wm-btn {
   font-family: var(--wm-mono);
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -37,13 +37,13 @@
 }
 
 .wm-btn--sm {
-  padding: 3px 7px;
-  font-size: 9px;
+  padding: 4px 8px;
+  font-size: var(--wm-font-xs);
 }
 
 .wm-btn--lg {
   padding: 7px 16px;
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
 }
 
 .wm-btn--amber {
@@ -190,18 +190,22 @@
 
 .wm-status-text--starting {
   color: var(--wm-amber);
+  animation: wm-pulse 1s infinite;
 }
 
 .wm-status-text--stopping {
   color: var(--wm-amber);
+  animation: wm-pulse 1s infinite;
 }
 
 .wm-status-text--restarting {
   color: var(--wm-amber);
+  animation: wm-pulse 1s infinite;
 }
 
 .wm-status-text--backoff {
   color: var(--wm-amber);
+  animation: wm-pulse 1s infinite;
 }
 
 .wm-status-text--fatal {
@@ -212,7 +216,7 @@
 
 .wm-input {
   font-family: var(--wm-mono);
-  font-size: 12px;
+  font-size: var(--wm-font-base);
   background: var(--wm-bg-inset);
   border: 1px solid var(--wm-border);
   color: var(--wm-text);
@@ -241,6 +245,11 @@
   background: var(--wm-bg);
 }
 
+.wm-input--inline {
+  font-size: var(--wm-font-xs);
+  padding: 4px 10px;
+}
+
 .wm-input--readonly {
   background: var(--wm-bg);
   color: var(--wm-text-dim);
@@ -252,7 +261,7 @@
 
 .wm-select {
   font-family: var(--wm-mono);
-  font-size: 12px;
+  font-size: var(--wm-font-base);
   background: var(--wm-bg-inset);
   border: 1px solid var(--wm-border);
   color: var(--wm-text);
@@ -335,7 +344,7 @@
 
 .wm-filter-chip {
   font-family: var(--wm-mono);
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -367,7 +376,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 9px;
+  font-size: var(--wm-font-2xs);
   color: var(--wm-text-dim);
   font-weight: 500;
   padding: 2px 6px;
@@ -382,7 +391,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 9px;
+  font-size: var(--wm-font-2xs);
   color: var(--wm-orange);
   font-weight: 600;
   padding: 2px 6px;
@@ -396,7 +405,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 9px;
+  font-size: var(--wm-font-2xs);
   color: var(--wm-text-dim);
   font-weight: 500;
   padding: 2px 6px;
@@ -430,7 +439,7 @@
 
 .wm-section-divider__label {
   font-family: var(--wm-mono);
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   font-weight: 600;
   color: var(--wm-text-dim);
   text-transform: uppercase;
@@ -448,7 +457,7 @@
 
 .wm-section-title {
   font-family: var(--wm-mono);
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   font-weight: 700;
   color: var(--wm-amber);
   text-transform: uppercase;
@@ -471,7 +480,7 @@
 .wm-topbar__brand {
   font-family: var(--wm-mono);
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--wm-font-md);
   color: var(--wm-amber);
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -480,7 +489,7 @@
 
 .wm-topbar__link {
   font-family: var(--wm-mono);
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   font-weight: 500;
   color: var(--wm-text-dim);
   text-transform: uppercase;
@@ -508,7 +517,7 @@
   background: var(--wm-bg-inset);
   border: 1px solid var(--wm-border);
   font-family: var(--wm-mono);
-  font-size: 9px;
+  font-size: var(--wm-font-2xs);
   color: var(--wm-text-dim);
   letter-spacing: 0.04em;
 }
@@ -546,7 +555,7 @@
 .wm-alert {
   padding: 12px 14px;
   border-radius: var(--wm-radius-md);
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -588,7 +597,7 @@
 
 .wm-danger-zone__title {
   font-family: var(--wm-mono);
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   font-weight: 600;
   color: var(--wm-red);
   text-transform: uppercase;
@@ -607,7 +616,7 @@
 
 .wm-kv-row {
   display: grid;
-  grid-template-columns: 200px 1fr 32px;
+  grid-template-columns: 280px 1fr 32px;
   border-bottom: 1px solid var(--wm-border-subtle);
   align-items: center;
 }
@@ -618,20 +627,23 @@
 
 .wm-kv-key {
   padding: 7px 12px;
-  font-size: 11px;
+  font-size: var(--wm-font-xs);
   color: var(--wm-amber);
   font-weight: 600;
   border-right: 1px solid var(--wm-border-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wm-kv-value {
   padding: 7px 12px;
-  font-size: 11px;
+  font-size: var(--wm-font-xs);
   color: var(--wm-text);
 }
 
 .wm-kv-remove {
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   color: var(--wm-text-dim);
   cursor: pointer;
   background: none;
@@ -647,11 +659,11 @@
 
 .wm-table {
   width: 100%;
-  font-size: 12px;
+  font-size: var(--wm-font-base);
 }
 
 .wm-table th {
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   font-weight: 600;
   color: var(--wm-text-dim);
   text-transform: uppercase;
@@ -687,7 +699,7 @@
 /* === Breadcrumbs === */
 
 .wm-breadcrumb {
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -728,7 +740,7 @@
 }
 
 .wm-status-cell__label {
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   color: var(--wm-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -754,7 +766,7 @@
 }
 
 .wm-status-cell__detail {
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   color: var(--wm-text-dim);
   margin-top: 2px;
 }
@@ -769,7 +781,7 @@
 }
 
 .wm-detail-card__title {
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   font-weight: 600;
   color: var(--wm-text-dim);
   text-transform: uppercase;
@@ -782,7 +794,7 @@
   justify-content: space-between;
   padding: 5px 0;
   border-bottom: 1px solid var(--wm-border-subtle);
-  font-size: 11px;
+  font-size: var(--wm-font-xs);
 }
 
 .wm-detail-row:last-child {
@@ -805,7 +817,7 @@
   border: 1px solid var(--wm-border);
   border-radius: var(--wm-radius-md);
   padding: 10px 12px;
-  font-size: 11px;
+  font-size: var(--wm-font-xs);
   line-height: 1.8;
   overflow-y: auto;
 }
@@ -880,14 +892,14 @@
 }
 
 .wm-empty-state__title {
-  font-size: 12px;
+  font-size: var(--wm-font-base);
   font-weight: 600;
   color: var(--wm-text);
   margin-bottom: 4px;
 }
 
 .wm-empty-state__description {
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
 }
 
 /* === Auth Gate === */
@@ -923,7 +935,7 @@
 }
 
 .wm-type-card__name {
-  font-size: 12px;
+  font-size: var(--wm-font-base);
   font-weight: 600;
   color: var(--wm-text-bright);
   margin-bottom: 2px;
@@ -934,7 +946,7 @@
 }
 
 .wm-type-card__desc {
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   color: var(--wm-text-dim);
   line-height: 1.4;
 }
@@ -948,7 +960,7 @@
 
 .wm-type-card__tag {
   font-family: var(--wm-mono);
-  font-size: 9px;
+  font-size: var(--wm-font-2xs);
   padding: 2px 5px;
   border-radius: var(--wm-radius-sm);
   background: var(--wm-bg-inset);
@@ -995,7 +1007,7 @@ dialog.wm-dialog-overlay::backdrop {
 
 .wm-dialog__title {
   font-family: var(--wm-mono);
-  font-size: 12px;
+  font-size: var(--wm-font-base);
   font-weight: 700;
   color: var(--wm-text-bright);
   text-transform: uppercase;
@@ -1004,7 +1016,7 @@ dialog.wm-dialog-overlay::backdrop {
 }
 
 .wm-dialog__body {
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   color: var(--wm-text-dim);
   line-height: 1.6;
   margin-bottom: 20px;
@@ -1049,7 +1061,7 @@ dialog.wm-dialog-overlay::backdrop {
   align-items: center;
   gap: 6px;
   font-family: var(--wm-mono);
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   font-weight: 600;
   color: var(--wm-text-dim);
   text-transform: uppercase;
@@ -1071,7 +1083,7 @@ dialog.wm-dialog-overlay::backdrop {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--wm-font-xs);
   font-weight: 700;
   border: 1px solid var(--wm-border);
   background: transparent;
@@ -1103,7 +1115,7 @@ dialog.wm-dialog-overlay::backdrop {
 /* === Settings Field Value (read mode) === */
 
 .wm-field-value {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--wm-text-bright);
   padding-top: 6px;
   display: flex;
@@ -1139,7 +1151,7 @@ dialog.wm-dialog-overlay::backdrop {
 
 .wm-directory-browser__up-btn {
   font-family: var(--wm-mono);
-  font-size: 12px;
+  font-size: var(--wm-font-base);
   font-weight: 700;
   color: var(--wm-amber);
   background: none;
@@ -1166,7 +1178,7 @@ dialog.wm-dialog-overlay::backdrop {
   align-items: center;
   gap: 0;
   font-family: var(--wm-mono);
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   overflow-x: auto;
   white-space: nowrap;
 }
@@ -1201,7 +1213,7 @@ dialog.wm-dialog-overlay::backdrop {
 
 .wm-directory-browser__current {
   font-family: var(--wm-mono);
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   color: var(--wm-text-dim);
 }
 
@@ -1224,7 +1236,7 @@ dialog.wm-dialog-overlay::backdrop {
 
 .wm-directory-browser__error {
   font-family: var(--wm-mono);
-  font-size: 11px;
+  font-size: var(--wm-font-sm);
   color: var(--wm-red);
   padding: 16px;
   text-align: center;
@@ -1240,7 +1252,7 @@ dialog.wm-dialog-overlay::backdrop {
   border: none;
   border-bottom: 1px solid var(--wm-border-subtle);
   font-family: var(--wm-mono);
-  font-size: 12px;
+  font-size: var(--wm-font-base);
   color: var(--wm-text);
   cursor: pointer;
   text-align: left;
