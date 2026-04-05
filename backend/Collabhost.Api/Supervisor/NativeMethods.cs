@@ -11,6 +11,7 @@ internal static class NativeMethods
     // Process creation flags
     public const uint CreateNewProcessGroup = 0x00000200;
     public const uint CreateNewConsole = 0x00000010;
+    public const uint CreateUnicodeEnvironment = 0x00000400;
 
     // Console control events
     public const uint CtrlBreakEvent = 1;

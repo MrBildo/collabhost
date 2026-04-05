@@ -167,7 +167,7 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         if (environmentBlock is not null)
         {
             environmentPointer = Marshal.StringToHGlobalUni(environmentBlock);
-            creationFlags |= 0x00000400; // CREATE_UNICODE_ENVIRONMENT
+            creationFlags |= NativeMethods.CreateUnicodeEnvironment;
         }
 
         try
@@ -208,11 +208,19 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
             // Wrap the raw process handle into a System.Diagnostics.Process so the rest
             // of the supervisor infrastructure (WaitForExitAsync, Kill, etc.) continues
             // to work with a Process object.
+            //
+            // Race condition analysis (GetProcessById vs. fast child exit):
+            // GetProcessById internally calls OpenProcess, which succeeds as long as the
+            // process object exists in the kernel. On Windows, a process object is not
+            // destroyed until ALL handles to it are closed. We still hold the CreateProcess
+            // handle (processInformation.Process) at this point, so the kernel object is
+            // guaranteed to exist -- even if the child exited in sub-millisecond time.
+            // This also prevents PID recycling until we close our handle below.
             var process = Process.GetProcessById((int)processInformation.ProcessId);
             process.EnableRaisingEvents = true;
 
             // Close the raw process handle from CreateProcess -- Process.GetProcessById
-            // opened its own handle internally.
+            // opened its own handle internally, so the kernel object stays alive.
             NativeMethods.CloseHandle(processInformation.Process);
 
             var processGroupId = processInformation.ProcessId;
@@ -366,6 +374,8 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         private readonly Action<string, LogStream> _onOutput;
         private readonly ILogger _logger;
         private CancellationTokenSource? _pipeReaderCancellation;
+        private SafeFileHandle? _stdoutReadHandle;
+        private SafeFileHandle? _stderrReadHandle;
 
         public ProcessGroupHandle
         (
@@ -443,6 +453,12 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
 
         public void StartPipeReaders(SafeFileHandle stdoutRead, SafeFileHandle stderrRead)
         {
+            // Store references so Dispose() can clean up even if FileStream
+            // construction fails inside ReadPipeAsync. FileStream.Dispose is
+            // idempotent with SafeFileHandle.Dispose, so double-dispose is safe.
+            _stdoutReadHandle = stdoutRead;
+            _stderrReadHandle = stderrRead;
+
             _pipeReaderCancellation = new CancellationTokenSource();
 
             var ct = _pipeReaderCancellation.Token;
@@ -497,6 +513,8 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         {
             _pipeReaderCancellation?.Cancel();
             _pipeReaderCancellation?.Dispose();
+            _stdoutReadHandle?.Dispose();
+            _stderrReadHandle?.Dispose();
             _process.Dispose();
         }
     }
