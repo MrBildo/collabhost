@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+
 using Collabhost.Api.Registry;
 
 namespace Collabhost.Api.Proxy;
@@ -83,13 +85,21 @@ public class ProxyAppSeeder
     )
     {
         // Process capability override: manual discovery, caddy binary as command
+        // --admin flag tells Caddy which port to use for its admin API
+        var adminAddress = string.Format
+        (
+            CultureInfo.InvariantCulture,
+            "localhost:{0}",
+            _settings.AdminPort
+        );
+
         var processOverride = JsonSerializer.Serialize
         (
             new
             {
                 discoveryStrategy = "Manual",
                 command = resolvedPath,
-                arguments = """run --config ""  """,
+                arguments = $"""run --config "" --admin {adminAddress}""",
                 workingDirectory = Path.GetDirectoryName(resolvedPath),
                 shutdownTimeoutSeconds = 10
             },

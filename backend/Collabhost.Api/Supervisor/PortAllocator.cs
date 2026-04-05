@@ -12,6 +12,8 @@ public class PortAllocator
         return Task.FromResult(FindFreePort());
     }
 
+    public static int AllocatePort() => FindFreePort();
+
     private static int FindFreePort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);

@@ -15,11 +15,18 @@ public static class ProxyConfigurationBuilder
         var subjects = BuildSubjectList(routes, settings);
         var caddyRoutes = BuildRoutes(routes, settings);
 
+        var adminListen = string.Format
+        (
+            CultureInfo.InvariantCulture,
+            "localhost:{0}",
+            settings.AdminPort
+        );
+
         return new JsonObject
         {
             ["admin"] = new JsonObject
             {
-                ["listen"] = "localhost:2019"
+                ["listen"] = adminListen
             },
             ["apps"] = new JsonObject
             {
