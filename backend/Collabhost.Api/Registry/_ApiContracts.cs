@@ -1,4 +1,5 @@
 using Collabhost.Api.Capabilities;
+using Collabhost.Api.Probes;
 
 namespace Collabhost.Api.Registry;
 
@@ -43,7 +44,7 @@ public record AppDetail
     string? Domain,
     bool DomainActive,
     string? HealthStatus,
-    List<AppTag> Tags,
+    List<ProbeEntry> Probes,
     AppResources? Resources,
     AppRoute? Route,
     AppActions Actions
@@ -51,6 +52,8 @@ public record AppDetail
 
 public record AppTypeDetailRef(string Id, string Name, string DisplayName);
 
+// AppTag is used by AppType contracts (type-level metadata).
+// Removed from AppDetail -- replaced by probe system (card #68).
 public record AppTag(string Label, string Group);
 
 public record AppResources(double? CpuPercent, double? MemoryMb, int? HandleCount);

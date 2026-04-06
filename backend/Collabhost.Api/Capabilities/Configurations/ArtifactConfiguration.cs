@@ -4,6 +4,8 @@ public class ArtifactConfiguration
 {
     public string Location { get; set; } = default!;
 
+    public string? ProjectRoot { get; set; }
+
     public static IReadOnlyList<FieldDescriptor> Schema =>
     [
         new
@@ -14,6 +16,14 @@ public class ArtifactConfiguration
             new FieldEditableLocked("Set during registration"),
             Required: true,
             RequiresRestart: true
+        ),
+        new
+        (
+            "projectRoot",
+            "Project Root",
+            FieldType.Directory,
+            new FieldEditableAlways(),
+            HelpText: "The project source directory (where package.json lives) when it differs from the application directory. Leave empty if they are the same."
         ),
     ];
 }
