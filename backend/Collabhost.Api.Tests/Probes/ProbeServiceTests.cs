@@ -146,6 +146,49 @@ public class ProbeServiceTests : IDisposable
     }
 
     [Fact]
+    public void RunProbesForDirectory_ProjectRootSubdir_FallsBackToArtifactDir()
+    {
+        // Simulates a React app where projectRoot points to src/ but
+        // package.json and tsconfig.json are in the artifact directory.
+        var srcDir = Path.Combine(_tempDir, "src");
+        Directory.CreateDirectory(srcDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "package.json"),
+            """
+            {
+              "name": "react-test-app",
+              "version": "0.0.0",
+              "type": "module",
+              "dependencies": { "react": "^19.2.4", "react-dom": "^19.2.4" },
+              "devDependencies": { "typescript": "~5.9.3", "vite": "^8.0.1" }
+            }
+            """
+        );
+
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "tsconfig.json"),
+            """{"compilerOptions":{"strict":true,"target":"ES2022","module":"ESNext"}}"""
+        );
+
+        // projectRoot = src/ (exists, but lacks package.json and tsconfig.json)
+        // artifactDirectory = temp dir root (has both files)
+        var results = ProbeService.RunProbesForDirectory(_tempDir, srcDir);
+
+        results.Count.ShouldBe(3);
+        results[0].Type.ShouldBe("node");
+        results[1].Type.ShouldBe("react");
+        results[2].Type.ShouldBe("typescript");
+
+        var nodeData = results[0].Data.ShouldBeOfType<NodeData>();
+
+        nodeData.DependencyCount.ShouldBe(2);
+        nodeData.DevDependencyCount.ShouldBe(2);
+    }
+
+    [Fact]
     public void RunProbesForDirectory_NonexistentDir_ReturnsEmpty()
     {
         var results = ProbeService.RunProbesForDirectory

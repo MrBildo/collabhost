@@ -138,6 +138,28 @@ public class TypeScriptExtractorTests : IDisposable
     }
 
     [Fact]
+    public void Extract_FallsBackToArtifactDir_WhenProjectRootExistsButLacksTsConfig()
+    {
+        var projectRoot = Path.Combine(_tempDir, "src");
+        var artifactDir = _tempDir;
+
+        Directory.CreateDirectory(projectRoot);
+
+        File.WriteAllText
+        (
+            Path.Combine(artifactDir, "tsconfig.json"),
+            """{"compilerOptions":{"strict":true,"target":"ES2022"}}"""
+        );
+
+        var result = TypeScriptExtractor.Extract(null, projectRoot, artifactDir);
+
+        result.ShouldNotBeNull();
+        result.TsConfig.ShouldNotBeNull();
+        result.TsConfig.Strict.ShouldBe(true);
+        result.TsConfig.Target.ShouldBe("ES2022");
+    }
+
+    [Fact]
     public void Extract_ProjectRoot_TakesPriority()
     {
         var projectRoot = Path.Combine(_tempDir, "source");

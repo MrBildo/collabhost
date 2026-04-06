@@ -4,16 +4,10 @@ public static class TypeScriptExtractor
 {
     public static RawTypeScriptData? Extract(RawPackageJson? packageJson, string? projectRoot, string artifactDirectory)
     {
-        var searchDirectory = ResolveSearchDirectory(projectRoot, artifactDirectory);
+        // Reuse NodeExtractor's fallback search -- try projectRoot first, then artifactDirectory
+        var tsconfigPath = NodeExtractor.FindFile("tsconfig.json", projectRoot, artifactDirectory);
 
-        if (searchDirectory is null)
-        {
-            return null;
-        }
-
-        var tsconfigPath = Path.Combine(searchDirectory, "tsconfig.json");
-
-        if (!File.Exists(tsconfigPath))
+        if (tsconfigPath is null)
         {
             return null;
         }
@@ -25,10 +19,6 @@ public static class TypeScriptExtractor
 
         return new RawTypeScriptData(version, tsConfig);
     }
-
-    private static string? ResolveSearchDirectory(string? projectRoot, string artifactDirectory) => !string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot)
-            ? projectRoot
-            : Directory.Exists(artifactDirectory) ? artifactDirectory : null;
 
     private static RawTsConfig? ParseTsConfig(string filePath)
     {

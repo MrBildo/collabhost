@@ -143,6 +143,27 @@ public class NodeExtractorTests : IDisposable
     }
 
     [Fact]
+    public void Extract_FallsBackToArtifactDir_WhenProjectRootExistsButLacksPackageJson()
+    {
+        var projectRoot = Path.Combine(_tempDir, "src");
+        var artifactDir = _tempDir;
+
+        Directory.CreateDirectory(projectRoot);
+
+        File.WriteAllText
+        (
+            Path.Combine(artifactDir, "package.json"),
+            """{"name":"from-artifact","dependencies":{"react":"19.0.0"}}"""
+        );
+
+        var result = NodeExtractor.Extract(projectRoot, artifactDir);
+
+        result.ShouldNotBeNull();
+        result.PackageJson.ShouldNotBeNull();
+        result.PackageJson.Name.ShouldBe("from-artifact");
+    }
+
+    [Fact]
     public void Extract_MalformedJson_ReturnsNull()
     {
         File.WriteAllText(Path.Combine(_tempDir, "package.json"), "not valid {");

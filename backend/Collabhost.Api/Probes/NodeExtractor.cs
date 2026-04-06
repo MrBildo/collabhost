@@ -4,16 +4,11 @@ public static class NodeExtractor
 {
     public static RawNodeData? Extract(string? projectRoot, string artifactDirectory)
     {
-        var searchDirectory = ResolveSearchDirectory(projectRoot, artifactDirectory);
+        // Try projectRoot first, then fall back to artifactDirectory.
+        // projectRoot may be a subdirectory (e.g. src/) that exists but lacks package.json.
+        var packageJsonPath = FindFile("package.json", projectRoot, artifactDirectory);
 
-        if (searchDirectory is null)
-        {
-            return null;
-        }
-
-        var packageJsonPath = Path.Combine(searchDirectory, "package.json");
-
-        if (!File.Exists(packageJsonPath))
+        if (packageJsonPath is null)
         {
             return null;
         }
@@ -25,16 +20,36 @@ public static class NodeExtractor
             return null;
         }
 
+        var searchDirectory = Path.GetDirectoryName(packageJsonPath)!;
         var lockfile = DetectLockfile(searchDirectory);
 
         return new RawNodeData(packageJson, lockfile);
     }
 
-    private static string? ResolveSearchDirectory(string? projectRoot, string artifactDirectory) =>
-        // Project root takes priority when set and exists
-        !string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot)
-            ? projectRoot
-            : Directory.Exists(artifactDirectory) ? artifactDirectory : null;
+    internal static string? FindFile(string fileName, string? projectRoot, string artifactDirectory)
+    {
+        if (!string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot))
+        {
+            var candidate = Path.Combine(projectRoot, fileName);
+
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        if (Directory.Exists(artifactDirectory))
+        {
+            var candidate = Path.Combine(artifactDirectory, fileName);
+
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
 
     private static RawPackageJson? ParsePackageJson(string filePath)
     {

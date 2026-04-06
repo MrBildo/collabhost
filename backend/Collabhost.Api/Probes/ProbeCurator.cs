@@ -221,12 +221,12 @@ public static class ProbeCurator
         }
 
         var allDeps = MergeAllDependencies(packageJson);
-        var searchDirectory = ResolveSearchDirectory(projectRoot, artifactDirectory);
+        var searchDirectories = ResolveSearchDirectories(projectRoot, artifactDirectory);
 
         var (bundler, bundlerVersion) = DetectBundler(allDeps);
         var router = DetectRouter(allDeps);
         var stateManagement = DetectStateManagement(allDeps);
-        var cssStrategy = DetectCssStrategy(allDeps, searchDirectory);
+        var cssStrategy = DetectCssStrategy(allDeps, searchDirectories);
 
         results.Add
         (
@@ -334,7 +334,7 @@ public static class ProbeCurator
     private static string? DetectCssStrategy
     (
         Dictionary<string, string> allDeps,
-        string? searchDirectory
+        List<string> searchDirectories
     )
     {
         // Check for Tailwind via dependency or config file
@@ -343,7 +343,7 @@ public static class ProbeCurator
             return "tailwind";
         }
 
-        if (searchDirectory is not null && HasConfigFile(searchDirectory, "tailwind.config.*"))
+        if (HasConfigFileInAny(searchDirectories, "tailwind.config.*"))
         {
             return "tailwind";
         }
@@ -364,13 +364,28 @@ public static class ProbeCurator
         }
 
         // CSS modules are detected by config file presence, not a dependency
-        return searchDirectory is not null && HasConfigFile(searchDirectory, "postcss.config.*") ? "postcss" : null;
+        return HasConfigFileInAny(searchDirectories, "postcss.config.*") ? "postcss" : null;
     }
 
-    private static string? ResolveSearchDirectory(string? projectRoot, string artifactDirectory) =>
-        !string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot)
-            ? projectRoot
-            : Directory.Exists(artifactDirectory) ? artifactDirectory : null;
+    private static List<string> ResolveSearchDirectories(string? projectRoot, string artifactDirectory)
+    {
+        var directories = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot))
+        {
+            directories.Add(projectRoot);
+        }
+
+        if (Directory.Exists(artifactDirectory))
+        {
+            directories.Add(artifactDirectory);
+        }
+
+        return directories;
+    }
+
+    private static bool HasConfigFileInAny(List<string> directories, string pattern) =>
+        directories.Exists(directory => HasConfigFile(directory, pattern));
 
     private static bool HasConfigFile(string directory, string pattern)
     {
