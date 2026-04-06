@@ -218,9 +218,10 @@ public class ProbeServiceTests : IDisposable
     }
 
     [Fact]
-    public void RunProbesForDirectory_BareNodeApp_SuppressesEmptyPanel()
+    public void RunProbesForDirectory_NamedNodeApp_ShowsPanel()
     {
-        // A bare Node.js app with nothing meaningful should produce no results
+        // A real Node.js app with a name should show the Node panel even with
+        // sparse data. This matches the typical test/demo app scenario.
         File.WriteAllText
         (
             Path.Combine(_tempDir, "package.json"),
@@ -231,6 +232,28 @@ public class ProbeServiceTests : IDisposable
         (
             Path.Combine(_tempDir, "server.js"),
             """console.log("hello")"""
+        );
+
+        var results = ProbeService.RunProbesForDirectory(_tempDir, null);
+
+        results.Count.ShouldBe(1);
+        results[0].Type.ShouldBe("node");
+
+        var data = results[0].Data.ShouldBeOfType<NodeData>();
+
+        data.ModuleSystem.ShouldBe("commonjs");
+        data.DependencyCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void RunProbesForDirectory_AnonymousPackageJson_SuppressesEmptyPanel()
+    {
+        // A package.json with no name and no version is likely incidental
+        // (e.g., alongside a non-Node project). It should be suppressed.
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "package.json"),
+            """{}"""
         );
 
         var results = ProbeService.RunProbesForDirectory(_tempDir, null);

@@ -172,15 +172,18 @@ public static class ProbeCurator
             _ => "commonjs"
         };
 
-        // Suppress the Node.js panel when it has nothing meaningful to report.
-        // A bare app with no engine version, no package manager, no dependencies,
-        // and default module system provides zero value to the operator.
+        // Suppress the Node.js panel only for truly anonymous package.json files --
+        // no name, no version, and nothing else meaningful. These are typically
+        // incidental files found alongside non-Node projects.
+        // If the package has a name or version, it's a real project and should
+        // always show the panel, even if the data is sparse.
+        var hasIdentity = packageJson.Name is not null || packageJson.Version is not null;
         var hasEngineVersion = packageJson.EngineNode is not null;
         var hasPackageManager = packageManager is not null;
         var hasDependencies = packageJson.Dependencies.Count > 0 || packageJson.DevDependencies.Count > 0;
         var hasNonDefaultModuleSystem = string.Equals(moduleSystem, "esm", StringComparison.Ordinal);
 
-        if (!hasEngineVersion && !hasPackageManager && !hasDependencies && !hasNonDefaultModuleSystem)
+        if (!hasIdentity && !hasEngineVersion && !hasPackageManager && !hasDependencies && !hasNonDefaultModuleSystem)
         {
             return;
         }

@@ -134,15 +134,16 @@ public class ProbeCuratorTests
     }
 
     [Fact]
-    public void Curate_BareNodeApp_SuppressedWhenNothingMeaningful()
+    public void Curate_AnonymousNodePackageJson_SuppressedWhenNothingMeaningful()
     {
-        // A bare app with no engine version, no package manager, no deps,
-        // and default (commonjs) module system should be suppressed
+        // A truly anonymous package.json (no name, no version) with no engine,
+        // no package manager, no deps, and default module system should be suppressed.
+        // This covers incidental package.json files found alongside non-Node projects.
         var node = new RawNodeData
         (
             new RawPackageJson
             (
-                "test", null, null, null, null,
+                null, null, null, null, null,
                 [],
                 []
             ),
@@ -152,6 +153,56 @@ public class ProbeCuratorTests
         var results = ProbeCurator.Curate(null, node, null, null, "/fake/dir");
 
         results.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Curate_NamedNodeAppWithNoExtras_NotSuppressed()
+    {
+        // A real Node.js project with a name but no engine, no package manager,
+        // no dependencies, and default module system should still show the panel.
+        // The operator registered this as a Node app -- sparse data is still useful.
+        var node = new RawNodeData
+        (
+            new RawPackageJson
+            (
+                "my-server", null, null, null, null,
+                [],
+                []
+            ),
+            null
+        );
+
+        var results = ProbeCurator.Curate(null, node, null, null, "/fake/dir");
+
+        results.Count.ShouldBe(1);
+        results[0].Type.ShouldBe("node");
+
+        var data = results[0].Data.ShouldBeOfType<NodeData>();
+
+        data.ModuleSystem.ShouldBe("commonjs");
+        data.DependencyCount.ShouldBe(0);
+        data.DevDependencyCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Curate_VersionOnlyNodeApp_NotSuppressed()
+    {
+        // A package.json with only a version (no name) should still show the panel
+        var node = new RawNodeData
+        (
+            new RawPackageJson
+            (
+                null, "1.0.0", null, null, null,
+                [],
+                []
+            ),
+            null
+        );
+
+        var results = ProbeCurator.Curate(null, node, null, null, "/fake/dir");
+
+        results.Count.ShouldBe(1);
+        results[0].Type.ShouldBe("node");
     }
 
     [Fact]
