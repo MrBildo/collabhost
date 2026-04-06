@@ -16,6 +16,7 @@ import { formatDateTime, formatHealthStatus, formatMemory, formatUptime } from '
 import { ROUTES } from '@/lib/routes'
 import type { LogStream } from '@/log/LogViewer'
 import { LogViewer } from '@/log/LogViewer'
+import { ProbeSection } from '@/probes/ProbeSection'
 import { DetailCard } from '@/shared/DetailCard'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { SectionDivider } from '@/shared/SectionDivider'
@@ -119,20 +120,6 @@ function AppDetailPage() {
       value: <TypeBadge label={app.appType.name} />,
     },
     { key: 'registered', label: 'Registered', value: formatDateTime(app.registeredAt) },
-    {
-      key: 'tags',
-      label: 'Tags',
-      value:
-        app.tags.length > 0 ? (
-          <span className="flex items-center gap-1.5">
-            {app.tags.map((tag) => (
-              <TypeBadge key={tag.label} label={tag.label} />
-            ))}
-          </span>
-        ) : (
-          '--'
-        ),
-    },
   ]
 
   const routeRows = app.route
@@ -277,6 +264,9 @@ function AppDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Technology probes */}
+      <ProbeSection probes={app.probes} />
 
       {/* Logs */}
       <SectionDivider label="Logs" className="mb-2" />
