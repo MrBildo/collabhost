@@ -5,6 +5,7 @@ using Collabhost.Api.Data;
 using Collabhost.Api.Events;
 using Collabhost.Api.Filesystem;
 using Collabhost.Api.Platform;
+using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
@@ -34,6 +35,7 @@ builder.Services.AddCapabilities();
 builder.Services.AddEventBus();
 builder.Services.AddSupervisor();
 builder.Services.AddProxy(builder.Configuration);
+builder.Services.AddProbes();
 
 // OpenAPI
 builder.Services.AddOpenApi();

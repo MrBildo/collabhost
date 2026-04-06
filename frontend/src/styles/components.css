@@ -453,6 +453,39 @@
   background: var(--wm-border);
 }
 
+/* === Tab Bar === */
+
+.wm-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--wm-border);
+}
+
+.wm-tab {
+  font-family: var(--wm-mono);
+  font-size: var(--wm-font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 16px;
+  color: var(--wm-text-dim);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.wm-tab:hover {
+  color: var(--wm-text);
+}
+
+.wm-tab--active {
+  color: var(--wm-amber);
+  border-bottom-color: var(--wm-amber);
+}
+
 /* === Section Title (amber) === */
 
 .wm-section-title {
@@ -1280,4 +1313,83 @@ dialog.wm-dialog-overlay::backdrop {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* === Probe Panels === */
+
+.wm-probe-panel {
+  background: var(--wm-bg-panel);
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-md);
+  overflow: hidden;
+}
+
+.wm-probe-panel__title {
+  font-size: var(--wm-font-xs);
+  font-weight: 600;
+  color: var(--wm-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--wm-border);
+}
+
+.wm-probe-panel__body {
+  padding: 4px 12px;
+}
+
+.wm-probe-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--wm-border-subtle);
+  font-size: var(--wm-font-xs);
+  gap: 12px;
+}
+
+.wm-probe-row:last-child {
+  border-bottom: none;
+}
+
+.wm-probe-row__label {
+  color: var(--wm-text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.wm-probe-row__value {
+  color: var(--wm-text-bright);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.wm-probe-badge {
+  font-family: var(--wm-mono);
+  font-size: var(--wm-font-2xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--wm-radius-sm);
+  border: 1px solid;
+  display: inline-block;
+}
+
+.wm-probe-version {
+  font-family: var(--wm-mono);
+  color: var(--wm-amber);
+  font-size: var(--wm-font-xs);
+}
+
+.wm-probe-dep {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: var(--wm-font-2xs);
+  padding: 1px 5px;
+  background: var(--wm-bg-inset);
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-sm);
 }

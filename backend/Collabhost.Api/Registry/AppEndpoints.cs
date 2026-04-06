@@ -2,6 +2,7 @@ using System.Globalization;
 
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
+using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Shared;
 using Collabhost.Api.Supervisor;
@@ -121,6 +122,7 @@ public static class AppEndpoints
         AppStore store,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
+        ProbeService probeService,
         CancellationToken ct
     )
     {
@@ -217,8 +219,8 @@ public static class AppEndpoints
             autoStartValue = autoStartConfiguration.Enabled;
         }
 
-        // Tags from metadata
-        var tags = BuildTags(app.AppType);
+        // Probes -- cached probe results from in-memory cache
+        var probes = probeService.GetCachedProbes(app.Id);
 
         // Route info
         AppRoute? route = null;
@@ -258,7 +260,7 @@ public static class AppEndpoints
             domain,
             routeEnabled,
             null,
-            tags,
+            probes,
             null,
             route,
             actions
@@ -304,6 +306,7 @@ public static class AppEndpoints
         string slug,
         UpdateSettingsRequest request,
         AppStore store,
+        ProbeService probeService,
         CancellationToken ct
     )
     {
@@ -401,6 +404,14 @@ public static class AppEndpoints
         store.Invalidate(slug);
         store.InvalidateOverrides(app.Id);
 
+        // Re-probe when artifact config changes (location or project root)
+        if (request.Changes.ContainsKey("artifact"))
+        {
+            probeService.InvalidateProbeCache(app.Id);
+
+            await probeService.RunProbesAsync(app.Id, ct);
+        }
+
         var freshApp = await store.GetBySlugAsync(slug, ct);
         var freshBindings = await store.GetBindingsAsync(app.AppTypeId, ct);
         var freshOverrides = await store.GetOverridesAsync(app.Id, ct);
@@ -426,6 +437,7 @@ public static class AppEndpoints
         AppStore store,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
+        ProbeService probeService,
         CancellationToken ct
     )
     {
@@ -445,6 +457,8 @@ public static class AppEndpoints
             proxy.EnableRoute(app.Slug);
             proxy.RequestSync();
 
+            await probeService.RunProbesAsync(app.Id, ct);
+
             var status = ProcessState.Running;
             var actions = BuildActions(hasProcess, hasRouting, status);
 
@@ -457,6 +471,9 @@ public static class AppEndpoints
         try
         {
             var managed = await supervisor.StartAppAsync(app.Id, ct);
+
+            await probeService.RunProbesAsync(app.Id, ct);
+
             var actions = BuildActions(hasProcess, hasRouting, managed.State);
 
             return TypedResults.Ok
@@ -874,53 +891,6 @@ public static class AppEndpoints
             hasProcess && status is ProcessState.Running or ProcessState.Starting or ProcessState.Restarting,
             false
         );
-
-    private static List<AppTag> BuildTags(AppType appType)
-    {
-        var tags = new List<AppTag>();
-
-        if (appType.MetadataJson is null)
-        {
-            return tags;
-        }
-
-        try
-        {
-            var metadata = JsonSerializer.Deserialize<AppTypeMetadata>
-            (
-                appType.MetadataJson, _jsonOptions
-            );
-
-            if (metadata?.Runtime is not null)
-            {
-                var label = !string.IsNullOrWhiteSpace(metadata.Runtime.Version)
-                    ? $"{metadata.Runtime.Name} {metadata.Runtime.Version}"
-                    : metadata.Runtime.Name;
-
-                tags.Add(new AppTag(label, "runtime"));
-
-                if (!string.IsNullOrWhiteSpace(metadata.Runtime.PackageManager))
-                {
-                    tags.Add(new AppTag(metadata.Runtime.PackageManager, "tooling"));
-                }
-            }
-
-            if (metadata?.Framework is not null)
-            {
-                var label = !string.IsNullOrWhiteSpace(metadata.Framework.Version)
-                    ? $"{metadata.Framework.Name} {metadata.Framework.Version}"
-                    : metadata.Framework.Name;
-
-                tags.Add(new AppTag(label, "framework"));
-            }
-        }
-        catch (JsonException)
-        {
-            // Malformed metadata -- skip tags
-        }
-
-        return tags;
-    }
 
     private static List<SettingsSection> BuildSettingsSections
     (

@@ -15,6 +15,60 @@ type AppTag = {
   group: 'runtime' | 'framework' | 'tooling'
 }
 
+// --- Probes ---
+
+type DotnetRuntimeProbe = {
+  tfm: string
+  runtimeVersion: string
+  isAspNetCore: boolean
+  isSelfContained: boolean
+  serverGc: boolean
+}
+
+type NotableDependency = {
+  name: string
+  version: string | null
+}
+
+type DotnetDependenciesProbe = {
+  packageCount: number
+  projectReferenceCount: number
+  notable: NotableDependency[]
+}
+
+type NodeProbe = {
+  engineVersion: string | null
+  packageManager: string | null
+  packageManagerVersion: string | null
+  moduleSystem: 'esm' | 'commonjs' | null
+  dependencyCount: number
+  devDependencyCount: number
+}
+
+type ReactProbe = {
+  version: string
+  bundler: string | null
+  bundlerVersion: string | null
+  router: string | null
+  stateManagement: string | null
+  cssStrategy: string | null
+}
+
+type TypeScriptProbe = {
+  version: string | null
+  strict: boolean
+  target: string | null
+  module: string | null
+}
+
+type ProbeEntry =
+  | { type: 'dotnet-runtime'; label: string; data: DotnetRuntimeProbe }
+  | { type: 'dotnet-dependencies'; label: string; data: DotnetDependenciesProbe }
+  | { type: 'node'; label: string; data: NodeProbe }
+  | { type: 'react'; label: string; data: ReactProbe }
+  | { type: 'typescript'; label: string; data: TypeScriptProbe }
+  | { type: string; label: string; data: Record<string, unknown> }
+
 type FieldType = 'text' | 'number' | 'boolean' | 'select' | 'directory' | 'keyValue' | 'keyvalue'
 
 type FieldEditable = { mode: 'always' } | { mode: 'locked'; reason: string } | { mode: 'derived'; reason: string }
@@ -67,7 +121,7 @@ type AppDetail = {
   domain: string | null
   domainActive: boolean
   healthStatus: HealthStatus | null
-  tags: AppTag[]
+  probes: ProbeEntry[]
   resources: AppResources | null
   route: AppRoute | null
   actions: AppActions
@@ -306,6 +360,13 @@ export type {
   AppStatus,
   HealthStatus,
   AppTag,
+  ProbeEntry,
+  DotnetRuntimeProbe,
+  DotnetDependenciesProbe,
+  NotableDependency,
+  NodeProbe,
+  ReactProbe,
+  TypeScriptProbe,
   FieldType,
   FieldEditable,
   FieldOption,

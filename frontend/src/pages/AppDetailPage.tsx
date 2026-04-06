@@ -11,14 +11,15 @@ import {
   useDetailStopApp,
 } from '@/hooks/use-app-detail'
 import { useLogStream } from '@/hooks/use-log-stream'
+import { cn } from '@/lib/cn'
 import { LOG_BUFFER_CAP } from '@/lib/constants'
 import { formatDateTime, formatHealthStatus, formatMemory, formatUptime } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import type { LogStream } from '@/log/LogViewer'
 import { LogViewer } from '@/log/LogViewer'
+import { ProbeSection } from '@/probes/ProbeSection'
 import { DetailCard } from '@/shared/DetailCard'
 import { ErrorBanner } from '@/shared/ErrorBanner'
-import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
 import { TypeBadge } from '@/shared/TypeBadge'
 import { StatsStrip } from '@/status/StatsStrip'
@@ -26,8 +27,11 @@ import { StatusText } from '@/status/StatusText'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+type DetailTab = 'logs' | 'technology'
+
 function AppDetailPage() {
   const { slug } = useParams<{ slug: string }>()
+  const [activeTab, setActiveTab] = useState<DetailTab>('logs')
   const [logStream, setLogStream] = useState<LogStream>('all')
 
   const detailQuery = useAppDetail(slug ?? '')
@@ -119,20 +123,6 @@ function AppDetailPage() {
       value: <TypeBadge label={app.appType.name} />,
     },
     { key: 'registered', label: 'Registered', value: formatDateTime(app.registeredAt) },
-    {
-      key: 'tags',
-      label: 'Tags',
-      value:
-        app.tags.length > 0 ? (
-          <span className="flex items-center gap-1.5">
-            {app.tags.map((tag) => (
-              <TypeBadge key={tag.label} label={tag.label} />
-            ))}
-          </span>
-        ) : (
-          '--'
-        ),
-    },
   ]
 
   const routeRows = app.route
@@ -278,15 +268,35 @@ function AppDetailPage() {
         )}
       </div>
 
-      {/* Logs */}
-      <SectionDivider label="Logs" className="mb-2" />
-      <LogViewer
-        entries={logEntries}
-        totalBuffered={totalBuffered}
-        stream={logStream}
-        onStreamChange={setLogStream}
-        className="flex-1"
-      />
+      {/* Tab bar */}
+      <div className="wm-tab-bar mb-3">
+        <button
+          type="button"
+          className={cn('wm-tab', activeTab === 'logs' && 'wm-tab--active')}
+          onClick={() => setActiveTab('logs')}
+        >
+          Logs
+        </button>
+        <button
+          type="button"
+          className={cn('wm-tab', activeTab === 'technology' && 'wm-tab--active')}
+          onClick={() => setActiveTab('technology')}
+        >
+          Technology
+        </button>
+      </div>
+
+      {/* Tab content */}
+      {activeTab === 'logs' && (
+        <LogViewer
+          entries={logEntries}
+          totalBuffered={totalBuffered}
+          stream={logStream}
+          onStreamChange={setLogStream}
+          className="flex-1"
+        />
+      )}
+      {activeTab === 'technology' && <ProbeSection probes={app.probes} />}
     </div>
   )
 }
