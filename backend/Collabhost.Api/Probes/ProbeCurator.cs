@@ -172,6 +172,19 @@ public static class ProbeCurator
             _ => "commonjs"
         };
 
+        // Suppress the Node.js panel when it has nothing meaningful to report.
+        // A bare app with no engine version, no package manager, no dependencies,
+        // and default module system provides zero value to the operator.
+        var hasEngineVersion = packageJson.EngineNode is not null;
+        var hasPackageManager = packageManager is not null;
+        var hasDependencies = packageJson.Dependencies.Count > 0 || packageJson.DevDependencies.Count > 0;
+        var hasNonDefaultModuleSystem = string.Equals(moduleSystem, "esm", StringComparison.Ordinal);
+
+        if (!hasEngineVersion && !hasPackageManager && !hasDependencies && !hasNonDefaultModuleSystem)
+        {
+            return;
+        }
+
         results.Add
         (
             new ProbeEntry
@@ -351,7 +364,8 @@ public static class ProbeCurator
         return searchDirectory is not null && HasConfigFile(searchDirectory, "postcss.config.*") ? "postcss" : null;
     }
 
-    private static string? ResolveSearchDirectory(string? projectRoot, string artifactDirectory) => !string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot)
+    private static string? ResolveSearchDirectory(string? projectRoot, string artifactDirectory) =>
+        !string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot)
             ? projectRoot
             : Directory.Exists(artifactDirectory) ? artifactDirectory : null;
 

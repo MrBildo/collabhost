@@ -182,4 +182,157 @@ public class DotnetExtractorTests : IDisposable
         result.RuntimeConfig.Frameworks[0].Name.ShouldBe("Microsoft.NETCore.App");
         result.RuntimeConfig.Frameworks[0].Version.ShouldBe("2.1.0");
     }
+
+    [Fact]
+    public void Extract_ProjectDirectory_FindsRuntimeConfigInBuildOutput()
+    {
+        // Simulate a .NET project directory with .csproj and build output
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "MyApp.csproj"),
+            """
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+
+        var buildDir = Path.Combine(_tempDir, "bin", "Debug", "net10.0");
+        Directory.CreateDirectory(buildDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(buildDir, "MyApp.runtimeconfig.json"),
+            """
+            {
+              "runtimeOptions": {
+                "tfm": "net10.0",
+                "frameworks": [
+                  { "name": "Microsoft.NETCore.App", "version": "10.0.0" },
+                  { "name": "Microsoft.AspNetCore.App", "version": "10.0.0" }
+                ]
+              }
+            }
+            """
+        );
+
+        var result = DotnetExtractor.Extract(_tempDir);
+
+        result.ShouldNotBeNull();
+        result.RuntimeConfig.ShouldNotBeNull();
+        result.RuntimeConfig.Tfm.ShouldBe("net10.0");
+        result.RuntimeConfig.Frameworks.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Extract_ProjectDirectory_FallsBackToCsprojTfm()
+    {
+        // Simulate a .NET project directory that has never been built
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "MyApp.csproj"),
+            """
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+
+        var result = DotnetExtractor.Extract(_tempDir);
+
+        result.ShouldNotBeNull();
+        result.RuntimeConfig.ShouldNotBeNull();
+        result.RuntimeConfig.Tfm.ShouldBe("net10.0");
+        result.RuntimeConfig.Frameworks.ShouldBeEmpty();
+        result.DepsJson.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Extract_ProjectDirectory_MultiTargeting_TakesFirstTfm()
+    {
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "MyLib.csproj"),
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>net10.0;net8.0;netstandard2.0</TargetFrameworks>
+              </PropertyGroup>
+            </Project>
+            """
+        );
+
+        var result = DotnetExtractor.Extract(_tempDir);
+
+        result.ShouldNotBeNull();
+        result.RuntimeConfig.ShouldNotBeNull();
+        result.RuntimeConfig.Tfm.ShouldBe("net10.0");
+    }
+
+    [Fact]
+    public void Extract_ProjectDirectory_BuildOutputDepsJson_Parsed()
+    {
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "MyApp.csproj"),
+            """<Project Sdk="Microsoft.NET.Sdk.Web"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>"""
+        );
+
+        var buildDir = Path.Combine(_tempDir, "bin", "Debug", "net10.0");
+        Directory.CreateDirectory(buildDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(buildDir, "MyApp.runtimeconfig.json"),
+            """{"runtimeOptions":{"tfm":"net10.0","frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0"}]}}"""
+        );
+
+        File.WriteAllText
+        (
+            Path.Combine(buildDir, "MyApp.deps.json"),
+            """
+            {
+              "runtimeTarget": { "name": ".NETCoreApp,Version=v10.0" },
+              "libraries": {
+                "Microsoft.EntityFrameworkCore/10.0.0": { "type": "package" }
+              }
+            }
+            """
+        );
+
+        var result = DotnetExtractor.Extract(_tempDir);
+
+        result.ShouldNotBeNull();
+        result.DepsJson.ShouldNotBeNull();
+        result.DepsJson.Libraries.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Extract_ProjectDirectory_PrefersReleaseBuild_WhenNoDebug()
+    {
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "MyApp.csproj"),
+            """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>"""
+        );
+
+        var releaseDir = Path.Combine(_tempDir, "bin", "Release", "net10.0");
+        Directory.CreateDirectory(releaseDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(releaseDir, "MyApp.runtimeconfig.json"),
+            """{"runtimeOptions":{"tfm":"net10.0","frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0"}]}}"""
+        );
+
+        var result = DotnetExtractor.Extract(_tempDir);
+
+        result.ShouldNotBeNull();
+        result.RuntimeConfig.ShouldNotBeNull();
+        result.RuntimeConfig.Tfm.ShouldBe("net10.0");
+    }
 }

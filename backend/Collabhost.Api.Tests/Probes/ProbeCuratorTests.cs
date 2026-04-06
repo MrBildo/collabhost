@@ -134,8 +134,10 @@ public class ProbeCuratorTests
     }
 
     [Fact]
-    public void Curate_CommonJsModuleSystem_WhenTypeAbsent()
+    public void Curate_BareNodeApp_SuppressedWhenNothingMeaningful()
     {
+        // A bare app with no engine version, no package manager, no deps,
+        // and default (commonjs) module system should be suppressed
         var node = new RawNodeData
         (
             new RawPackageJson
@@ -149,9 +151,70 @@ public class ProbeCuratorTests
 
         var results = ProbeCurator.Curate(null, node, null, null, "/fake/dir");
 
+        results.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Curate_NodeWithEsmModuleSystem_NotSuppressed()
+    {
+        var node = new RawNodeData
+        (
+            new RawPackageJson
+            (
+                "test", null, "module", null, null,
+                [],
+                []
+            ),
+            null
+        );
+
+        var results = ProbeCurator.Curate(null, node, null, null, "/fake/dir");
+
+        results.Count.ShouldBe(1);
+
         var data = results[0].Data.ShouldBeOfType<NodeData>();
 
-        data.ModuleSystem.ShouldBe("commonjs");
+        data.ModuleSystem.ShouldBe("esm");
+    }
+
+    [Fact]
+    public void Curate_NodeWithDependenciesOnly_NotSuppressed()
+    {
+        var node = new RawNodeData
+        (
+            new RawPackageJson
+            (
+                "test", null, null, null, null,
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["express"] = "4.18.0" },
+                []
+            ),
+            null
+        );
+
+        var results = ProbeCurator.Curate(null, node, null, null, "/fake/dir");
+
+        results.Count.ShouldBe(1);
+        results[0].Type.ShouldBe("node");
+    }
+
+    [Fact]
+    public void Curate_NodeWithPackageManagerOnly_NotSuppressed()
+    {
+        var node = new RawNodeData
+        (
+            new RawPackageJson
+            (
+                "test", null, null, null, null,
+                [],
+                []
+            ),
+            "npm"
+        );
+
+        var results = ProbeCurator.Curate(null, node, null, null, "/fake/dir");
+
+        results.Count.ShouldBe(1);
+        results[0].Type.ShouldBe("node");
     }
 
     [Fact]

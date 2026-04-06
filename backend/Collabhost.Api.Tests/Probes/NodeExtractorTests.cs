@@ -163,4 +163,91 @@ public class NodeExtractorTests : IDisposable
         result.PackageJson.ShouldNotBeNull();
         result.PackageJson.Type.ShouldBeNull();
     }
+
+    [Fact]
+    public void Extract_ParentFallback_FindsPackageJsonInParent()
+    {
+        // Simulate a static site: artifact dir is dist/, package.json is in parent
+        var distDir = Path.Combine(_tempDir, "dist");
+        Directory.CreateDirectory(distDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "package.json"),
+            """{"name":"react-app","dependencies":{"react":"^19.1.0"}}"""
+        );
+
+        var result = NodeExtractor.Extract(null, distDir);
+
+        result.ShouldNotBeNull();
+        result.PackageJson.ShouldNotBeNull();
+        result.PackageJson.Name.ShouldBe("react-app");
+    }
+
+    [Fact]
+    public void Extract_ParentFallback_ArtifactDirPrefersOwnPackageJson()
+    {
+        // When both the artifact dir and parent have package.json, use artifact dir's
+        var distDir = Path.Combine(_tempDir, "dist");
+        Directory.CreateDirectory(distDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "package.json"),
+            """{"name":"parent-app"}"""
+        );
+
+        File.WriteAllText
+        (
+            Path.Combine(distDir, "package.json"),
+            """{"name":"dist-app"}"""
+        );
+
+        var result = NodeExtractor.Extract(null, distDir);
+
+        result.ShouldNotBeNull();
+        result.PackageJson.ShouldNotBeNull();
+        result.PackageJson.Name.ShouldBe("dist-app");
+    }
+
+    [Fact]
+    public void Extract_ParentFallback_ProjectRootStillTakesPriority()
+    {
+        // Even with parent fallback available, explicit projectRoot wins
+        var projectRoot = Path.Combine(_tempDir, "source");
+        var distDir = Path.Combine(_tempDir, "dist");
+
+        Directory.CreateDirectory(projectRoot);
+        Directory.CreateDirectory(distDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(projectRoot, "package.json"),
+            """{"name":"from-project-root"}"""
+        );
+
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "package.json"),
+            """{"name":"from-parent"}"""
+        );
+
+        var result = NodeExtractor.Extract(projectRoot, distDir);
+
+        result.ShouldNotBeNull();
+        result.PackageJson.ShouldNotBeNull();
+        result.PackageJson.Name.ShouldBe("from-project-root");
+    }
+
+    [Fact]
+    public void Extract_ParentFallback_NoPackageJsonAnywhere_ReturnsNull()
+    {
+        // No package.json in artifact dir or parent -- returns null
+        var distDir = Path.Combine(_tempDir, "dist");
+        Directory.CreateDirectory(distDir);
+
+        var result = NodeExtractor.Extract(null, distDir);
+
+        result.ShouldBeNull();
+    }
 }

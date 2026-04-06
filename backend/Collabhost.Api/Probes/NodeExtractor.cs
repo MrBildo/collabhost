@@ -30,11 +30,34 @@ public static class NodeExtractor
         return new RawNodeData(packageJson, lockfile);
     }
 
-    private static string? ResolveSearchDirectory(string? projectRoot, string artifactDirectory) =>
+    private static string? ResolveSearchDirectory(string? projectRoot, string artifactDirectory)
+    {
         // Project root takes priority when set and exists
-        !string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot)
-            ? projectRoot
-            : Directory.Exists(artifactDirectory) ? artifactDirectory : null;
+        if (!string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot))
+        {
+            return projectRoot;
+        }
+
+        if (!Directory.Exists(artifactDirectory))
+        {
+            return null;
+        }
+
+        // Check the artifact directory first
+        if (File.Exists(Path.Combine(artifactDirectory, "package.json")))
+        {
+            return artifactDirectory;
+        }
+
+        // Fallback: check the parent directory (one level up only).
+        // This handles static sites where the artifact dir is a build output (e.g., dist/)
+        // and the package.json lives in the project root above it.
+        var parent = Directory.GetParent(artifactDirectory)?.FullName;
+
+        return parent is not null && File.Exists(Path.Combine(parent, "package.json"))
+            ? parent
+            : artifactDirectory;
+    }
 
     private static RawPackageJson? ParsePackageJson(string filePath)
     {

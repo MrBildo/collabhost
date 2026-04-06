@@ -1,3 +1,5 @@
+using System.Xml.Linq;
+
 namespace Collabhost.Api.Probes;
 
 public static class DotnetExtractor
@@ -11,15 +13,44 @@ public static class DotnetExtractor
 
         var runtimeConfigFile = FindRuntimeConfig(artifactDirectory);
 
-        if (runtimeConfigFile is null)
+        if (runtimeConfigFile is not null)
+        {
+            var runtimeConfig = ParseRuntimeConfig(runtimeConfigFile);
+            var depsJson = ParseDepsJson(Path.GetDirectoryName(runtimeConfigFile)!);
+
+            return new RawDotnetData(runtimeConfig, depsJson);
+        }
+
+        // No runtimeconfig.json in root -- check if this is a .NET project directory
+        var csprojFile = FindCsproj(artifactDirectory);
+
+        if (csprojFile is null)
         {
             return null;
         }
 
-        var runtimeConfig = ParseRuntimeConfig(runtimeConfigFile);
-        var depsJson = ParseDepsJson(artifactDirectory);
+        // Search build output directories for runtimeconfig.json
+        var buildOutputConfig = FindRuntimeConfigInBuildOutput(artifactDirectory);
 
-        return new RawDotnetData(runtimeConfig, depsJson);
+        if (buildOutputConfig is not null)
+        {
+            var runtimeConfig = ParseRuntimeConfig(buildOutputConfig);
+            var depsJson = ParseDepsJson(Path.GetDirectoryName(buildOutputConfig)!);
+
+            return new RawDotnetData(runtimeConfig, depsJson);
+        }
+
+        // Fallback: parse the .csproj for TargetFramework to produce minimal runtime data
+        var tfmFromProject = ParseTargetFrameworkFromCsproj(csprojFile);
+
+        if (tfmFromProject is not null)
+        {
+            var minimalConfig = new RawRuntimeConfig(tfmFromProject, [], [], []);
+
+            return new RawDotnetData(minimalConfig, null);
+        }
+
+        return null;
     }
 
     private static string? FindRuntimeConfig(string directory)
@@ -31,6 +62,98 @@ public static class DotnetExtractor
             return files.Length > 0 ? files[0] : null;
         }
         catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    private static string? FindCsproj(string directory)
+    {
+        try
+        {
+            var files = Directory.GetFiles(directory, "*.csproj");
+
+            return files.Length > 0 ? files[0] : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    private static string? FindRuntimeConfigInBuildOutput(string projectDirectory)
+    {
+        // Check bin/Debug/*/ and bin/Release/*/ for runtimeconfig.json
+        var binDir = Path.Combine(projectDirectory, "bin");
+
+        if (!Directory.Exists(binDir))
+        {
+            return null;
+        }
+
+        try
+        {
+            foreach (var configuration in new[] { "Debug", "Release" })
+            {
+                var configDir = Path.Combine(binDir, configuration);
+
+                if (!Directory.Exists(configDir))
+                {
+                    continue;
+                }
+
+                // Each TFM gets its own subdirectory (e.g., net10.0/)
+                foreach (var tfmDir in Directory.GetDirectories(configDir))
+                {
+                    var result = FindRuntimeConfig(tfmDir);
+
+                    if (result is not null)
+                    {
+                        return result;
+                    }
+                }
+            }
+        }
+        catch (IOException)
+        {
+            // Ignore filesystem errors during search
+        }
+
+        return null;
+    }
+
+    private static string? ParseTargetFrameworkFromCsproj(string csprojPath)
+    {
+        try
+        {
+            var xml = File.ReadAllText(csprojPath);
+            var doc = XDocument.Parse(xml);
+
+            // Look for <TargetFramework> element (single TFM)
+            var tfm = doc.Descendants("TargetFramework")
+                .FirstOrDefault()
+                    ?.Value;
+
+            if (!string.IsNullOrWhiteSpace(tfm))
+            {
+                return tfm.Trim();
+            }
+
+            // Look for <TargetFrameworks> (multi-targeting) -- take the first one
+            var tfms = doc.Descendants("TargetFrameworks")
+                .FirstOrDefault()
+                    ?.Value;
+
+            if (!string.IsNullOrWhiteSpace(tfms))
+            {
+                var first = tfms.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                return first.Length > 0 ? first[0] : null;
+            }
+
+            return null;
+        }
+        catch
         {
             return null;
         }
