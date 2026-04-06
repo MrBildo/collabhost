@@ -218,45 +218,6 @@ public class ProbeServiceTests : IDisposable
     }
 
     [Fact]
-    public void RunProbesForDirectory_StaticSiteDistDir_FindsPackageJsonInParent()
-    {
-        // Simulate a React static site: artifact dir is dist/, package.json is in parent
-        var distDir = Path.Combine(_tempDir, "dist");
-        Directory.CreateDirectory(distDir);
-
-        File.WriteAllText
-        (
-            Path.Combine(_tempDir, "package.json"),
-            """
-            {
-              "name": "react-site",
-              "type": "module",
-              "dependencies": { "react": "^19.1.0", "react-dom": "^19.1.0" },
-              "devDependencies": { "typescript": "5.8.3", "vite": "6.4.1" }
-            }
-            """
-        );
-
-        File.WriteAllText
-        (
-            Path.Combine(_tempDir, "tsconfig.json"),
-            """{"compilerOptions":{"strict":true,"target":"ES2022","module":"ESNext"}}"""
-        );
-
-        // No projectRoot set -- should auto-detect via parent fallback
-        var results = ProbeService.RunProbesForDirectory(distDir, null);
-
-        results.Count.ShouldBe(3);
-        results[0].Type.ShouldBe("node");
-        results[1].Type.ShouldBe("react");
-        results[2].Type.ShouldBe("typescript");
-
-        var nodeData = results[0].Data.ShouldBeOfType<NodeData>();
-
-        nodeData.DependencyCount.ShouldBe(2);
-    }
-
-    [Fact]
     public void RunProbesForDirectory_BareNodeApp_SuppressesEmptyPanel()
     {
         // A bare Node.js app with nothing meaningful should produce no results

@@ -26,34 +26,9 @@ public static class TypeScriptExtractor
         return new RawTypeScriptData(version, tsConfig);
     }
 
-    private static string? ResolveSearchDirectory(string? projectRoot, string artifactDirectory)
-    {
-        // Project root takes priority when set and exists
-        if (!string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot))
-        {
-            return projectRoot;
-        }
-
-        if (!Directory.Exists(artifactDirectory))
-        {
-            return null;
-        }
-
-        // Check the artifact directory first
-        if (File.Exists(Path.Combine(artifactDirectory, "tsconfig.json")))
-        {
-            return artifactDirectory;
-        }
-
-        // Fallback: check the parent directory (one level up only).
-        // This handles static sites where the artifact dir is a build output (e.g., dist/)
-        // and the tsconfig.json lives in the project root above it.
-        var parent = Directory.GetParent(artifactDirectory)?.FullName;
-
-        return parent is not null && File.Exists(Path.Combine(parent, "tsconfig.json"))
-            ? parent
-            : artifactDirectory;
-    }
+    private static string? ResolveSearchDirectory(string? projectRoot, string artifactDirectory) => !string.IsNullOrWhiteSpace(projectRoot) && Directory.Exists(projectRoot)
+            ? projectRoot
+            : Directory.Exists(artifactDirectory) ? artifactDirectory : null;
 
     private static RawTsConfig? ParseTsConfig(string filePath)
     {
