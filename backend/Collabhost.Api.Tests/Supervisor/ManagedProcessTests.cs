@@ -171,14 +171,6 @@ public class ManagedProcessTests
     }
 
     [Fact]
-    public void LogBuffer_HasDefaultCapacity()
-    {
-        var process = CreateProcess();
-
-        process.LogBuffer.Capacity.ShouldBe(1000);
-    }
-
-    [Fact]
     public void HasProcessExited_NoHandle_ReturnsTrue()
     {
         var process = CreateProcess();

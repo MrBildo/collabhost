@@ -88,11 +88,7 @@ public static class AppEndpoints
 
             var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-            // For routing-only apps, use explicit check so newly registered static sites start as Stopped
-            var routeExplicitlyEnabled = routingConfiguration is not null
-                && proxy.IsRouteExplicitlyEnabled(app.Slug);
-
-            var status = ResolveStatus(hasProcess, process, hasRouting, routeExplicitlyEnabled);
+            var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
             items.Add
             (
@@ -174,11 +170,7 @@ public static class AppEndpoints
 
         var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-        // For routing-only apps, use explicit check so newly registered static sites start as Stopped
-        var routeExplicitlyEnabled = routingConfiguration is not null
-            && proxy.IsRouteExplicitlyEnabled(app.Slug);
-
-        var status = ResolveStatus(hasProcess, process, hasRouting, routeExplicitlyEnabled);
+        var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
         // Restart policy + auto-start
         string? restartPolicyValue = null;
@@ -616,15 +608,9 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var process = supervisor.GetProcess(app.Id);
-
-        if (process is null)
-        {
-            return TypedResults.Ok(new LogsResponse([], 0));
-        }
-
+        var buffer = supervisor.GetOrCreateLogBuffer(app.Id);
         var lineCount = lines ?? 200;
-        var allEntries = process.LogBuffer.GetLast(lineCount);
+        var allEntries = buffer.GetLastWithIds(lineCount);
 
         LogStream? filterStream = stream?.ToLowerInvariant() switch
         {
@@ -634,7 +620,7 @@ public static class AppEndpoints
         };
 
         var filtered = filterStream.HasValue
-            ? allEntries.Where(e => e.Stream == filterStream.Value)
+            ? allEntries.Where(e => e.Item.Stream == filterStream.Value)
             : allEntries;
 
         var entries = filtered
@@ -642,21 +628,23 @@ public static class AppEndpoints
                 (
                     e => new LogEntryResponse
                     (
-                        e.Timestamp.ToString("o", CultureInfo.InvariantCulture),
-                        e.Stream == LogStream.StdOut ? "stdout" : "stderr",
-                        e.Content,
-                        e.Level
+                        e.Id,
+                        e.Item.Timestamp.ToString("o", CultureInfo.InvariantCulture),
+                        e.Item.Stream == LogStream.StdOut ? "stdout" : "stderr",
+                        e.Item.Content,
+                        e.Item.Level
                     )
                 )
                     .ToList();
 
-        return TypedResults.Ok(new LogsResponse(entries, process.LogBuffer.Count));
+        return TypedResults.Ok(new LogsResponse(entries, buffer.Count));
     }
 
     private static async Task<IResult> CreateAppAsync
     (
         CreateAppRequest request,
         AppStore store,
+        ProxyManager proxy,
         CancellationToken ct
     )
     {
@@ -702,8 +690,24 @@ public static class AppEndpoints
         // Apply registration values as capability overrides
         if (request.Values is not null)
         {
+            // Collect process overrides from both the "process" section and the "discovery" virtual section
+            JsonObject? processOverrides = null;
+
             foreach (var (sectionKey, sectionValues) in request.Values)
             {
+                // The "discovery" section is a registration-only concept that maps to the "process" capability
+                if (string.Equals(sectionKey, "discovery", StringComparison.Ordinal))
+                {
+                    processOverrides ??= [];
+
+                    foreach (var (fieldKey, fieldValue) in sectionValues)
+                    {
+                        processOverrides[fieldKey] = JsonNode.Parse(fieldValue.GetRawText());
+                    }
+
+                    continue;
+                }
+
                 var overrideObject = new JsonObject();
 
                 foreach (var (fieldKey, fieldValue) in sectionValues)
@@ -725,6 +729,19 @@ public static class AppEndpoints
                     );
                 }
 
+                // If this is the process section, merge with any discovery overrides
+                if (string.Equals(sectionKey, "process", StringComparison.Ordinal))
+                {
+                    processOverrides ??= [];
+
+                    foreach (var property in overrideObject)
+                    {
+                        processOverrides[property.Key] = property.Value?.DeepClone();
+                    }
+
+                    continue;
+                }
+
                 await store.SaveOverrideAsync
                 (
                     app.Id,
@@ -733,6 +750,42 @@ public static class AppEndpoints
                     ct
                 );
             }
+
+            // Save merged process overrides if any were collected
+            if (processOverrides is not null)
+            {
+                var processErrors = CapabilityResolver.ValidateEdits
+                (
+                    "process", processOverrides, isNewApp: true
+                );
+
+                if (processErrors.Count > 0)
+                {
+                    return TypedResults.Problem
+                    (
+                        string.Join("; ", processErrors),
+                        statusCode: 400
+                    );
+                }
+
+                await store.SaveOverrideAsync
+                (
+                    app.Id,
+                    "process",
+                    processOverrides.ToJsonString(_jsonOptions),
+                    ct
+                );
+            }
+        }
+
+        // Routing-only apps (e.g. static sites) start with their route disabled.
+        // Process-based apps have routes tied to process state, so no explicit disable needed.
+        var hasRouting = await store.HasBindingAsync(appTypeId, "routing", ct);
+        var hasProcess = await store.HasBindingAsync(appTypeId, "process", ct);
+
+        if (hasRouting && !hasProcess)
+        {
+            proxy.DisableRoute(app.Slug);
         }
 
         return TypedResults.Created
@@ -787,6 +840,8 @@ public static class AppEndpoints
         }
 
         await store.DeleteAppAsync(app.Id, ct);
+
+        supervisor.CleanupDeletedApp(app.Id);
 
         return TypedResults.NoContent();
     }
@@ -957,6 +1012,7 @@ public static class AppEndpoints
                         value,
                         defaultValue,
                         fieldDescriptor.Editable,
+                        fieldDescriptor.RequiresRestart,
                         fieldDescriptor.Options?
                             .Select(o => new FieldOption(o.Value.ToCamelCase(), o.Label))
                                 .ToList(),

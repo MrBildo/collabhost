@@ -1,13 +1,13 @@
-import type { LogEntry } from '@/api/types'
+import type { AppStatus, StreamEntry } from '@/api/types'
 import { cn } from '@/lib/cn'
 import { FilterChip } from '@/shared/FilterChip'
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { LogLine } from './LogLine'
 
 type LogStream = 'all' | 'stdout' | 'stderr'
 
 type LogViewerProps = {
-  entries: LogEntry[]
+  entries: StreamEntry[]
   totalBuffered: number
   stream: LogStream
   onStreamChange: (stream: LogStream) => void
@@ -20,27 +20,71 @@ const STREAMS: { value: LogStream; label: string }[] = [
   { value: 'stderr', label: 'stderr' },
 ]
 
+function LogStatusMarker({ state }: { state: AppStatus }) {
+  return (
+    <div className="flex items-center gap-2 py-1" style={{ color: 'var(--wm-text-dim)', opacity: 0.5 }}>
+      <div className="flex-1" style={{ borderTop: '1px solid var(--wm-border-subtle)' }} />
+      <span className="text-xs" style={{ fontStyle: 'italic' }}>
+        {state}
+      </span>
+      <div className="flex-1" style={{ borderTop: '1px solid var(--wm-border-subtle)' }} />
+    </div>
+  )
+}
+
+function LogGapMarker() {
+  return (
+    <div className="flex items-center gap-2 py-1" style={{ color: 'var(--wm-text-dim)', opacity: 0.4 }}>
+      <div className="flex-1" style={{ borderTop: '1px dashed var(--wm-border-subtle)' }} />
+      <span className="text-xs">connection gap</span>
+      <div className="flex-1" style={{ borderTop: '1px dashed var(--wm-border-subtle)' }} />
+    </div>
+  )
+}
+
 function LogViewer({ entries, totalBuffered, stream, onStreamChange, className }: LogViewerProps) {
   const [isFollowing, setIsFollowing] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const prevEntryCount = useRef(entries.length)
+  const userScrolledRef = useRef(false)
 
-  useEffect(() => {
-    if (isFollowing && scrollRef.current && entries.length > prevEntryCount.current) {
+  const filteredEntries =
+    stream === 'all' ? entries : entries.filter((item) => item.type !== 'log' || item.entry.stream === stream)
+
+  // useLayoutEffect runs after DOM mutations but before paint, so the
+  // scroll container already has the new elements measured. When Follow
+  // is on, pin to bottom every time entries change.
+  //
+  // We depend on the `entries` prop reference (not length) because the
+  // log stream hook creates a new array reference on each flush. Using
+  // length breaks at buffer cap: eviction keeps length at ~1000 so the
+  // effect never re-fires. The entries reference changes exactly when
+  // new data arrives, which is the right trigger regardless of eviction.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: entries reference is an intentional re-trigger signal for auto-scroll on new data
+  useLayoutEffect(() => {
+    if (isFollowing && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-    prevEntryCount.current = entries.length
-  }, [entries.length, isFollowing])
+  }, [entries, isFollowing])
 
   function handleScroll(): void {
     if (!scrollRef.current) return
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
     const isAtBottom = scrollHeight - scrollTop - clientHeight < 40
-    setIsFollowing(isAtBottom)
+
+    // Only auto-update follow state from user-initiated scrolls, not
+    // from our programmatic scrollTop assignment in the layout effect.
+    if (userScrolledRef.current) {
+      setIsFollowing(isAtBottom)
+      userScrolledRef.current = false
+    }
+  }
+
+  function handleWheel(): void {
+    userScrolledRef.current = true
   }
 
   return (
-    <div className={cn('flex flex-col', className)}>
+    <div className={cn('flex flex-col min-h-0', className)}>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
           {STREAMS.map((s) => (
@@ -65,17 +109,31 @@ function LogViewer({ entries, totalBuffered, stream, onStreamChange, className }
           </button>
         </div>
       </div>
-      <div ref={scrollRef} className="wm-log-viewer flex-1" style={{ minHeight: 300 }} onScroll={handleScroll}>
-        {entries.length === 0 ? (
+      <div
+        ref={scrollRef}
+        className="wm-log-viewer flex-1"
+        style={{ minHeight: 0 }}
+        onScroll={handleScroll}
+        onWheel={handleWheel}
+      >
+        {filteredEntries.length === 0 ? (
           <div className="text-xs py-4 text-center" style={{ color: 'var(--wm-text-dim)' }}>
             No log entries
           </div>
         ) : (
-          entries.map((entry, i) => (
-            // Log entries lack unique IDs; index is stable within a polling cycle
-            // biome-ignore lint/suspicious/noArrayIndexKey: log entries have no unique key
-            <LogLine key={i} entry={entry} />
-          ))
+          filteredEntries.map((item, i) => {
+            if (item.type === 'log') {
+              return <LogLine key={item.entry.id} entry={item.entry} />
+            }
+            if (item.type === 'status') {
+              return <LogStatusMarker key={`status-${item.timestamp}`} state={item.state} />
+            }
+            if (item.type === 'gap') {
+              // biome-ignore lint/suspicious/noArrayIndexKey: gap markers are synthetic with no stable identity
+              return <LogGapMarker key={`gap-${i}`} />
+            }
+            return null
+          })
         )}
       </div>
     </div>

@@ -14,6 +14,7 @@ type RegistrationFieldProps = {
   required: boolean
   placeholder?: string
   helpText?: string
+  hint?: string
   options?: FieldOption[]
   error?: string
   onChange: (value: unknown) => void
@@ -28,6 +29,7 @@ function RegistrationField({
   required,
   placeholder,
   helpText,
+  hint,
   options,
   error,
   onChange,
@@ -44,20 +46,25 @@ function RegistrationField({
           color: 'var(--wm-text-dim)',
           textTransform: 'uppercase',
           letterSpacing: '0.06em',
-          fontSize: '10px',
+          fontSize: '12px',
         }}
       >
         {label}
         {required && <span style={{ color: 'var(--wm-amber)', marginLeft: '2px' }}>*</span>}
       </label>
       {renderField(type, fieldId, value, placeholder, options, !!error, onChange)}
-      {helpText && !error && (
-        <div className="mt-1" style={{ fontSize: '10px', color: 'var(--wm-text-dim)', fontStyle: 'italic' }}>
+      {hint && !error && (
+        <div className="mt-1" style={{ fontSize: '12px', color: 'var(--wm-cyan)', fontFamily: 'var(--wm-mono)' }}>
+          {hint}
+        </div>
+      )}
+      {helpText && !error && !hint && (
+        <div className="mt-1" style={{ fontSize: '12px', color: 'var(--wm-text-dim)', fontStyle: 'italic' }}>
           {helpText}
         </div>
       )}
       {error && (
-        <div className="mt-1" style={{ fontSize: '10px', color: 'var(--wm-red)' }}>
+        <div className="mt-1" style={{ fontSize: '12px', color: 'var(--wm-red)' }}>
           {error}
         </div>
       )}

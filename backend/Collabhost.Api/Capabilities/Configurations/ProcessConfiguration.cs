@@ -26,6 +26,7 @@ public class ProcessConfiguration
             "Discovery Strategy",
             FieldType.Select,
             new FieldEditableAlways(),
+            RequiresRestart: true,
             Options: [.. Enum.GetValues<DiscoveryStrategy>()
                 .Select(v => new FieldOption(v.ToString(), FormatDiscoveryStrategy(v)))]
         ),
@@ -35,6 +36,7 @@ public class ProcessConfiguration
             "Command",
             FieldType.Text,
             new FieldEditableAlways(),
+            RequiresRestart: true,
             DependsOn: new FieldDependency("discoveryStrategy", DiscoveryStrategy.Manual.ToString())
         ),
         new
@@ -43,6 +45,7 @@ public class ProcessConfiguration
             "Arguments",
             FieldType.Text,
             new FieldEditableAlways(),
+            RequiresRestart: true,
             DependsOn: new FieldDependency("discoveryStrategy", DiscoveryStrategy.Manual.ToString())
         ),
         new
@@ -50,7 +53,8 @@ public class ProcessConfiguration
             "workingDirectory",
             "Working Directory",
             FieldType.Text,
-            new FieldEditableAlways()
+            new FieldEditableAlways(),
+            RequiresRestart: true
         ),
         new
         (
@@ -82,6 +86,7 @@ public class ProcessConfiguration
     private static string FormatDiscoveryStrategy(DiscoveryStrategy value) => value switch
     {
         DiscoveryStrategy.DotNetRuntimeConfiguration => ".NET Runtime Config",
+        DiscoveryStrategy.DotNetProject => ".NET Project (source)",
         DiscoveryStrategy.PackageJson => "Package JSON",
         DiscoveryStrategy.Manual => "Manual",
         _ => value.ToString()

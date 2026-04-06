@@ -3,13 +3,14 @@ import { ApiError } from '@/api/client'
 import type { AppSettings, SettingsField, SettingsValidationError } from '@/api/types'
 import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { SchemaField } from '@/forms/SchemaField'
-import { useAppSettings, useDeleteApp, useSaveSettings } from '@/hooks/use-app-settings'
+import { useAppSettings, useDeleteApp, useSaveSettings, useSettingsRestartApp } from '@/hooks/use-app-settings'
 import { ROUTES } from '@/lib/routes'
 import { ConfirmDialog } from '@/shared/ConfirmDialog'
 import { ErrorBanner } from '@/shared/ErrorBanner'
+import { RestartConfirmDialog } from '@/shared/RestartConfirmDialog'
 import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 type DirtyFields = Record<string, Record<string, unknown>>
@@ -33,13 +34,19 @@ function AppSettingsPage() {
 
   const settingsQuery = useAppSettings(slug ?? '')
   const saveMutation = useSaveSettings(slug ?? '')
+  const restartMutation = useSettingsRestartApp(slug ?? '')
   const deleteMutation = useDeleteApp()
 
   const [isEditing, setIsEditing] = useState(false)
   const [editValues, setEditValues] = useState<DirtyFields>({})
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [isRestartDialogOpen, setIsRestartDialogOpen] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Stash the changes object when the restart dialog opens so both
+  // Save Only and Save & Restart use the same payload
+  const pendingChangesRef = useRef<Record<string, Record<string, unknown>> | null>(null)
 
   const settings = settingsQuery.data
 
@@ -91,10 +98,10 @@ function AppSettingsPage() {
     })
   }, [])
 
-  const handleSave = useCallback(() => {
-    if (!settings || !slug) return
+  /** Build the changes object from current edit state. Returns null if nothing changed. */
+  const buildChanges = useCallback((): Record<string, Record<string, unknown>> | null => {
+    if (!settings) return null
 
-    // Build changes object: only include fields that changed
     const changes: Record<string, Record<string, unknown>> = {}
     for (const section of settings.sections) {
       for (const field of section.fields) {
@@ -112,42 +119,109 @@ function AppSettingsPage() {
       }
     }
 
-    if (Object.keys(changes).length === 0) {
+    return Object.keys(changes).length > 0 ? changes : null
+  }, [settings, editValues])
+
+  /** Check if any of the changed fields have requiresRestart flagged by the API. */
+  const hasRestartRequiredChanges = useCallback(
+    (changes: Record<string, Record<string, unknown>>): boolean => {
+      if (!settings) return false
+      for (const section of settings.sections) {
+        const sectionChanges = changes[section.key]
+        if (!sectionChanges) continue
+        for (const field of section.fields) {
+          if (field.requiresRestart && sectionChanges[field.key] !== undefined) {
+            return true
+          }
+        }
+      }
+      return false
+    },
+    [settings],
+  )
+
+  /** Execute the save mutation with shared error handling. */
+  const executeSave = useCallback(
+    (changes: Record<string, Record<string, unknown>>, andRestart: boolean) => {
+      setSaveError(null)
+      setFieldErrors({})
+
+      saveMutation.mutate(
+        { changes },
+        {
+          onSuccess: () => {
+            setIsEditing(false)
+            setEditValues({})
+            setIsRestartDialogOpen(false)
+            pendingChangesRef.current = null
+
+            if (andRestart && slug) {
+              restartMutation.mutate()
+            }
+          },
+          onError: (error) => {
+            setIsRestartDialogOpen(false)
+            pendingChangesRef.current = null
+
+            if (error instanceof ApiError && error.statusCode === 400) {
+              try {
+                const parsed = JSON.parse(error.body) as SettingsValidationError
+                const errors: FieldErrors = {}
+                for (const e of parsed.errors) {
+                  if (!errors[e.section]) errors[e.section] = {}
+                  const sectionErrors = errors[e.section]
+                  if (sectionErrors) sectionErrors[e.field] = e.message
+                }
+                setFieldErrors(errors)
+              } catch {
+                setSaveError(error.message)
+              }
+            } else {
+              setSaveError(error instanceof Error ? error.message : 'Failed to save settings')
+            }
+          },
+        },
+      )
+    },
+    [slug, saveMutation, restartMutation],
+  )
+
+  const handleSave = useCallback(() => {
+    if (!settings || !slug) return
+
+    const changes = buildChanges()
+    if (!changes) {
       setIsEditing(false)
       return
     }
 
-    setSaveError(null)
-    setFieldErrors({})
+    // If any changed field requires restart, show the confirmation dialog
+    if (hasRestartRequiredChanges(changes)) {
+      pendingChangesRef.current = changes
+      setIsRestartDialogOpen(true)
+      return
+    }
 
-    saveMutation.mutate(
-      { changes },
-      {
-        onSuccess: () => {
-          setIsEditing(false)
-          setEditValues({})
-        },
-        onError: (error) => {
-          if (error instanceof ApiError && error.statusCode === 400) {
-            try {
-              const parsed = JSON.parse(error.body) as SettingsValidationError
-              const errors: FieldErrors = {}
-              for (const e of parsed.errors) {
-                if (!errors[e.section]) errors[e.section] = {}
-                const sectionErrors = errors[e.section]
-                if (sectionErrors) sectionErrors[e.field] = e.message
-              }
-              setFieldErrors(errors)
-            } catch {
-              setSaveError(error.message)
-            }
-          } else {
-            setSaveError(error instanceof Error ? error.message : 'Failed to save settings')
-          }
-        },
-      },
-    )
-  }, [settings, slug, editValues, saveMutation])
+    // No restart-flagged fields changed — save directly
+    executeSave(changes, false)
+  }, [settings, slug, buildChanges, hasRestartRequiredChanges, executeSave])
+
+  const handleSaveAndRestart = useCallback(() => {
+    const changes = pendingChangesRef.current
+    if (!changes) return
+    executeSave(changes, true)
+  }, [executeSave])
+
+  const handleSaveOnly = useCallback(() => {
+    const changes = pendingChangesRef.current
+    if (!changes) return
+    executeSave(changes, false)
+  }, [executeSave])
+
+  const handleRestartDialogCancel = useCallback(() => {
+    setIsRestartDialogOpen(false)
+    pendingChangesRef.current = null
+  }, [])
 
   const handleDelete = useCallback(() => {
     if (!slug) return
@@ -190,7 +264,7 @@ function AppSettingsPage() {
   }
 
   return (
-    <div className="flex flex-col" style={{ maxWidth: '720px' }}>
+    <div className="flex flex-col">
       {/* Breadcrumbs with edit/save actions */}
       <Breadcrumbs
         segments={[
@@ -233,6 +307,7 @@ function AppSettingsPage() {
                 value={getFieldValue(field, section.key)}
                 defaultValue={field.defaultValue}
                 editable={field.editable}
+                requiresRestart={field.requiresRestart}
                 options={field.options}
                 helpText={field.helpText}
                 unit={field.unit}
@@ -250,7 +325,7 @@ function AppSettingsPage() {
       {isEditing && (
         <div className="wm-danger-zone mt-10">
           <div className="wm-danger-zone__title">{'// Danger Zone'}</div>
-          <p className="mb-3" style={{ fontSize: '11px', color: 'var(--wm-text-dim)', lineHeight: 1.6 }}>
+          <p className="mb-3" style={{ fontSize: '14px', color: 'var(--wm-text-dim)', lineHeight: 1.6 }}>
             {
               'Deleting this app will remove it from Collabhost, stop its process, and remove its route. The application files on disk will not be deleted.'
             }
@@ -271,6 +346,15 @@ function AppSettingsPage() {
         isPending={deleteMutation.isPending}
         onConfirm={handleDelete}
         onCancel={() => setIsDeleteOpen(false)}
+      />
+
+      {/* Restart confirmation dialog — shown when saving changes to restart-required fields */}
+      <RestartConfirmDialog
+        isOpen={isRestartDialogOpen}
+        isPending={saveMutation.isPending}
+        onSaveAndRestart={handleSaveAndRestart}
+        onSaveOnly={handleSaveOnly}
+        onCancel={handleRestartDialogCancel}
       />
     </div>
   )

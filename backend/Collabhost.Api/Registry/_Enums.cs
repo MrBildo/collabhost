@@ -28,6 +28,7 @@ public enum ServeMode
 public enum DiscoveryStrategy
 {
     DotNetRuntimeConfiguration,
+    DotNetProject,
     PackageJson,
     Manual
 }

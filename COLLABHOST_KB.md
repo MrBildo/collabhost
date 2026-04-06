@@ -158,6 +158,8 @@ var app = new App { Name = name, DisplayName = displayName };
 - **Private setters** — mutation via methods only (`app.AssignPort(port)`, `app.UpdateConfiguration(...)`)
 - **Protected parameterless constructor** for EF Core: `protected App() { }`
 
+**Never fabricate GUIDs or ULIDs.** Use `dotnet run --file tools/generate-ids.cs` to generate real identifiers for seed data, catalog constants, and migrations. Placeholder-style IDs (`a1234567-...`, sequential patterns) are never acceptable.
+
 **Lookup tables, not enums** for persisted/displayed values. Lookup entities are seeded with fixed Guid IDs and have `Name`, `DisplayName`, `Description`, `Ordinal`, `IsActive`.
 
 **Backend is the source of truth for all option/enum-like values.** Any field with a fixed set of valid values (dropdowns, selects, mode switches) — e.g., restart policies, serve modes, discovery strategies — must follow this chain:

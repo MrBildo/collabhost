@@ -12,12 +12,15 @@ function useAppDetail(slug: string) {
   })
 }
 
-function useAppLogs(slug: string, params?: { lines?: number; stream?: 'all' | 'stdout' | 'stderr' }) {
+function useAppLogs(
+  slug: string,
+  params?: { lines?: number; stream?: 'all' | 'stdout' | 'stderr'; enabled?: boolean },
+) {
   return useQuery<LogsResponse>({
     queryKey: ['apps', slug, 'logs', params?.stream ?? 'all'],
     queryFn: () => getAppLogs(slug, params),
     refetchInterval: POLL_INTERVALS.logs,
-    enabled: !!slug,
+    enabled: (params?.enabled ?? true) && !!slug,
   })
 }
 

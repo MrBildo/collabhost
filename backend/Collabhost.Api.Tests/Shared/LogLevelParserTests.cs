@@ -130,4 +130,27 @@ public class LogLevelParserTests
     public void ParseLevel_EmbeddedKeywordWARNING_LEVEL_ReturnsNull() =>
         // "WARNING_LEVEL" — underscore is a word character, so \b prevents matching
         LogLevelParser.ParseLevel("WARNING_LEVEL is set").ShouldBeNull();
+
+    // --- ANSI escape sequences ---
+
+    [Fact]
+    public void ParseLevel_MicrosoftInfoWithAnsi_ReturnsINF() =>
+        LogLevelParser.ParseLevel("\x1b[32minfo\x1b[0m: Application started").ShouldBe("INF");
+
+    [Fact]
+    public void ParseLevel_SerilogWithAnsi_ReturnsINF() =>
+        LogLevelParser.ParseLevel("\x1b[36m[10:30:00 INF]\x1b[0m Starting").ShouldBe("INF");
+
+    [Fact]
+    public void ParseLevel_GenericErrorWithAnsi_ReturnsERR() =>
+        LogLevelParser.ParseLevel("\x1b[31mERROR\x1b[0m: Something failed").ShouldBe("ERR");
+
+    [Fact]
+    public void ParseLevel_OnlyAnsi_ReturnsNull() =>
+        LogLevelParser.ParseLevel("\x1b[32m\x1b[0m").ShouldBeNull();
+
+    [Fact]
+    public void ParseLevel_NoAnsi_StillWorks() =>
+        // Regression test: clean input still works after ANSI stripping was added
+        LogLevelParser.ParseLevel("info: Normal line").ShouldBe("INF");
 }

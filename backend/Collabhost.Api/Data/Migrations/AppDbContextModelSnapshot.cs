@@ -99,7 +99,7 @@ namespace Collabhost.Api.Data.Migrations
                             Id = "01KN8K1MRT0B5TF2TTXV68DAFJ",
                             AppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y",
                             CapabilitySlug = "environment-defaults",
-                            DefaultConfigurationJson = "{\"variables\":{\"ASPNETCORE_ENVIRONMENT\":\"Production\"}}"
+                            DefaultConfigurationJson = "{\"variables\":{\"ASPNETCORE_ENVIRONMENT\":\"Production\",\"DOTNET_ENVIRONMENT\":\"Production\",\"DOTNET_NOLOGO\":\"1\",\"DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION\":\"true\"}}"
                         },
                         new
                         {

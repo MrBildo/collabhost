@@ -123,6 +123,7 @@ type SettingsField = {
   value: unknown
   defaultValue: unknown
   editable: FieldEditable
+  requiresRestart?: boolean
   options?: FieldOption[]
   helpText?: string
   unit?: string
@@ -156,11 +157,19 @@ type LogsResponse = {
 }
 
 type LogEntry = {
+  id: number
   timestamp: string
   stream: 'stdout' | 'stderr'
   content: string
   level?: string
 }
+
+// --- SSE Log Stream ---
+
+type StreamEntry =
+  | { type: 'log'; entry: LogEntry }
+  | { type: 'status'; state: AppStatus; timestamp: string }
+  | { type: 'gap' }
 
 // --- Dashboard ---
 
@@ -275,32 +284,16 @@ type SystemStatus = {
   timestamp: string
 }
 
-// --- SSE Update Events ---
+// --- Filesystem ---
 
-type UpdateStatusEvent = {
-  type: 'status'
-  phase: string
+type DetectStrategyResponse = {
+  suggestedStrategy: string
+  evidence: string[]
 }
-
-type UpdateLogEvent = {
-  type: 'log'
-  stream: 'stdout' | 'stderr'
-  line: string
-}
-
-type UpdateResultEvent = {
-  type: 'result'
-  success: boolean
-  exitCode: number
-  timedOut: boolean
-}
-
-type UpdateEvent = UpdateStatusEvent | UpdateLogEvent | UpdateResultEvent
-
-// --- Filesystem Browse ---
 
 type FilesystemBrowseResponse = {
-  path: string
+  currentPath: string
+  parent: string | null
   directories: DirectoryEntry[]
 }
 
@@ -332,6 +325,7 @@ export type {
   ActionResult,
   LogsResponse,
   LogEntry,
+  StreamEntry,
   DashboardStats,
   DashboardEventsResponse,
   DashboardEvent,
@@ -345,10 +339,7 @@ export type {
   RouteListResponse,
   RouteEntry,
   SystemStatus,
-  UpdateStatusEvent,
-  UpdateLogEvent,
-  UpdateResultEvent,
-  UpdateEvent,
+  DetectStrategyResponse,
   FilesystemBrowseResponse,
   DirectoryEntry,
 }

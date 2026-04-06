@@ -43,6 +43,14 @@ public class AuthorizationMiddleware
         }
 
         var userKey = context.Request.Headers["X-User-Key"].FirstOrDefault();
+
+        // Query param auth is only allowed for SSE endpoints where EventSource
+        // cannot set custom headers (browser limitation)
+        if (userKey is null && path.EndsWith("/logs/stream", StringComparison.OrdinalIgnoreCase))
+        {
+            userKey = context.Request.Query["key"].FirstOrDefault();
+        }
+
         var adminKey = _authorizationSettings.CurrentValue.AdminKey;
 
         if (adminKey is null || userKey != adminKey)

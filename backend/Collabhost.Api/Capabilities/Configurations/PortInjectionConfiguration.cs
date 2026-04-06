@@ -13,7 +13,8 @@ public class PortInjectionConfiguration
             "environmentVariableName",
             "Environment Variable",
             FieldType.Text,
-            new FieldEditableAlways()
+            new FieldEditableAlways(),
+            RequiresRestart: true
         ),
         new
         (
@@ -21,6 +22,7 @@ public class PortInjectionConfiguration
             "Port Format",
             FieldType.Text,
             new FieldEditableAlways(),
+            RequiresRestart: true,
             HelpText: "Use {port} as placeholder. Example: http://localhost:{port}"
         ),
     ];

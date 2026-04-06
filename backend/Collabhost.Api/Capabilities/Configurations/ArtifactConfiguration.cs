@@ -11,8 +11,9 @@ public class ArtifactConfiguration
             "location",
             "Application Directory",
             FieldType.Directory,
-            new FieldEditableAlways(),
-            Required: true
+            new FieldEditableLocked("Set during registration"),
+            Required: true,
+            RequiresRestart: true
         ),
     ];
 }

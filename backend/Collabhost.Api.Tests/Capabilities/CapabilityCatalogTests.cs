@@ -92,6 +92,51 @@ public class CapabilityCatalogTests
         }
     }
 
+    [Theory]
+    [InlineData("process", "discoveryStrategy", true)]
+    [InlineData("process", "command", true)]
+    [InlineData("process", "arguments", true)]
+    [InlineData("process", "workingDirectory", true)]
+    [InlineData("process", "shutdownTimeoutSeconds", false)]
+    [InlineData("process", "startupGracePeriodSeconds", false)]
+    [InlineData("process", "maxStartupRetries", false)]
+    [InlineData("port-injection", "environmentVariableName", true)]
+    [InlineData("port-injection", "portFormat", true)]
+    [InlineData("routing", "domainPattern", true)]
+    [InlineData("routing", "serveMode", true)]
+    [InlineData("routing", "spaFallback", true)]
+    [InlineData("artifact", "location", true)]
+    [InlineData("environment-defaults", "variables", true)]
+    [InlineData("health-check", "endpoint", false)]
+    [InlineData("health-check", "intervalSeconds", false)]
+    [InlineData("health-check", "timeoutSeconds", false)]
+    [InlineData("restart", "policy", false)]
+    [InlineData("restart", "successExitCodes", false)]
+    [InlineData("auto-start", "enabled", false)]
+    public void Schema_RequiresRestart_FlaggedCorrectly
+    (
+        string capabilitySlug,
+        string fieldKey,
+        bool expectedRequiresRestart
+    )
+    {
+        var schema = CapabilityCatalog.GetSchema(capabilitySlug);
+
+        schema.ShouldNotBeNull();
+
+        var field = schema.SingleOrDefault
+        (
+            f => string.Equals(f.Key, fieldKey, StringComparison.Ordinal)
+        );
+
+        field.ShouldNotBeNull($"Field '{fieldKey}' not found in {capabilitySlug} schema.");
+        field.RequiresRestart.ShouldBe
+        (
+            expectedRequiresRestart,
+            $"Field '{capabilitySlug}.{fieldKey}' RequiresRestart should be {expectedRequiresRestart}."
+        );
+    }
+
     public static TheoryData<string> AllSlugs()
     {
         var data = new TheoryData<string>();

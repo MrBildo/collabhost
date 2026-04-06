@@ -41,7 +41,9 @@ function KeyValueField({ value, onChange, disabled, className }: KeyValueFieldPr
     <div className={cn('wm-kv-table', className)}>
       {entries.map(([k, v]) => (
         <div key={k} className="wm-kv-row">
-          <div className="wm-kv-key">{k}</div>
+          <div className="wm-kv-key" title={k}>
+            {k}
+          </div>
           <div className="wm-kv-value">
             <input
               type="text"
@@ -116,12 +118,12 @@ function KeyValueField({ value, onChange, disabled, className }: KeyValueFieldPr
             </div>
           </div>
           {trimmedKey && !isKeyValid && (
-            <div style={{ padding: '4px 12px', fontSize: '10px', color: 'var(--wm-red)' }}>
+            <div style={{ padding: '4px 12px', fontSize: '12px', color: 'var(--wm-red)' }}>
               Keys must start with a letter or underscore, and contain only letters, digits, and underscores.
             </div>
           )}
           {isDuplicate && (
-            <div style={{ padding: '4px 12px', fontSize: '10px', color: 'var(--wm-red)' }}>Key already exists.</div>
+            <div style={{ padding: '4px 12px', fontSize: '12px', color: 'var(--wm-red)' }}>Key already exists.</div>
           )}
         </>
       )}

@@ -247,6 +247,80 @@ describe('SchemaField', () => {
     })
   })
 
+  describe('restart badge', () => {
+    test('shows restart badge in edit mode for requiresRestart fields', () => {
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="Command"
+          type="text"
+          value="dotnet"
+          defaultValue="dotnet"
+          editable={EDITABLE_ALWAYS}
+          requiresRestart={true}
+          isEditing={true}
+          onChange={vi.fn()}
+        />,
+      )
+      expect(screen.getByText('Restart required')).toBeInTheDocument()
+    })
+
+    test('does not show restart badge in read mode', () => {
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="Command"
+          type="text"
+          value="dotnet"
+          defaultValue="dotnet"
+          editable={EDITABLE_ALWAYS}
+          requiresRestart={true}
+          isEditing={false}
+          onChange={vi.fn()}
+        />,
+      )
+      expect(screen.queryByText('Restart required')).not.toBeInTheDocument()
+    })
+
+    test('does not show restart badge for locked fields even in edit mode', () => {
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="Name"
+          type="text"
+          value="my-app"
+          defaultValue="my-app"
+          editable={EDITABLE_LOCKED}
+          requiresRestart={true}
+          isEditing={true}
+          onChange={vi.fn()}
+        />,
+      )
+      expect(screen.queryByText('Restart required')).not.toBeInTheDocument()
+    })
+
+    test('does not show restart badge when requiresRestart is false', () => {
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="Policy"
+          type="select"
+          value="never"
+          defaultValue="never"
+          editable={EDITABLE_ALWAYS}
+          requiresRestart={false}
+          options={[
+            { value: 'never', label: 'Never' },
+            { value: 'always', label: 'Always' },
+          ]}
+          isEditing={true}
+          onChange={vi.fn()}
+        />,
+      )
+      expect(screen.queryByText('Restart required')).not.toBeInTheDocument()
+    })
+  })
+
   describe('override badge', () => {
     test('shows override badge when value differs from default', () => {
       render(

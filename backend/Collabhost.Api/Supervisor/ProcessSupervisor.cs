@@ -39,6 +39,7 @@ public class ProcessSupervisor
 
     private readonly ConcurrentDictionary<Ulid, ManagedProcess> _processes = new();
     private readonly ConcurrentDictionary<Ulid, RestartPolicy> _restartPolicies = new();
+    private readonly ConcurrentDictionary<Ulid, RingBuffer<LogEntry>> _logBuffers = new();
     private Timer? _graceTimer;
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -135,6 +136,7 @@ public class ProcessSupervisor
 
         _processes.Clear();
         _restartPolicies.Clear();
+        _logBuffers.Clear();
 
         _logger.LogInformation("Process supervisor stopped");
     }
@@ -171,16 +173,26 @@ public class ProcessSupervisor
 
     public async Task<ManagedProcess> RestartAppAsync(Ulid appId, CancellationToken ct = default)
     {
+        ManagedProcess? stopped = null;
+
         if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
         {
             await using var operationLock = await existing.AcquireOperationLockAsync(ct);
 
-            existing.ClearStoppedByOperator();
+            existing.MarkStoppedByOperator();
 
             await StopProcessWithShutdownPolicyAsync(appId, existing);
 
-            existing.Dispose();
+            stopped = existing;
+        }
+
+        // Dispose the old process after releasing the operation lock to avoid
+        // ObjectDisposedException -- the lock's DisposeAsync calls Release() on
+        // the semaphore, which fails if the process (and its semaphore) is already disposed
+        if (stopped is not null)
+        {
             _processes.TryRemove(appId, out _);
+            stopped.Dispose();
         }
 
         return await StartAppInternalAsync(appId, ct);
@@ -209,6 +221,20 @@ public class ProcessSupervisor
     {
         _processes.TryGetValue(appId, out var process);
         return process;
+    }
+
+    public RingBuffer<LogEntry> GetOrCreateLogBuffer(Ulid appId) =>
+        _logBuffers.GetOrAdd(appId, _ => new RingBuffer<LogEntry>(1000));
+
+    public void CleanupDeletedApp(Ulid appId)
+    {
+        _logBuffers.TryRemove(appId, out _);
+        _restartPolicies.TryRemove(appId, out _);
+
+        if (_processes.TryRemove(appId, out var process))
+        {
+            process.Dispose();
+        }
     }
 
     private async Task<ManagedProcess> StartAppInternalAsync(Ulid appId, CancellationToken ct)
@@ -323,7 +349,7 @@ public class ProcessSupervisor
             discoveredProcess.Arguments,
             discoveredProcess.WorkingDirectory,
             environmentVariables,
-            (line, stream) => managed.LogBuffer.Add(new LogEntry(DateTime.UtcNow, stream, line, LogLevelParser.ParseLevel(line)))
+            (line, stream) => GetOrCreateLogBuffer(app.Id).Add(new LogEntry(DateTime.UtcNow, stream, line, LogLevelParser.ParseLevel(line)))
         );
 
         var handle = _runner.Start(startConfiguration);
@@ -895,7 +921,7 @@ public class ProcessSupervisor
     {
         var errorProcess = new ManagedProcess(app.Id, app.Slug, app.DisplayName);
 
-        errorProcess.LogBuffer.Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, errorMessage));
+        GetOrCreateLogBuffer(app.Id).Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, errorMessage));
 
         _processes[appId] = errorProcess;
     }

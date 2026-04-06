@@ -161,6 +161,47 @@ public class CapabilityResolverTests
     }
 
     [Fact]
+    public void ValidateEdits_LockedField_AllowedForNewApp()
+    {
+        var overrides = new JsonObject
+        {
+            ["domainPattern"] = "custom.example.com"
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, isNewApp: true);
+
+        errors.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void ValidateEdits_LockedArtifactLocation_AllowedDuringRegistration()
+    {
+        var overrides = new JsonObject
+        {
+            ["location"] = "C:\\Projects\\my-site"
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("artifact", overrides, isNewApp: true);
+
+        errors.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void ValidateEdits_LockedArtifactLocation_RejectedAfterRegistration()
+    {
+        var overrides = new JsonObject
+        {
+            ["location"] = "C:\\Projects\\my-site"
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("artifact", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("location");
+        errors[0].ShouldContain("Set during registration");
+    }
+
+    [Fact]
     public void ValidateEdits_DerivedField_AllowedForNewApp()
     {
         var overrides = new JsonObject
