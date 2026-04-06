@@ -46,13 +46,7 @@ function makeUnknownProbe(): ProbeEntry {
 describe('ProbeSection', () => {
   test('renders empty state when probes array is empty', () => {
     render(<ProbeSection probes={[]} />)
-    expect(screen.getByText('Technology')).toBeInTheDocument()
     expect(screen.getByText('No technology information detected')).toBeInTheDocument()
-  })
-
-  test('renders section title for non-empty probes', () => {
-    render(<ProbeSection probes={[makeDotnetRuntimeProbe()]} />)
-    expect(screen.getByText('Technology')).toBeInTheDocument()
   })
 
   test('renders panel with label from probe entry', () => {

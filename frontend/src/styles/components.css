@@ -453,6 +453,39 @@
   background: var(--wm-border);
 }
 
+/* === Tab Bar === */
+
+.wm-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--wm-border);
+}
+
+.wm-tab {
+  font-family: var(--wm-mono);
+  font-size: var(--wm-font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 16px;
+  color: var(--wm-text-dim);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.wm-tab:hover {
+  color: var(--wm-text);
+}
+
+.wm-tab--active {
+  color: var(--wm-amber);
+  border-bottom-color: var(--wm-amber);
+}
+
 /* === Section Title (amber) === */
 
 .wm-section-title {
