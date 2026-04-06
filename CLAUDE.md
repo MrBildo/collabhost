@@ -276,12 +276,16 @@ See **[[COLLABHOST_KB]]** §3 Safety for the full list. Summary:
 3. **Ask, don't guess.** If uncertain about scope, intent, or approach, stop and ask.
 4. **On any issues, errors, or unexpected behavior — stop and ask.**
 5. **Max 3 follow-ups before escalation.**
+6. **Never dismiss observed issues as "pre-existing."** Investigate, link to an existing card, or file a new card.
+7. **UAT feedback accumulation.** During UAT, the user gives feedback one item at a time, batched by recipient agent. Do NOT dispatch fixes until the user explicitly says to dispatch. They may have more items to add.
+8. **Build verification reads FULL output.** Always run `dotnet build Collabhost.slnx --no-incremental` and read the FULL output — not just the summary line. Surface ALL warnings from ANY source.
 
 ## Git, Paths, and Context Window
 
 See **[[COLLABHOST_KB]]** §3 for full rules. Key points:
 
 - Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`), squash merge to main
+- **Always merge PRs via `gh pr merge --squash`**, never local `git merge --squash` (local squash merges leave PRs dangling open on GitHub)
 - Branch naming: `feature/`, `bugfix/`, `hotfix/`
 - **Commit everything** — `git status` must be clean when done
 - Relative paths in committed files; absolute paths only in gitignored config
