@@ -1,5 +1,7 @@
 using System.Globalization;
 
+using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Probes;
@@ -307,6 +309,8 @@ public static class AppEndpoints
         UpdateSettingsRequest request,
         AppStore store,
         ProbeService probeService,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
@@ -412,6 +416,24 @@ public static class AppEndpoints
             await probeService.RunProbesAsync(app.Id, ct);
         }
 
+        var changedCapabilities = request.Changes.Keys
+            .Where(k => !string.Equals(k, "identity", StringComparison.Ordinal))
+                .ToList();
+
+        await activityEventStore.RecordAsync
+        (
+            new ActivityEvent
+            {
+                EventType = ActivityEventTypes.AppSettingsUpdated,
+                ActorId = currentUser.UserId.ToString(),
+                ActorName = currentUser.User.Name,
+                AppId = app.Id.ToString(),
+                AppSlug = app.Slug,
+                MetadataJson = JsonSerializer.Serialize(new { changedCapabilities })
+            },
+            ct
+        );
+
         var freshApp = await store.GetBySlugAsync(slug, ct);
         var freshBindings = await store.GetBindingsAsync(app.AppTypeId, ct);
         var freshOverrides = await store.GetOverridesAsync(app.Id, ct);
@@ -438,6 +460,8 @@ public static class AppEndpoints
         ProcessSupervisor supervisor,
         ProxyManager proxy,
         ProbeService probeService,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
@@ -459,6 +483,20 @@ public static class AppEndpoints
 
             await probeService.RunProbesAsync(app.Id, ct);
 
+            await activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppStarted,
+                    ActorId = currentUser.UserId.ToString(),
+                    ActorName = currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = null
+                },
+                ct
+            );
+
             var status = ProcessState.Running;
             var actions = BuildActions(hasProcess, hasRouting, status);
 
@@ -473,6 +511,20 @@ public static class AppEndpoints
             var managed = await supervisor.StartAppAsync(app.Id, ct);
 
             await probeService.RunProbesAsync(app.Id, ct);
+
+            await activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppStarted,
+                    ActorId = currentUser.UserId.ToString(),
+                    ActorName = currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = null
+                },
+                ct
+            );
 
             var actions = BuildActions(hasProcess, hasRouting, managed.State);
 
@@ -493,6 +545,8 @@ public static class AppEndpoints
         AppStore store,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
@@ -512,6 +566,20 @@ public static class AppEndpoints
             proxy.DisableRoute(app.Slug);
             proxy.RequestSync();
 
+            await activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppStopped,
+                    ActorId = currentUser.UserId.ToString(),
+                    ActorName = currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = null
+                },
+                ct
+            );
+
             var status = ProcessState.Stopped;
             var actions = BuildActions(hasProcess, hasRouting, status);
 
@@ -524,6 +592,21 @@ public static class AppEndpoints
         try
         {
             var managed = await supervisor.StopAppAsync(app.Id, ct);
+
+            await activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppStopped,
+                    ActorId = currentUser.UserId.ToString(),
+                    ActorName = currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = null
+                },
+                ct
+            );
+
             var actions = BuildActions(hasProcess, hasRouting, managed.State);
 
             return TypedResults.Ok
@@ -542,6 +625,8 @@ public static class AppEndpoints
         string slug,
         AppStore store,
         ProcessSupervisor supervisor,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
@@ -555,6 +640,20 @@ public static class AppEndpoints
         try
         {
             var managed = await supervisor.RestartAppAsync(app.Id, ct);
+
+            await activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppRestarted,
+                    ActorId = currentUser.UserId.ToString(),
+                    ActorName = currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = null
+                },
+                ct
+            );
 
             var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
             var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
@@ -576,6 +675,8 @@ public static class AppEndpoints
         string slug,
         AppStore store,
         ProcessSupervisor supervisor,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
@@ -589,6 +690,20 @@ public static class AppEndpoints
         try
         {
             await supervisor.KillAppAsync(app.Id, ct);
+
+            await activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppKilled,
+                    ActorId = currentUser.UserId.ToString(),
+                    ActorName = currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = null
+                },
+                ct
+            );
 
             var process = supervisor.GetProcess(app.Id);
             var state = process?.State ?? ProcessState.Stopped;
@@ -662,6 +777,8 @@ public static class AppEndpoints
         CreateAppRequest request,
         AppStore store,
         ProxyManager proxy,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
@@ -805,6 +922,23 @@ public static class AppEndpoints
             proxy.DisableRoute(app.Slug);
         }
 
+        await activityEventStore.RecordAsync
+        (
+            new ActivityEvent
+            {
+                EventType = ActivityEventTypes.AppCreated,
+                ActorId = currentUser.UserId.ToString(),
+                ActorName = currentUser.User.Name,
+                AppId = app.Id.ToString(),
+                AppSlug = app.Slug,
+                MetadataJson = JsonSerializer.Serialize
+                (
+                    new { appTypeSlug = appType.Slug, displayName = app.DisplayName }
+                )
+            },
+            ct
+        );
+
         return TypedResults.Created
         (
             $"/api/v1/apps/{app.Slug}",
@@ -817,6 +951,8 @@ public static class AppEndpoints
         string slug,
         AppStore store,
         ProcessSupervisor supervisor,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
@@ -826,6 +962,11 @@ public static class AppEndpoints
         {
             return TypedResults.NotFound();
         }
+
+        // Capture before delete -- app won't exist after store.DeleteAppAsync
+        var appId = app.Id.ToString();
+        var appSlug = app.Slug;
+        var appDisplayName = app.DisplayName;
 
         // Stop if running (10s timeout, force-kill fallback)
         var process = supervisor.GetProcess(app.Id);
@@ -859,6 +1000,20 @@ public static class AppEndpoints
         await store.DeleteAppAsync(app.Id, ct);
 
         supervisor.CleanupDeletedApp(app.Id);
+
+        await activityEventStore.RecordAsync
+        (
+            new ActivityEvent
+            {
+                EventType = ActivityEventTypes.AppDeleted,
+                ActorId = currentUser.UserId.ToString(),
+                ActorName = currentUser.User.Name,
+                AppId = appId,
+                AppSlug = appSlug,
+                MetadataJson = JsonSerializer.Serialize(new { displayName = appDisplayName })
+            },
+            ct
+        );
 
         return TypedResults.NoContent();
     }
