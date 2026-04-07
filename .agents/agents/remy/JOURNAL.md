@@ -2,6 +2,109 @@
 
 ---
 
+## 2026-04-07 -- Activity Log Phase 3: System event emission (Card #103)
+
+**Session start.** Implementing Phase 3: system events from hosted services and background tasks. Branch: main worktree on `release/activity-log`. Modifying ProcessSupervisor, ProxyManager, UserSeedService, ProxyAppSeeder.
+
+---
+
+## 2026-04-07 -- Activity Log Phase 2b: MCP tool event emission (Card #103)
+
+**Session start.** Implementing Phase 2b: adding ICurrentUser + ActivityEventStore + ILogger<T> to all three MCP tool classes and emitting activity events from 8 mutation methods. Branch: worktree-agent-a52a9737. Cherry-picked Phase 1 and 2a commits first since they hadn't been merged to release/activity-log yet.
+
+### Implementation
+
+Preflight: cherry-picked commits 8083542 (Phase 1) and a5671d1 (Phase 2a) into worktree before writing new code.
+
+Modified 4 files:
+- `Mcp/LifecycleTools.cs` — added ICurrentUser, ActivityEventStore, ILogger to constructor. Emitted 4 events (started, stopped, restarted, killed) — each with try/catch + LogWarning. Both routing-only and process paths covered. Added MA0011/MA0076 pragmas.
+- `Mcp/RegistrationTools.cs` — added ICurrentUser, ActivityEventStore, ILogger to constructor. Emitted 2 events (created, deleted). Captured appId/appSlug/displayName before delete. Added serialized metadata for both events.
+- `Mcp/ConfigurationTools.cs` — added ICurrentUser, ActivityEventStore, ILogger to constructor. Emitted 2 events (settings_updated, proxy.reloaded). ReloadProxy promoted from sync `CallToolResult` to `async Task<CallToolResult>`. changedCapabilities list computed from changesObject keys. Added MA0011/MA0076 pragmas.
+- `Collabhost.Api.Tests/Mcp/McpToolTests.cs` — updated CreateLifecycleTools() and CreateConfigurationTools() factory methods to resolve ICurrentUser via CreateScope() rather than root provider. Also added ActivityEventStore + ILogger resolution.
+
+**Issues encountered and resolved:**
+
+1. MA0011 warnings on `_currentUser.UserId.ToString()` in LifecycleTools and ConfigurationTools — fixed by adding `#pragma warning disable MA0076/MA0011` at file level (consistent with AppEndpoints, RegistrationTools).
+
+2. Test compilation errors — McpToolTests.cs instantiated tools with old constructor signatures. Fixed by updating factory methods.
+
+3. Test runtime errors — `ICurrentUser` is scoped and can't be resolved from root `IServiceProvider`. Fixed by using `_services.CreateScope()` in factory methods. The `CurrentUser` class itself is not disposable so scope can be disposed before tool usage without issue.
+
+4. `release/activity-log` hadn't been pushed to origin — pushed all 3 commits cleanly as a new branch. Main repo fast-forwarded via `git pull`.
+
+### Decisions Made
+
+- **try/catch per emission point in MCP tools:** Consistent with task requirement ("activity logging must never break MCP responses"). REST handlers don't have this guard — they let exceptions propagate. MCP responses are more opaque to users so defensive logging makes sense.
+- **ILogger<T> added per class:** Each tool class gets its own typed logger. Consistent with DI constructor pattern in the KB.
+- **`using var scope = _services.CreateScope()` in tests:** Minimal intervention. The scope is disposed before tool use, but `CurrentUser` is not disposable so no problem. The key thing is it satisfies DI validation.
+
+### Verification
+
+Build: 0w/0e, Format: clean, Tests: 437 pass (425 + 12)
+
+### Commit(s)
+
+- Cherry-picked `e895aad` -- feat: activity log foundation — entity, store, migration (#103)
+- Cherry-picked `e7d9f21` -- feat: activity log operator events — REST endpoints (#103)
+- `5271578` -- feat: activity log operator events — MCP tools (#103)
+
+All 3 pushed to origin/release/activity-log and fast-forwarded to main repo.
+
+---
+
+## 2026-04-07 -- Activity Log Phase 2a: REST endpoint event emission (Card #103)
+
+**Session start.** Implementing Phase 2a: adding ICurrentUser + ActivityEventStore to all mutation REST handlers and emitting activity events. Branch: `worktree-agent-aedecfca`, based on Phase 1 tip.
+
+### Implementation
+
+Modified 3 files, 10 emission points. See worktree journal for full details. Key notes:
+- `ICurrentUser.User.Name` (not a direct `.Name` property) for actor name
+- `ReloadProxyAsync` converted from sync to proper `async Task<IResult>`
+- Captures app fields (slug, displayName, id) as locals before `store.DeleteAppAsync` in `DeleteAppAsync`
+- Changed capabilities for settings: `request.Changes.Keys.Where(k != "identity")`
+
+### Verification
+Build: 0w/0e, Format: clean, Tests: 437 pass (425 + 12)
+
+### Commit(s)
+- `a5671d1` -- feat: activity log operator events — REST endpoints (#103)
+
+---
+
+## 2026-04-07 -- Activity Log Phase 1 implementation (Card #103)
+
+**Session start.** Implementing Phase 1 of the Activity Log: entity, store, migration, and DI registration. Branch: worktree-agent-abdb8cb5 (same tip as release/activity-log). Spec at `.agents/specs/activity-log.md`, sections 2-5, 7, 8.3.
+
+### Implementation
+
+All Phase 1 files created and committed.
+
+**Issues encountered and resolved:**
+
+1. `IDE0060` (unused parameter `routes` in empty `Map` method) — fixed by making the method an expression body that calls `routes.MapGroup().WithTags()`.
+2. `MA0011` (Ulid.ToString without IFormatProvider) — fixed by using `ToString(null, CultureInfo.InvariantCulture)` for the cursor return value.
+3. `IDE0022` (block body in single-expression method) — fixed with expression body syntax.
+4. `CS0019` (Ulid `<` operator not defined) — fixed by switching to `EF.Property<string>(e, "Id").CompareTo(cursor) < 0` for the keyset cursor WHERE clause.
+5. Tests failing with `PendingModelChangesWarning` — expected, resolved by generating the migration.
+
+**Note on cursor comparison:** Used `EF.Property<string>(e, "Id").CompareTo(cursor) < 0` for the keyset pagination WHERE clause. EF Core may or may not translate `CompareTo` to SQL — this needs runtime verification in Phase 4 when the endpoint goes live. If it does client-side eval, switch to raw SQL fragment. Flagging for Phase 4.
+
+### Decisions Made
+
+- **`EF.Property<string>` for cursor comparison:** `Ulid` doesn't implement `<`/`>` operators. EF Core expression tree can't use `CompareTo` on the Ulid struct. Used `EF.Property<string>(e, "Id").CompareTo(cursor) < 0`. This compiles but SQL translation is not verified. Phase 4 needs to verify this works in SQLite.
+- **`DeriveSeverity` as static method on ActivityEventStore:** Consistent with where it's used (store builds responses). If Phase 4 endpoint also needs it, it's trivially accessible as `ActivityEventStore.DeriveSeverity`.
+
+### Verification
+
+Build: 0w/0e, Format: clean, Tests: 437 pass (425 + 12)
+
+### Commit(s)
+
+- `8083542` -- feat: activity log foundation — entity, store, migration (#103)
+
+---
+
 ## 2026-04-07 -- Activity Log spec finalization (Card #103)
 
 **Session start.** Finalizing the Activity Log spec based on consolidated feedback from Kai (8 items) and Marcus (9 items). Branch: `feature/103-activity-log-spec-feedback`.

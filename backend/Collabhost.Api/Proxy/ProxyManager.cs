@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Threading.Channels;
 
+using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Events;
 using Collabhost.Api.Registry;
@@ -16,6 +18,7 @@ public class ProxyManager
     ProcessSupervisor processSupervisor,
     IEventBus<ProcessStateChangedEvent> eventBus,
     ProxySettings settings,
+    ActivityEventStore activityEventStore,
     ILogger<ProxyManager> logger
 ) : IHostedService, IDisposable
 {
@@ -33,6 +36,9 @@ public class ProxyManager
 
     private readonly ProxySettings _settings = settings
         ?? throw new ArgumentNullException(nameof(settings));
+
+    private readonly ActivityEventStore _activityEventStore = activityEventStore
+        ?? throw new ArgumentNullException(nameof(activityEventStore));
 
     private readonly ILogger<ProxyManager> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -363,6 +369,26 @@ public class ProxyManager
             );
 
             EnableRoute(app.Slug);
+
+            try
+            {
+                await _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppAutoStarted,
+                        ActorId = ActivityActor.SystemId,
+                        ActorName = ActivityActor.SystemName,
+                        AppId = app.Id.ToString(null, CultureInfo.InvariantCulture),
+                        AppSlug = app.Slug
+                    },
+                    CancellationToken.None
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record activity event for '{DisplayName}'", app.DisplayName);
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Data;
 
 using Microsoft.Extensions.Options;
@@ -10,6 +11,7 @@ public class UserSeedService
 (
     IDbContextFactory<AppDbContext> dbFactory,
     IOptions<AuthorizationSettings> authorizationSettings,
+    ActivityEventStore activityEventStore,
     ILogger<UserSeedService> logger
 ) : IHostedService
 {
@@ -17,6 +19,9 @@ public class UserSeedService
         ?? throw new ArgumentNullException(nameof(dbFactory));
 
     private readonly AuthorizationSettings _authorizationSettings = authorizationSettings.Value;
+
+    private readonly ActivityEventStore _activityEventStore = activityEventStore
+        ?? throw new ArgumentNullException(nameof(activityEventStore));
 
     private readonly ILogger<UserSeedService> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -44,6 +49,25 @@ public class UserSeedService
 
         db.Users.Add(admin);
         await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await _activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.UserSeeded,
+                    ActorId = ActivityActor.SystemId,
+                    ActorName = ActivityActor.SystemName,
+                    MetadataJson = JsonSerializer.Serialize(new { role = "administrator" })
+                },
+                CancellationToken.None
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record activity event for admin user seed");
+        }
 
         var keyHint = adminKey[..Math.Min(8, adminKey.Length)] + "...";
 

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 
+using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Events;
 using Collabhost.Api.Registry;
@@ -16,6 +17,7 @@ public class ProcessSupervisor
     AppStore appStore,
     IEventBus<ProcessStateChangedEvent> eventBus,
     IEnumerable<IProcessArgumentProvider> argumentProviders,
+    ActivityEventStore activityEventStore,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
 {
@@ -33,6 +35,9 @@ public class ProcessSupervisor
 
     private readonly IProcessArgumentProvider[] _argumentProviders =
         [.. (argumentProviders ?? throw new ArgumentNullException(nameof(argumentProviders)))];
+
+    private readonly ActivityEventStore _activityEventStore = activityEventStore
+        ?? throw new ArgumentNullException(nameof(activityEventStore));
 
     private readonly ILogger<ProcessSupervisor> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -79,6 +84,26 @@ public class ProcessSupervisor
                     _logger.LogInformation("Auto-starting app '{DisplayName}'", app.DisplayName);
 
                     await StartAppInternalAsync(app.Id, cancellationToken);
+
+                    try
+                    {
+                        await _activityEventStore.RecordAsync
+                        (
+                            new ActivityEvent
+                            {
+                                EventType = ActivityEventTypes.AppAutoStarted,
+                                ActorId = ActivityActor.SystemId,
+                                ActorName = ActivityActor.SystemName,
+                                AppId = app.Id.ToString(null, CultureInfo.InvariantCulture),
+                                AppSlug = app.Slug
+                            },
+                            CancellationToken.None
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to record activity event for '{DisplayName}'", app.DisplayName);
+                    }
                 }
                 catch (Exception exception)
                 {
@@ -553,6 +578,27 @@ public class ProcessSupervisor
                 process.StartupFailures
             );
 
+            try
+            {
+                _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppFatal,
+                        ActorId = ActivityActor.SystemId,
+                        ActorName = ActivityActor.SystemName,
+                        AppId = appId.ToString(null, CultureInfo.InvariantCulture),
+                        AppSlug = process.AppSlug,
+                        MetadataJson = JsonSerializer.Serialize(new { failureCount = process.StartupFailures })
+                    },
+                    CancellationToken.None
+                ).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record activity event for '{DisplayName}'", process.DisplayName);
+            }
+
             return;
         }
 
@@ -667,6 +713,27 @@ public class ProcessSupervisor
             exitCode
         );
 
+        try
+        {
+            _activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppCrashed,
+                    ActorId = ActivityActor.SystemId,
+                    ActorName = ActivityActor.SystemName,
+                    AppId = appId.ToString(null, CultureInfo.InvariantCulture),
+                    AppSlug = process.AppSlug,
+                    MetadataJson = JsonSerializer.Serialize(new { exitCode })
+                },
+                CancellationToken.None
+            ).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record activity event for '{DisplayName}'", process.DisplayName);
+        }
+
         _restartPolicies.TryGetValue(appId, out var restartPolicy);
 
         var shouldRestart = restartPolicy switch
@@ -699,6 +766,27 @@ public class ProcessSupervisor
                 "App '{DisplayName}' has exceeded maximum restart count -- manual restart required",
                 process.DisplayName
             );
+
+            try
+            {
+                _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppFatal,
+                        ActorId = ActivityActor.SystemId,
+                        ActorName = ActivityActor.SystemName,
+                        AppId = appId.ToString(null, CultureInfo.InvariantCulture),
+                        AppSlug = process.AppSlug,
+                        MetadataJson = JsonSerializer.Serialize(new { failureCount = process.RestartCount })
+                    },
+                    CancellationToken.None
+                ).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record activity event for '{DisplayName}'", process.DisplayName);
+            }
 
             return;
         }
@@ -739,6 +827,30 @@ public class ProcessSupervisor
                     stale?.Dispose();
 
                     await StartAppInternalAsync(appId, cancellation.Token);
+
+                    try
+                    {
+                        await _activityEventStore.RecordAsync
+                        (
+                            new ActivityEvent
+                            {
+                                EventType = ActivityEventTypes.AppAutoRestarted,
+                                ActorId = ActivityActor.SystemId,
+                                ActorName = ActivityActor.SystemName,
+                                AppId = appId.ToString(null, CultureInfo.InvariantCulture),
+                                AppSlug = process.AppSlug,
+                                MetadataJson = JsonSerializer.Serialize
+                                (
+                                    new { restartCount = process.RestartCount, exitCode }
+                                )
+                            },
+                            CancellationToken.None
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to record activity event for '{DisplayName}'", process.DisplayName);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
