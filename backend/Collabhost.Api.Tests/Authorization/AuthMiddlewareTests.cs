@@ -159,11 +159,6 @@ public class AuthMiddlewareTests(ApiFixture fixture)
         statusCode.ShouldBeInRange(400, 499, "MCP path should reach MCP handler, not return 200 auth pass-through");
     }
 
-    // Bug card #124: RequireRoleFilter 403 path throws "response headers cannot be modified"
-    // because the filter writes a response body and then returns null, which causes ASP.NET Core
-    // to attempt another response write. The fix is to return a typed IResult instead of null.
-    // Test for the agent 403 path is omitted until the bug is fixed.
-
     [Fact]
     public async Task RequireRoleFilter_AdminAccessingUsersEndpoint_Returns200()
     {
@@ -173,5 +168,41 @@ public class AuthMiddlewareTests(ApiFixture fixture)
         var response = await _client.SendAsync(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task RequireRoleFilter_AgentAccessingUsersEndpoint_Returns403()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+
+        // Create an agent-role user
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/users");
+        createRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+        createRequest.Content = JsonContent.Create
+        (
+            new { name = $"Agent 403 Test {suffix}", role = (int)UserRole.Agent },
+            options: _jsonOptions
+        );
+
+        var createResponse = await _client.SendAsync(createRequest);
+
+        createResponse.StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        var createBody = await createResponse.Content.ReadAsStringAsync();
+        var created = JsonDocument.Parse(createBody).RootElement;
+        var agentKey = created.GetProperty("authKey").GetString()!;
+
+        // Agent accessing admin-only endpoint should get 403
+        using var usersRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/users");
+        usersRequest.Headers.Add("X-User-Key", agentKey);
+
+        var usersResponse = await _client.SendAsync(usersRequest);
+
+        usersResponse.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+        var body = await usersResponse.Content.ReadAsStringAsync();
+        var error = JsonDocument.Parse(body).RootElement;
+
+        error.GetProperty("error").GetString().ShouldBe("Forbidden");
     }
 }

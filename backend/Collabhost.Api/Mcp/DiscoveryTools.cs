@@ -102,29 +102,7 @@ public class DiscoveryTools
                 b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
             );
 
-            var routingBinding = bindings.SingleOrDefault
-            (
-                b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-            );
-
-            RoutingConfiguration? routingConfiguration = null;
-
-            if (routingBinding is not null)
-            {
-                var overrideJson = overrides.TryGetValue("routing", out var routingOverride)
-                    ? routingOverride.ConfigurationJson
-                    : null;
-
-                routingConfiguration = CapabilityResolver.Resolve<RoutingConfiguration>
-                (
-                    routingBinding.DefaultConfigurationJson, overrideJson
-                );
-            }
-
-            var domain = routingConfiguration?.DomainPattern
-                .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
-
-            var routeEnabled = routingConfiguration is not null && _proxy.IsRouteEnabled(app.Slug);
+            var (_, domain, routeEnabled) = ResolveRouting(app, bindings, overrides);
 
             var resolvedStatus = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
             var statusString = resolvedStatus.ToApiString();
@@ -192,29 +170,7 @@ public class DiscoveryTools
             b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
         );
 
-        var routingBinding = bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-        );
-
-        RoutingConfiguration? routingConfiguration = null;
-
-        if (routingBinding is not null)
-        {
-            var overrideJson = overrides.TryGetValue("routing", out var routingOverride)
-                ? routingOverride.ConfigurationJson
-                : null;
-
-            routingConfiguration = CapabilityResolver.Resolve<RoutingConfiguration>
-            (
-                routingBinding.DefaultConfigurationJson, overrideJson
-            );
-        }
-
-        var domain = routingConfiguration?.DomainPattern
-            .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
-
-        var routeEnabled = routingConfiguration is not null && _proxy.IsRouteEnabled(app.Slug);
+        var (routingConfiguration, domain, routeEnabled) = ResolveRouting(app, bindings, overrides);
 
         var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
@@ -336,6 +292,40 @@ public class DiscoveryTools
         var json = McpResponseFormatter.ToJson(items);
 
         return McpResponseFormatter.Success($"{header}\n{json}");
+    }
+
+    private (RoutingConfiguration? config, string? domain, bool routeEnabled) ResolveRouting
+    (
+        App app,
+        IReadOnlyList<CapabilityBinding> bindings,
+        IReadOnlyDictionary<string, CapabilityOverride> overrides
+    )
+    {
+        var routingBinding = bindings.SingleOrDefault
+        (
+            b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
+        );
+
+        if (routingBinding is null)
+        {
+            return (null, null, false);
+        }
+
+        var overrideJson = overrides.TryGetValue("routing", out var routingOverride)
+            ? routingOverride.ConfigurationJson
+            : null;
+
+        var config = CapabilityResolver.Resolve<RoutingConfiguration>
+        (
+            routingBinding.DefaultConfigurationJson, overrideJson
+        );
+
+        var domain = config?.DomainPattern
+            .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
+
+        var routeEnabled = config is not null && _proxy.IsRouteEnabled(app.Slug);
+
+        return (config, domain, routeEnabled);
     }
 
     private static ProcessState ResolveStatus

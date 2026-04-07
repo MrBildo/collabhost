@@ -41,6 +41,7 @@ public static class AuthorizationRegistration
             services.AddHostedService<UserSeedService>();
 
             services.AddSingleton<UserStore>();
+            services.AddSingleton<AuthKeyResolver>();
             services.AddScoped<CurrentUser>();
             services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
 
