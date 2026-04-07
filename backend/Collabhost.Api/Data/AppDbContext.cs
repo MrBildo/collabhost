@@ -1,3 +1,4 @@
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
@@ -6,6 +7,8 @@ namespace Collabhost.Api.Data;
 
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
+    public DbSet<User> Users => Set<User>();
+
     public DbSet<App> Apps => Set<App>();
 
     public DbSet<AppType> AppTypes => Set<AppType>();
