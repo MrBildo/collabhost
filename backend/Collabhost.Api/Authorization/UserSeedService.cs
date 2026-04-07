@@ -45,7 +45,12 @@ public class UserSeedService
         db.Users.Add(admin);
         await db.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Admin user seeded. Key: {AdminKey}", adminKey);
+        var keyHint = adminKey[..Math.Min(8, adminKey.Length)] + "...";
+
+        _logger.LogInformation("Admin user seeded. Key: {AdminKeyHint}", keyHint);
+
+        // Full key written to stdout for operator visibility -- not captured in structured log exports
+        Console.WriteLine($"[Collabhost] Admin key: {adminKey}");
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

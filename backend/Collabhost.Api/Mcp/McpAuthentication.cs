@@ -1,7 +1,5 @@
 using Collabhost.Api.Authorization;
 
-using Microsoft.Extensions.Options;
-
 using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
@@ -28,7 +26,8 @@ public static class McpAuthentication
             return;
         }
 
-        var user = await ResolveUserAsync(httpContext, authKey, ct);
+        var resolver = httpContext.RequestServices.GetRequiredService<AuthKeyResolver>();
+        var user = await resolver.ResolveAsync(authKey, ct);
 
         if (user is null || !user.IsActive)
         {
@@ -50,50 +49,6 @@ public static class McpAuthentication
         {
             FilterToolsByRole(sessionOptions, user.Role);
         }
-    }
-
-    private static async Task<User?> ResolveUserAsync
-    (
-        HttpContext httpContext,
-        string authKey,
-        CancellationToken ct
-    )
-    {
-        var settings = httpContext.RequestServices
-            .GetRequiredService<IOptionsMonitor<AuthorizationSettings>>()
-            .CurrentValue;
-
-        var userStore = httpContext.RequestServices.GetRequiredService<UserStore>();
-
-        // Config key bypass: permanent lockout override
-        if (settings.AdminKey is not null && authKey == settings.AdminKey)
-        {
-            var user = await userStore.GetByAuthKeyAsync(authKey, ct);
-
-            if (user is not null)
-            {
-                return user;
-            }
-
-            // Config key always works even if no matching user exists in DB
-            var logger = httpContext.RequestServices
-                .GetRequiredService<ILoggerFactory>()
-                .CreateLogger(typeof(McpAuthentication));
-
-            logger.LogWarning
-            (
-                "MCP auth bypass: request authenticated via config admin key with no matching DB user"
-            );
-
-            return new User
-            {
-                Name = "Admin (config bypass)",
-                AuthKey = authKey,
-                Role = UserRole.Administrator,
-            };
-        }
-
-        return await userStore.GetByAuthKeyAsync(authKey, ct);
     }
 
     private static void FilterToolsByRole(McpServerOptions sessionOptions, UserRole role)
