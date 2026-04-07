@@ -18,6 +18,15 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 // Aspire service defaults
 builder.AddServiceDefaults();
 
+// JSON: accept string enum values (e.g. "administrator", "agent") in request bodies
+builder.Services.ConfigureHttpJsonOptions
+(
+    options => options.SerializerOptions.Converters.Add
+    (
+        new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)
+    )
+);
+
 // Database
 builder.Services.AddDataAccess(builder.Configuration);
 
