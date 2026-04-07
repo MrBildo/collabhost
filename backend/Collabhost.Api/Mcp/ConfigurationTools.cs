@@ -174,6 +174,168 @@ public class ConfigurationTools
 
     [McpServerTool
     (
+        Name = "update_settings",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false
+    )]
+    [Description("Saves capability override settings for an application. Only provided fields are changed -- omitted fields retain their current values. Settings must conform to the schema from get_settings. Some settings require an app restart to take effect (check the 'requiresRestart' flag in get_settings). Use get_settings first to see the schema and current values.")]
+    public async Task<CallToolResult> UpdateSettingsAsync
+    (
+        [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
+        [Description("JSON object of settings overrides to apply. Must match the capability schema structure from get_settings. Example: {\"process\":{\"workingDirectory\":\"/app\"},\"restart\":{\"policy\":\"always\"}}")] string settings,
+        CancellationToken ct
+    )
+    {
+        var app = await _appStore.GetBySlugAsync(slug, ct);
+
+        if (app is null)
+        {
+            return McpResponseFormatter.AppNotFound(slug);
+        }
+
+        JsonObject? changesObject;
+
+        try
+        {
+            changesObject = JsonNode.Parse(settings)?.AsObject();
+        }
+        catch (JsonException ex)
+        {
+            return McpResponseFormatter.InvalidParameters
+            (
+                $"Invalid JSON in settings parameter: {ex.Message}"
+            );
+        }
+
+        if (changesObject is null)
+        {
+            return McpResponseFormatter.InvalidParameters
+            (
+                "settings must be a non-null JSON object."
+            );
+        }
+
+        var bindings = await _appStore.GetBindingsAsync(app.AppTypeId, ct);
+        var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
+
+        // Handle identity section changes
+        if (changesObject.TryGetPropertyValue("identity", out var identityNode)
+            && identityNode is JsonObject identityChanges
+            && identityChanges.TryGetPropertyValue("displayName", out var displayNameNode))
+        {
+            var newDisplayName = displayNameNode?.GetValue<string>();
+
+            if (!string.IsNullOrWhiteSpace(newDisplayName))
+            {
+                app.DisplayName = newDisplayName;
+                app.ModifiedAt = DateTime.UtcNow;
+
+                await _appStore.UpdateAppAsync(app, ct);
+            }
+        }
+
+        // Handle capability section changes
+        foreach (var (sectionKey, sectionValueNode) in changesObject)
+        {
+            if (string.Equals(sectionKey, "identity", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (sectionValueNode is not JsonObject sectionChanges)
+            {
+                continue;
+            }
+
+            var binding = bindings.SingleOrDefault
+            (
+                b => string.Equals(b.CapabilitySlug, sectionKey, StringComparison.Ordinal)
+            );
+
+            if (binding is null)
+            {
+                return McpResponseFormatter.InvalidParameters
+                (
+                    $"Unknown capability section '{sectionKey}'. Use get_settings to see valid sections for this app."
+                );
+            }
+
+            var proposedOverrides = new JsonObject();
+
+            foreach (var (fieldKey, fieldValue) in sectionChanges)
+            {
+                proposedOverrides[fieldKey] = fieldValue?.DeepClone();
+            }
+
+            var validationErrors = CapabilityResolver.ValidateEdits
+            (
+                sectionKey, proposedOverrides, isNewApp: false
+            );
+
+            if (validationErrors.Count > 0)
+            {
+                return McpResponseFormatter.InvalidParameters
+                (
+                    $"Validation errors for '{sectionKey}': {string.Join("; ", validationErrors)}"
+                );
+            }
+
+            // Merge with existing override (only change provided fields)
+            var existingOverrideJson = overrides.TryGetValue(sectionKey, out var existing)
+                ? existing.ConfigurationJson
+                : null;
+
+            var effectiveOverride = existingOverrideJson is not null
+                ? JsonNode.Parse(existingOverrideJson)?.AsObject() ?? []
+                : (JsonObject)[];
+
+            foreach (var (fieldKey, fieldValue) in sectionChanges)
+            {
+                effectiveOverride[fieldKey] = fieldValue?.DeepClone();
+            }
+
+            await _appStore.SaveOverrideAsync
+            (
+                app.Id,
+                sectionKey,
+                effectiveOverride.ToJsonString(McpResponseFormatter.JsonOptions),
+                ct
+            );
+        }
+
+        _appStore.Invalidate(slug);
+        _appStore.InvalidateOverrides(app.Id);
+
+        return McpResponseFormatter.Success
+        (
+            $"Settings updated for app '{slug}'. Use get_settings to review current values. "
+            + "If any changed settings require restart, use restart_app to apply them."
+        );
+    }
+
+    [McpServerTool
+    (
+        Name = "reload_proxy",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false
+    )]
+    [Description("Forces Caddy to regenerate its proxy configuration from the current app registry state. Use this when routes appear stale or when an app's domain is not resolving correctly. This is safe to call at any time -- it regenerates the full configuration idempotently.")]
+    public CallToolResult ReloadProxy()
+    {
+        _proxy.RequestSync();
+
+        return McpResponseFormatter.Success
+        (
+            "Proxy configuration reload requested. Caddy will regenerate its configuration from the current app registry state."
+        );
+    }
+
+    [McpServerTool
+    (
         Name = "list_routes",
         ReadOnly = true,
         Destructive = false,
