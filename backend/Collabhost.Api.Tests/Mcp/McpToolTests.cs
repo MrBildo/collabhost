@@ -203,10 +203,6 @@ public class McpToolTests(ApiFixture fixture)
     [Fact]
     public void DetectStrategy_ExistingDirectory_ReturnsNonErrorResponse()
     {
-        var appStore = _services.GetRequiredService<AppStore>();
-        var supervisor = _services.GetRequiredService<ProcessSupervisor>();
-        var proxy = _services.GetRequiredService<ProxyManager>();
-        var tools = new RegistrationTools(appStore, supervisor, proxy);
         var dir = Path.GetTempPath();
 
         var result = RegistrationTools.DetectStrategy(dir, "dotnet-app");
@@ -217,11 +213,6 @@ public class McpToolTests(ApiFixture fixture)
     [Fact]
     public void DetectStrategy_NonexistentDirectory_ReturnsError()
     {
-        var appStore = _services.GetRequiredService<AppStore>();
-        var supervisor = _services.GetRequiredService<ProcessSupervisor>();
-        var proxy = _services.GetRequiredService<ProxyManager>();
-        var tools = new RegistrationTools(appStore, supervisor, proxy);
-
         var result = RegistrationTools.DetectStrategy("/does/not/exist/xyz-abc", "dotnet-app");
 
         (result.IsError ?? false).ShouldBeTrue();
