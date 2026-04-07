@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
@@ -10,6 +12,7 @@ using Collabhost.Api.Supervisor;
 using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using ModelContextProtocol.Protocol;
 
@@ -82,8 +85,14 @@ public class McpToolTests(ApiFixture fixture)
         var appStore = _services.GetRequiredService<AppStore>();
         var supervisor = _services.GetRequiredService<ProcessSupervisor>();
         var proxy = _services.GetRequiredService<ProxyManager>();
+        var activityEventStore = _services.GetRequiredService<ActivityEventStore>();
+        var logger = _services.GetRequiredService<ILogger<LifecycleTools>>();
 
-        return new LifecycleTools(appStore, supervisor, proxy);
+        // ICurrentUser is scoped -- create a scope to resolve it
+        using var scope = _services.CreateScope();
+        var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
+
+        return new LifecycleTools(appStore, supervisor, proxy, currentUser, activityEventStore, logger);
     }
 
     private ConfigurationTools CreateConfigurationTools()
@@ -92,8 +101,14 @@ public class McpToolTests(ApiFixture fixture)
         var supervisor = _services.GetRequiredService<ProcessSupervisor>();
         var proxy = _services.GetRequiredService<ProxyManager>();
         var proxySettings = _services.GetRequiredService<ProxySettings>();
+        var activityEventStore = _services.GetRequiredService<ActivityEventStore>();
+        var logger = _services.GetRequiredService<ILogger<ConfigurationTools>>();
 
-        return new ConfigurationTools(appStore, supervisor, proxy, proxySettings);
+        // ICurrentUser is scoped -- create a scope to resolve it
+        using var scope = _services.CreateScope();
+        var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
+
+        return new ConfigurationTools(appStore, supervisor, proxy, proxySettings, currentUser, activityEventStore, logger);
     }
 
     // -------- Discovery: list_apps --------

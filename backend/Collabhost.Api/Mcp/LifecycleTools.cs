@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Globalization;
 
+using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
@@ -11,12 +13,17 @@ using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
+#pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
+#pragma warning disable MA0011 // Ulid.ToString is not locale-sensitive
 [McpServerToolType]
 public class LifecycleTools
 (
     AppStore appStore,
     ProcessSupervisor supervisor,
-    ProxyManager proxy
+    ProxyManager proxy,
+    ICurrentUser currentUser,
+    ActivityEventStore activityEventStore,
+    ILogger<LifecycleTools> logger
 )
 {
     private readonly AppStore _appStore = appStore
@@ -27,6 +34,15 @@ public class LifecycleTools
 
     private readonly ProxyManager _proxy = proxy
         ?? throw new ArgumentNullException(nameof(proxy));
+
+    private readonly ICurrentUser _currentUser = currentUser
+        ?? throw new ArgumentNullException(nameof(currentUser));
+
+    private readonly ActivityEventStore _activityEventStore = activityEventStore
+        ?? throw new ArgumentNullException(nameof(activityEventStore));
+
+    private readonly ILogger<LifecycleTools> _logger = logger
+        ?? throw new ArgumentNullException(nameof(logger));
 
     [McpServerTool
     (
@@ -59,6 +75,27 @@ public class LifecycleTools
             _proxy.EnableRoute(app.Slug);
             _proxy.RequestSync();
 
+            try
+            {
+                await _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppStarted,
+                        ActorId = _currentUser.UserId.ToString(),
+                        ActorName = _currentUser.User.Name,
+                        AppId = app.Id.ToString(),
+                        AppSlug = app.Slug,
+                        MetadataJson = null
+                    },
+                    ct
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record activity event for app.started (slug={Slug})", app.Slug);
+            }
+
             return McpResponseFormatter.Success
             (
                 McpResponseFormatter.ToJson
@@ -71,6 +108,27 @@ public class LifecycleTools
         try
         {
             var managed = await _supervisor.StartAppAsync(app.Id, ct);
+
+            try
+            {
+                await _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppStarted,
+                        ActorId = _currentUser.UserId.ToString(),
+                        ActorName = _currentUser.User.Name,
+                        AppId = app.Id.ToString(),
+                        AppSlug = app.Slug,
+                        MetadataJson = null
+                    },
+                    ct
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record activity event for app.started (slug={Slug})", app.Slug);
+            }
 
             return McpResponseFormatter.Success
             (
@@ -117,6 +175,27 @@ public class LifecycleTools
             _proxy.DisableRoute(app.Slug);
             _proxy.RequestSync();
 
+            try
+            {
+                await _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppStopped,
+                        ActorId = _currentUser.UserId.ToString(),
+                        ActorName = _currentUser.User.Name,
+                        AppId = app.Id.ToString(),
+                        AppSlug = app.Slug,
+                        MetadataJson = null
+                    },
+                    ct
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record activity event for app.stopped (slug={Slug})", app.Slug);
+            }
+
             return McpResponseFormatter.Success
             (
                 McpResponseFormatter.ToJson
@@ -129,6 +208,27 @@ public class LifecycleTools
         try
         {
             var managed = await _supervisor.StopAppAsync(app.Id, ct);
+
+            try
+            {
+                await _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppStopped,
+                        ActorId = _currentUser.UserId.ToString(),
+                        ActorName = _currentUser.User.Name,
+                        AppId = app.Id.ToString(),
+                        AppSlug = app.Slug,
+                        MetadataJson = null
+                    },
+                    ct
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record activity event for app.stopped (slug={Slug})", app.Slug);
+            }
 
             return McpResponseFormatter.Success
             (
@@ -180,6 +280,27 @@ public class LifecycleTools
         {
             var managed = await _supervisor.RestartAppAsync(app.Id, ct);
 
+            try
+            {
+                await _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppRestarted,
+                        ActorId = _currentUser.UserId.ToString(),
+                        ActorName = _currentUser.User.Name,
+                        AppId = app.Id.ToString(),
+                        AppSlug = app.Slug,
+                        MetadataJson = null
+                    },
+                    ct
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record activity event for app.restarted (slug={Slug})", app.Slug);
+            }
+
             return McpResponseFormatter.Success
             (
                 McpResponseFormatter.ToJson
@@ -229,6 +350,27 @@ public class LifecycleTools
         try
         {
             await _supervisor.KillAppAsync(app.Id, ct);
+
+            try
+            {
+                await _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppKilled,
+                        ActorId = _currentUser.UserId.ToString(),
+                        ActorName = _currentUser.User.Name,
+                        AppId = app.Id.ToString(),
+                        AppSlug = app.Slug,
+                        MetadataJson = null
+                    },
+                    ct
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record activity event for app.killed (slug={Slug})", app.Slug);
+            }
 
             var process = _supervisor.GetProcess(app.Id);
             var status = process?.State.ToApiString() ?? "stopped";
@@ -306,3 +448,5 @@ public class LifecycleTools
         return McpResponseFormatter.Success($"{header}\n{content}");
     }
 }
+#pragma warning restore MA0011
+#pragma warning restore MA0076

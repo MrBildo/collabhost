@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Globalization;
 
+using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Proxy;
@@ -12,13 +14,18 @@ using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
+#pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
+#pragma warning disable MA0011 // Ulid.ToString is not locale-sensitive
 [McpServerToolType]
 public class ConfigurationTools
 (
     AppStore appStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
-    ProxySettings proxySettings
+    ProxySettings proxySettings,
+    ICurrentUser currentUser,
+    ActivityEventStore activityEventStore,
+    ILogger<ConfigurationTools> logger
 )
 {
     private readonly AppStore _appStore = appStore
@@ -32,6 +39,15 @@ public class ConfigurationTools
 
     private readonly ProxySettings _proxySettings = proxySettings
         ?? throw new ArgumentNullException(nameof(proxySettings));
+
+    private readonly ICurrentUser _currentUser = currentUser
+        ?? throw new ArgumentNullException(nameof(currentUser));
+
+    private readonly ActivityEventStore _activityEventStore = activityEventStore
+        ?? throw new ArgumentNullException(nameof(activityEventStore));
+
+    private readonly ILogger<ConfigurationTools> _logger = logger
+        ?? throw new ArgumentNullException(nameof(logger));
 
     [McpServerTool
     (
@@ -308,6 +324,31 @@ public class ConfigurationTools
         _appStore.Invalidate(slug);
         _appStore.InvalidateOverrides(app.Id);
 
+        var changedCapabilities = changesObject.Select(kvp => kvp.Key)
+            .Where(k => !string.Equals(k, "identity", StringComparison.Ordinal))
+                .ToList();
+
+        try
+        {
+            await _activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppSettingsUpdated,
+                    ActorId = _currentUser.UserId.ToString(),
+                    ActorName = _currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = JsonSerializer.Serialize(new { changedCapabilities })
+                },
+                ct
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record activity event for app.settings_updated (slug={Slug})", slug);
+        }
+
         return McpResponseFormatter.Success
         (
             $"Settings updated for app '{slug}'. Use get_settings to review current values. "
@@ -324,9 +365,30 @@ public class ConfigurationTools
         OpenWorld = false
     )]
     [Description("Forces Caddy to regenerate its proxy configuration from the current app registry state. Use this when routes appear stale or when an app's domain is not resolving correctly. This is safe to call at any time -- it regenerates the full configuration idempotently.")]
-    public CallToolResult ReloadProxy()
+    public async Task<CallToolResult> ReloadProxyAsync(CancellationToken ct)
     {
         _proxy.RequestSync();
+
+        try
+        {
+            await _activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.ProxyReloaded,
+                    ActorId = _currentUser.UserId.ToString(),
+                    ActorName = _currentUser.User.Name,
+                    AppId = null,
+                    AppSlug = null,
+                    MetadataJson = null
+                },
+                ct
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record activity event for proxy.reloaded");
+        }
 
         return McpResponseFormatter.Success
         (
@@ -452,3 +514,5 @@ file static class ConfigurationToolExtensions
         };
     }
 }
+#pragma warning restore MA0011
+#pragma warning restore MA0076
