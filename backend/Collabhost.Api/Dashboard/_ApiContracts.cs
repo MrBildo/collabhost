@@ -22,7 +22,7 @@ public record DashboardEventResponse
 (
     DateTime Timestamp,
     string Message,
-    string? AppName,
+    string? AppSlug,
     string Source,
     string Severity
 );

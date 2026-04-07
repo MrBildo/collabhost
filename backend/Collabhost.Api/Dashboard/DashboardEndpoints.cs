@@ -122,14 +122,14 @@ public static class DashboardEndpoints
         var events = await activityEventStore.GetRecentAsync(
             Math.Min(limit ?? 20, 100), ct);
 
-        var items = events.Select(e => new
-        {
-            timestamp = e.Timestamp,
-            message = FormatEventMessage(e),
-            appSlug = e.AppSlug,
-            source = e.ActorName,
-            severity = ActivityEventStore.DeriveSeverity(e.EventType)
-        });
+        var items = events.Select(e => new DashboardEventResponse
+        (
+            Timestamp: e.Timestamp,
+            Message: FormatEventMessage(e),
+            AppSlug: e.AppSlug,
+            Source: e.ActorName,
+            Severity: ActivityEventStore.DeriveSeverity(e.EventType)
+        ));
 
         return TypedResults.Ok(new { events = items });
     }
