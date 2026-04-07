@@ -56,4 +56,13 @@ public static class AuthorizationRegistration
             return app;
         }
     }
+
+    extension(IEndpointRouteBuilder routes)
+    {
+        public IEndpointRouteBuilder MapUserEndpoints()
+        {
+            UserEndpoints.Map(routes);
+            return routes;
+        }
+    }
 }

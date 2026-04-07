@@ -71,6 +71,7 @@ if (app.Environment.IsDevelopment())
 app.UseCollabhostAuthorization();
 
 // Endpoints
+app.MapUserEndpoints();
 app.MapRegistryEndpoints();
 app.MapProxyEndpoints();
 app.MapDashboardEndpoints();
