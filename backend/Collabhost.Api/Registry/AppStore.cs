@@ -85,6 +85,7 @@ public class AppStore
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
         return await db.AppTypes
+            .Include(t => t.Bindings)
             .OrderBy(t => t.DisplayName)
             .AsNoTracking()
                 .ToListAsync(ct);

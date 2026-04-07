@@ -107,7 +107,7 @@ public class DiscoveryTools
             var resolvedStatus = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
             var statusString = resolvedStatus.ToApiString();
 
-            if (status is not null && !string.Equals(statusString, status, StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(status) && !string.Equals(statusString, status, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
