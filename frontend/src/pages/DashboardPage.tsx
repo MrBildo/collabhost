@@ -1,10 +1,11 @@
 import { ActionButton } from '@/actions/ActionButton'
 import { useApps, useStartApp, useStopApp } from '@/hooks/use-apps'
-import { useDashboardStats } from '@/hooks/use-dashboard'
+import { useDashboardEvents, useDashboardStats } from '@/hooks/use-dashboard'
 import { formatMemory } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
 import { ErrorBanner } from '@/shared/ErrorBanner'
+import { EventList } from '@/shared/EventList'
 import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
 import { StatusStrip } from '@/status/StatusStrip'
@@ -16,6 +17,7 @@ function DashboardPage() {
   const navigate = useNavigate()
   const statsQuery = useDashboardStats()
   const appsQuery = useApps()
+  const eventsQuery = useDashboardEvents()
   const startMutation = useStartApp()
   const stopMutation = useStopApp()
 
@@ -115,6 +117,9 @@ function DashboardPage() {
           className="mb-5"
         />
       )}
+
+      <SectionDivider label="Recent Activity" className="mb-3 mt-5" />
+      {eventsQuery.data ? <EventList events={eventsQuery.data.events} /> : eventsQuery.isLoading ? <Spinner /> : null}
     </div>
   )
 }

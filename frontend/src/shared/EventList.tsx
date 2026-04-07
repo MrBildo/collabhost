@@ -42,8 +42,8 @@ function EventList({ events, className }: EventListProps) {
               {formatTimestamp(event.timestamp)}
             </span>
             <span className="text-xs flex-1" style={msgColor ? { color: msgColor } : undefined}>
-              {event.appName && (
-                <strong style={{ fontWeight: 600, color: msgColor ?? 'var(--wm-text-bright)' }}>{event.appName}</strong>
+              {event.appSlug && (
+                <strong style={{ fontWeight: 600, color: msgColor ?? 'var(--wm-text-bright)' }}>{event.appSlug}</strong>
               )}{' '}
               {event.message}
             </span>
