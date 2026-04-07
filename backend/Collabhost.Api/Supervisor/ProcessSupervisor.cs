@@ -143,11 +143,15 @@ public class ProcessSupervisor
 
     public async Task<ManagedProcess> StartAppAsync(Ulid appId, CancellationToken ct = default)
     {
-        if (_processes.TryGetValue(appId, out var existing))
+        // If a previous ManagedProcess exists (e.g. after stop), dispose it BEFORE
+        // starting the new one. We must not hold the old process's operation lock
+        // across StartAppInternalAsync because that method removes and disposes the
+        // old process, which invalidates the semaphore -- causing the lock's
+        // DisposeAsync to throw ObjectDisposedException on Release().
+        if (_processes.TryGetValue(appId, out var existing) && !existing.IsRunning)
         {
-            await using var _ = await existing.AcquireOperationLockAsync(ct);
-
-            return await StartAppInternalAsync(appId, ct);
+            _processes.TryRemove(appId, out _);
+            existing.Dispose();
         }
 
         return await StartAppInternalAsync(appId, ct);
