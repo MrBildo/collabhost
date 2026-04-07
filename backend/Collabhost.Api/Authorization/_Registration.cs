@@ -40,6 +40,10 @@ public static class AuthorizationRegistration
 
             services.AddHostedService<UserSeedService>();
 
+            services.AddSingleton<UserStore>();
+            services.AddScoped<CurrentUser>();
+            services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
+
             return services;
         }
     }
