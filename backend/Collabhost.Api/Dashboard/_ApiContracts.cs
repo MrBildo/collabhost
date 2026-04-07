@@ -17,3 +17,12 @@ public record DashboardStats
     double? RequestsPerMinute,
     int AppTypes
 );
+
+public record DashboardEventResponse
+(
+    DateTime Timestamp,
+    string Message,
+    string? AppName,
+    string Source,
+    string Severity
+);
