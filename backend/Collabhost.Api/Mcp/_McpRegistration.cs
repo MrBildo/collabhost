@@ -29,7 +29,11 @@ public static class McpRegistration
                 {
                     options.Stateless = true;
                     options.ConfigureSessionOptions = McpAuthentication.ConfigureSessionAsync;
-                });
+                })
+                .WithTools<DiscoveryTools>()
+                .WithTools<LifecycleTools>()
+                .WithTools<ConfigurationTools>()
+                .WithTools<RegistrationTools>();
 
             return services;
         }
