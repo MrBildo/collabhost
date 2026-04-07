@@ -13,6 +13,7 @@ public class AuthorizationMiddleware
 (
     RequestDelegate next,
     IOptionsMonitor<AuthorizationSettings> authorizationSettings,
+    UserStore userStore,
     ILogger<AuthorizationMiddleware> logger
 )
 {
@@ -22,10 +23,13 @@ public class AuthorizationMiddleware
     private readonly IOptionsMonitor<AuthorizationSettings> _authorizationSettings = authorizationSettings
         ?? throw new ArgumentNullException(nameof(authorizationSettings));
 
+    private readonly UserStore _userStore = userStore
+        ?? throw new ArgumentNullException(nameof(userStore));
+
     private readonly ILogger<AuthorizationMiddleware> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
-    private static readonly string[] _skipPrefixes = ["/health", "/alive", "/openapi"];
+    private static readonly string[] _skipPrefixes = ["/health", "/alive", "/openapi", "/mcp"];
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -51,32 +55,88 @@ public class AuthorizationMiddleware
             userKey = context.Request.Query["key"].FirstOrDefault();
         }
 
-        var adminKey = _authorizationSettings.CurrentValue.AdminKey;
-
-        if (adminKey is null || userKey != adminKey)
+        if (string.IsNullOrEmpty(userKey))
         {
-            _logger.LogWarning
-            (
-                "Auth rejected for {Path} -- key {Status}",
-                path,
-                userKey is null ? "missing" : "invalid"
-            );
-
-            context.Response.StatusCode = 403;
-            context.Response.ContentType = "application/json";
-
-            var body = new { error = "Forbidden", message = "Invalid or missing API key." };
-
-            await context.Response.WriteAsync
-            (
-                JsonSerializer.Serialize(body, _jsonOptions),
-                context.RequestAborted
-            );
-
+            await WriteUnauthorizedAsync(context, "API key is required. Provide X-User-Key header.");
             return;
         }
 
+        var user = await ResolveUserAsync(userKey, context.RequestAborted);
+
+        if (user is null)
+        {
+            _logger.LogWarning("Auth rejected for {Path} -- invalid key", path);
+
+            await WriteUnauthorizedAsync(context, "Invalid API key.");
+            return;
+        }
+
+        if (!user.IsActive)
+        {
+            _logger.LogWarning
+            (
+                "Auth rejected for {Path} -- user {UserName} ({UserId}) is deactivated",
+                path,
+                user.Name,
+                user.Id
+            );
+
+            await WriteUnauthorizedAsync(context, "User account is deactivated.");
+            return;
+        }
+
+        var currentUser = context.RequestServices.GetRequiredService<CurrentUser>();
+
+        currentUser.Set(user);
+
         await _next(context);
+    }
+
+    private async Task<User?> ResolveUserAsync(string authKey, CancellationToken ct)
+    {
+        var adminKey = _authorizationSettings.CurrentValue.AdminKey;
+
+        // Config key bypass: permanent lockout override -- always works even if DB is empty
+        if (adminKey is not null && authKey == adminKey)
+        {
+            var user = await _userStore.GetByAuthKeyAsync(authKey, ct);
+
+            if (user is not null)
+            {
+                return user;
+            }
+
+            // DB has no user for the config key (deleted or first request before seed runs).
+            // Create a transient admin identity so the request succeeds.
+            _logger.LogWarning
+            (
+                "Auth bypass: request authenticated via config admin key with no matching DB user. "
+                + "Create a proper user account."
+            );
+
+            return new User
+            {
+                Name = "Admin (config bypass)",
+                AuthKey = authKey,
+                Role = UserRole.Administrator,
+            };
+        }
+
+        return await _userStore.GetByAuthKeyAsync(authKey, ct);
+    }
+
+    private static async Task WriteUnauthorizedAsync(HttpContext context, string message)
+    {
+        context.Response.StatusCode = 401;
+        context.Response.ContentType = "application/json";
+
+        var body = new { error = "Unauthorized", message };
+
+        await context.Response.WriteAsync
+        (
+            JsonSerializer.Serialize(body, _jsonOptions),
+            context.RequestAborted
+        );
     }
 
     private static bool ShouldSkip(string path, string method)

@@ -61,7 +61,7 @@ public class SmokeTests(AppHostFixture fixture)
     {
         var response = await _client.GetAsync("/api/v1/apps");
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
