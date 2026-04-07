@@ -4,6 +4,7 @@ using Collabhost.Api.Dashboard;
 using Collabhost.Api.Data;
 using Collabhost.Api.Events;
 using Collabhost.Api.Filesystem;
+using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
@@ -36,6 +37,9 @@ builder.Services.AddEventBus();
 builder.Services.AddSupervisor();
 builder.Services.AddProxy(builder.Configuration);
 builder.Services.AddProbes();
+
+// MCP
+builder.Services.AddMcp();
 
 // OpenAPI
 builder.Services.AddOpenApi();
@@ -72,6 +76,7 @@ app.MapProxyEndpoints();
 app.MapDashboardEndpoints();
 app.MapFilesystemEndpoints();
 app.MapSystemEndpoints();
+app.MapMcpEndpoints();
 
 // SPA fallback
 app.UseStaticFiles();
