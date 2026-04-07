@@ -6,6 +6,8 @@ const ROUTES = {
   appCreate: '/apps/new',
   routes: '/routes',
   system: '/system',
+  users: '/users',
+  userCreate: '/users/new',
 } as const
 
 export { ROUTES }

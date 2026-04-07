@@ -1,3 +1,4 @@
+import { emitChange } from '@/hooks/use-auth'
 import { API_BASE, AUTH_STORAGE_KEY } from '@/lib/constants'
 
 class ApiError extends Error {
@@ -27,6 +28,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       ...options?.headers,
     },
   })
+
+  if (res.status === 401) {
+    // Key is invalid or deactivated — clear session and surface AuthGate
+    localStorage.removeItem(AUTH_STORAGE_KEY)
+    emitChange()
+    throw new ApiError(401, 'Session expired. Please log in again.')
+  }
 
   if (!res.ok) {
     const body = await res.text()

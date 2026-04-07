@@ -7,15 +7,19 @@ import type {
   AppTypeListItem,
   CreateAppRequest,
   CreateAppResponse,
+  CreateUserRequest,
   DashboardEventsResponse,
   DashboardStats,
   DetectStrategyResponse,
   FilesystemBrowseResponse,
   LogsResponse,
+  MeResponse,
   RegistrationSchema,
   RouteListResponse,
   SystemStatus,
   UpdateSettingsRequest,
+  User,
+  UserCreateResponse,
 } from './types'
 
 // --- Apps ---
@@ -104,6 +108,31 @@ function createApp(body: CreateAppRequest): Promise<CreateAppResponse> {
   })
 }
 
+// --- Users ---
+
+function fetchUsers(): Promise<User[]> {
+  return request('/users')
+}
+
+function fetchUser(id: string): Promise<User> {
+  return request(`/users/${id}`)
+}
+
+function createUser(body: CreateUserRequest): Promise<UserCreateResponse> {
+  return request('/users', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+function deactivateUser(id: string): Promise<void> {
+  return request(`/users/${id}/deactivate`, { method: 'PATCH' })
+}
+
+function fetchMe(): Promise<MeResponse> {
+  return request('/auth/me')
+}
+
 // --- Routes ---
 
 function getRoutes(): Promise<RouteListResponse> {
@@ -132,6 +161,11 @@ function detectStrategy(path: string, appTypeSlug: string): Promise<DetectStrate
 }
 
 export {
+  fetchUsers,
+  fetchUser,
+  createUser,
+  deactivateUser,
+  fetchMe,
   getApps,
   getAppDetail,
   startApp,
