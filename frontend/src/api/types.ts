@@ -328,6 +328,40 @@ type RouteEntry = {
   enabled: boolean
 }
 
+// --- Users ---
+
+type UserRole = 'administrator' | 'agent'
+
+type User = {
+  id: string
+  name: string
+  role: UserRole
+  isActive: boolean
+  createdAt: string
+}
+
+type UserCreateResponse = {
+  id: string
+  name: string
+  role: UserRole
+  isActive: boolean
+  createdAt: string
+  authKey: string
+}
+
+type MeResponse = {
+  id: string
+  name: string
+  role: UserRole
+  isActive: boolean
+  createdAt: string
+}
+
+type CreateUserRequest = {
+  name: string
+  role: UserRole
+}
+
 // --- System ---
 
 type SystemStatus = {
@@ -357,6 +391,11 @@ type DirectoryEntry = {
 }
 
 export type {
+  UserRole,
+  User,
+  UserCreateResponse,
+  MeResponse,
+  CreateUserRequest,
   AppStatus,
   HealthStatus,
   AppTag,

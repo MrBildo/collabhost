@@ -20,7 +20,7 @@ function AuthGate({ children }: AuthGateProps) {
     e.preventDefault()
     const trimmed = key.trim()
     if (!trimmed) {
-      setError('Admin key is required')
+      setError('User key is required')
       return
     }
     login(trimmed)
@@ -34,17 +34,17 @@ function AuthGate({ children }: AuthGateProps) {
             Collabhost
           </h1>
           <p className="text-xs mt-2" style={{ color: 'var(--wm-text-dim)' }}>
-            Enter your admin key to continue.
+            Enter your user key to continue.
           </p>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="admin-key" className="block text-xs mb-1.5" style={{ color: 'var(--wm-text-dim)' }}>
-              Admin Key
+            <label htmlFor="user-key" className="block text-xs mb-1.5" style={{ color: 'var(--wm-text-dim)' }}>
+              User Key
             </label>
             <input
-              id="admin-key"
+              id="user-key"
               type="password"
               className="wm-input w-full"
               value={key}

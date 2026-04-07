@@ -6,6 +6,8 @@ import { AppSettingsPage } from '@/pages/AppSettingsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { RoutesPage } from '@/pages/RoutesPage'
 import { SystemPage } from '@/pages/SystemPage'
+import { UserCreatePage } from '@/pages/UserCreatePage'
+import { UsersPage } from '@/pages/UsersPage'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 function App() {
@@ -20,6 +22,8 @@ function App() {
           <Route path="apps/:slug/settings" element={<AppSettingsPage />} />
           <Route path="routes" element={<RoutesPage />} />
           <Route path="system" element={<SystemPage />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="users/new" element={<UserCreatePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

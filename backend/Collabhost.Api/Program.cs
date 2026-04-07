@@ -4,6 +4,7 @@ using Collabhost.Api.Dashboard;
 using Collabhost.Api.Data;
 using Collabhost.Api.Events;
 using Collabhost.Api.Filesystem;
+using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
@@ -16,6 +17,15 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 
 // Aspire service defaults
 builder.AddServiceDefaults();
+
+// JSON: accept string enum values (e.g. "administrator", "agent") in request bodies
+builder.Services.ConfigureHttpJsonOptions
+(
+    options => options.SerializerOptions.Converters.Add
+    (
+        new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)
+    )
+);
 
 // Database
 builder.Services.AddDataAccess(builder.Configuration);
@@ -36,6 +46,9 @@ builder.Services.AddEventBus();
 builder.Services.AddSupervisor();
 builder.Services.AddProxy(builder.Configuration);
 builder.Services.AddProbes();
+
+// MCP
+builder.Services.AddMcp();
 
 // OpenAPI
 builder.Services.AddOpenApi();
@@ -67,11 +80,13 @@ if (app.Environment.IsDevelopment())
 app.UseCollabhostAuthorization();
 
 // Endpoints
+app.MapUserEndpoints();
 app.MapRegistryEndpoints();
 app.MapProxyEndpoints();
 app.MapDashboardEndpoints();
 app.MapFilesystemEndpoints();
 app.MapSystemEndpoints();
+app.MapMcpEndpoints();
 
 // SPA fallback
 app.UseStaticFiles();

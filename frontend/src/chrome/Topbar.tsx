@@ -1,3 +1,5 @@
+import { UserIndicator } from '@/chrome/UserIndicator'
+import { useCurrentUser } from '@/hooks/use-current-user'
 import { cn } from '@/lib/cn'
 import { ROUTES } from '@/lib/routes'
 import { StatusDot } from '@/status/StatusDot'
@@ -8,7 +10,7 @@ type NavItem = {
   to: string
 }
 
-const NAV_ITEMS: NavItem[] = [
+const BASE_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', to: ROUTES.dashboard },
   { label: 'Apps', to: ROUTES.apps },
   { label: 'Routes', to: ROUTES.routes },
@@ -16,6 +18,11 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 function Topbar() {
+  const { data: currentUser } = useCurrentUser()
+  const isAdmin = currentUser?.role === 'administrator'
+
+  const navItems = isAdmin ? [...BASE_NAV_ITEMS, { label: 'Users', to: ROUTES.users }] : BASE_NAV_ITEMS
+
   return (
     <nav className="wm-topbar" aria-label="Main navigation">
       <div className="flex items-center h-full px-4 mx-auto max-w-screen-xl w-full">
@@ -27,7 +34,7 @@ function Topbar() {
 
         {/* Nav links */}
         <div className="flex items-center h-full">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -41,8 +48,10 @@ function Topbar() {
           ))}
         </div>
 
-        {/* Right side: reserved for command palette */}
-        <div className="ml-auto flex items-center gap-4" />
+        {/* Right side: user identity */}
+        <div className="ml-auto flex items-center gap-4">
+          <UserIndicator />
+        </div>
       </div>
     </nav>
   )

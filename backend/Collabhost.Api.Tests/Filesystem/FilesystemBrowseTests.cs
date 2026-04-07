@@ -119,13 +119,13 @@ public class FilesystemBrowseTests(ApiFixture fixture)
     }
 
     [Fact]
-    public async Task Browse_NoAuthKey_Returns403()
+    public async Task Browse_NoAuthKey_Returns401()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/filesystem/browse");
 
         var response = await _client.SendAsync(request);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]

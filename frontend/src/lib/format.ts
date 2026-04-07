@@ -1,4 +1,4 @@
-import type { AppStatus, HealthStatus } from '@/api/types'
+import type { AppStatus, HealthStatus, UserRole } from '@/api/types'
 
 function formatUptime(seconds: number | null | undefined): string {
   if (seconds == null) return '--'
@@ -99,6 +99,25 @@ function toSlug(displayName: string): string {
   )
 }
 
+const ROLE_LABELS: Record<UserRole, string> = {
+  administrator: 'Administrator',
+  agent: 'Agent',
+}
+
+function formatRole(role: UserRole): string {
+  return ROLE_LABELS[role] ?? role
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '--'
+  const date = new Date(iso)
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
 export {
   formatUptime,
   formatUptimeLong,
@@ -109,4 +128,6 @@ export {
   formatTimestamp,
   formatMemory,
   toSlug,
+  formatRole,
+  formatDate,
 }

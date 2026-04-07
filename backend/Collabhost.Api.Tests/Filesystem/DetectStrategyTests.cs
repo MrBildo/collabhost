@@ -295,7 +295,7 @@ public class DetectStrategyTests : IDisposable
     }
 
     [Fact]
-    public async Task DetectStrategy_NoAuth_Returns403()
+    public async Task DetectStrategy_NoAuth_Returns401()
     {
         var encoded = Uri.EscapeDataString(_tempDirectory);
 
@@ -307,7 +307,7 @@ public class DetectStrategyTests : IDisposable
 
         var response = await _client.SendAsync(request);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]

@@ -38,13 +38,13 @@ public class LogStreamEndpointTests(ApiFixture fixture)
     }
 
     [Fact]
-    public async Task StreamLogs_MissingAuth_Returns403()
+    public async Task StreamLogs_MissingAuth_Returns401()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/apps/any-slug/logs/stream");
 
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -664,7 +664,7 @@ public class LogStreamEndpointTests(ApiFixture fixture)
     }
 
     [Fact]
-    public async Task QueryParamAuth_NonSseEndpoint_Returns403()
+    public async Task QueryParamAuth_NonSseEndpoint_Returns401()
     {
         using var request = new HttpRequestMessage
         (
@@ -674,7 +674,7 @@ public class LogStreamEndpointTests(ApiFixture fixture)
 
         using var response = await _client.SendAsync(request);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]

@@ -38,6 +38,13 @@ public static class AuthorizationRegistration
                 }
             );
 
+            services.AddHostedService<UserSeedService>();
+
+            services.AddSingleton<UserStore>();
+            services.AddSingleton<AuthKeyResolver>();
+            services.AddScoped<CurrentUser>();
+            services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
+
             return services;
         }
     }
@@ -48,6 +55,15 @@ public static class AuthorizationRegistration
         {
             app.UseMiddleware<AuthorizationMiddleware>();
             return app;
+        }
+    }
+
+    extension(IEndpointRouteBuilder routes)
+    {
+        public IEndpointRouteBuilder MapUserEndpoints()
+        {
+            UserEndpoints.Map(routes);
+            return routes;
         }
     }
 }
