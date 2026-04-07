@@ -33,7 +33,8 @@ public static class McpRegistration
                 .WithTools<DiscoveryTools>()
                 .WithTools<LifecycleTools>()
                 .WithTools<ConfigurationTools>()
-                .WithTools<RegistrationTools>();
+                .WithTools<RegistrationTools>()
+                .WithTools<ActivityLogTools>();
 
             return services;
         }
