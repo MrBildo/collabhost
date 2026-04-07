@@ -130,7 +130,14 @@ public static class UserEndpoints
             return TypedResults.NotFound();
         }
 
-        await store.DeactivateAsync(userId, ct);
+        try
+        {
+            await store.DeactivateAsync(userId, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return TypedResults.Conflict(new { error = ex.Message });
+        }
 
         var updated = await store.GetByIdAsync(userId, ct);
 

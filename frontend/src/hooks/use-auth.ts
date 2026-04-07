@@ -46,4 +46,4 @@ function useAuth(): {
   }
 }
 
-export { useAuth }
+export { useAuth, emitChange }

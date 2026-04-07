@@ -1393,3 +1393,85 @@ dialog.wm-dialog-overlay::backdrop {
   border: 1px solid var(--wm-border);
   border-radius: var(--wm-radius-sm);
 }
+
+/* === Role Badges === */
+
+.wm-role-badge {
+  font-family: var(--wm-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: var(--wm-radius-sm);
+  border: 1px solid transparent;
+  display: inline-block;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.wm-role-badge--md {
+  font-size: var(--wm-font-xs);
+  padding: 3px 8px;
+}
+
+.wm-role-badge--administrator {
+  color: var(--wm-amber);
+  background: var(--wm-amber-dim);
+  border-color: var(--wm-amber-border);
+}
+
+.wm-role-badge--agent {
+  color: var(--wm-text-dim);
+  background: var(--wm-bg-inset);
+  border-color: var(--wm-border);
+}
+
+/* === Key Display === */
+
+.wm-key-display {
+  background: var(--wm-bg-inset);
+  border: 1px solid var(--wm-amber);
+  border-radius: var(--wm-radius);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wm-key-display__value {
+  font-family: var(--wm-mono);
+  font-size: var(--wm-font-sm);
+  color: var(--wm-amber);
+  flex: 1;
+  word-break: break-all;
+  letter-spacing: 0.03em;
+}
+
+.wm-key-display__copy {
+  flex-shrink: 0;
+}
+
+.wm-key-display__copy--copied {
+  color: var(--wm-green) !important;
+  border-color: var(--wm-green) !important;
+}
+
+/* === Topbar User Identity === */
+
+.wm-topbar__user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--wm-mono);
+  font-size: var(--wm-font-xs);
+  color: var(--wm-text);
+  padding: 4px 8px;
+  border-radius: var(--wm-radius);
+}
+
+/* === User Table Row === */
+
+.wm-table-row--inactive {
+  opacity: 0.5;
+}

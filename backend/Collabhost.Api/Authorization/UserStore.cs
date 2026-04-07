@@ -108,6 +108,18 @@ public class UserStore
             return;
         }
 
+        if (user.Role == UserRole.Administrator)
+        {
+            var activeAdminCount = await db.Users
+                .Where(u => u.Role == UserRole.Administrator && u.IsActive)
+                    .CountAsync(ct);
+
+            if (activeAdminCount <= 1)
+            {
+                throw new InvalidOperationException("Cannot deactivate the last active administrator");
+            }
+        }
+
         user.IsActive = false;
         await db.SaveChangesAsync(ct);
 

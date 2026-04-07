@@ -160,6 +160,46 @@ public class UserEndpointsTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task DeactivateUser_LastActiveAdministrator_Returns409Conflict()
+    {
+        // The seeded admin is the only administrator in the test fixture
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/users");
+        listRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+        var listResponse = await _client.SendAsync(listRequest);
+
+        listResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var listBody = await listResponse.Content.ReadAsStringAsync();
+        var users = JsonDocument.Parse(listBody).RootElement;
+
+        var adminId = users
+            .EnumerateArray()
+            .Single(u => u.GetProperty("role").GetString() == "administrator")
+            .GetProperty("id")
+            .GetString();
+
+        adminId.ShouldNotBeNullOrEmpty();
+
+        // Attempt to deactivate the only admin -- must be rejected
+        using var deactivateRequest = new HttpRequestMessage
+        (
+            HttpMethod.Patch, $"/api/v1/users/{adminId}/deactivate"
+        );
+        deactivateRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+        var deactivateResponse = await _client.SendAsync(deactivateRequest);
+
+        deactivateResponse.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+
+        var body = await deactivateResponse.Content.ReadAsStringAsync();
+        var parsed = JsonDocument.Parse(body).RootElement;
+
+        parsed.GetProperty("error").GetString()
+            .ShouldBe("Cannot deactivate the last active administrator");
+    }
+
+    [Fact]
     public async Task GetMe_AdminKey_ReturnsCurrentUser()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");

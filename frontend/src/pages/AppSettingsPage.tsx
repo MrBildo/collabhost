@@ -4,6 +4,7 @@ import type { AppSettings, SettingsField, SettingsValidationError } from '@/api/
 import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { SchemaField } from '@/forms/SchemaField'
 import { useAppSettings, useDeleteApp, useSaveSettings, useSettingsRestartApp } from '@/hooks/use-app-settings'
+import { useCurrentUser } from '@/hooks/use-current-user'
 import { ROUTES } from '@/lib/routes'
 import { ConfirmDialog } from '@/shared/ConfirmDialog'
 import { ErrorBanner } from '@/shared/ErrorBanner'
@@ -36,6 +37,8 @@ function AppSettingsPage() {
   const saveMutation = useSaveSettings(slug ?? '')
   const restartMutation = useSettingsRestartApp(slug ?? '')
   const deleteMutation = useDeleteApp()
+  const { data: currentUser } = useCurrentUser()
+  const isAdmin = currentUser?.role === 'administrator'
 
   const [isEditing, setIsEditing] = useState(false)
   const [editValues, setEditValues] = useState<DirtyFields>({})
@@ -321,8 +324,8 @@ function AppSettingsPage() {
         </div>
       ))}
 
-      {/* Danger Zone — only visible in edit mode */}
-      {isEditing && (
+      {/* Danger Zone — only visible in edit mode for admins */}
+      {isEditing && isAdmin && (
         <div className="wm-danger-zone mt-10">
           <div className="wm-danger-zone__title">{'// Danger Zone'}</div>
           <p className="mb-3" style={{ fontSize: '14px', color: 'var(--wm-text-dim)', lineHeight: 1.6 }}>

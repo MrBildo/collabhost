@@ -169,6 +169,39 @@ public class UserStoreTests : IAsyncDisposable
         );
 
     [Fact]
+    public async Task DeactivateAsync_LastActiveAdministrator_ThrowsInvalidOperationException()
+    {
+        var admin = await _store.CreateAsync("LastAdmin", UserRole.Administrator, CancellationToken.None);
+
+        var exception = await Should.ThrowAsync<InvalidOperationException>
+        (
+            () => _store.DeactivateAsync(admin.Id, CancellationToken.None)
+        );
+
+        exception.Message.ShouldBe("Cannot deactivate the last active administrator");
+    }
+
+    [Fact]
+    public async Task DeactivateAsync_AdminWhenOtherActiveAdminsExist_Deactivates()
+    {
+        var admin1 = await _store.CreateAsync("Admin1", UserRole.Administrator, CancellationToken.None);
+        var admin2 = await _store.CreateAsync("Admin2", UserRole.Administrator, CancellationToken.None);
+
+        await Should.NotThrowAsync
+        (
+            () => _store.DeactivateAsync(admin1.Id, CancellationToken.None)
+        );
+
+        var found = await _store.GetByIdAsync(admin1.Id, CancellationToken.None);
+
+        found.ShouldNotBeNull();
+        found!.IsActive.ShouldBeFalse();
+
+        // admin2 is still active — the second admin is unaffected
+        _ = admin2;
+    }
+
+    [Fact]
     public async Task GetByAuthKeyAsync_CachesOnSecondCall()
     {
         var created = await _store.CreateAsync("Hank", UserRole.Agent, CancellationToken.None);
