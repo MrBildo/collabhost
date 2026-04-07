@@ -38,6 +38,8 @@ public static class AuthorizationRegistration
                 }
             );
 
+            services.AddHostedService<UserSeedService>();
+
             return services;
         }
     }
