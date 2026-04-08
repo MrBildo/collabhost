@@ -19,6 +19,11 @@ function EventList({ events, className }: EventListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const userScrolledRef = useRef(false)
 
+  // Reverse to chronological order (oldest first, newest at bottom) so
+  // new events appear at the bottom — same mental model as the log viewer.
+  // The API returns newest-first; we flip for consistent time-flows-down UX.
+  const chronological = [...events].reverse()
+
   // useLayoutEffect runs after DOM mutations but before paint — same
   // pattern as LogViewer. Depend on events reference (not length) so
   // follow works even at buffer cap when eviction keeps length stable.
@@ -58,21 +63,23 @@ function EventList({ events, className }: EventListProps) {
         </button>
       </div>
       <div ref={scrollRef} className="wm-event-list" onScroll={handleScroll} onWheel={handleWheel}>
-        {events.length === 0 ? (
+        {chronological.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
               No recent events
             </span>
           </div>
         ) : (
-          events.map((event, i) => {
+          chronological.map((event, i) => {
             const msgColor = SEVERITY_STYLES[event.severity]
             return (
               <div
                 // biome-ignore lint/suspicious/noArrayIndexKey: events lack unique IDs
                 key={i}
                 className="flex items-center gap-3 px-3.5 py-2"
-                style={{ borderBottom: i < events.length - 1 ? '1px solid var(--wm-border-subtle)' : undefined }}
+                style={{
+                  borderBottom: i < chronological.length - 1 ? '1px solid var(--wm-border-subtle)' : undefined,
+                }}
               >
                 <span
                   className="text-xs flex-shrink-0"
