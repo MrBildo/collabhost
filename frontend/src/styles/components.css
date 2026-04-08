@@ -1479,9 +1479,9 @@ dialog.wm-dialog-overlay::backdrop {
 /* === Event List === */
 
 .wm-event-list {
-  background: var(--wm-bg-panel);
+  background: var(--wm-bg-inset);
   border: 1px solid var(--wm-border);
   border-radius: var(--wm-radius-md);
   overflow-y: auto;
-  max-height: 320px;
+  height: 280px;
 }

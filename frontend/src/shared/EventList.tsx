@@ -48,7 +48,7 @@ function EventList({ events, className }: EventListProps) {
 
   if (events.length === 0) {
     return (
-      <div className={cn('wm-event-list flex items-center justify-center', className)} style={{ minHeight: 64 }}>
+      <div className={cn('wm-event-list flex items-center justify-center', className)}>
         <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
           No recent events
         </span>
