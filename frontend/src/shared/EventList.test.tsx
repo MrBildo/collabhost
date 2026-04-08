@@ -1,5 +1,6 @@
 import type { DashboardEvent } from '@/api/types'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'
 import { EventList } from './EventList'
 
@@ -58,5 +59,25 @@ describe('EventList', () => {
     render(<EventList events={events} />)
     const messages = screen.getAllByText(/event/)
     expect(messages).toHaveLength(3)
+  })
+
+  test('renders Follow button in active state by default', () => {
+    render(<EventList events={[makeEvent()]} />)
+    const follow = screen.getByRole('button', { name: 'Follow' })
+    expect(follow).toBeInTheDocument()
+    expect(follow.className).toContain('wm-filter-chip--active')
+  })
+
+  test('Follow button toggles off when clicked', async () => {
+    const user = userEvent.setup()
+    render(<EventList events={[makeEvent()]} />)
+    const follow = screen.getByRole('button', { name: 'Follow' })
+    await user.click(follow)
+    expect(follow.className).not.toContain('wm-filter-chip--active')
+  })
+
+  test('Follow button renders for empty event list', () => {
+    render(<EventList events={[]} />)
+    expect(screen.getByRole('button', { name: 'Follow' })).toBeInTheDocument()
   })
 })
