@@ -113,6 +113,25 @@ dotnet run --project backend/Collabhost.Api
 cd frontend && npm run dev
 ```
 
+### Linux (WSL2)
+
+For Linux-native testing. See `ecosystem/docs/wsl2-linux-test-environment.md` for full setup.
+
+**One-shot commands** (build, test) work via `wsl bash -c`:
+
+```powershell
+wsl bash -c "cd ~/projects/collab/collabhost/backend && dotnet test Collabhost.slnx"
+```
+
+**Long-running processes** (dev servers) require tmux-mcp — configured in `.mcp.json`:
+
+- `tmux_create_session` — use absolute paths (`/home/bill/projects/...`), not `~`
+- `tmux_send_keys` — start the process (`npx vite --port 5173 --host`, `dotnet run`)
+- `tmux_capture_pane` — always use bounded `lines` (50-200), never `-1`
+- `tmux_kill_session` — clean up when done
+
+Aspire does NOT run workloads natively on Linux. Use standalone `dotnet run` for Linux testing.
+
 ### Tests & Verification
 
 ```powershell
