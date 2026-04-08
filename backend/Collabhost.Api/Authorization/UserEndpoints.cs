@@ -1,3 +1,5 @@
+using Collabhost.Api.ActivityLog;
+
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Collabhost.Api.Authorization;
@@ -27,6 +29,8 @@ public static class UserEndpoints
     (
         CreateUserRequest request,
         UserStore store,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
@@ -41,6 +45,28 @@ public static class UserEndpoints
         }
 
         var user = await store.CreateAsync(request.Name, request.Role, ct);
+
+        await activityEventStore.RecordAsync
+        (
+            new ActivityEvent
+            {
+                EventType = ActivityEventTypes.UserCreated,
+                ActorId = currentUser.UserId.ToString(),
+                ActorName = currentUser.User.Name,
+                AppId = null,
+                AppSlug = null,
+                MetadataJson = JsonSerializer.Serialize
+                (
+                    new
+                    {
+                        targetUserId = user.Id.ToString(),
+                        targetName = user.Name,
+                        role = user.Role.ToString().ToLowerInvariant()
+                    }
+                )
+            },
+            ct
+        );
 
         return TypedResults.Created
         (
@@ -115,6 +141,8 @@ public static class UserEndpoints
     (
         string id,
         UserStore store,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
@@ -138,6 +166,27 @@ public static class UserEndpoints
         {
             return TypedResults.Conflict(new { error = ex.Message });
         }
+
+        await activityEventStore.RecordAsync
+        (
+            new ActivityEvent
+            {
+                EventType = ActivityEventTypes.UserDeactivated,
+                ActorId = currentUser.UserId.ToString(),
+                ActorName = currentUser.User.Name,
+                AppId = null,
+                AppSlug = null,
+                MetadataJson = JsonSerializer.Serialize
+                (
+                    new
+                    {
+                        targetUserId = userId.ToString(),
+                        targetName = user.Name
+                    }
+                )
+            },
+            ct
+        );
 
         var updated = await store.GetByIdAsync(userId, ct);
 

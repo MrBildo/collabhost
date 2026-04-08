@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Security;
 
+using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
@@ -18,7 +20,10 @@ public class RegistrationTools
 (
     AppStore appStore,
     ProcessSupervisor supervisor,
-    ProxyManager proxy
+    ProxyManager proxy,
+    ICurrentUser currentUser,
+    ActivityEventStore activityEventStore,
+    ILogger<RegistrationTools> logger
 )
 {
     private readonly AppStore _appStore = appStore
@@ -29,6 +34,15 @@ public class RegistrationTools
 
     private readonly ProxyManager _proxy = proxy
         ?? throw new ArgumentNullException(nameof(proxy));
+
+    private readonly ICurrentUser _currentUser = currentUser
+        ?? throw new ArgumentNullException(nameof(currentUser));
+
+    private readonly ActivityEventStore _activityEventStore = activityEventStore
+        ?? throw new ArgumentNullException(nameof(activityEventStore));
+
+    private readonly ILogger<RegistrationTools> _logger = logger
+        ?? throw new ArgumentNullException(nameof(logger));
 
     [McpServerTool
     (
@@ -199,6 +213,30 @@ public class RegistrationTools
             _proxy.DisableRoute(app.Slug);
         }
 
+        try
+        {
+            await _activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppCreated,
+                    ActorId = _currentUser.UserId.ToString(),
+                    ActorName = _currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = JsonSerializer.Serialize
+                    (
+                        new { appTypeSlug = appType.Slug, displayName = app.DisplayName }
+                    )
+                },
+                ct
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record activity event for app.created (slug={Slug})", app.Slug);
+        }
+
         return McpResponseFormatter.Success
         (
             McpResponseFormatter.ToJson
@@ -229,6 +267,11 @@ public class RegistrationTools
         {
             return McpResponseFormatter.AppNotFound(slug);
         }
+
+        // Capture before delete -- app won't exist after _appStore.DeleteAppAsync
+        var appId = app.Id.ToString();
+        var appSlug = app.Slug;
+        var appDisplayName = app.DisplayName;
 
         // Stop if running (10s graceful timeout, force-kill fallback)
         var process = _supervisor.GetProcess(app.Id);
@@ -263,9 +306,30 @@ public class RegistrationTools
 
         _supervisor.CleanupDeletedApp(app.Id);
 
+        try
+        {
+            await _activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppDeleted,
+                    ActorId = _currentUser.UserId.ToString(),
+                    ActorName = _currentUser.User.Name,
+                    AppId = appId,
+                    AppSlug = appSlug,
+                    MetadataJson = JsonSerializer.Serialize(new { displayName = appDisplayName })
+                },
+                ct
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record activity event for app.deleted (slug={Slug})", appSlug);
+        }
+
         return McpResponseFormatter.Success
         (
-            $"Deleted app '{slug}' ({app.DisplayName}). This action cannot be undone."
+            $"Deleted app '{appSlug}' ({appDisplayName}). This action cannot be undone."
         );
     }
 

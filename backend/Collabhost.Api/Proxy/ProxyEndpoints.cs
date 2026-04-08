@@ -1,5 +1,7 @@
 using System.Globalization;
 
+using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Registry;
@@ -92,11 +94,31 @@ public static class ProxyEndpoints
         );
     }
 
-    private static Task<IResult> ReloadProxyAsync(ProxyManager proxy)
+    private static async Task<IResult> ReloadProxyAsync
+    (
+        ProxyManager proxy,
+        ICurrentUser currentUser,
+        ActivityEventStore activityEventStore,
+        CancellationToken ct
+    )
     {
         proxy.RequestSync();
 
-        return Task.FromResult<IResult>(TypedResults.NoContent());
+        await activityEventStore.RecordAsync
+        (
+            new ActivityEvent
+            {
+                EventType = ActivityEventTypes.ProxyReloaded,
+                ActorId = currentUser.UserId.ToString(),
+                ActorName = currentUser.User.Name,
+                AppId = null,
+                AppSlug = null,
+                MetadataJson = null
+            },
+            ct
+        );
+
+        return TypedResults.NoContent();
     }
 }
 #pragma warning restore MA0011

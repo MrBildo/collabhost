@@ -7,7 +7,7 @@ function useRoutes() {
   return useQuery<RouteListResponse>({
     queryKey: ['routes'],
     queryFn: getRoutes,
-    refetchInterval: POLL_INTERVALS.apps,
+    refetchInterval: POLL_INTERVALS.routes,
   })
 }
 

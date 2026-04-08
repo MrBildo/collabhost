@@ -251,7 +251,7 @@ type DashboardEventsResponse = {
 type DashboardEvent = {
   timestamp: string
   message: string
-  appName: string | null
+  appSlug: string | null
   source: string
   severity: 'info' | 'warning' | 'error'
 }

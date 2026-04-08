@@ -3,11 +3,13 @@ const API_BASE = '/api/v1'
 const BASE_DOMAIN = 'collab.internal'
 
 const POLL_INTERVALS = {
-  apps: 5_000,
+  apps: 3_000,
   appDetail: 3_000,
-  dashboard: 5_000,
+  dashboard: 3_000,
   logs: 2_000,
+  routes: 10_000,
   system: 30_000,
+  users: 30_000,
 } as const
 
 const AUTH_STORAGE_KEY = 'collabhost-user-key'

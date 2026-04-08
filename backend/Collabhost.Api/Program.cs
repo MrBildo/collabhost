@@ -1,3 +1,4 @@
+using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Dashboard;
@@ -40,6 +41,7 @@ var earlyLogger = earlyLoggerFactory.CreateLogger("Startup");
 builder.Services.AddCollabhostAuthorization(builder.Configuration, earlyLogger);
 
 // Subsystems
+builder.Services.AddActivityLog();
 builder.Services.AddRegistry();
 builder.Services.AddCapabilities();
 builder.Services.AddEventBus();
@@ -80,6 +82,7 @@ if (app.Environment.IsDevelopment())
 app.UseCollabhostAuthorization();
 
 // Endpoints
+app.MapActivityLogEndpoints();
 app.MapUserEndpoints();
 app.MapRegistryEndpoints();
 app.MapProxyEndpoints();

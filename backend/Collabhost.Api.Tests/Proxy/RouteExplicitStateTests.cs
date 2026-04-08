@@ -1,3 +1,4 @@
+using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Data;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
@@ -78,7 +79,8 @@ public class RouteExplicitStateTests
 
         var runner = new FakeManagedProcessRunner();
         var eventBus = new Collabhost.Api.Events.EventBus<Collabhost.Api.Events.ProcessStateChangedEvent>();
-        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, eventBus, [], NullLogger<ProcessSupervisor>.Instance);
+        var activityEventStore = new ActivityEventStore(dbFactory, NullLogger<ActivityEventStore>.Instance);
+        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, eventBus, [], activityEventStore, NullLogger<ProcessSupervisor>.Instance);
 
         return new ProxyManager
         (
@@ -95,6 +97,7 @@ public class RouteExplicitStateTests
                 SelfPort = 58400,
                 AdminPort = 2019
             },
+            activityEventStore,
             NullLogger<ProxyManager>.Instance
         );
     }

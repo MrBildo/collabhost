@@ -1,6 +1,9 @@
 using System.Diagnostics;
 
+using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Registry;
+
+using ActivityEvent = Collabhost.Api.ActivityLog.ActivityEvent;
 
 namespace Collabhost.Api.Proxy;
 
@@ -8,6 +11,7 @@ public class ProxyAppSeeder
 (
     AppStore appStore,
     ProxySettings settings,
+    ActivityEventStore activityEventStore,
     ILogger<ProxyAppSeeder> logger
 )
 {
@@ -16,6 +20,9 @@ public class ProxyAppSeeder
 
     private readonly ProxySettings _settings = settings
         ?? throw new ArgumentNullException(nameof(settings));
+
+    private readonly ActivityEventStore _activityEventStore = activityEventStore
+        ?? throw new ArgumentNullException(nameof(activityEventStore));
 
     private readonly ILogger<ProxyAppSeeder> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -72,6 +79,26 @@ public class ProxyAppSeeder
         await _appStore.CreateAsync(proxyApp, cancellationToken);
 
         await CreateCapabilityOverridesAsync(proxyApp.Id, resolvedPath, cancellationToken);
+
+        try
+        {
+            await _activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppSeeded,
+                    ActorId = ActivityActor.SystemId,
+                    ActorName = ActivityActor.SystemName,
+                    AppId = proxyApp.Id.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+                    AppSlug = proxyApp.Slug
+                },
+                CancellationToken.None
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record activity event for proxy app seed");
+        }
 
         _logger.LogInformation("Proxy app seeded -- binary at '{BinaryPath}'", resolvedPath);
     }
