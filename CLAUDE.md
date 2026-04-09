@@ -37,7 +37,7 @@ When the KB and a skill conflict, the KB wins — it contains project-specific o
 
 ## Active Branch
 
-Development is on `release/v2`. The v1 codebase is preserved on `v0-reference` for reference only.
+Development is on `main`. The v1 codebase is preserved on `v0-reference` for reference only.
 
 ## Structure
 
@@ -90,7 +90,8 @@ collabhost/
 │       ├── styles/            # War Machine tokens, components, reset
 │       └── tables/            # DataTable, FilterBar, app-columns
 └── tools/
-    └── generate-ids.cs        # ULID/GUID generator for seed data
+    ├── generate-ids.cs        # ULID/GUID generator for seed data
+    └── tmux-mcp.cs            # tmux MCP server for WSL2 persistent sessions
 ```
 
 ## Build & Run
@@ -138,13 +139,13 @@ Aspire does NOT run workloads natively on Linux. Use standalone `dotnet run` for
 # Backend (MUST use solution build with --no-incremental)
 cd backend && dotnet build Collabhost.slnx --no-incremental
 cd backend && dotnet format --verify-no-changes
-cd backend && dotnet test   # Runs both Api.Tests (320) and AppHost.Tests (12)
+cd backend && dotnet test   # Runs both Api.Tests and AppHost.Tests
 
 # Frontend
 cd frontend && npm run build
 cd frontend && npm run lint
 cd frontend && npm run format:check
-cd frontend && npm run test   # 129 tests
+cd frontend && npm run test
 ```
 
 ## Core Subsystems
@@ -165,6 +166,9 @@ cd frontend && npm run test   # 129 tests
 ### Process Supervisor (`Supervisor/`)
 - Singleton `IHostedService`, `ConcurrentDictionary<Ulid, ManagedProcess>`
 - Start/stop/restart/kill managed processes
+- `IManagedProcessRunner` interface — platform-specific implementations (`WindowsProcessRunner`, `LinuxProcessRunner` planned)
+- `IProcessContainment` / `IContainmentHandle` — process containment abstraction (Windows: Job Objects, Linux: planned)
+- Windows: CreateProcess P/Invoke, process groups, `GenerateConsoleCtrlEvent` for graceful shutdown, Job Objects for orphan protection
 - Stdout/stderr capture into in-memory ring buffer
 - Crash detection + restart with exponential backoff
 - Discovery strategy via switch expression (DotNetRuntimeConfiguration, PackageJson, Manual)
@@ -268,7 +272,6 @@ See `v2-architecture.md` § Deferred Features for full list. Key items:
 
 ## Known Issues
 
-- **Card #82:** WindowsProcessRunner doesn't use Job Objects — child processes orphaned on API restart
 - **Card #83:** Caddy admin port hardcoded to 2019 — should be dynamically allocated
 
 ## Relationship to Other Projects
