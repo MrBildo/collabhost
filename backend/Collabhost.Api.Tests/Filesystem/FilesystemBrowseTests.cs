@@ -34,21 +34,27 @@ public class FilesystemBrowseTests(ApiFixture fixture)
 
         directories.GetArrayLength().ShouldBeGreaterThan(0);
 
-        // On Windows, at least C:\ should be present
-        var hasRootDrive = false;
-
         foreach (var entry in directories.EnumerateArray())
         {
             entry.GetProperty("name").GetString().ShouldNotBeNullOrWhiteSpace();
             entry.GetProperty("path").GetString().ShouldNotBeNullOrWhiteSpace();
-
-            if (string.Equals(entry.GetProperty("name").GetString(), "C:", StringComparison.OrdinalIgnoreCase))
-            {
-                hasRootDrive = true;
-            }
         }
 
-        hasRootDrive.ShouldBeTrue("Drive roots should include C:");
+        if (OperatingSystem.IsWindows())
+        {
+            // On Windows, at least C:\ should be present
+            var hasRootDrive = directories.EnumerateArray()
+                .Any(entry => string.Equals(
+                    entry.GetProperty("name").GetString(), "C:",
+                    StringComparison.OrdinalIgnoreCase));
+
+            hasRootDrive.ShouldBeTrue("Drive roots should include C:");
+        }
+        else
+        {
+            // On Linux, the root path is "/" and directories are its children
+            root.GetProperty("currentPath").GetString().ShouldBe("/");
+        }
     }
 
     [Fact]
@@ -84,7 +90,10 @@ public class FilesystemBrowseTests(ApiFixture fixture)
     [Fact]
     public async Task Browse_NonexistentPath_Returns404()
     {
-        var fakePath = Uri.EscapeDataString(@"C:\this-path-does-not-exist-" + Guid.NewGuid().ToString("N"));
+        var basePath = OperatingSystem.IsWindows() ? @"C:\" : "/tmp/";
+
+        var fakePath = Uri.EscapeDataString(
+            Path.Combine(basePath, "this-path-does-not-exist-" + Guid.NewGuid().ToString("N")));
 
         using var request = new HttpRequestMessage
         (
@@ -175,7 +184,8 @@ public class FilesystemBrowseTests(ApiFixture fixture)
     [Fact]
     public async Task Browse_ParentOfDriveRoot_ReturnsNullParent()
     {
-        var encoded = Uri.EscapeDataString(@"C:\");
+        var rootPath = OperatingSystem.IsWindows() ? @"C:\" : "/";
+        var encoded = Uri.EscapeDataString(rootPath);
 
         using var request = new HttpRequestMessage
         (
@@ -193,7 +203,7 @@ public class FilesystemBrowseTests(ApiFixture fixture)
         var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
-        root.GetProperty("currentPath").GetString().ShouldBe(@"C:\");
+        root.GetProperty("currentPath").GetString().ShouldBe(rootPath);
         root.GetProperty("parent").ValueKind.ShouldBe(JsonValueKind.Null);
     }
 }

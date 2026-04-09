@@ -236,7 +236,15 @@ file record struct OperationLockRelease(SemaphoreSlim Semaphore) : IAsyncDisposa
 {
     public ValueTask DisposeAsync()
     {
-        Semaphore.Release();
+        try
+        {
+            Semaphore.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+            // ManagedProcess was disposed while the operation lock was held.
+            // The semaphore is gone; nothing to release.
+        }
 
         return ValueTask.CompletedTask;
     }

@@ -9,14 +9,23 @@ public static class SupervisorRegistration
         public IServiceCollection AddSupervisor()
         {
             services.AddSingleton<PortAllocator>();
-            services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();
 
             if (OperatingSystem.IsWindows())
             {
+                services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();
                 services.AddSingleton<IProcessContainment, WindowsJobObjectContainment>();
+            }
+            else if (OperatingSystem.IsLinux())
+            {
+                services.AddSingleton<IManagedProcessRunner, LinuxProcessRunner>();
+                services.AddSingleton<IProcessContainment, LinuxContainment>();
             }
             else
             {
+                // Degraded mode: start, output capture, and hard kill only.
+                // No graceful shutdown (CloseMainWindow returns false for console apps).
+                // No orphan protection (NullContainment).
+                services.AddSingleton<IManagedProcessRunner, FallbackProcessRunner>();
                 services.AddSingleton<IProcessContainment, NullContainment>();
             }
 

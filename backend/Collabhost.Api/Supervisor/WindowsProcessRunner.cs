@@ -97,14 +97,14 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         var environmentBlock = BuildEnvironmentBlock(configuration.EnvironmentVariables);
 
         // Create stdout pipe
-        var stdoutSecurity = new NativeMethods.SecurityAttributes
+        var stdoutSecurity = new WindowsNativeMethods.SecurityAttributes
         {
-            Length = (uint)Marshal.SizeOf<NativeMethods.SecurityAttributes>(),
+            Length = (uint)Marshal.SizeOf<WindowsNativeMethods.SecurityAttributes>(),
             SecurityDescriptor = IntPtr.Zero,
             InheritHandle = true
         };
 
-        if (!NativeMethods.CreatePipe(out var stdoutRead, out var stdoutWrite, ref stdoutSecurity, 0))
+        if (!WindowsNativeMethods.CreatePipe(out var stdoutRead, out var stdoutWrite, ref stdoutSecurity, 0))
         {
             var stdoutError = Marshal.GetLastPInvokeError();
 
@@ -113,17 +113,17 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         }
 
         // Prevent the read end from being inherited by the child
-        NativeMethods.SetHandleInformation(stdoutRead, NativeMethods.HandleFlagInherit, 0);
+        WindowsNativeMethods.SetHandleInformation(stdoutRead, WindowsNativeMethods.HandleFlagInherit, 0);
 
         // Create stderr pipe
-        var stderrSecurity = new NativeMethods.SecurityAttributes
+        var stderrSecurity = new WindowsNativeMethods.SecurityAttributes
         {
-            Length = (uint)Marshal.SizeOf<NativeMethods.SecurityAttributes>(),
+            Length = (uint)Marshal.SizeOf<WindowsNativeMethods.SecurityAttributes>(),
             SecurityDescriptor = IntPtr.Zero,
             InheritHandle = true
         };
 
-        if (!NativeMethods.CreatePipe(out var stderrRead, out var stderrWrite, ref stderrSecurity, 0))
+        if (!WindowsNativeMethods.CreatePipe(out var stderrRead, out var stderrWrite, ref stderrSecurity, 0))
         {
             stdoutRead.Dispose();
             stdoutWrite.Dispose();
@@ -135,19 +135,19 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         }
 
         // Prevent the read end from being inherited by the child
-        NativeMethods.SetHandleInformation(stderrRead, NativeMethods.HandleFlagInherit, 0);
+        WindowsNativeMethods.SetHandleInformation(stderrRead, WindowsNativeMethods.HandleFlagInherit, 0);
 
         // DangerousGetHandle is required because STARTUPINFO expects raw HANDLE values.
         // The SafeFileHandles remain alive until after CreateProcess completes and the
         // write ends are explicitly disposed below -- no risk of use-after-close.
 #pragma warning disable S3869
-        var startupInfo = new NativeMethods.StartupInfo
+        var startupInfo = new WindowsNativeMethods.StartupInfo
         {
-            Cb = (uint)Marshal.SizeOf<NativeMethods.StartupInfo>(),
+            Cb = (uint)Marshal.SizeOf<WindowsNativeMethods.StartupInfo>(),
             // STARTF_USESTDHANDLES: redirect stdout/stderr through our pipes
             // STARTF_USESHOWWINDOW: honor ShowWindow to hide the console window
-            Flags = NativeMethods.StartFUseStdHandles | NativeMethods.StartFUseShowWindow,
-            ShowWindow = NativeMethods.SwHide,
+            Flags = WindowsNativeMethods.StartFUseStdHandles | WindowsNativeMethods.StartFUseShowWindow,
+            ShowWindow = WindowsNativeMethods.SwHide,
             StdInput = IntPtr.Zero,
             StdOutput = stdoutWrite.DangerousGetHandle(),
             StdError = stderrWrite.DangerousGetHandle()
@@ -160,19 +160,19 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         // CREATE_NEW_CONSOLE: child gets its own console (hidden via SW_HIDE above).
         //   Without a console, GenerateConsoleCtrlEvent has no target to deliver the event to.
         //   CREATE_NO_WINDOW would prevent console allocation entirely, making Ctrl+Break a no-op.
-        var creationFlags = NativeMethods.CreateNewProcessGroup | NativeMethods.CreateNewConsole;
+        var creationFlags = WindowsNativeMethods.CreateNewProcessGroup | WindowsNativeMethods.CreateNewConsole;
 
         var environmentPointer = IntPtr.Zero;
 
         if (environmentBlock is not null)
         {
             environmentPointer = Marshal.StringToHGlobalUni(environmentBlock);
-            creationFlags |= NativeMethods.CreateUnicodeEnvironment;
+            creationFlags |= WindowsNativeMethods.CreateUnicodeEnvironment;
         }
 
         try
         {
-            if (!NativeMethods.CreateProcess
+            if (!WindowsNativeMethods.CreateProcess
             (
                 null,
                 commandLine,
@@ -198,7 +198,7 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
             }
 
             // Close the thread handle immediately -- we don't need it
-            NativeMethods.CloseHandle(processInformation.Thread);
+            WindowsNativeMethods.CloseHandle(processInformation.Thread);
 
             // Close the write ends of the pipes -- the child has inherited copies.
             // If we keep ours open, reads on the pipe will never see EOF.
@@ -221,7 +221,7 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
 
             // Close the raw process handle from CreateProcess -- Process.GetProcessById
             // opened its own handle internally, so the kernel object stays alive.
-            NativeMethods.CloseHandle(processInformation.Process);
+            WindowsNativeMethods.CloseHandle(processInformation.Process);
 
             var processGroupId = processInformation.ProcessId;
 
@@ -418,7 +418,7 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
             // child with CREATE_NEW_PROCESS_GROUP, its group ID equals its PID and
             // is distinct from the Collabhost host's group. The event is delivered
             // only to processes in the target group -- the host is not affected.
-            if (!NativeMethods.GenerateConsoleCtrlEvent(NativeMethods.CtrlBreakEvent, _processGroupId))
+            if (!WindowsNativeMethods.GenerateConsoleCtrlEvent(WindowsNativeMethods.CtrlBreakEvent, _processGroupId))
             {
                 var error = Marshal.GetLastPInvokeError();
 

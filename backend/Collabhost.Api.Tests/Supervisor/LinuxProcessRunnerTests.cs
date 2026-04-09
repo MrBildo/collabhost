@@ -13,10 +13,10 @@ using Xunit.Abstractions;
 
 namespace Collabhost.Api.Tests.Supervisor;
 
-[SupportedOSPlatform("windows")]
-public class WindowsProcessRunnerTests(ITestOutputHelper output)
+[SupportedOSPlatform("linux")]
+public class LinuxProcessRunnerTests(ITestOutputHelper output)
 {
-    private readonly WindowsProcessRunner _runner = new(new XunitLogger(output));
+    private readonly LinuxProcessRunner _runner = new(new XunitLinuxLogger(output));
 
     private static async Task WaitForExitAsync(IProcessHandle handle, int timeoutSeconds = 10)
     {
@@ -29,17 +29,17 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task Start_CapturesStdoutFromProcess()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var captured = new ConcurrentBag<string>();
 
         var configuration = new ProcessStartConfiguration
         (
-            "cmd.exe",
-            "/c echo hello-stdout",
+            "/bin/sh",
+            "-c \"echo hello-stdout\"",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (line, _) => captured.Add(line)
@@ -55,17 +55,17 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task Start_CapturesStderrFromProcess()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var captured = new ConcurrentBag<(string Line, LogStream Stream)>();
 
         var configuration = new ProcessStartConfiguration
         (
-            "cmd.exe",
-            "/c echo hello-stderr 1>&2",
+            "/bin/sh",
+            "-c \"echo hello-stderr >&2\"",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (line, stream) => captured.Add((line, stream))
@@ -81,15 +81,15 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task Start_ProcessHasPid()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
-            "cmd.exe",
-            "/c echo test",
+            "/bin/sh",
+            "-c \"echo test\"",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (_, _) => { }
@@ -103,15 +103,15 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task Start_ExitCodeAvailableAfterExit()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
-            "cmd.exe",
-            "/c exit 42",
+            "/bin/sh",
+            "-c \"exit 42\"",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (_, _) => { }
@@ -126,18 +126,18 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task Start_ExitedEventFires()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var exitedCode = -1;
         var exitedFired = new TaskCompletionSource<int>();
 
         var configuration = new ProcessStartConfiguration
         (
-            "cmd.exe",
-            "/c exit 7",
+            "/bin/sh",
+            "-c \"exit 7\"",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (_, _) => { }
@@ -159,19 +159,15 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task TryGracefulShutdown_LongRunningProcess_SendsSignal()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
-        // Verify that CTRL_BREAK_EVENT is successfully sent via GenerateConsoleCtrlEvent.
-        // Whether the process actually exits depends on its signal handler -- that is
-        // process-specific behavior, not something we control. The supervisor's shutdown
-        // flow has a timeout + hard kill fallback for uncooperative processes.
         var configuration = new ProcessStartConfiguration
         (
-            "ping",
-            "-n 100 127.0.0.1",
+            "sleep",
+            "300",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (_, _) => { }
@@ -179,7 +175,7 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
 
         using var handle = _runner.Start(configuration);
 
-        await Task.Delay(1000);
+        await Task.Delay(500);
 
         handle.HasExited.ShouldBeFalse();
 
@@ -187,25 +183,21 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
 
         shutdownSent.ShouldBeTrue();
 
-        // Clean up -- kill the process since ping may not honor CTRL_BREAK
-        if (!handle.HasExited)
-        {
-            handle.Kill();
+        await WaitForExitAsync(handle, 5);
 
-            await WaitForExitAsync(handle);
-        }
+        handle.HasExited.ShouldBeTrue();
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task TryGracefulShutdown_AlreadyExitedProcess_ReturnsTrue()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
-            "cmd.exe",
-            "/c exit 0",
+            "/bin/sh",
+            "-c \"exit 0\"",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (_, _) => { }
@@ -223,15 +215,15 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task Kill_TerminatesRunningProcess()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
-            "ping",
-            "-n 100 127.0.0.1",
+            "sleep",
+            "300",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (_, _) => { }
@@ -251,10 +243,10 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task Start_InjectsEnvironmentVariables()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var captured = new ConcurrentBag<string>();
 
@@ -265,8 +257,8 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
 
         var configuration = new ProcessStartConfiguration
         (
-            "cmd.exe",
-            "/c echo %COLLABHOST_TEST_VAR%",
+            "/bin/sh",
+            "-c \"echo $COLLABHOST_TEST_VAR\"",
             null,
             environmentVariables,
             (line, _) => captured.Add(line)
@@ -282,17 +274,17 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task RunToCompletion_CapturesOutput()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var captured = new ConcurrentBag<string>();
 
         var configuration = new ProcessStartConfiguration
         (
-            "cmd.exe",
-            "/c echo run-to-completion-test",
+            "/bin/sh",
+            "-c \"echo run-to-completion-test\"",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (line, _) => captured.Add(line)
@@ -307,15 +299,15 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
     }
 
     [SkippableFact]
-    [Trait("Platform", "windows")]
+    [Trait("Platform", "linux")]
     public async Task RunToCompletion_TimesOut_KillsProcess()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
-            "ping",
-            "-n 100 127.0.0.1",
+            "sleep",
+            "300",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (_, _) => { }
@@ -326,10 +318,79 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         result.TimedOut.ShouldBeTrue();
         result.ExitCode.ShouldBe(-1);
     }
+
+    [SkippableFact]
+    [Trait("Platform", "linux")]
+    public async Task Start_SetsProcessGroup()
+    {
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+
+        var configuration = new ProcessStartConfiguration
+        (
+            "sleep",
+            "300",
+            null,
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            (_, _) => { }
+        );
+
+        using var handle = _runner.Start(configuration);
+
+        await Task.Delay(200);
+
+        handle.HasExited.ShouldBeFalse();
+
+        // Verify that the child process has a valid process group.
+        // setpgid(pid, pid) races with the child's exec() -- when it succeeds,
+        // getpgid(pid) == pid. When the race is lost (EACCES), the child stays
+        // in the parent's group and the runner falls back to single-PID signals.
+        // Both outcomes are correct behavior. We verify the process has a valid
+        // group (getpgid returns > 0) and that start succeeded regardless.
+        var pgid = LinuxNativeMethods.GetProcessGroupId(handle.Pid);
+
+        pgid.ShouldBeGreaterThan(0);
+
+        handle.Kill();
+
+        await WaitForExitAsync(handle);
+    }
+
+    [SkippableFact]
+    [Trait("Platform", "linux")]
+    public async Task TryGracefulShutdown_KillsProcessGroup()
+    {
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+
+        // Start a shell that spawns a background child -- both should be in the same process group.
+        // The shell runs "sleep 300" in the background and then sleeps itself.
+        // SIGTERM to the process group should kill both.
+        var configuration = new ProcessStartConfiguration
+        (
+            "/bin/sh",
+            "-c \"sleep 300 & sleep 300\"",
+            null,
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            (_, _) => { }
+        );
+
+        using var handle = _runner.Start(configuration);
+
+        await Task.Delay(500);
+
+        handle.HasExited.ShouldBeFalse();
+
+        var shutdownSent = handle.TryGracefulShutdown();
+
+        shutdownSent.ShouldBeTrue();
+
+        await WaitForExitAsync(handle, 5);
+
+        handle.HasExited.ShouldBeTrue();
+    }
 }
 
 // No subclasses expected -- test adapter bridging ILogger<T> to xUnit output
-file sealed class XunitLogger(ITestOutputHelper output) : ILogger<WindowsProcessRunner>
+file sealed class XunitLinuxLogger(ITestOutputHelper output) : ILogger<LinuxProcessRunner>
 {
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 

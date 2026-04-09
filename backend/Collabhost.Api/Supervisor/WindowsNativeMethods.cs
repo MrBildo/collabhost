@@ -6,7 +6,7 @@ using Microsoft.Win32.SafeHandles;
 namespace Collabhost.Api.Supervisor;
 
 [SupportedOSPlatform("windows")]
-internal static class NativeMethods
+internal static class WindowsNativeMethods
 {
     // Process creation flags
     public const uint CreateNewProcessGroup = 0x00000200;

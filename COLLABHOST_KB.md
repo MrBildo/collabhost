@@ -337,8 +337,9 @@ Four Roslyn analyzers enforced across all projects:
 All must pass before reporting done:
 
 ```powershell
-dotnet build                                      # 0 errors, 0 warnings (beyond known gentle-nudges)
-dotnet format --verify-no-changes   # formatting clean
+dotnet build                                      # 0 errors, 0 warnings
+dotnet format --verify-no-changes                 # formatting clean
+dotnet format Collabhost.slnx --verify-no-changes --severity info  # suggestion check (report NEW suggestions to user)
 dotnet test                                       # all pass (includes Aspire smoke tests)
 ```
 
@@ -427,6 +428,7 @@ A feature is done when ALL of the following pass:
 **Backend:**
 - `dotnet build Collabhost.slnx --no-incremental` — 0 errors, 0 warnings. **MUST use `--no-incremental`** to match Visual Studio behavior (incremental builds skip compilation and hide warnings). **MUST build the solution**, not individual projects. **Read the FULL build output** — this includes CSC-level warnings, MSBuild warnings, and analyzer warnings, not just the summary line. ANY warning from ANY source must be surfaced and addressed.
 - `dotnet format --verify-no-changes` — clean
+- `dotnet format Collabhost.slnx --verify-no-changes --severity info` — **suggestion check.** Surfaces Info/suggestion-level diagnostics (the green squigglies from Visual Studio). If NEW suggestions appear that were not present before your changes, **stop and report them to the user.** Do not auto-fix, do not ignore. Each suggestion requires a resolution decision from Bill (promote to error, demote to none, or defer). Agents may address suggestions that are already resolved to error-level in `.editorconfig` the same way they handle any other build error.
 - `dotnet test` — all pass. Same rule: read the full output, surface ANY warnings from the test run (build warnings appear here too).
 
 **Frontend:**
@@ -442,7 +444,7 @@ A feature is done when ALL of the following pass:
 - **Model:** Always use `model: "opus"` (Opus High)
 - **Skills:** MUST invoke `dotnet-dev` for C# tasks, `typescript-dev` for TypeScript tasks
 - **MUST read and follow this document** (`COLLABHOST_KB.md`) — all conventions apply
-- **Backend agents MUST run full verification:** `dotnet build`, `dotnet format --verify-no-changes`, `dotnet test`
+- **Backend agents MUST run full verification:** `dotnet build`, `dotnet format --verify-no-changes`, `dotnet format --verify-no-changes --severity info` (suggestion check), `dotnet test`
 - **Frontend agents MUST run:** `npm run build`, `npm run lint`, `npm run format:check`, `npm run test`
 - **Never auto-fix lint errors** — report to user
 - **Never auto-fix test failures during analyzer work** — investigate failures as behavioral signals

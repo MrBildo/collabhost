@@ -261,6 +261,10 @@ Four named agents with dedicated workspaces in `.agents/agents/{name}/`:
 
 Agents sign commits with `Co-Authored-By: {Name} <{name}@collabot.dev>`.
 
+## Dispatch Tracking
+
+All sub-agent dispatches are logged in `.agents/agents/nolan/DISPATCH_LOG.md` with pre-dispatch token estimates vs. actual consumption. This is mandatory — Nolan must update the log for every dispatch, every session. The log drives model selection calibration (Sonnet vs. Opus) and task sizing over time.
+
 ## Deferred Features
 
 See `v2-architecture.md` § Deferred Features for full list. Key items:
