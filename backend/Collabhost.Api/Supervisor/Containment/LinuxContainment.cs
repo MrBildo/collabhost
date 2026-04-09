@@ -97,7 +97,12 @@ public class LinuxContainment : IProcessContainment, IDisposable
 
     private void CleanupStaleCgroups()
     {
-        var collabhostDir = Path.Combine(_cgroupBasePath!, "collabhost");
+        if (_cgroupBasePath is null)
+        {
+            return;
+        }
+
+        var collabhostDir = Path.Combine(_cgroupBasePath, "collabhost");
 
         if (!Directory.Exists(collabhostDir))
         {
