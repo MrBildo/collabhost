@@ -123,7 +123,7 @@ For Linux-native testing. See `ecosystem/docs/wsl2-linux-test-environment.md` fo
 wsl bash -c "cd ~/projects/collab/collabhost/backend && dotnet test Collabhost.slnx"
 ```
 
-**Long-running processes** (dev servers) require tmux-mcp — configured in `.mcp.json`:
+**Long-running processes** (dev servers) require the tmux MCP tool (`tools/tmux-mcp.cs`) — configured in `.mcp.json`:
 
 - `tmux_create_session` — use absolute paths (`/home/bill/projects/...`), not `~`
 - `tmux_send_keys` — start the process (`npx vite --port 5173 --host`, `dotnet run`)
