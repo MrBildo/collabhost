@@ -18,7 +18,7 @@ public static class SupervisorRegistration
             else if (OperatingSystem.IsLinux())
             {
                 services.AddSingleton<IManagedProcessRunner, LinuxProcessRunner>();
-                services.AddSingleton<IProcessContainment, NullContainment>();
+                services.AddSingleton<IProcessContainment, LinuxContainment>();
             }
             else
             {
