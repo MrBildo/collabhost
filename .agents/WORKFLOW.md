@@ -45,6 +45,14 @@ CLAUDE.md is the up-to-date source for conventions and patterns.
 - Use [[specs/TEMPLATE]] as the starting point
 - Link the spec from the card description
 
+### Spec Review Threshold
+
+- **Size S/M cards:** Assessment + direct implementation. No spec review cycle required.
+- **Size L+ cards or new subsystems:** Mandatory spec review cycle — Remy draft → Marcus+Kai parallel review → Remy final pass. This eliminated ALL rework on #105 (Linux process management, ~345k Opus spec spend, zero implementation rework across 6 dispatches).
+- **Research-heavy features:** Add the research pipeline (parallel Sonnet agents) before the spec cycle.
+
+The cost of the review cycle is far less than the cost of rework dispatches. This is the highest-ROI process the team has.
+
 ## During Work
 
 - Comment on the card with progress (write for a reader with no context)

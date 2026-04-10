@@ -343,6 +343,13 @@ dotnet format Collabhost.slnx --verify-no-changes --severity info  # suggestion 
 dotnet test                                       # all pass (includes Aspire smoke tests)
 ```
 
+**Suggestion Triage as Release Gate:**
+- After every PR merge to main, run `dotnet format Collabhost.slnx --verify-no-changes --severity info`
+- If NEW suggestions appear, they enter a triage queue — Bill resolves each one (promote to `:error` and fix, demote to `:none`, or defer)
+- Resolution + fix happens before the next feature card starts
+- Target steady state: zero unresolved suggestions on main at all times
+- Never auto-fix suggestions — always report to Bill for triage
+
 - Never modify `.editorconfig` to work around conflicts — restructure code or use `#pragma` instead
 - Never use `dotnet-script` — use `dotnet run --file <file>.cs` for single-file execution
 
