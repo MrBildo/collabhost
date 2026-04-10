@@ -90,8 +90,7 @@ collabhost/
 │       ├── styles/            # War Machine tokens, components, reset
 │       └── tables/            # DataTable, FilterBar, app-columns
 └── tools/
-    ├── generate-ids.cs        # ULID/GUID generator for seed data
-    └── tmux-mcp.cs            # tmux MCP server for WSL2 persistent sessions
+    └── generate-ids.cs        # ULID/GUID generator for seed data
 ```
 
 ## Build & Run
@@ -124,7 +123,7 @@ For Linux-native testing. See `ecosystem/docs/wsl2-linux-test-environment.md` fo
 wsl bash -c "cd ~/projects/collab/collabhost/backend && dotnet test Collabhost.slnx"
 ```
 
-**Long-running processes** (dev servers) require the tmux MCP tool (`tools/tmux-mcp.cs`) — configured in `.mcp.json`:
+**Long-running processes** (dev servers) require the tmux MCP tool — configured as a user-scoped MCP server (see `ecosystem/projects/dotnet/tmux-mcp/`):
 
 - `tmux_create_session` — use absolute paths (`/home/bill/projects/...`), not `~`
 - `tmux_send_keys` — start the process (`npx vite --port 5173 --host`, `dotnet run`)
