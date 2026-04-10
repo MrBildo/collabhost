@@ -1,10 +1,13 @@
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
+using Collabhost.Api.Data.AppTypes;
+
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Collabhost.Api.Registry;
 
-#pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
-#pragma warning disable MA0011 // Ulid.ToString is not locale-sensitive
+#pragma warning disable MA0076 // ToString on types that are not locale-sensitive
+#pragma warning disable MA0011 // ToString on types that are not locale-sensitive
 public static class AppTypeEndpoints
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -18,24 +21,23 @@ public static class AppTypeEndpoints
     {
         var group = routes.MapGroup("/api/v1/app-types").WithTags("App Types");
 
-        group.MapGet("/", ListAppTypesAsync);
-        group.MapGet("/{slug}/registration", GetRegistrationSchemaAsync);
+        group.MapGet("/", ListAppTypes);
+        group.MapGet("/{slug}/registration", GetRegistrationSchema);
     }
 
-    private static async Task<IResult> ListAppTypesAsync
+    private static Ok<List<AppTypeListItem>> ListAppTypes
     (
-        AppStore store,
-        CancellationToken ct
+        TypeStore typeStore
     )
     {
-        var appTypes = await store.ListAppTypesAsync(ct);
+        var types = typeStore.ListTypes();
 
-        var items = appTypes
+        var items = types
             .Select
             (
                 t => new AppTypeListItem
                 (
-                    t.Id.ToString(),
+                    t.Slug,
                     t.Slug,
                     t.DisplayName,
                     t.Description,
@@ -48,29 +50,30 @@ public static class AppTypeEndpoints
         return TypedResults.Ok(items);
     }
 
-    private static async Task<IResult> GetRegistrationSchemaAsync
+    private static IResult GetRegistrationSchema
     (
         string slug,
-        AppStore store,
-        CancellationToken ct
+        TypeStore typeStore
     )
     {
-        var appType = await store.GetAppTypeBySlugAsync(slug, ct);
+        var appType = typeStore.GetBySlug(slug);
 
         if (appType is null)
         {
             return TypedResults.NotFound();
         }
 
+        var bindings = typeStore.GetBindings(slug);
+
         var tags = BuildTags(appType);
 
-        var sections = BuildRegistrationSections(appType);
+        var sections = BuildRegistrationSections(appType, bindings);
 
         var schema = new RegistrationSchema
         (
             new RegistrationAppType
             (
-                appType.Id.ToString(),
+                appType.Slug,
                 appType.Slug,
                 appType.DisplayName,
                 appType.Description
@@ -82,7 +85,11 @@ public static class AppTypeEndpoints
         return TypedResults.Ok(schema);
     }
 
-    private static List<RegistrationSection> BuildRegistrationSections(AppType appType)
+    private static List<RegistrationSection> BuildRegistrationSections
+    (
+        AppTypeDefinition appType,
+        IReadOnlyDictionary<string, string>? bindings
+    )
     {
         var sections = new List<RegistrationSection>
         {
@@ -114,13 +121,13 @@ public static class AppTypeEndpoints
             )
         };
 
-        // Artifact section (if the type has artifact capability)
-        var artifactBinding = appType.Bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "artifact", StringComparison.Ordinal)
-        );
+        if (bindings is null)
+        {
+            return sections;
+        }
 
-        if (artifactBinding is not null)
+        // Artifact section (if the type has artifact capability)
+        if (bindings.ContainsKey("artifact"))
         {
             sections.Add
             (
@@ -143,16 +150,11 @@ public static class AppTypeEndpoints
         }
 
         // Discovery strategy section (if the type has process capability)
-        var processBinding = appType.Bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
-        );
-
-        if (processBinding is not null)
+        if (bindings.TryGetValue("process", out var processBindingJson))
         {
             var processConfiguration = JsonSerializer.Deserialize<ProcessConfiguration>
             (
-                processBinding.DefaultConfigurationJson, _jsonOptions
+                processBindingJson, _jsonOptions
             );
 
             var defaultStrategy = processConfiguration?.DiscoveryStrategy ?? DiscoveryStrategy.Manual;
@@ -192,12 +194,8 @@ public static class AppTypeEndpoints
         }
 
         // Routing options section (for file-server types that support SPA fallback)
-        var routingBinding = appType.Bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-        );
-
-        if (routingBinding is not null && IsFileServerRouting(routingBinding))
+        if (bindings.TryGetValue("routing", out var routingBindingJson)
+            && IsFileServerRouting(routingBindingJson))
         {
             sections.Add
             (
@@ -223,13 +221,13 @@ public static class AppTypeEndpoints
         return sections;
     }
 
-    private static bool IsFileServerRouting(CapabilityBinding routingBinding)
+    private static bool IsFileServerRouting(string routingConfigurationJson)
     {
         try
         {
             var configuration = JsonSerializer.Deserialize<RoutingConfiguration>
             (
-                routingBinding.DefaultConfigurationJson, _jsonOptions
+                routingConfigurationJson, _jsonOptions
             );
 
             return configuration?.ServeMode == ServeMode.FileServer;
@@ -240,21 +238,16 @@ public static class AppTypeEndpoints
         }
     }
 
-    private static List<AppTag> BuildTags(AppType appType)
+    private static List<AppTag> BuildTags(AppTypeDefinition appType)
     {
         var tags = new List<AppTag>();
 
-        if (appType.MetadataJson is null)
+        if (appType.Metadata is null)
         {
             return tags;
         }
 
-        var metadata = appType.MetadataJson.TryDeserializeJson<AppTypeMetadata>(_jsonOptions);
-
-        if (metadata is null)
-        {
-            return tags;
-        }
+        var metadata = appType.Metadata;
 
         if (metadata.Runtime is not null)
         {
@@ -320,20 +313,3 @@ public static class AppTypeEndpoints
 }
 #pragma warning restore MA0011
 #pragma warning restore MA0076
-
-// Encapsulates try/catch for JSON deserialization so callers use validation flow, not exception flow
-file static class JsonExtensions
-{
-    public static T? TryDeserializeJson<T>(this string json, JsonSerializerOptions? options = null)
-        where T : class
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<T>(json, options);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-}

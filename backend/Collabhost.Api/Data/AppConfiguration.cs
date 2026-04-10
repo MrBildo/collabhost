@@ -35,6 +35,8 @@ public class AppConfiguration : IEntityTypeConfiguration<App>
             )
             .HasMaxLength(26);
 
+        builder.Ignore(a => a.AppTypeSlug);
+
         builder.HasOne(a => a.AppType)
             .WithMany()
             .HasForeignKey(a => a.AppTypeId);

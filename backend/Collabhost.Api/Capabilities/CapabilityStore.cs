@@ -1,13 +1,18 @@
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Registry;
 
 namespace Collabhost.Api.Capabilities;
 
 public class CapabilityStore
 (
+    TypeStore typeStore,
     AppStore appStore,
     ILogger<CapabilityStore> logger
 )
 {
+    private readonly TypeStore _typeStore = typeStore
+        ?? throw new ArgumentNullException(nameof(typeStore));
+
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
 
@@ -17,18 +22,20 @@ public class CapabilityStore
     public async Task<T?> ResolveAsync<T>
     (
         string capabilitySlug,
-        Ulid appTypeId,
+        string appTypeSlug,
         Ulid appId,
         CancellationToken ct
     )
         where T : class
     {
-        var bindings = await _appStore.GetBindingsAsync(appTypeId, ct);
+        var bindings = _typeStore.GetBindings(appTypeSlug);
 
-        var binding = bindings
-            .SingleOrDefault(b => string.Equals(b.CapabilitySlug, capabilitySlug, StringComparison.Ordinal));
+        if (bindings is null)
+        {
+            return null;
+        }
 
-        if (binding is null)
+        if (!bindings.TryGetValue(capabilitySlug, out var defaultConfigurationJson))
         {
             return null;
         }
@@ -39,23 +46,37 @@ public class CapabilityStore
             ? capabilityOverride.ConfigurationJson
             : null;
 
-        return CapabilityResolver.Resolve<T>(binding.DefaultConfigurationJson, overrideJson);
+        return CapabilityResolver.Resolve<T>(defaultConfigurationJson, overrideJson);
     }
+
+    // Convenience overload: uses app.AppType.Slug during Phase 1a coexistence
+    // (navigation property is still loaded). Phase 1b switches to app.AppTypeSlug
+    // when the navigation property is removed.
+    public async Task<T?> ResolveAsync<T>
+    (
+        string capabilitySlug,
+        App app,
+        CancellationToken ct
+    )
+        where T : class =>
+        await ResolveAsync<T>(capabilitySlug, app.AppTypeSlug ?? app.AppType.Slug, app.Id, ct);
 
     public async Task<string?> ResolveJsonAsync
     (
         string capabilitySlug,
-        Ulid appTypeId,
+        string appTypeSlug,
         Ulid appId,
         CancellationToken ct
     )
     {
-        var bindings = await _appStore.GetBindingsAsync(appTypeId, ct);
+        var bindings = _typeStore.GetBindings(appTypeSlug);
 
-        var binding = bindings
-            .SingleOrDefault(b => string.Equals(b.CapabilitySlug, capabilitySlug, StringComparison.Ordinal));
+        if (bindings is null)
+        {
+            return null;
+        }
 
-        if (binding is null)
+        if (!bindings.TryGetValue(capabilitySlug, out var defaultConfigurationJson))
         {
             return null;
         }
@@ -66,30 +87,35 @@ public class CapabilityStore
             ? capabilityOverride.ConfigurationJson
             : null;
 
-        return CapabilityResolver.ResolveJson(binding.DefaultConfigurationJson, overrideJson);
+        return CapabilityResolver.ResolveJson(defaultConfigurationJson, overrideJson);
     }
 
     public async Task<IDictionary<string, string>> ResolveAllJsonAsync
     (
-        Ulid appTypeId,
+        string appTypeSlug,
         Ulid appId,
         CancellationToken ct
     )
     {
-        var bindings = await _appStore.GetBindingsAsync(appTypeId, ct);
+        var bindings = _typeStore.GetBindings(appTypeSlug);
         var overrides = await _appStore.GetOverridesAsync(appId, ct);
 
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        foreach (var binding in bindings)
+        if (bindings is null)
         {
-            var overrideJson = overrides.TryGetValue(binding.CapabilitySlug, out var capabilityOverride)
+            return result;
+        }
+
+        foreach (var (capabilitySlug, defaultConfigurationJson) in bindings)
+        {
+            var overrideJson = overrides.TryGetValue(capabilitySlug, out var capabilityOverride)
                 ? capabilityOverride.ConfigurationJson
                 : null;
 
-            result[binding.CapabilitySlug] = CapabilityResolver.ResolveJson
+            result[capabilitySlug] = CapabilityResolver.ResolveJson
             (
-                binding.DefaultConfigurationJson,
+                defaultConfigurationJson,
                 overrideJson
             );
         }
