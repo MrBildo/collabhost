@@ -7,58 +7,85 @@ using Collabhost.Api.Shared;
 namespace Collabhost.Api.Supervisor;
 
 [SupportedOSPlatform("linux")]
-public class LinuxProcessRunner(ILogger<LinuxProcessRunner> logger) : IManagedProcessRunner
+public class LinuxProcessRunner : IManagedProcessRunner
 {
-    private readonly ILogger<LinuxProcessRunner> _logger = logger
-        ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ILogger<LinuxProcessRunner> _logger;
+    private readonly bool _setsidAvailable;
+
+    public LinuxProcessRunner(ILogger<LinuxProcessRunner> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        _setsidAvailable = ProbeSetsid();
+
+        if (_setsidAvailable)
+        {
+            _logger.LogInformation("setsid command available -- process group establishment will be race-free");
+        }
+        else
+        {
+            _logger.LogWarning
+            (
+                "setsid command not found -- falling back to post-fork setpgid " +
+                "(process group establishment may race with child exec)"
+            );
+        }
+    }
 
     public IProcessHandle Start(ProcessStartConfiguration configuration)
     {
-        var startInfo = CreateStartInfo(configuration);
+        var startInfo = CreateStartInfo(configuration, _setsidAvailable);
 
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
 
         process.Start();
 
-        // Set the child into its own process group immediately after Start().
-        //
-        // Race analysis: Unlike Windows's CREATE_NEW_PROCESS_GROUP (which is atomic --
-        // the kernel assigns the process group during CreateProcess), Linux's post-fork
-        // setpgid has a real race window. The child process runs in the parent's group
-        // from fork() until this setpgid call succeeds. If the child has already called
-        // exec() before we get here, setpgid returns EACCES and the child remains in
-        // the parent's group.
-        //
-        // For Collabhost's use case (long-lived services, not sub-millisecond scripts),
-        // this race is unlikely to matter -- we only send group signals when stopping
-        // managed processes, not during startup. When setpgid does fail, we fall back to
-        // single-PID signals (see _processGroupEstablished in LinuxProcessGroupHandle).
         var childPid = process.Id;
-        var processGroupEstablished = true;
+        var processGroupEstablished = _setsidAvailable;
+
+        // Defense-in-depth: attempt setpgid from the parent regardless of setsid.
+        //
+        // When setsid is available, the child has already called setsid() before exec,
+        // establishing its own session and process group atomically. The parent's setpgid
+        // call will likely fail with EACCES (child already exec'd) or EPERM (child is a
+        // session leader). Both are harmless -- setsid already did the work.
+        //
+        // When setsid is NOT available, this is the primary mechanism. The race with
+        // exec still applies: if the child exec's before this call, setpgid returns
+        // EACCES and we fall back to single-PID signals.
         var setpgidResult = LinuxNativeMethods.SetProcessGroupId(childPid, childPid);
 
         if (setpgidResult != 0)
         {
             var errno = Marshal.GetLastPInvokeError();
 
-            // EACCES: child already called exec before our setpgid took effect.
-            // The child is still in the parent's process group, NOT in its own group.
-            // We track this so TryGracefulShutdown and Kill use single-PID signals
-            // instead of group signals.
-            //
-            // ESRCH: process already exited.
-            //
-            // Both are non-fatal -- the process still runs, just without group isolation.
-            processGroupEstablished = false;
+            if (_setsidAvailable)
+            {
+                // Expected when using setsid -- the child is already a session leader,
+                // so parent-side setpgid fails. This is the happy path.
+                _logger.LogDebug
+                (
+                    "setpgid({Pid}, {Pgid}) failed (errno {Errno}) -- expected with setsid wrapper",
+                    childPid,
+                    childPid,
+                    errno
+                );
+            }
+            else
+            {
+                // Without setsid, setpgid failure means we lost the race.
+                // Fall back to single-PID signals.
+                processGroupEstablished = false;
 
-            _logger.LogDebug
-            (
-                "setpgid({Pid}, {Pgid}) failed (errno {Errno}). " +
-                "Process group not established -- will use single-PID signals",
-                childPid,
-                childPid,
-                errno
-            );
+                _logger.LogDebug
+                (
+                    "setpgid({Pid}, {Pgid}) failed (errno {Errno}). " +
+                    "Process group not established -- will use single-PID signals",
+                    childPid,
+                    childPid,
+                    errno
+                );
+            }
         }
 
         process.BeginOutputReadLine();
@@ -75,7 +102,8 @@ public class LinuxProcessRunner(ILogger<LinuxProcessRunner> logger) : IManagedPr
 
         _logger.LogDebug
         (
-            "Started process via Process.Start (PID {Pid}, GroupEstablished {GroupEstablished})",
+            "Started process via {LaunchMethod} (PID {Pid}, GroupEstablished {GroupEstablished})",
+            _setsidAvailable ? "setsid" : "Process.Start",
             process.Id,
             processGroupEstablished
         );
@@ -90,9 +118,10 @@ public class LinuxProcessRunner(ILogger<LinuxProcessRunner> logger) : IManagedPr
         CancellationToken ct = default
     )
     {
-        // RunToCompletion uses standard Process.Start -- it is for short-lived commands
-        // (e.g., update scripts) where graceful shutdown is not needed.
-        var startInfo = CreateStartInfo(configuration);
+        // RunToCompletion uses standard Process.Start without setsid -- it is for
+        // short-lived commands (e.g., update scripts) where process group signals are
+        // not needed. It uses Process.Kill(entireProcessTree: true) for cleanup.
+        var startInfo = CreateStartInfo(configuration, useSetsid: false);
 
         using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
 
@@ -136,14 +165,32 @@ public class LinuxProcessRunner(ILogger<LinuxProcessRunner> logger) : IManagedPr
         }
     }
 
-    private static ProcessStartInfo CreateStartInfo(ProcessStartConfiguration configuration)
+    private static ProcessStartInfo CreateStartInfo
+    (
+        ProcessStartConfiguration configuration,
+        bool useSetsid
+    )
     {
-        // No ResolveCommand call -- on Linux, the shell and PATH handle command resolution.
-        // FileName is passed as-is. No .cmd/.bat/.exe extension guessing needed.
+        // When setsid is available, wrap the command so the child calls setsid()
+        // before exec. This establishes a new session and process group atomically,
+        // eliminating the race between parent-side setpgid and child exec.
+        //
+        // Before: FileName = "dotnet", Arguments = "run --project MyApp"
+        // After:  FileName = "setsid", Arguments = "dotnet run --project MyApp"
+        //
+        // setsid(1) from util-linux calls setsid() then execvp(argv[1], argv+1),
+        // transparently passing through all arguments and inherited file descriptors
+        // (including the redirected stdio pipes from Process.Start).
+        var fileName = useSetsid ? "setsid" : configuration.Command;
+
+        var arguments = useSetsid
+            ? BuildSetsidArguments(configuration.Command, configuration.Arguments)
+            : configuration.Arguments ?? "";
+
         var startInfo = new ProcessStartInfo
         {
-            FileName = configuration.Command,
-            Arguments = configuration.Arguments ?? "",
+            FileName = fileName,
+            Arguments = arguments,
             WorkingDirectory = configuration.WorkingDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -157,6 +204,45 @@ public class LinuxProcessRunner(ILogger<LinuxProcessRunner> logger) : IManagedPr
         }
 
         return startInfo;
+    }
+
+    private static string BuildSetsidArguments(string command, string? arguments) =>
+        string.IsNullOrEmpty(arguments)
+            ? command
+            : $"{command} {arguments}";
+
+    private static bool ProbeSetsid()
+    {
+        // Check for the setsid command from util-linux. This is present on virtually
+        // every Linux distribution including minimal containers and WSL2.
+        // We probe once at construction (DI singleton) rather than per-launch.
+        try
+        {
+            using var probe = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "setsid",
+                    Arguments = "--version",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+
+            probe.Start();
+            probe.WaitForExit(TimeSpan.FromSeconds(5));
+
+            // setsid --version exits 0 on util-linux implementations.
+            // Any successful start means the binary exists.
+            return true;
+        }
+        catch
+        {
+            // File not found, permission denied, etc.
+            return false;
+        }
     }
 
     // No subclasses expected -- process handle using POSIX process groups via setpgid,
