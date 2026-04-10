@@ -37,7 +37,7 @@ public class RoutingConfiguration
             FieldType.Boolean,
             new FieldEditableAlways(),
             RequiresRestart: true,
-            DependsOn: new FieldDependency("serveMode", ServeMode.FileServer.ToString())
+            DependsOn: new FieldDependency("serveMode", nameof(ServeMode.FileServer))
         ),
     ];
 

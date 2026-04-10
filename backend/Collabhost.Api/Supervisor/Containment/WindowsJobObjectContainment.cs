@@ -6,7 +6,7 @@ using Microsoft.Win32.SafeHandles;
 namespace Collabhost.Api.Supervisor.Containment;
 
 [SupportedOSPlatform("windows")]
-public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> logger) : IProcessContainment
+public partial class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> logger) : IProcessContainment
 {
     private readonly ILogger<WindowsJobObjectContainment> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -29,7 +29,7 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
 
             // CRITICAL: bInheritHandle MUST be false. If children inherit the job handle,
             // closing our handle is not the "last close" and kill-on-close does not fire.
-            InheritHandle = false
+            InheritHandle = 0
         };
 
         var jobHandle = NativeMethods.CreateJobObject(ref securityAttributes, jobName);
@@ -97,7 +97,7 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
             {
                 Length = (uint)Marshal.SizeOf<SecurityAttributes>(),
                 SecurityDescriptor = IntPtr.Zero,
-                InheritHandle = false
+                InheritHandle = 0
             };
 
             using var probeJob = NativeMethods.CreateJobObject(ref securityAttributes, null);
@@ -209,9 +209,7 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
     {
         public uint Length;
         public IntPtr SecurityDescriptor;
-
-        [MarshalAs(UnmanagedType.Bool)]
-        public bool InheritHandle;
+        public int InheritHandle;
     }
 
     private enum JobObjectInfoType
@@ -255,7 +253,7 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
         public UIntPtr PeakJobMemoryUsed;
     }
 
-    private static class NativeMethods
+    private static partial class NativeMethods
     {
         public const uint JobObjectLimitKillOnJobClose = 0x2000;
 
@@ -264,12 +262,12 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
         public const uint ProcessTerminate = 0x0001;
         public const uint ProcessAssignProcess = ProcessSetQuota | ProcessTerminate;
 
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        public static extern SafeJobHandle CreateJobObject(ref SecurityAttributes lpJobAttributes, string? lpName);
+        [LibraryImport("kernel32.dll", EntryPoint = "CreateJobObjectW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        public static partial SafeJobHandle CreateJobObject(ref SecurityAttributes lpJobAttributes, [MarshalAs(UnmanagedType.LPWStr)] string? lpName);
 
-        [DllImport("kernel32.dll", SetLastError = true)]
+        [LibraryImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool SetInformationJobObject
+        public static partial bool SetInformationJobObject
         (
             SafeJobHandle hJob,
             JobObjectInfoType jobObjectInformationClass,
@@ -277,27 +275,27 @@ public class WindowsJobObjectContainment(ILogger<WindowsJobObjectContainment> lo
             uint cbJobObjectInformationLength
         );
 
-        [DllImport("kernel32.dll", SetLastError = true)]
+        [LibraryImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool AssignProcessToJobObject(SafeJobHandle hJob, IntPtr hProcess);
+        public static partial bool AssignProcessToJobObject(SafeJobHandle hJob, IntPtr hProcess);
 
-        [DllImport("kernel32.dll", SetLastError = true)]
+        [LibraryImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool TerminateJobObject(SafeJobHandle hJob, uint uExitCode);
+        public static partial bool TerminateJobObject(SafeJobHandle hJob, uint uExitCode);
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
+        [LibraryImport("kernel32.dll", SetLastError = true)]
+        public static partial IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
 
-        [DllImport("kernel32.dll", SetLastError = true)]
+        [LibraryImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool CloseHandle(IntPtr hObject);
+        public static partial bool CloseHandle(IntPtr hObject);
 
-        [DllImport("kernel32.dll")]
-        public static extern IntPtr GetCurrentProcess();
+        [LibraryImport("kernel32.dll")]
+        public static partial IntPtr GetCurrentProcess();
 
-        [DllImport("kernel32.dll", SetLastError = true)]
+        [LibraryImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool IsProcessInJob(
+        public static partial bool IsProcessInJob(
             IntPtr processHandle,
             IntPtr jobHandle,
             [MarshalAs(UnmanagedType.Bool)] out bool result);

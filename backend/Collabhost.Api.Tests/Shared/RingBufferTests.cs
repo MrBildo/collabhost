@@ -156,13 +156,13 @@ public class RingBufferTests
         buffer.Add("hello");
         buffer.Add("world");
 
-        var item1 = await reader.ReadAsync();
-        var item2 = await reader.ReadAsync();
+        var (id1, value1) = await reader.ReadAsync();
+        var (id2, value2) = await reader.ReadAsync();
 
-        item1.Id.ShouldBe(1);
-        item1.Item.ShouldBe("hello");
-        item2.Id.ShouldBe(2);
-        item2.Item.ShouldBe("world");
+        id1.ShouldBe(1);
+        value1.ShouldBe("hello");
+        id2.ShouldBe(2);
+        value2.ShouldBe("world");
 
         buffer.Unsubscribe(reader);
     }
@@ -176,13 +176,13 @@ public class RingBufferTests
 
         buffer.Add(42);
 
-        var item1 = await reader1.ReadAsync();
-        var item2 = await reader2.ReadAsync();
+        var (id1, value1) = await reader1.ReadAsync();
+        var (id2, value2) = await reader2.ReadAsync();
 
-        item1.Id.ShouldBe(1);
-        item1.Item.ShouldBe(42);
-        item2.Id.ShouldBe(1);
-        item2.Item.ShouldBe(42);
+        id1.ShouldBe(1);
+        value1.ShouldBe(42);
+        id2.ShouldBe(1);
+        value2.ShouldBe(42);
 
         buffer.Unsubscribe(reader1);
         buffer.Unsubscribe(reader2);
@@ -320,8 +320,8 @@ public class RingBufferTests
 
         for (var i = 0; i < 10; i++)
         {
-            var item = await reader.ReadAsync();
-            ids.Add(item.Id);
+            var (id, _) = await reader.ReadAsync();
+            ids.Add(id);
         }
 
         for (var i = 1; i < ids.Count; i++)
@@ -340,9 +340,9 @@ public class RingBufferTests
 
         buffer.Add("first");
 
-        var item = await reader.ReadAsync();
+        var (id, _) = await reader.ReadAsync();
 
-        item.Id.ShouldBe(1);
+        id.ShouldBe(1);
 
         buffer.Unsubscribe(reader);
     }

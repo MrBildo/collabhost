@@ -101,7 +101,7 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         {
             Length = (uint)Marshal.SizeOf<WindowsNativeMethods.SecurityAttributes>(),
             SecurityDescriptor = IntPtr.Zero,
-            InheritHandle = true
+            InheritHandle = 1
         };
 
         if (!WindowsNativeMethods.CreatePipe(out var stdoutRead, out var stdoutWrite, ref stdoutSecurity, 0))
@@ -120,7 +120,7 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         {
             Length = (uint)Marshal.SizeOf<WindowsNativeMethods.SecurityAttributes>(),
             SecurityDescriptor = IntPtr.Zero,
-            InheritHandle = true
+            InheritHandle = 1
         };
 
         if (!WindowsNativeMethods.CreatePipe(out var stderrRead, out var stderrWrite, ref stderrSecurity, 0))
