@@ -37,7 +37,7 @@ public class ProcessConfiguration
             FieldType.Text,
             new FieldEditableAlways(),
             RequiresRestart: true,
-            DependsOn: new FieldDependency("discoveryStrategy", DiscoveryStrategy.Manual.ToString())
+            DependsOn: new FieldDependency("discoveryStrategy", nameof(DiscoveryStrategy.Manual))
         ),
         new
         (
@@ -46,7 +46,7 @@ public class ProcessConfiguration
             FieldType.Text,
             new FieldEditableAlways(),
             RequiresRestart: true,
-            DependsOn: new FieldDependency("discoveryStrategy", DiscoveryStrategy.Manual.ToString())
+            DependsOn: new FieldDependency("discoveryStrategy", nameof(DiscoveryStrategy.Manual))
         ),
         new
         (

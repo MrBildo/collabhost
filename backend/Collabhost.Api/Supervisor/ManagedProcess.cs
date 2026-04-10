@@ -234,7 +234,7 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
 
 file record struct OperationLockRelease(SemaphoreSlim Semaphore) : IAsyncDisposable
 {
-    public ValueTask DisposeAsync()
+    public readonly ValueTask DisposeAsync()
     {
         try
         {

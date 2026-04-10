@@ -32,7 +32,7 @@ public static class LogStreamEndpoints
         if (Interlocked.Increment(ref _concurrentStreams) > _maxConcurrentStreams)
         {
             Interlocked.Decrement(ref _concurrentStreams);
-            httpContext.Response.Headers["Retry-After"] = "5";
+            httpContext.Response.Headers.RetryAfter = "5";
             httpContext.Response.StatusCode = 503;
             return;
         }

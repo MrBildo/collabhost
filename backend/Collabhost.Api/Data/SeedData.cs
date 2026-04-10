@@ -11,13 +11,13 @@ public static class SeedData
 
     public static void Apply(ModelBuilder modelBuilder)
     {
-        var appTypes = SeedAppTypes(modelBuilder);
+        var (dotNet, nodeJs, staticSite, systemService, executable) = SeedAppTypes(modelBuilder);
 
-        SeedDotNetBindings(modelBuilder, appTypes.DotNet);
-        SeedNodeJsBindings(modelBuilder, appTypes.NodeJs);
-        SeedStaticSiteBindings(modelBuilder, appTypes.StaticSite);
-        SeedSystemServiceBindings(modelBuilder, appTypes.SystemService);
-        SeedExecutableBindings(modelBuilder, appTypes.Executable);
+        SeedDotNetBindings(modelBuilder, dotNet);
+        SeedNodeJsBindings(modelBuilder, nodeJs);
+        SeedStaticSiteBindings(modelBuilder, staticSite);
+        SeedSystemServiceBindings(modelBuilder, systemService);
+        SeedExecutableBindings(modelBuilder, executable);
     }
 
     private static

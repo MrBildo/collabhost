@@ -109,16 +109,9 @@ public class RegistrationTools
             );
         }
 
-        var app = new App
-        {
-            Slug = derivedSlug,
-            DisplayName = name.Trim(),
-            AppTypeId = appType.Id
-        };
+        // Validate all settings BEFORE creating the app to ensure registration is transactional
+        var validatedOverrides = new List<(string SectionKey, JsonObject Overrides)>();
 
-        await _appStore.CreateAsync(app, ct);
-
-        // Apply settings as capability overrides
         if (!string.IsNullOrWhiteSpace(settings))
         {
             JsonObject? settingsObject;
@@ -172,13 +165,7 @@ public class RegistrationTools
                         );
                     }
 
-                    await _appStore.SaveOverrideAsync
-                    (
-                        app.Id,
-                        sectionKey,
-                        sectionChanges.ToJsonString(McpResponseFormatter.JsonOptions),
-                        ct
-                    );
+                    validatedOverrides.Add((sectionKey, sectionChanges));
                 }
             }
         }
@@ -194,14 +181,29 @@ public class RegistrationTools
                     ["workingDirectory"] = JsonValue.Create(installDirectory)
                 };
 
-                await _appStore.SaveOverrideAsync
-                (
-                    app.Id,
-                    "process",
-                    processOverride.ToJsonString(McpResponseFormatter.JsonOptions),
-                    ct
-                );
+                validatedOverrides.Add(("process", processOverride));
             }
+        }
+
+        // All validation passed -- now create the app and persist overrides
+        var app = new App
+        {
+            Slug = derivedSlug,
+            DisplayName = name.Trim(),
+            AppTypeId = appType.Id
+        };
+
+        await _appStore.CreateAsync(app, ct);
+
+        foreach (var (sectionKey, overrideObject) in validatedOverrides)
+        {
+            await _appStore.SaveOverrideAsync
+            (
+                app.Id,
+                sectionKey,
+                overrideObject.ToJsonString(McpResponseFormatter.JsonOptions),
+                ct
+            );
         }
 
         // Routing-only apps (e.g. static sites) start with their route disabled

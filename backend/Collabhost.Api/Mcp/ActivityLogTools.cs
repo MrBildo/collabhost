@@ -67,7 +67,7 @@ public class ActivityLogTools(ActivityEventStore activityEventStore)
             lines.Add(FormatEvent(ev));
         }
 
-        return McpResponseFormatter.Success(string.Join("\n", lines));
+        return McpResponseFormatter.Success(string.Join('\n', lines));
     }
 
     private static string BuildHeader
@@ -121,7 +121,7 @@ public class ActivityLogTools(ActivityEventStore activityEventStore)
 
         var actor = string.Equals(ev.ActorId, ActivityActor.SystemId, StringComparison.Ordinal)
             ? "(system)"
-            : string.Create(CultureInfo.InvariantCulture, $"(by {ev.ActorName})");
+            : $"(by {ev.ActorName})";
 
         sb.Append(' ');
         sb.Append(actor);
@@ -155,7 +155,7 @@ public class ActivityLogTools(ActivityEventStore activityEventStore)
                     FormatAutoRestarted(root),
 
                 ActivityEventTypes.AppSettingsUpdated => TryGetStringArray(root, "changedCapabilities") is { } caps
-                    ? $"changed={string.Join(",", caps)}"
+                    ? $"changed={string.Join(',', caps)}"
                     : null,
 
                 ActivityEventTypes.AppCreated => TryGetString(root, "appTypeSlug") is { } typeSlug
@@ -199,7 +199,7 @@ public class ActivityLogTools(ActivityEventStore activityEventStore)
             parts.Add(string.Create(CultureInfo.InvariantCulture, $"exit={exitCode}"));
         }
 
-        return parts.Count > 0 ? string.Join(" ", parts) : null;
+        return parts.Count > 0 ? string.Join(' ', parts) : null;
     }
 
     private static string? FormatUserEvent(JsonElement root)
@@ -216,7 +216,7 @@ public class ActivityLogTools(ActivityEventStore activityEventStore)
             parts.Add($"role={role}");
         }
 
-        return parts.Count > 0 ? string.Join(" ", parts) : null;
+        return parts.Count > 0 ? string.Join(' ', parts) : null;
     }
 
     private static string? TryGetString(JsonElement root, string key) =>

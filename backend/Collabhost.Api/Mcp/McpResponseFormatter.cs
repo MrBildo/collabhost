@@ -101,7 +101,7 @@ public static class McpResponseFormatter
                 .Select(l => l.Length > _maxLineLength ? l[.._maxLineLength] + "... (truncated)" : l)
                     .ToList();
 
-        var content = string.Join("\n", included);
+        var content = string.Join('\n', included);
 
         var summary = string.Create
         (

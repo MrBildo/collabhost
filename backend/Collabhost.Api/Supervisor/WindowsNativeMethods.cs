@@ -6,7 +6,7 @@ using Microsoft.Win32.SafeHandles;
 namespace Collabhost.Api.Supervisor;
 
 [SupportedOSPlatform("windows")]
-internal static class WindowsNativeMethods
+internal static partial class WindowsNativeMethods
 {
     // Process creation flags
     public const uint CreateNewProcessGroup = 0x00000200;
@@ -26,25 +26,25 @@ internal static class WindowsNativeMethods
     // Handle flags for SetHandleInformation
     public const uint HandleFlagInherit = 0x00000001;
 
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateProcessW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool CreateProcess
+    public static partial bool CreateProcess
     (
-        string? lpApplicationName,
-        string lpCommandLine,
+        [MarshalAs(UnmanagedType.LPWStr)] string? lpApplicationName,
+        [MarshalAs(UnmanagedType.LPWStr)] string lpCommandLine,
         IntPtr lpProcessAttributes,
         IntPtr lpThreadAttributes,
         [MarshalAs(UnmanagedType.Bool)] bool bInheritHandles,
         uint dwCreationFlags,
         IntPtr lpEnvironment,
-        string? lpCurrentDirectory,
+        [MarshalAs(UnmanagedType.LPWStr)] string? lpCurrentDirectory,
         ref StartupInfo lpStartupInfo,
         out ProcessInformation lpProcessInformation
     );
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool CreatePipe
+    public static partial bool CreatePipe
     (
         out SafeFileHandle hReadPipe,
         out SafeFileHandle hWritePipe,
@@ -52,30 +52,30 @@ internal static class WindowsNativeMethods
         uint nSize
     );
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool SetHandleInformation
+    public static partial bool SetHandleInformation
     (
         SafeFileHandle hObject,
         uint dwMask,
         uint dwFlags
     );
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, uint dwProcessGroupId);
+    public static partial bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, uint dwProcessGroupId);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool CloseHandle(IntPtr hObject);
+    public static partial bool CloseHandle(IntPtr hObject);
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    [StructLayout(LayoutKind.Sequential)]
     public struct StartupInfo
     {
         public uint Cb;
-        public string? Reserved;
-        public string? Desktop;
-        public string? Title;
+        public IntPtr Reserved;
+        public IntPtr Desktop;
+        public IntPtr Title;
         public uint X;
         public uint Y;
         public uint XSize;
@@ -111,8 +111,6 @@ internal static class WindowsNativeMethods
     {
         public uint Length;
         public IntPtr SecurityDescriptor;
-
-        [MarshalAs(UnmanagedType.Bool)]
-        public bool InheritHandle;
+        public int InheritHandle;
     }
 }
