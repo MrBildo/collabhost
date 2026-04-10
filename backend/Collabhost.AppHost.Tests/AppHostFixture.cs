@@ -1,6 +1,9 @@
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
 
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
 using Xunit;
 
 namespace Collabhost.AppHost.Tests;
@@ -31,6 +34,16 @@ public class AppHostFixture : IAsyncLifetime
 
         var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.Collabhost_AppHost>();
+
+        // Suppress verbose console logging to prevent test runner pipe buffer deadlocks on Linux.
+        // Aspire forwards all managed resource stdout/stderr to ILogger under the category
+        // "Collabhost.AppHost.Resources.{name}", which produces 700+ lines of EF Core SQL,
+        // ASP.NET Core info, and HTTP client traces. When dotnet test runs multiple projects
+        // concurrently, this volume deadlocks the terminal logger's output buffer on Linux.
+        appHost.Services.AddLogging(logging =>
+        {
+            logging.SetMinimumLevel(LogLevel.Warning);
+        });
 
         _app = await appHost.BuildAsync();
 
