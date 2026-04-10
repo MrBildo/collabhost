@@ -376,7 +376,7 @@ public class RegistrationTools
             return BrowseRoots();
         }
 
-        if (!IsValidPath(path))
+        if (!path.IsValidPath())
         {
             return McpResponseFormatter.InvalidParameters
             (
@@ -451,7 +451,7 @@ public class RegistrationTools
             return McpResponseFormatter.InvalidParameters("appTypeSlug is required.");
         }
 
-        if (!IsValidPath(path))
+        if (!path.IsValidPath())
         {
             return McpResponseFormatter.InvalidParameters
             (
@@ -619,13 +619,6 @@ public class RegistrationTools
         return char.ToLowerInvariant(name[0]) + name[1..];
     }
 
-    private static bool IsValidPath(string path)
-    {
-        var invalidChars = Path.GetInvalidPathChars();
-
-        return !path.AsSpan().ContainsAny(invalidChars);
-    }
-
     private static JsonObject EnsureSection(JsonObject parent, string key)
     {
         if (parent[key] is JsonObject existing)
@@ -641,3 +634,16 @@ public class RegistrationTools
 }
 #pragma warning restore MA0011
 #pragma warning restore MA0076
+
+file static class RegistrationToolExtensions
+{
+    extension(string path)
+    {
+        public bool IsValidPath()
+        {
+            var invalidChars = Path.GetInvalidPathChars();
+
+            return !path.AsSpan().ContainsAny(invalidChars);
+        }
+    }
+}
