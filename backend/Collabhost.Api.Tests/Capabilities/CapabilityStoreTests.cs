@@ -2,6 +2,7 @@ using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Events;
 using Collabhost.Api.Registry;
 
 using Microsoft.Data.Sqlite;
@@ -24,7 +25,12 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
 
     public async Task InitializeAsync()
     {
-        _typeStore = new TypeStore(NullLogger<TypeStore>.Instance);
+        _typeStore = new TypeStore
+        (
+            new EventBus<TypeStoreReloadedEvent>(),
+            new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-notexist") },
+            NullLogger<TypeStore>.Instance
+        );
 
         await _typeStore.LoadAsync();
 

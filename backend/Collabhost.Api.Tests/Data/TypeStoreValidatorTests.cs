@@ -286,4 +286,132 @@ public class TypeStoreValidatorTests
 
         result.ShouldBe("test");
     }
+
+    [Fact]
+    public void ValidateUserTypes_ValidUserType_ReturnsNoErrors()
+    {
+        var userJson = """
+            {
+              "slug": "custom-app",
+              "displayName": "Custom Application"
+            }
+            """;
+
+        var userSources = new List<(string FileName, string Json)>
+        {
+            ("custom-app.json", userJson)
+        };
+
+        var builtInTypes = new List<AppType>
+        {
+            new() { Slug = "dotnet-app", DisplayName = ".NET Application", IsBuiltIn = true }
+        };
+
+        var errors = TypeStoreValidator.ValidateUserTypes(userSources, builtInTypes);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ValidateUserTypes_SlugConflictsWithBuiltIn_ReturnsError()
+    {
+        var userJson = """
+            {
+              "slug": "dotnet-app",
+              "displayName": "My Custom Type"
+            }
+            """;
+
+        var userSources = new List<(string FileName, string Json)>
+        {
+            ("dotnet-app.json", userJson)
+        };
+
+        var builtInTypes = new List<AppType>
+        {
+            new() { Slug = "dotnet-app", DisplayName = ".NET Application", IsBuiltIn = true }
+        };
+
+        var errors = TypeStoreValidator.ValidateUserTypes(userSources, builtInTypes);
+
+        errors.ShouldContain(error =>
+            error.FieldPath == "slug"
+            && error.Message.Contains("conflicts with a built-in type", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateUserTypes_DisplayNameConflictsWithBuiltIn_ReturnsError()
+    {
+        var userJson = """
+            {
+              "slug": "unique-slug",
+              "displayName": ".NET Application"
+            }
+            """;
+
+        var userSources = new List<(string FileName, string Json)>
+        {
+            ("unique-slug.json", userJson)
+        };
+
+        var builtInTypes = new List<AppType>
+        {
+            new() { Slug = "dotnet-app", DisplayName = ".NET Application", IsBuiltIn = true }
+        };
+
+        var errors = TypeStoreValidator.ValidateUserTypes(userSources, builtInTypes);
+
+        errors.ShouldContain(error =>
+            error.FieldPath == "displayName"
+            && error.Message.Contains("conflicts with a built-in type", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateUserTypes_DuplicateSlugsAmongUserTypes_ReturnsError()
+    {
+        var json1 = """
+            {
+              "slug": "custom-app",
+              "displayName": "Custom App 1"
+            }
+            """;
+
+        var json2 = """
+            {
+              "slug": "custom-app",
+              "displayName": "Custom App 2"
+            }
+            """;
+
+        var userSources = new List<(string FileName, string Json)>
+        {
+            ("custom-app.json", json1),
+            ("custom-app.json", json2)
+        };
+
+        var builtInTypes = new List<AppType>();
+
+        var errors = TypeStoreValidator.ValidateUserTypes(userSources, builtInTypes);
+
+        errors.ShouldContain(error =>
+            error.FieldPath == "slug"
+            && error.Message.Contains("Duplicate slug", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateUserTypes_InvalidJson_ReturnsError()
+    {
+        var userSources = new List<(string FileName, string Json)>
+        {
+            ("bad-app.json", "{ broken json")
+        };
+
+        var builtInTypes = new List<AppType>();
+
+        var errors = TypeStoreValidator.ValidateUserTypes(userSources, builtInTypes);
+
+        errors.ShouldContain(error =>
+            error.FieldPath == "(root)"
+            && error.Message.Contains("Invalid JSON", StringComparison.Ordinal));
+    }
 }

@@ -1,4 +1,5 @@
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Events;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -11,7 +12,12 @@ namespace Collabhost.Api.Tests.Data;
 public class TypeStoreTests
 {
     private static TypeStore CreateTypeStore() =>
-        new(NullLogger<TypeStore>.Instance);
+        new
+        (
+            new EventBus<TypeStoreReloadedEvent>(),
+            new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-usertypes-" + Guid.NewGuid().ToString("N", System.Globalization.CultureInfo.InvariantCulture)) },
+            NullLogger<TypeStore>.Instance
+        );
 
     [Fact]
     public async Task LoadAsync_LoadsAllFiveBuiltInTypes()

@@ -79,7 +79,12 @@ public class RouteExplicitStateTests
         var cache = new MemoryCache(new MemoryCacheOptions());
         var appStore = new AppStore(dbFactory, cache, NullLogger<AppStore>.Instance);
 
-        var typeStore = new TypeStore(NullLogger<TypeStore>.Instance);
+        var typeStore = new TypeStore
+        (
+            new Collabhost.Api.Events.EventBus<TypeStoreReloadedEvent>(),
+            new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-notexist") },
+            NullLogger<TypeStore>.Instance
+        );
         var capabilityStore = new CapabilityStore(typeStore, appStore, NullLogger<CapabilityStore>.Instance);
 
         var runner = new FakeManagedProcessRunner();

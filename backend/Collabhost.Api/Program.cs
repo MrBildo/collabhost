@@ -42,7 +42,7 @@ var earlyLogger = earlyLoggerFactory.CreateLogger("Startup");
 builder.Services.AddCollabhostAuthorization(builder.Configuration, earlyLogger);
 
 // Type store
-builder.Services.AddTypeStore();
+builder.Services.AddTypeStore(builder.Configuration);
 
 // Subsystems
 builder.Services.AddActivityLog();
@@ -78,6 +78,7 @@ if (app.Environment.IsDevelopment())
     // TypeStore startup gate -- load and validate built-in types before hosted services
     var typeStore = app.Services.GetRequiredService<TypeStore>();
     await typeStore.LoadAsync(CancellationToken.None);
+    typeStore.StartWatching();
 
     var proxySeeder = scope.ServiceProvider.GetRequiredService<ProxyAppSeeder>();
     await proxySeeder.SeedAsync(CancellationToken.None);

@@ -33,6 +33,59 @@ public static partial class TypeStoreValidator
         return errors;
     }
 
+    public static IReadOnlyList<TypeStoreValidationError> ValidateUserTypes
+    (
+        IReadOnlyList<(string FileName, string Json)> userSources,
+        IReadOnlyList<AppType> builtInTypes
+    )
+    {
+        var errors = new List<TypeStoreValidationError>();
+
+        var parsedTypes = new List<(string ResourceName, string Slug, string DisplayName)>();
+
+        foreach (var (fileName, json) in userSources)
+        {
+            ValidateFile(fileName, json, errors, parsedTypes);
+        }
+
+        // Cross-file validation among user types themselves
+        ValidateCrossFile(parsedTypes, errors);
+
+        // Cross-set validation: user types vs built-in types
+        ValidateAgainstBuiltInTypes(parsedTypes, builtInTypes, errors);
+
+        return errors;
+    }
+
+    private static void ValidateAgainstBuiltInTypes
+    (
+        List<(string ResourceName, string Slug, string DisplayName)> userTypes,
+        IReadOnlyList<AppType> builtInTypes,
+        List<TypeStoreValidationError> errors
+    )
+    {
+        var builtInSlugs = builtInTypes
+            .Select(type => type.Slug)
+                .ToHashSet(StringComparer.Ordinal);
+
+        var builtInDisplayNames = builtInTypes
+            .Select(type => type.DisplayName)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (resourceName, slug, displayName) in userTypes)
+        {
+            if (builtInSlugs.Contains(slug))
+            {
+                errors.Add(new TypeStoreValidationError(resourceName, "slug", $"Slug '{slug}' conflicts with a built-in type."));
+            }
+
+            if (builtInDisplayNames.Contains(displayName))
+            {
+                errors.Add(new TypeStoreValidationError(resourceName, "displayName", $"Display name '{displayName}' conflicts with a built-in type."));
+            }
+        }
+    }
+
     private static void ValidateFile
     (
         string resourceName,
