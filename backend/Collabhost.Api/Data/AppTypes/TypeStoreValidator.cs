@@ -190,7 +190,7 @@ public static partial class TypeStoreValidator
         // Check for duplicate slugs
         var slugGroups = parsedTypes
             .GroupBy(t => t.Slug, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1);
+            .Where(group => group.Skip(1).Any());
 
         foreach (var group in slugGroups)
         {
@@ -201,7 +201,7 @@ public static partial class TypeStoreValidator
         // Check for duplicate display names
         var displayNameGroups = parsedTypes
             .GroupBy(t => t.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .Where(group => group.Count() > 1);
+            .Where(group => group.Skip(1).Any());
 
         foreach (var group in displayNameGroups)
         {

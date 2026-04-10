@@ -80,7 +80,7 @@ public class TypeStore(ILogger<TypeStore> logger)
         var resourceNames = assembly.GetManifestResourceNames()
             .Where(name => name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
                 && name.Contains("BuiltInTypes", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(name => name, StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
                 .ToList();
 
         var sources = new List<(string ResourceName, string Json)>(resourceNames.Count);
