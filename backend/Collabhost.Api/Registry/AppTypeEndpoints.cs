@@ -87,7 +87,7 @@ public static class AppTypeEndpoints
 
     private static List<RegistrationSection> BuildRegistrationSections
     (
-        AppTypeDefinition appType,
+        AppType appType,
         IReadOnlyDictionary<string, string>? bindings
     )
     {
@@ -238,7 +238,7 @@ public static class AppTypeEndpoints
         }
     }
 
-    private static List<AppTag> BuildTags(AppTypeDefinition appType)
+    private static List<AppTag> BuildTags(AppType appType)
     {
         var tags = new List<AppTag>();
 

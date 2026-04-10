@@ -1,24 +1,16 @@
-using Collabhost.Api.Capabilities;
-
-namespace Collabhost.Api.Registry;
+namespace Collabhost.Api.Data.AppTypes;
 
 public class AppType
 {
-    public Ulid Id { get; init; } = Ulid.NewUlid();
-
     public required string Slug { get; init; }
 
     public required string DisplayName { get; set; }
 
     public string? Description { get; set; }
 
+    public AppTypeMetadata? Metadata { get; set; }
+
     public bool IsBuiltIn { get; init; }
-
-    public string? MetadataJson { get; set; }
-
-    public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
-
-    public ICollection<CapabilityBinding> Bindings { get; init; } = [];
 }
 
 public class AppTypeMetadata

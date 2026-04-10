@@ -74,21 +74,10 @@ public class ProxyAppSeeder
             return;
         }
 
-        // Phase 1b coexistence: resolve the ULID for the FK (removed in Phase 2)
-        var appTypeId = await _appStore.GetAppTypeIdBySlugAsync("system-service", cancellationToken);
-
-        if (appTypeId is null)
-        {
-            _logger.LogWarning("No 'system-service' app type found in database -- cannot seed proxy app");
-
-            return;
-        }
-
         var proxyApp = new App
         {
             Slug = "proxy",
             DisplayName = "Proxy",
-            AppTypeId = appTypeId.Value,
             AppTypeSlug = "system-service"
         };
 

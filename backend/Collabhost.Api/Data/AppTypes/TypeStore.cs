@@ -1,5 +1,4 @@
 using System.Reflection;
-using Collabhost.Api.Registry;
 
 namespace Collabhost.Api.Data.AppTypes;
 
@@ -18,7 +17,7 @@ public class TypeStore(ILogger<TypeStore> logger)
     private volatile TypeStoreSnapshot _snapshot = new
     (
         [],
-        FrozenDictionary<string, AppTypeDefinition>.Empty,
+        FrozenDictionary<string, AppType>.Empty,
         FrozenDictionary<string, IReadOnlyDictionary<string, string>>.Empty
     );
 
@@ -57,10 +56,10 @@ public class TypeStore(ILogger<TypeStore> logger)
         );
     }
 
-    public AppTypeDefinition? GetBySlug(string slug) =>
+    public AppType? GetBySlug(string slug) =>
         _snapshot.TypesBySlug.GetValueOrDefault(slug);
 
-    public IReadOnlyList<AppTypeDefinition> ListTypes() =>
+    public IReadOnlyList<AppType> ListTypes() =>
         _snapshot.Types;
 
     public IReadOnlyDictionary<string, string>? GetBindings(string appTypeSlug) =>
@@ -105,8 +104,8 @@ public class TypeStore(ILogger<TypeStore> logger)
         IReadOnlyList<(string ResourceName, string Json)> sources
     )
     {
-        var types = new List<AppTypeDefinition>(sources.Count);
-        var typesBySlug = new Dictionary<string, AppTypeDefinition>(sources.Count, StringComparer.Ordinal);
+        var types = new List<AppType>(sources.Count);
+        var typesBySlug = new Dictionary<string, AppType>(sources.Count, StringComparer.Ordinal);
         var bindingsByTypeSlug = new Dictionary<string, IReadOnlyDictionary<string, string>>(sources.Count, StringComparer.Ordinal);
 
         foreach (var (resourceName, json) in sources)
@@ -130,7 +129,7 @@ public class TypeStore(ILogger<TypeStore> logger)
                 metadata = JsonSerializer.Deserialize<AppTypeMetadata>(metadataElement.GetRawText(), _jsonOptions);
             }
 
-            var typeDefinition = new AppTypeDefinition
+            var typeDefinition = new AppType
             {
                 Slug = slug,
                 DisplayName = displayName,

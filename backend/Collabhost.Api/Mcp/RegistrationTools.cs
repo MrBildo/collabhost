@@ -217,20 +217,11 @@ public class RegistrationTools
             }
         }
 
-        // Phase 1b coexistence: resolve the ULID for the FK (removed in Phase 2)
-        var appTypeId = await _appStore.GetAppTypeIdBySlugAsync(appType.Slug, ct);
-
-        if (appTypeId is null)
-        {
-            return McpResponseFormatter.InvalidParameters("App type not found in database.");
-        }
-
         // All validation passed -- now create the app and persist overrides
         var app = new App
         {
             Slug = derivedSlug,
             DisplayName = name.Trim(),
-            AppTypeId = appTypeId.Value,
             AppTypeSlug = appType.Slug
         };
 

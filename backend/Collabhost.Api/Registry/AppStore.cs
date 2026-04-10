@@ -29,14 +29,9 @@ public class AppStore
 
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-            var app = await db.Apps
-                .Include(a => a.AppType)
+            return await db.Apps
                 .AsNoTracking()
                     .SingleOrDefaultAsync(a => a.Slug == slug, ct);
-
-            HydrateAppTypeSlug(app);
-
-            return app;
         });
 
     public async Task<App?> GetByIdAsync(Ulid id, CancellationToken ct) =>
@@ -46,14 +41,9 @@ public class AppStore
 
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-            var app = await db.Apps
-                .Include(a => a.AppType)
+            return await db.Apps
                 .AsNoTracking()
                     .SingleOrDefaultAsync(a => a.Id == id, ct);
-
-            HydrateAppTypeSlug(app);
-
-            return app;
         });
 
     public async Task<IReadOnlyList<App>> ListAsync(CancellationToken ct) =>
@@ -63,18 +53,10 @@ public class AppStore
 
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-            var apps = await db.Apps
-                .Include(a => a.AppType)
+            return await db.Apps
                 .OrderBy(a => a.Slug)
                 .AsNoTracking()
                     .ToListAsync(ct);
-
-            foreach (var app in apps)
-            {
-                HydrateAppTypeSlug(app);
-            }
-
-            return apps;
         }) ?? [];
 
     public async Task<bool> ExistsBySlugAsync(string slug, CancellationToken ct)
@@ -84,7 +66,6 @@ public class AppStore
         return await db.Apps
                 .AnyAsync(a => a.Slug == slug, ct);
     }
-
 
     public async Task<IReadOnlyDictionary<string, CapabilityOverride>> GetOverridesAsync
     (
@@ -102,20 +83,6 @@ public class AppStore
                 .AsNoTracking()
                     .ToDictionaryAsync(o => o.CapabilitySlug, StringComparer.Ordinal, ct);
         }) ?? new Dictionary<string, CapabilityOverride>(StringComparer.Ordinal);
-
-    // Phase 1b coexistence: the App entity still has an AppTypeId FK to the
-    // AppTypes table. This method resolves the ULID for app creation only.
-    // It will be removed in Phase 2 when the FK is dropped.
-    public async Task<Ulid?> GetAppTypeIdBySlugAsync(string slug, CancellationToken ct)
-    {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-
-        var appType = await db.AppTypes
-            .AsNoTracking()
-                .SingleOrDefaultAsync(t => t.Slug == slug, ct);
-
-        return appType?.Id;
-    }
 
     public async Task UpdateAppAsync(App app, CancellationToken ct)
     {
@@ -214,16 +181,6 @@ public class AppStore
 
     public void InvalidateOverrides(Ulid appId) =>
         _cache.Remove($"overrides:{appId}");
-
-    private static void HydrateAppTypeSlug(App? app)
-    {
-        if (app is null)
-        {
-            return;
-        }
-
-        app.AppTypeSlug ??= app.AppType.Slug;
-    }
 
     private void InvalidateAppCache(string slug)
     {

@@ -56,7 +56,7 @@ public static class AppEndpoints
         foreach (var app in apps)
         {
             var process = supervisor.GetProcess(app.Id);
-            var bindings = typeStore.GetBindings(app.AppTypeSlug!);
+            var bindings = typeStore.GetBindings(app.AppTypeSlug);
             var overrides = await store.GetOverridesAsync(app.Id, ct);
 
             var hasProcess = bindings?.ContainsKey("process") ?? false;
@@ -83,7 +83,7 @@ public static class AppEndpoints
 
             var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
-            var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug!);
+            var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug);
 
             items.Add
             (
@@ -94,8 +94,8 @@ public static class AppEndpoints
                     app.DisplayName,
                     new AppTypeRef
                     (
-                        appTypeDefinition?.Slug ?? app.AppTypeSlug!,
-                        appTypeDefinition?.DisplayName ?? app.AppTypeSlug!
+                        appTypeDefinition?.Slug ?? app.AppTypeSlug,
+                        appTypeDefinition?.DisplayName ?? app.AppTypeSlug
                     ),
                     status.ToApiString(),
                     domain,
@@ -133,7 +133,7 @@ public static class AppEndpoints
         }
 
         var process = supervisor.GetProcess(app.Id);
-        var bindings = typeStore.GetBindings(app.AppTypeSlug!);
+        var bindings = typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await store.GetOverridesAsync(app.Id, ct);
 
         var hasProcess = bindings?.ContainsKey("process") ?? false;
@@ -215,7 +215,7 @@ public static class AppEndpoints
 
         var actions = BuildActions(hasProcess, hasRouting, status);
 
-        var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug!);
+        var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug);
 
         var detail = new AppDetail
         (
@@ -224,9 +224,9 @@ public static class AppEndpoints
             app.DisplayName,
             new AppTypeDetailRef
             (
-                appTypeDefinition?.Slug ?? app.AppTypeSlug!,
-                appTypeDefinition?.Slug ?? app.AppTypeSlug!,
-                appTypeDefinition?.DisplayName ?? app.AppTypeSlug!
+                appTypeDefinition?.Slug ?? app.AppTypeSlug,
+                appTypeDefinition?.Slug ?? app.AppTypeSlug,
+                appTypeDefinition?.DisplayName ?? app.AppTypeSlug
             ),
             app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
             status.ToApiString(),
@@ -263,9 +263,9 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var bindings = typeStore.GetBindings(app.AppTypeSlug!);
+        var bindings = typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await store.GetOverridesAsync(app.Id, ct);
-        var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug!);
+        var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug);
 
         var sections = BuildSettingsSections(app, bindings, overrides);
 
@@ -274,7 +274,7 @@ public static class AppEndpoints
             app.Id.ToString(),
             app.Slug,
             app.DisplayName,
-            appTypeDefinition?.DisplayName ?? app.AppTypeSlug!,
+            appTypeDefinition?.DisplayName ?? app.AppTypeSlug,
             app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
             sections
         );
@@ -301,7 +301,7 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var bindings = typeStore.GetBindings(app.AppTypeSlug!);
+        var bindings = typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await store.GetOverridesAsync(app.Id, ct);
 
         // Handle identity section changes
@@ -410,9 +410,9 @@ public static class AppEndpoints
         );
 
         var freshApp = await store.GetBySlugAsync(slug, ct);
-        var freshBindings = typeStore.GetBindings(freshApp!.AppTypeSlug!);
+        var freshBindings = typeStore.GetBindings(freshApp!.AppTypeSlug);
         var freshOverrides = await store.GetOverridesAsync(app.Id, ct);
-        var appTypeDefinition = typeStore.GetBySlug(freshApp.AppTypeSlug!);
+        var appTypeDefinition = typeStore.GetBySlug(freshApp.AppTypeSlug);
 
         var sections = BuildSettingsSections(freshApp, freshBindings, freshOverrides);
 
@@ -421,7 +421,7 @@ public static class AppEndpoints
             freshApp.Id.ToString(),
             freshApp.Slug,
             freshApp.DisplayName,
-            appTypeDefinition?.DisplayName ?? freshApp.AppTypeSlug!,
+            appTypeDefinition?.DisplayName ?? freshApp.AppTypeSlug,
             freshApp.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
             sections
         );
@@ -449,8 +449,8 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var hasProcess = typeStore.HasBinding(app.AppTypeSlug!, "process");
-        var hasRouting = typeStore.HasBinding(app.AppTypeSlug!, "routing");
+        var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
+        var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
 
         // Routing-only apps (e.g. static sites): enable route instead of starting a process
         if (!hasProcess && hasRouting)
@@ -535,8 +535,8 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var hasProcess = typeStore.HasBinding(app.AppTypeSlug!, "process");
-        var hasRouting = typeStore.HasBinding(app.AppTypeSlug!, "routing");
+        var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
+        var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
 
         // Routing-only apps (e.g. static sites): disable route instead of stopping a process
         if (!hasProcess && hasRouting)
@@ -634,8 +634,8 @@ public static class AppEndpoints
                 ct
             );
 
-            var hasProcess = typeStore.HasBinding(app.AppTypeSlug!, "process");
-            var hasRouting = typeStore.HasBinding(app.AppTypeSlug!, "routing");
+            var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
+            var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
             var actions = BuildActions(hasProcess, hasRouting, managed.State);
 
             return TypedResults.Ok
@@ -688,8 +688,8 @@ public static class AppEndpoints
             var process = supervisor.GetProcess(app.Id);
             var state = process?.State ?? ProcessState.Stopped;
 
-            var hasProcess = typeStore.HasBinding(app.AppTypeSlug!, "process");
-            var hasRouting = typeStore.HasBinding(app.AppTypeSlug!, "routing");
+            var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
+            var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
             var actions = BuildActions(hasProcess, hasRouting, state);
 
             return TypedResults.Ok
@@ -781,7 +781,6 @@ public static class AppEndpoints
             );
         }
 
-        // AppTypeId is now a slug (since Phase 1a, the type list returns slugs as IDs)
         var appType = typeStore.GetBySlug(request.AppTypeId);
 
         if (appType is null)
@@ -870,20 +869,11 @@ public static class AppEndpoints
             }
         }
 
-        // Phase 1b coexistence: resolve the ULID for the FK (removed in Phase 2)
-        var appTypeId = await store.GetAppTypeIdBySlugAsync(appType.Slug, ct);
-
-        if (appTypeId is null)
-        {
-            return TypedResults.Problem("App type not found in database.", statusCode: 500);
-        }
-
         // All validation passed -- now create the app and persist overrides
         var app = new App
         {
             Slug = request.Name.Trim().ToLowerInvariant(),
             DisplayName = request.DisplayName,
-            AppTypeId = appTypeId.Value,
             AppTypeSlug = appType.Slug
         };
 
