@@ -20,8 +20,8 @@ public class RegistrationValidationTests(ApiFixture fixture)
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    // executable type ID from seed data
-    private const string _executableAppTypeId = "01KNA0A0ZRZE6W7RPX9BRREKNQ";
+    // executable type slug (Phase 1b: CreateAppAsync now accepts slugs)
+    private const string _executableAppTypeId = "executable";
 
     [Fact]
     public async Task RegisterWithInvalidSettings_ReturnsErrorAndDoesNotCreateApp()

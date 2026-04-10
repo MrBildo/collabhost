@@ -1,6 +1,7 @@
 using System.Globalization;
 
 using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
@@ -20,13 +21,14 @@ public static class DashboardEndpoints
     private static async Task<IResult> GetStatsAsync
     (
         AppStore store,
+        TypeStore typeStore,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
         CancellationToken ct
     )
     {
         var apps = await store.ListAsync(ct);
-        var appTypes = await store.ListAppTypesAsync(ct);
+        var appTypes = typeStore.ListTypes();
 
         var running = 0;
         var stopped = 0;
@@ -38,8 +40,8 @@ public static class DashboardEndpoints
         foreach (var app in apps)
         {
             var process = supervisor.GetProcess(app.Id);
-            var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
-            var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
+            var hasProcess = typeStore.HasBinding(app.AppTypeSlug!, "process");
+            var hasRouting = typeStore.HasBinding(app.AppTypeSlug!, "routing");
 
             if (!hasProcess && !hasRouting)
             {

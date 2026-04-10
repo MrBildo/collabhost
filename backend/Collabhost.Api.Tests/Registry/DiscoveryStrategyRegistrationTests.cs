@@ -20,8 +20,8 @@ public class DiscoveryStrategyRegistrationTests(ApiFixture fixture)
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    // dotnet-app type ID from seed data
-    private const string _dotNetAppTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y";
+    // dotnet-app type slug (Phase 1b: CreateAppAsync now accepts slugs)
+    private const string _dotNetAppTypeId = "dotnet-app";
 
     [Fact]
     public async Task RegisterWithDiscoveryStrategyOverride_AppliesProcessOverride()

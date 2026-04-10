@@ -1,5 +1,7 @@
 using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
@@ -121,15 +123,20 @@ public class ProxyManagerTests
         var cache = new MemoryCache(new MemoryCacheOptions());
         var appStore = new AppStore(dbFactory, cache, NullLogger<AppStore>.Instance);
 
+        var typeStore = new TypeStore(NullLogger<TypeStore>.Instance);
+        var capabilityStore = new CapabilityStore(typeStore, appStore, NullLogger<CapabilityStore>.Instance);
+
         var runner = new FakeManagedProcessRunner();
         var eventBus = new Collabhost.Api.Events.EventBus<Collabhost.Api.Events.ProcessStateChangedEvent>();
         var activityEventStore = new ActivityEventStore(dbFactory, NullLogger<ActivityEventStore>.Instance);
-        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, eventBus, [], activityEventStore, NullLogger<ProcessSupervisor>.Instance);
+        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, capabilityStore, typeStore, eventBus, [], activityEventStore, NullLogger<ProcessSupervisor>.Instance);
 
         return new ProxyManager
         (
             new FakeCaddyClient(),
             appStore,
+            capabilityStore,
+            typeStore,
             supervisor,
             eventBus,
             new ProxySettings

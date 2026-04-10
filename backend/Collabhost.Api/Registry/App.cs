@@ -10,13 +10,15 @@ public class App
 
     public required Ulid AppTypeId { get; init; }
 
-    // Phase 1a coexistence: not mapped to DB (no migration yet). Populated from
-    // AppType.Slug via navigation property. Becomes a real column in Phase 2.
+    // Not mapped to DB (Phase 1b). Populated at query time from the AppType
+    // navigation property. Becomes a real column in Phase 2 when AppTypeId is removed.
     public string? AppTypeSlug { get; set; }
 
     public DateTime RegisteredAt { get; init; } = DateTime.UtcNow;
 
     public DateTime? ModifiedAt { get; set; }
 
+    // Navigation property retained during Phase 1b coexistence so that AppTypeSlug
+    // can be populated from AppType.Slug in AppStore queries.
     public AppType AppType { get; init; } = default!;
 }

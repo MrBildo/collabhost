@@ -29,10 +29,14 @@ public class AppStore
 
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-            return await db.Apps
+            var app = await db.Apps
                 .Include(a => a.AppType)
                 .AsNoTracking()
                     .SingleOrDefaultAsync(a => a.Slug == slug, ct);
+
+            HydrateAppTypeSlug(app);
+
+            return app;
         });
 
     public async Task<App?> GetByIdAsync(Ulid id, CancellationToken ct) =>
@@ -42,10 +46,14 @@ public class AppStore
 
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-            return await db.Apps
+            var app = await db.Apps
                 .Include(a => a.AppType)
                 .AsNoTracking()
                     .SingleOrDefaultAsync(a => a.Id == id, ct);
+
+            HydrateAppTypeSlug(app);
+
+            return app;
         });
 
     public async Task<IReadOnlyList<App>> ListAsync(CancellationToken ct) =>
@@ -55,11 +63,18 @@ public class AppStore
 
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-            return await db.Apps
+            var apps = await db.Apps
                 .Include(a => a.AppType)
                 .OrderBy(a => a.Slug)
                 .AsNoTracking()
                     .ToListAsync(ct);
+
+            foreach (var app in apps)
+            {
+                HydrateAppTypeSlug(app);
+            }
+
+            return apps;
         }) ?? [];
 
     public async Task<bool> ExistsBySlugAsync(string slug, CancellationToken ct)
@@ -70,39 +85,6 @@ public class AppStore
                 .AnyAsync(a => a.Slug == slug, ct);
     }
 
-    public async Task<AppType?> GetAppTypeBySlugAsync(string slug, CancellationToken ct)
-    {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-
-        return await db.AppTypes
-            .Include(t => t.Bindings)
-            .AsNoTracking()
-                .SingleOrDefaultAsync(t => t.Slug == slug, ct);
-    }
-
-    public async Task<IReadOnlyList<AppType>> ListAppTypesAsync(CancellationToken ct)
-    {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-
-        return await db.AppTypes
-            .Include(t => t.Bindings)
-            .OrderBy(t => t.DisplayName)
-            .AsNoTracking()
-                .ToListAsync(ct);
-    }
-
-    public async Task<IReadOnlyList<CapabilityBinding>> GetBindingsAsync(Ulid appTypeId, CancellationToken ct) =>
-        await _cache.GetOrCreateAsync($"bindings:{appTypeId}", async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = _cacheDuration;
-
-            await using var db = await _dbFactory.CreateDbContextAsync(ct);
-
-            return await db.CapabilityBindings
-                .Where(b => b.AppTypeId == appTypeId)
-                .AsNoTracking()
-                    .ToListAsync(ct);
-        }) ?? [];
 
     public async Task<IReadOnlyDictionary<string, CapabilityOverride>> GetOverridesAsync
     (
@@ -121,64 +103,19 @@ public class AppStore
                     .ToDictionaryAsync(o => o.CapabilitySlug, StringComparer.Ordinal, ct);
         }) ?? new Dictionary<string, CapabilityOverride>(StringComparer.Ordinal);
 
-    public async Task<bool> HasBindingAsync
-    (
-        Ulid appTypeId,
-        string capabilitySlug,
-        CancellationToken ct
-    )
+    // Phase 1b coexistence: the App entity still has an AppTypeId FK to the
+    // AppTypes table. This method resolves the ULID for app creation only.
+    // It will be removed in Phase 2 when the FK is dropped.
+    public async Task<Ulid?> GetAppTypeIdBySlugAsync(string slug, CancellationToken ct)
     {
-        var bindings = await GetBindingsAsync(appTypeId, ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        return bindings.Any
-        (
-            b => string.Equals(b.CapabilitySlug, capabilitySlug, StringComparison.Ordinal)
-        );
+        var appType = await db.AppTypes
+            .AsNoTracking()
+                .SingleOrDefaultAsync(t => t.Slug == slug, ct);
+
+        return appType?.Id;
     }
-
-    public async Task<T?> ResolveCapabilityAsync<T>
-    (
-        Ulid appTypeId,
-        Ulid appId,
-        string capabilitySlug,
-        CancellationToken ct
-    )
-        where T : class
-    {
-        var bindings = await GetBindingsAsync(appTypeId, ct);
-
-        var binding = bindings
-            .SingleOrDefault
-            (
-                b => string.Equals(b.CapabilitySlug, capabilitySlug, StringComparison.Ordinal)
-            );
-
-        if (binding is null)
-        {
-            return null;
-        }
-
-        var overrides = await GetOverridesAsync(appId, ct);
-
-        var overrideJson = overrides.TryGetValue(capabilitySlug, out var capabilityOverride)
-            ? capabilityOverride.ConfigurationJson
-            : null;
-
-        return CapabilityResolver.Resolve<T>(binding.DefaultConfigurationJson, overrideJson);
-    }
-
-    public async Task<AppType?> GetAppTypeByIdAsync(Ulid id, CancellationToken ct) =>
-        await _cache.GetOrCreateAsync($"apptype:id:{id}", async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = _cacheDuration;
-
-            await using var db = await _dbFactory.CreateDbContextAsync(ct);
-
-            return await db.AppTypes
-                .Include(t => t.Bindings)
-                .AsNoTracking()
-                    .SingleOrDefaultAsync(t => t.Id == id, ct);
-        });
 
     public async Task UpdateAppAsync(App app, CancellationToken ct)
     {
@@ -275,11 +212,18 @@ public class AppStore
 
     public void Invalidate(string slug) => InvalidateAppCache(slug);
 
-    public void InvalidateBindings(Ulid appTypeId) =>
-        _cache.Remove($"bindings:{appTypeId}");
-
     public void InvalidateOverrides(Ulid appId) =>
         _cache.Remove($"overrides:{appId}");
+
+    private static void HydrateAppTypeSlug(App? app)
+    {
+        if (app is null)
+        {
+            return;
+        }
+
+        app.AppTypeSlug ??= app.AppType.Slug;
+    }
 
     private void InvalidateAppCache(string slug)
     {

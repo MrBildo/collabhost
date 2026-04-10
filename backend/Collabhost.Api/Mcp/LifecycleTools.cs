@@ -3,6 +3,7 @@ using System.Globalization;
 
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
@@ -19,6 +20,7 @@ namespace Collabhost.Api.Mcp;
 public class LifecycleTools
 (
     AppStore appStore,
+    TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
     ICurrentUser currentUser,
@@ -28,6 +30,9 @@ public class LifecycleTools
 {
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly TypeStore _typeStore = typeStore
+        ?? throw new ArgumentNullException(nameof(typeStore));
 
     private readonly ProcessSupervisor _supervisor = supervisor
         ?? throw new ArgumentNullException(nameof(supervisor));
@@ -66,8 +71,8 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
-        var hasRouting = await _appStore.HasBindingAsync(app.AppTypeId, "routing", ct);
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
+        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug!, "routing");
 
         // Routing-only apps (e.g. static sites): enable route instead of starting a process
         if (!hasProcess && hasRouting)
@@ -100,7 +105,7 @@ public class LifecycleTools
             (
                 McpResponseFormatter.ToJson
                 (
-                    new { slug = app.Slug, status = "running", appType = app.AppType.Slug }
+                    new { slug = app.Slug, status = "running", appType = app.AppTypeSlug }
                 )
             );
         }
@@ -134,7 +139,7 @@ public class LifecycleTools
             (
                 McpResponseFormatter.ToJson
                 (
-                    new { slug = app.Slug, status = managed.State.ToApiString(), appType = app.AppType.Slug }
+                    new { slug = app.Slug, status = managed.State.ToApiString(), appType = app.AppTypeSlug }
                 )
             );
         }
@@ -166,8 +171,8 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
-        var hasRouting = await _appStore.HasBindingAsync(app.AppTypeId, "routing", ct);
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
+        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug!, "routing");
 
         // Routing-only apps (e.g. static sites): disable route instead of stopping a process
         if (!hasProcess && hasRouting)
@@ -200,7 +205,7 @@ public class LifecycleTools
             (
                 McpResponseFormatter.ToJson
                 (
-                    new { slug = app.Slug, status = "stopped", appType = app.AppType.Slug }
+                    new { slug = app.Slug, status = "stopped", appType = app.AppTypeSlug }
                 )
             );
         }
@@ -234,7 +239,7 @@ public class LifecycleTools
             (
                 McpResponseFormatter.ToJson
                 (
-                    new { slug = app.Slug, status = managed.State.ToApiString(), appType = app.AppType.Slug }
+                    new { slug = app.Slug, status = managed.State.ToApiString(), appType = app.AppTypeSlug }
                 )
             );
         }
@@ -266,13 +271,13 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
 
         if (!hasProcess)
         {
             return McpResponseFormatter.InvalidParameters
             (
-                $"Cannot restart app '{slug}': only process-based apps support restart. '{slug}' is a {app.AppType.Slug}."
+                $"Cannot restart app '{slug}': only process-based apps support restart. '{slug}' is a {app.AppTypeSlug}."
             );
         }
 
@@ -305,7 +310,7 @@ public class LifecycleTools
             (
                 McpResponseFormatter.ToJson
                 (
-                    new { slug = app.Slug, status = managed.State.ToApiString(), appType = app.AppType.Slug }
+                    new { slug = app.Slug, status = managed.State.ToApiString(), appType = app.AppTypeSlug }
                 )
             );
         }
@@ -337,13 +342,13 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
 
         if (!hasProcess)
         {
             return McpResponseFormatter.InvalidParameters
             (
-                $"Cannot kill app '{slug}': only process-based apps support kill. '{slug}' is a {app.AppType.Slug}."
+                $"Cannot kill app '{slug}': only process-based apps support kill. '{slug}' is a {app.AppTypeSlug}."
             );
         }
 
@@ -379,7 +384,7 @@ public class LifecycleTools
             (
                 McpResponseFormatter.ToJson
                 (
-                    new { slug = app.Slug, status, appType = app.AppType.Slug }
+                    new { slug = app.Slug, status, appType = app.AppTypeSlug }
                 )
             );
         }

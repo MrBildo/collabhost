@@ -49,9 +49,6 @@ public class CapabilityStore
         return CapabilityResolver.Resolve<T>(defaultConfigurationJson, overrideJson);
     }
 
-    // Convenience overload: uses app.AppType.Slug during Phase 1a coexistence
-    // (navigation property is still loaded). Phase 1b switches to app.AppTypeSlug
-    // when the navigation property is removed.
     public async Task<T?> ResolveAsync<T>
     (
         string capabilitySlug,
@@ -59,7 +56,7 @@ public class CapabilityStore
         CancellationToken ct
     )
         where T : class =>
-        await ResolveAsync<T>(capabilitySlug, app.AppTypeSlug ?? app.AppType.Slug, app.Id, ct);
+        await ResolveAsync<T>(capabilitySlug, app.AppTypeSlug!, app.Id, ct);
 
     public async Task<string?> ResolveJsonAsync
     (

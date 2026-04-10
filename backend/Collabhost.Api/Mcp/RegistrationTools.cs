@@ -4,6 +4,7 @@ using System.Security;
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
@@ -19,6 +20,7 @@ namespace Collabhost.Api.Mcp;
 public class RegistrationTools
 (
     AppStore appStore,
+    TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
     ICurrentUser currentUser,
@@ -28,6 +30,9 @@ public class RegistrationTools
 {
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly TypeStore _typeStore = typeStore
+        ?? throw new ArgumentNullException(nameof(typeStore));
 
     private readonly ProcessSupervisor _supervisor = supervisor
         ?? throw new ArgumentNullException(nameof(supervisor));
@@ -77,7 +82,7 @@ public class RegistrationTools
             return McpResponseFormatter.InvalidParameters("installDirectory is required.");
         }
 
-        var appType = await _appStore.GetAppTypeBySlugAsync(appTypeSlug, ct);
+        var appType = _typeStore.GetBySlug(appTypeSlug);
 
         if (appType is null)
         {
@@ -131,7 +136,7 @@ public class RegistrationTools
             if (settingsObject is not null)
             {
                 // Apply installDirectory into the process capability if it has one
-                var hasProcess = await _appStore.HasBindingAsync(appType.Id, "process", ct);
+                var hasProcess = _typeStore.HasBinding(appType.Slug, "process");
 
                 if (hasProcess)
                 {
@@ -146,7 +151,7 @@ public class RegistrationTools
                 }
 
                 // Apply installDirectory into the artifact capability if it has one
-                var hasArtifact = await _appStore.HasBindingAsync(appType.Id, "artifact", ct);
+                var hasArtifact = _typeStore.HasBinding(appType.Slug, "artifact");
 
                 if (hasArtifact)
                 {
@@ -187,7 +192,7 @@ public class RegistrationTools
         else
         {
             // No explicit settings -- inject installDirectory into capabilities if available
-            var hasProcess = await _appStore.HasBindingAsync(appType.Id, "process", ct);
+            var hasProcess = _typeStore.HasBinding(appType.Slug, "process");
 
             if (hasProcess)
             {
@@ -199,7 +204,7 @@ public class RegistrationTools
                 validatedOverrides.Add(("process", processOverride));
             }
 
-            var hasArtifact = await _appStore.HasBindingAsync(appType.Id, "artifact", ct);
+            var hasArtifact = _typeStore.HasBinding(appType.Slug, "artifact");
 
             if (hasArtifact)
             {
@@ -212,12 +217,21 @@ public class RegistrationTools
             }
         }
 
+        // Phase 1b coexistence: resolve the ULID for the FK (removed in Phase 2)
+        var appTypeId = await _appStore.GetAppTypeIdBySlugAsync(appType.Slug, ct);
+
+        if (appTypeId is null)
+        {
+            return McpResponseFormatter.InvalidParameters("App type not found in database.");
+        }
+
         // All validation passed -- now create the app and persist overrides
         var app = new App
         {
             Slug = derivedSlug,
             DisplayName = name.Trim(),
-            AppTypeId = appType.Id
+            AppTypeId = appTypeId.Value,
+            AppTypeSlug = appType.Slug
         };
 
         await _appStore.CreateAsync(app, ct);
@@ -234,8 +248,8 @@ public class RegistrationTools
         }
 
         // Routing-only apps (e.g. static sites) start with their route disabled
-        var hasRouting = await _appStore.HasBindingAsync(appType.Id, "routing", ct);
-        var hasProcessCapability = await _appStore.HasBindingAsync(appType.Id, "process", ct);
+        var hasRouting = _typeStore.HasBinding(appType.Slug, "routing");
+        var hasProcessCapability = _typeStore.HasBinding(appType.Slug, "process");
 
         if (hasRouting && !hasProcessCapability)
         {

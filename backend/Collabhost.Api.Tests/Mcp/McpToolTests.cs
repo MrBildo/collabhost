@@ -4,6 +4,7 @@ using System.Text.Json;
 
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
@@ -52,7 +53,7 @@ public class McpToolTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "MCP Test App",
-                appTypeId = "01KN8K1MRT26VCX65J1ZSVWESB"  // static-site
+                appTypeId = "static-site"
             },
             options: _jsonOptions
         );
@@ -73,16 +74,18 @@ public class McpToolTests(ApiFixture fixture)
     private DiscoveryTools CreateDiscoveryTools()
     {
         var appStore = _services.GetRequiredService<AppStore>();
+        var typeStore = _services.GetRequiredService<TypeStore>();
         var supervisor = _services.GetRequiredService<ProcessSupervisor>();
         var proxy = _services.GetRequiredService<ProxyManager>();
         var probeService = _services.GetRequiredService<ProbeService>();
 
-        return new DiscoveryTools(appStore, supervisor, proxy, probeService);
+        return new DiscoveryTools(appStore, typeStore, supervisor, proxy, probeService);
     }
 
     private LifecycleTools CreateLifecycleTools()
     {
         var appStore = _services.GetRequiredService<AppStore>();
+        var typeStore = _services.GetRequiredService<TypeStore>();
         var supervisor = _services.GetRequiredService<ProcessSupervisor>();
         var proxy = _services.GetRequiredService<ProxyManager>();
         var activityEventStore = _services.GetRequiredService<ActivityEventStore>();
@@ -92,12 +95,13 @@ public class McpToolTests(ApiFixture fixture)
         using var scope = _services.CreateScope();
         var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
 
-        return new LifecycleTools(appStore, supervisor, proxy, currentUser, activityEventStore, logger);
+        return new LifecycleTools(appStore, typeStore, supervisor, proxy, currentUser, activityEventStore, logger);
     }
 
     private ConfigurationTools CreateConfigurationTools()
     {
         var appStore = _services.GetRequiredService<AppStore>();
+        var typeStore = _services.GetRequiredService<TypeStore>();
         var supervisor = _services.GetRequiredService<ProcessSupervisor>();
         var proxy = _services.GetRequiredService<ProxyManager>();
         var proxySettings = _services.GetRequiredService<ProxySettings>();
@@ -108,12 +112,13 @@ public class McpToolTests(ApiFixture fixture)
         using var scope = _services.CreateScope();
         var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
 
-        return new ConfigurationTools(appStore, supervisor, proxy, proxySettings, currentUser, activityEventStore, logger);
+        return new ConfigurationTools(appStore, typeStore, supervisor, proxy, proxySettings, currentUser, activityEventStore, logger);
     }
 
     private RegistrationTools CreateRegistrationTools()
     {
         var appStore = _services.GetRequiredService<AppStore>();
+        var typeStore = _services.GetRequiredService<TypeStore>();
         var supervisor = _services.GetRequiredService<ProcessSupervisor>();
         var proxy = _services.GetRequiredService<ProxyManager>();
         var activityEventStore = _services.GetRequiredService<ActivityEventStore>();
@@ -123,7 +128,7 @@ public class McpToolTests(ApiFixture fixture)
         using var scope = _services.CreateScope();
         var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
 
-        return new RegistrationTools(appStore, supervisor, proxy, currentUser, activityEventStore, logger);
+        return new RegistrationTools(appStore, typeStore, supervisor, proxy, currentUser, activityEventStore, logger);
     }
 
     // -------- Discovery: list_apps --------
