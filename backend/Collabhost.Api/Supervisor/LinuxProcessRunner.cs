@@ -88,9 +88,10 @@ public class LinuxProcessRunner : IManagedProcessRunner
             }
         }
 
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-
+        // Create the handle BEFORE starting the output read pump. The handle constructor
+        // wires OutputDataReceived/ErrorDataReceived event handlers. If BeginOutputReadLine
+        // is called first, fast-exiting processes (e.g., `echo`) can produce output before
+        // the handler is registered, causing the output to be silently dropped.
         var handle = new LinuxProcessGroupHandle
         (
             process,
@@ -99,6 +100,9 @@ public class LinuxProcessRunner : IManagedProcessRunner
             configuration.OnOutput,
             _logger
         );
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
 
         _logger.LogDebug
         (
