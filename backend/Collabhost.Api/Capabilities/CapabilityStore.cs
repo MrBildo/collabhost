@@ -56,7 +56,7 @@ public class CapabilityStore
         CancellationToken ct
     )
         where T : class =>
-        await ResolveAsync<T>(capabilitySlug, app.AppTypeSlug!, app.Id, ct);
+        await ResolveAsync<T>(capabilitySlug, app.AppTypeSlug, app.Id, ct);
 
     public async Task<string?> ResolveJsonAsync
     (

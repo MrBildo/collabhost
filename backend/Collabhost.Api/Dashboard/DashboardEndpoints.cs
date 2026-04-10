@@ -40,8 +40,8 @@ public static class DashboardEndpoints
         foreach (var app in apps)
         {
             var process = supervisor.GetProcess(app.Id);
-            var hasProcess = typeStore.HasBinding(app.AppTypeSlug!, "process");
-            var hasRouting = typeStore.HasBinding(app.AppTypeSlug!, "routing");
+            var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
+            var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
 
             if (!hasProcess && !hasRouting)
             {

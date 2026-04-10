@@ -140,12 +140,7 @@ public class RegistrationTools
 
                 if (hasProcess)
                 {
-                    if (!settingsObject.ContainsKey("process"))
-                    {
-                        settingsObject["process"] = new JsonObject();
-                    }
-
-                    var processSection = settingsObject["process"]!.AsObject();
+                    var processSection = EnsureSection(settingsObject, "process");
 
                     processSection["workingDirectory"] ??= JsonValue.Create(installDirectory);
                 }
@@ -155,12 +150,7 @@ public class RegistrationTools
 
                 if (hasArtifact)
                 {
-                    if (!settingsObject.ContainsKey("artifact"))
-                    {
-                        settingsObject["artifact"] = new JsonObject();
-                    }
-
-                    var artifactSection = settingsObject["artifact"]!.AsObject();
+                    var artifactSection = EnsureSection(settingsObject, "artifact");
 
                     artifactSection["location"] ??= JsonValue.Create(installDirectory);
                 }
@@ -634,6 +624,19 @@ public class RegistrationTools
         var invalidChars = Path.GetInvalidPathChars();
 
         return !path.AsSpan().ContainsAny(invalidChars);
+    }
+
+    private static JsonObject EnsureSection(JsonObject parent, string key)
+    {
+        if (parent[key] is JsonObject existing)
+        {
+            return existing;
+        }
+
+        var section = new JsonObject();
+        parent[key] = section;
+
+        return section;
     }
 }
 #pragma warning restore MA0011

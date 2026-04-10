@@ -76,7 +76,7 @@ public class ConfigurationTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var bindings = _typeStore.GetBindings(app.AppTypeSlug!);
+        var bindings = _typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
 
         List<object> sections =
@@ -241,7 +241,7 @@ public class ConfigurationTools
             );
         }
 
-        var bindings = _typeStore.GetBindings(app.AppTypeSlug!);
+        var bindings = _typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
 
         // Handle identity section changes
@@ -416,7 +416,7 @@ public class ConfigurationTools
 
         foreach (var app in apps)
         {
-            var bindings = _typeStore.GetBindings(app.AppTypeSlug!);
+            var bindings = _typeStore.GetBindings(app.AppTypeSlug);
 
             if (bindings is null || !bindings.TryGetValue("routing", out var routingBindingJson))
             {

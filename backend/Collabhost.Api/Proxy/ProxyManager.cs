@@ -269,7 +269,7 @@ public class ProxyManager
 
         foreach (var app in apps)
         {
-            var hasRouting = _typeStore.HasBinding(app.AppTypeSlug!, "routing");
+            var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
 
             if (!hasRouting)
             {
@@ -346,14 +346,14 @@ public class ProxyManager
 
         foreach (var app in apps)
         {
-            var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
+            var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
 
             if (hasProcess)
             {
                 continue;
             }
 
-            var hasRouting = _typeStore.HasBinding(app.AppTypeSlug!, "routing");
+            var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
 
             if (!hasRouting)
             {

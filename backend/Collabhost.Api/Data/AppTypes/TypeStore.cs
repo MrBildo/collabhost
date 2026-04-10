@@ -72,7 +72,7 @@ public class TypeStore
             throw new TypeStoreValidationException(builtInErrors);
         }
 
-        var builtInSnapshot = BuildSnapshot(builtInSources, isBuiltIn: true);
+        var builtInSnapshot = BuildSnapshot(builtInSources, true);
 
         _builtInSnapshot = builtInSnapshot;
 
@@ -100,7 +100,7 @@ public class TypeStore
                 throw new TypeStoreValidationException(userErrors);
             }
 
-            var userSnapshot = BuildSnapshot(userSources, isBuiltIn: false);
+            var userSnapshot = BuildSnapshot(userSources, false);
 
             var combinedSnapshot = CombineSnapshots(builtInSnapshot, userSnapshot);
 
@@ -216,18 +216,21 @@ public class TypeStore
 
     private async Task ProcessReloadsAsync(CancellationToken cancellationToken)
     {
-        await foreach (var signal in _reloadChannel.Reader.ReadAllAsync(cancellationToken))
+        while (await _reloadChannel.Reader.WaitToReadAsync(cancellationToken))
         {
-            // Signal value is irrelevant -- the channel is a notification mechanism
-            _ = signal;
+            // Drain all pending signals -- values are irrelevant, channel is a notification mechanism
+            while (_reloadChannel.Reader.TryRead(out _))
+            {
+                // Intentionally empty -- draining the channel
+            }
 
             // Small delay to coalesce rapid FSW events
             await Task.Delay(500, cancellationToken);
 
             // Drain any additional signals that arrived during the delay
-            while (_reloadChannel.Reader.TryRead(out var excess))
+            while (_reloadChannel.Reader.TryRead(out _))
             {
-                _ = excess;
+                // Intentionally empty -- draining the channel
             }
 
             try
@@ -247,7 +250,7 @@ public class TypeStore
 
     private Task ReloadAsync(CancellationToken cancellationToken)
     {
-        _ = cancellationToken;
+        cancellationToken.ThrowIfCancellationRequested();
 
         var userTypesDirectory = ResolveUserTypesDirectory();
         var userSources = ReadUserTypesDirectory(userTypesDirectory);
@@ -301,7 +304,7 @@ public class TypeStore
             return Task.CompletedTask;
         }
 
-        var userSnapshot = BuildSnapshot(userSources, isBuiltIn: false);
+        var userSnapshot = BuildSnapshot(userSources, false);
         var combinedSnapshot = CombineSnapshots(_builtInSnapshot, userSnapshot);
 
         Interlocked.Exchange(ref _snapshot, combinedSnapshot);
@@ -405,8 +408,11 @@ public class TypeStore
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
 
-            var slug = root.GetProperty("slug").GetString()!;
-            var displayName = root.GetProperty("displayName").GetString()!;
+            var slug = root.GetProperty("slug").GetString()
+                ?? throw new InvalidOperationException($"Null slug in validated resource '{resourceName}'.");
+
+            var displayName = root.GetProperty("displayName").GetString()
+                ?? throw new InvalidOperationException($"Null displayName in validated resource '{resourceName}'.");
 
             var description = root.TryGetProperty("description", out var descriptionElement)
                 && descriptionElement.ValueKind == JsonValueKind.String

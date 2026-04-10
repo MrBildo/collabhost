@@ -71,8 +71,8 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
-        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug!, "routing");
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
+        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
 
         // Routing-only apps (e.g. static sites): enable route instead of starting a process
         if (!hasProcess && hasRouting)
@@ -171,8 +171,8 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
-        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug!, "routing");
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
+        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
 
         // Routing-only apps (e.g. static sites): disable route instead of stopping a process
         if (!hasProcess && hasRouting)
@@ -271,7 +271,7 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
 
         if (!hasProcess)
         {
@@ -342,7 +342,7 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
 
         if (!hasProcess)
         {

@@ -94,7 +94,7 @@ public class DiscoveryTools
         foreach (var app in apps)
         {
             var process = _supervisor.GetProcess(app.Id);
-            var bindings = _typeStore.GetBindings(app.AppTypeSlug!);
+            var bindings = _typeStore.GetBindings(app.AppTypeSlug);
             var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
 
             var hasProcess = bindings?.ContainsKey("process") ?? false;
@@ -155,7 +155,7 @@ public class DiscoveryTools
         }
 
         var process = _supervisor.GetProcess(app.Id);
-        var bindings = _typeStore.GetBindings(app.AppTypeSlug!);
+        var bindings = _typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
 
         var hasProcess = bindings?.ContainsKey("process") ?? false;

@@ -38,7 +38,7 @@ public static class ProxyEndpoints
 
         foreach (var app in apps)
         {
-            var bindings = typeStore.GetBindings(app.AppTypeSlug!);
+            var bindings = typeStore.GetBindings(app.AppTypeSlug);
 
             if (bindings is null || !bindings.TryGetValue("routing", out var routingBindingJson))
             {

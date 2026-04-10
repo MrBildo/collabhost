@@ -4,7 +4,7 @@ namespace Collabhost.Api.Data.AppTypes;
 
 public static partial class TypeStoreValidator
 {
-    [GeneratedRegex(@"^[a-z0-9-]+$", RegexOptions.None, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"^[a-z0-9-]+$", RegexOptions.None, 100)]
     private static partial Regex SlugPattern { get; }
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -135,7 +135,8 @@ public static partial class TypeStoreValidator
             return null;
         }
 
-        var slug = slugElement.GetString()!;
+        var slug = slugElement.GetString()
+            ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(slug))
         {
@@ -174,7 +175,8 @@ public static partial class TypeStoreValidator
             return null;
         }
 
-        var displayName = displayNameElement.GetString()!;
+        var displayName = displayNameElement.GetString()
+            ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(displayName))
         {

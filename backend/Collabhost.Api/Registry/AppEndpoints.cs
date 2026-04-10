@@ -64,7 +64,7 @@ public static class AppEndpoints
 
             RoutingConfiguration? routingConfiguration = null;
 
-            if (hasRouting && bindings!.TryGetValue("routing", out var routingBindingJson))
+            if (hasRouting && bindings is not null && bindings.TryGetValue("routing", out var routingBindingJson))
             {
                 var overrideJson = overrides.TryGetValue("routing", out var routingOverride)
                     ? routingOverride.ConfigurationJson
@@ -142,7 +142,7 @@ public static class AppEndpoints
         // Routing
         RoutingConfiguration? routingConfiguration = null;
 
-        if (hasRouting && bindings!.TryGetValue("routing", out var routingBindingJson))
+        if (hasRouting && bindings is not null && bindings.TryGetValue("routing", out var routingBindingJson))
         {
             var overrideJson = overrides.TryGetValue("routing", out var routingOverride)
                 ? routingOverride.ConfigurationJson
@@ -409,8 +409,10 @@ public static class AppEndpoints
             ct
         );
 
-        var freshApp = await store.GetBySlugAsync(slug, ct);
-        var freshBindings = typeStore.GetBindings(freshApp!.AppTypeSlug);
+        var freshApp = await store.GetBySlugAsync(slug, ct)
+            ?? throw new InvalidOperationException($"App '{slug}' not found after save.");
+
+        var freshBindings = typeStore.GetBindings(freshApp.AppTypeSlug);
         var freshOverrides = await store.GetOverridesAsync(app.Id, ct);
         var appTypeDefinition = typeStore.GetBySlug(freshApp.AppTypeSlug);
 

@@ -79,7 +79,7 @@ public class ProcessSupervisor
                     continue;
                 }
 
-                var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
+                var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
 
                 if (!hasProcess)
                 {
@@ -283,7 +283,7 @@ public class ProcessSupervisor
         var app = await _appStore.GetByIdAsync(appId, ct)
             ?? throw new InvalidOperationException("App not found.");
 
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug!, "process");
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
 
         if (!hasProcess)
         {
