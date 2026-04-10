@@ -127,7 +127,9 @@ wsl bash -c "cd ~/projects/collab/collabhost/backend && dotnet test Collabhost.s
 
 - `tmux_create_session` — use absolute paths (`/home/bill/projects/...`), not `~`
 - `tmux_send_keys` — start the process (`npx vite --port 5173 --host`, `dotnet run`)
-- `tmux_capture_pane` — always use bounded `lines` (50-200), never `-1`
+- `tmux_send_and_capture` — send a command and capture output in one call (preferred for quick checks)
+- `tmux_wait_for_pattern` — block until output matches a regex (preferred over polling for builds/tests)
+- `tmux_capture_pane` — one-shot output read, use bounded `lines` (10-200)
 - `tmux_kill_session` — clean up when done
 
 Aspire does NOT run workloads natively on Linux. Use standalone `dotnet run` for Linux testing.
