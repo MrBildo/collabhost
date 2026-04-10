@@ -321,7 +321,7 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
 
     [SkippableFact]
     [Trait("Platform", "linux")]
-    public async Task Start_SetsProcessGroup()
+    public async Task Start_EstablishesProcessGroup_ViaSetsid()
     {
         Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
@@ -340,15 +340,18 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
 
         handle.HasExited.ShouldBeFalse();
 
-        // Verify that the child process has a valid process group.
-        // setpgid(pid, pid) races with the child's exec() -- when it succeeds,
-        // getpgid(pid) == pid. When the race is lost (EACCES), the child stays
-        // in the parent's group and the runner falls back to single-PID signals.
-        // Both outcomes are correct behavior. We verify the process has a valid
-        // group (getpgid returns > 0) and that start succeeded regardless.
+        // With the setsid wrapper, the child's PGID equals its own PID because
+        // setsid() creates a new session and process group with the calling process
+        // as the leader. This should be true regardless of the setpgid race --
+        // setsid establishes the group atomically before exec.
         var pgid = LinuxNativeMethods.GetProcessGroupId(handle.Pid);
 
         pgid.ShouldBeGreaterThan(0);
+
+        // The PGID should equal the child's PID (setsid makes the child the
+        // process group leader). This assertion would fail under the old code
+        // when the setpgid race was lost, but with setsid it should always hold.
+        pgid.ShouldBe(handle.Pid);
 
         handle.Kill();
 
@@ -357,7 +360,7 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
 
     [SkippableFact]
     [Trait("Platform", "linux")]
-    public async Task TryGracefulShutdown_KillsProcessGroup()
+    public async Task TryGracefulShutdown_SendsSigtermToProcessGroup()
     {
         Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
 
@@ -379,6 +382,12 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
 
         handle.HasExited.ShouldBeFalse();
 
+        // Verify the process group is established before testing shutdown.
+        // With setsid, this should always be true.
+        var pgid = LinuxNativeMethods.GetProcessGroupId(handle.Pid);
+
+        pgid.ShouldBe(handle.Pid);
+
         var shutdownSent = handle.TryGracefulShutdown();
 
         shutdownSent.ShouldBeTrue();
@@ -386,6 +395,69 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         await WaitForExitAsync(handle, 5);
 
         handle.HasExited.ShouldBeTrue();
+    }
+
+    [SkippableFact]
+    [Trait("Platform", "linux")]
+    public async Task Start_SetsidWrapper_PreservesStdioCapture()
+    {
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+
+        // Verify that wrapping in setsid does not break stdout/stderr capture.
+        // setsid(1) calls setsid() then execvp, preserving inherited pipe FDs.
+        var captured = new ConcurrentBag<(string Line, LogStream Stream)>();
+
+        var configuration = new ProcessStartConfiguration
+        (
+            "/bin/sh",
+            "-c \"echo setsid-stdout && echo setsid-stderr >&2\"",
+            null,
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            (line, stream) => captured.Add((line, stream))
+        );
+
+        using var handle = _runner.Start(configuration);
+
+        await WaitForExitAsync(handle);
+
+        handle.HasExited.ShouldBeTrue();
+
+        captured.ShouldContain(entry =>
+            entry.Line.Contains("setsid-stdout", StringComparison.Ordinal));
+
+        captured.ShouldContain(entry =>
+            entry.Line.Contains("setsid-stderr", StringComparison.Ordinal));
+    }
+
+    [SkippableFact]
+    [Trait("Platform", "linux")]
+    public async Task Start_SetsidWrapper_PreservesEnvironmentVariables()
+    {
+        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+
+        var captured = new ConcurrentBag<string>();
+
+        var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["COLLABHOST_SETSID_TEST"] = "env-propagation-verified"
+        };
+
+        var configuration = new ProcessStartConfiguration
+        (
+            "/bin/sh",
+            "-c \"echo $COLLABHOST_SETSID_TEST\"",
+            null,
+            environmentVariables,
+            (line, _) => captured.Add(line)
+        );
+
+        using var handle = _runner.Start(configuration);
+
+        await WaitForExitAsync(handle);
+
+        handle.HasExited.ShouldBeTrue();
+
+        captured.ShouldContain(line => line.Contains("env-propagation-verified", StringComparison.Ordinal));
     }
 }
 

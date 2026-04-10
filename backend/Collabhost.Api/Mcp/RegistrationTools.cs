@@ -145,6 +145,21 @@ public class RegistrationTools
                     processSection["workingDirectory"] ??= JsonValue.Create(installDirectory);
                 }
 
+                // Apply installDirectory into the artifact capability if it has one
+                var hasArtifact = await _appStore.HasBindingAsync(appType.Id, "artifact", ct);
+
+                if (hasArtifact)
+                {
+                    if (!settingsObject.ContainsKey("artifact"))
+                    {
+                        settingsObject["artifact"] = new JsonObject();
+                    }
+
+                    var artifactSection = settingsObject["artifact"]!.AsObject();
+
+                    artifactSection["location"] ??= JsonValue.Create(installDirectory);
+                }
+
                 foreach (var (sectionKey, sectionValueNode) in settingsObject)
                 {
                     if (sectionValueNode is not JsonObject sectionChanges)
@@ -171,7 +186,7 @@ public class RegistrationTools
         }
         else
         {
-            // No explicit settings -- inject installDirectory into process capability if available
+            // No explicit settings -- inject installDirectory into capabilities if available
             var hasProcess = await _appStore.HasBindingAsync(appType.Id, "process", ct);
 
             if (hasProcess)
@@ -182,6 +197,18 @@ public class RegistrationTools
                 };
 
                 validatedOverrides.Add(("process", processOverride));
+            }
+
+            var hasArtifact = await _appStore.HasBindingAsync(appType.Id, "artifact", ct);
+
+            if (hasArtifact)
+            {
+                var artifactOverride = new JsonObject
+                {
+                    ["location"] = JsonValue.Create(installDirectory)
+                };
+
+                validatedOverrides.Add(("artifact", artifactOverride));
             }
         }
 

@@ -111,6 +111,21 @@ public class McpToolTests(ApiFixture fixture)
         return new ConfigurationTools(appStore, supervisor, proxy, proxySettings, currentUser, activityEventStore, logger);
     }
 
+    private RegistrationTools CreateRegistrationTools()
+    {
+        var appStore = _services.GetRequiredService<AppStore>();
+        var supervisor = _services.GetRequiredService<ProcessSupervisor>();
+        var proxy = _services.GetRequiredService<ProxyManager>();
+        var activityEventStore = _services.GetRequiredService<ActivityEventStore>();
+        var logger = _services.GetRequiredService<ILogger<RegistrationTools>>();
+
+        // ICurrentUser is scoped -- create a scope to resolve it
+        using var scope = _services.CreateScope();
+        var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
+
+        return new RegistrationTools(appStore, supervisor, proxy, currentUser, activityEventStore, logger);
+    }
+
     // -------- Discovery: list_apps --------
 
     [Fact]
@@ -231,6 +246,89 @@ public class McpToolTests(ApiFixture fixture)
         var result = RegistrationTools.DetectStrategy("/does/not/exist/xyz-abc", "dotnet-app");
 
         (result.IsError ?? false).ShouldBeTrue();
+    }
+
+    // -------- Registration: register_app persists artifact location --------
+
+    [Fact]
+    public async Task RegisterApp_WithInstallDirectory_PersistsArtifactLocation()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var appName = $"mcp-artifact-test-{suffix}";
+        var installDirectory = Path.Combine(Path.GetTempPath(), $"collabhost-test-{suffix}");
+
+        Directory.CreateDirectory(installDirectory);
+
+        try
+        {
+            var tools = CreateRegistrationTools();
+
+            var result = await tools.RegisterAppAsync
+            (
+                appName,
+                "executable",
+                installDirectory,
+                null,
+                CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeFalse("Registration should succeed");
+
+            // Read settings back via the REST API and verify artifact.location
+            using var settingsRequest = new HttpRequestMessage
+            (
+                HttpMethod.Get,
+                $"/api/v1/apps/{appName}/settings"
+            );
+
+            settingsRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            var settingsResponse = await _client.SendAsync(settingsRequest);
+
+            settingsResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var settingsJson = await settingsResponse.Content.ReadAsStringAsync();
+            var settings = JsonDocument.Parse(settingsJson);
+
+            var sections = settings.RootElement.GetProperty("sections");
+
+            var artifactSection = sections.EnumerateArray()
+                .Single
+                (
+                    s => string.Equals
+                    (
+                        s.GetProperty("key").GetString(),
+                        "artifact",
+                        StringComparison.Ordinal
+                    )
+                );
+
+            var locationField = artifactSection.GetProperty("fields").EnumerateArray()
+                .Single
+                (
+                    f => string.Equals
+                    (
+                        f.GetProperty("key").GetString(),
+                        "location",
+                        StringComparison.Ordinal
+                    )
+                );
+
+            locationField.GetProperty("value").GetString().ShouldBe
+            (
+                installDirectory,
+                "artifact.location should be persisted from installDirectory during MCP registration"
+            );
+        }
+        finally
+        {
+            await DeleteTestAppAsync(appName);
+
+            if (Directory.Exists(installDirectory))
+            {
+                Directory.Delete(installDirectory, recursive: true);
+            }
+        }
     }
 
     // -------- Auth rejection at HTTP layer --------
