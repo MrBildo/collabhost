@@ -812,16 +812,9 @@ public static class AppEndpoints
             return TypedResults.Problem("App type not found.", statusCode: 404);
         }
 
-        var app = new App
-        {
-            Slug = request.Name.Trim().ToLowerInvariant(),
-            DisplayName = request.DisplayName,
-            AppTypeId = appTypeId
-        };
+        // Validate all settings BEFORE creating the app to ensure registration is transactional
+        var validatedOverrides = new List<(string SectionKey, JsonObject Overrides)>();
 
-        await store.CreateAsync(app, ct);
-
-        // Apply registration values as capability overrides
         if (request.Values is not null)
         {
             // Collect process overrides from both the "process" section and the "discovery" virtual section
@@ -876,16 +869,10 @@ public static class AppEndpoints
                     continue;
                 }
 
-                await store.SaveOverrideAsync
-                (
-                    app.Id,
-                    sectionKey,
-                    overrideObject.ToJsonString(_jsonOptions),
-                    ct
-                );
+                validatedOverrides.Add((sectionKey, overrideObject));
             }
 
-            // Save merged process overrides if any were collected
+            // Validate merged process overrides
             if (processOverrides is not null)
             {
                 var processErrors = CapabilityResolver.ValidateEdits
@@ -902,14 +889,29 @@ public static class AppEndpoints
                     );
                 }
 
-                await store.SaveOverrideAsync
-                (
-                    app.Id,
-                    "process",
-                    processOverrides.ToJsonString(_jsonOptions),
-                    ct
-                );
+                validatedOverrides.Add(("process", processOverrides));
             }
+        }
+
+        // All validation passed -- now create the app and persist overrides
+        var app = new App
+        {
+            Slug = request.Name.Trim().ToLowerInvariant(),
+            DisplayName = request.DisplayName,
+            AppTypeId = appTypeId
+        };
+
+        await store.CreateAsync(app, ct);
+
+        foreach (var (sectionKey, overrideObject) in validatedOverrides)
+        {
+            await store.SaveOverrideAsync
+            (
+                app.Id,
+                sectionKey,
+                overrideObject.ToJsonString(_jsonOptions),
+                ct
+            );
         }
 
         // Routing-only apps (e.g. static sites) start with their route disabled.
