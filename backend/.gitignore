@@ -1,0 +1,5 @@
+# AI tool configs (instance-local)
+.claude/*
+.github/*
+.opencode/*
+opencode.json

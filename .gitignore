@@ -4,6 +4,11 @@
 # Claude Code (instance-local)
 .claude/*
 
+# Project docs (instance-local)
+CLAUDE.md
+COLLABHOST_KB.md
+COLLABOARD.md
+
 # Auth keys
 .agents.env
 
