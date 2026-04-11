@@ -5,7 +5,8 @@
 <h1 align="center">Collabhost</h1>
 
 <p align="center">
-  A self-hosted control plane for your local services, workers, and scheduled jobs.
+  A self-hosted control plane for your local services, MCP servers, and AI agent workflows.<br/>
+  Cross-platform. Windows and Linux.
 </p>
 
 <p align="center">
@@ -26,7 +27,9 @@
 
 Collabhost gives you a single dashboard to manage everything running on your machine — .NET services, Node.js apps, MCP servers, static sites, and arbitrary executables. Register an app, point it at a directory, and Collabhost handles process supervision, reverse proxy routing, log aggregation, and crash recovery. No containers. No YAML. No cloud account.
 
-It was built for developers and AI harness engineers who run multiple local services and need operational visibility without the overhead of a full platform. Think of it as a lightweight, self-hosted Heroku for your workstation — a control plane that stays out of your way until something goes wrong.
+**Built for AI agent workflows.** Collabhost is designed with AI agents as first-class operators. Manage MCP servers alongside your application stack, provide agents with API access through scoped user keys, and give both humans and agents a unified control plane for the services they depend on. If you're building an AI harness, agent framework, or multi-agent system that needs to manage local infrastructure, Collabhost is the platform layer.
+
+It runs natively on **Windows** and **Linux** with platform-specific process management — no WSL required on Windows, no emulation layer on Linux. Think of it as a lightweight, self-hosted Heroku for your workstation — a control plane that stays out of your way until something goes wrong.
 
 <!-- SCREENSHOT SECTION
      ==================
@@ -42,7 +45,7 @@ It was built for developers and AI harness engineers who run multiple local serv
         An app detail page for a running Node.js or .NET app showing:
         - The identity header with status dot and action bar
         - A few lines of log output in the log viewer
-        - The route indicator showing the .collab.internal domain
+        - The route indicator showing the proxy domain
         Save as: docs/images/app-detail.png
 
      3. **Registration flow** (optional)
@@ -61,9 +64,9 @@ It was built for developers and AI harness engineers who run multiple local serv
 
 ## Features
 
-**Process supervision** — Start, stop, restart, and kill managed processes. Crash detection with automatic restart and exponential backoff. Stdout/stderr captured into searchable, streaming log viewers.
+**Process supervision** — Start, stop, restart, and kill managed processes with platform-native implementations for both Windows and Linux. On Windows: processes launch via `CreateProcess` with dedicated process groups, graceful shutdown via `GenerateConsoleCtrlEvent`, and orphan protection through Win32 Job Objects that guarantee child process cleanup even if Collabhost crashes. On Linux: process groups with `SIGTERM`/`SIGKILL` lifecycle and cgroup-based containment. Crash detection with automatic restart and configurable exponential backoff. Stdout/stderr captured into in-memory ring buffers with streaming log viewers.
 
-**Reverse proxy** — Every app gets a `{slug}.collab.internal` route, automatically configured through [Caddy](https://caddyserver.com/). HTTPS via Caddy's internal CA. Routes sync on process state changes — no manual config.
+**Reverse proxy** — Every app gets a subdomain route automatically configured through [Caddy](https://caddyserver.com/). HTTPS via Caddy's internal CA. Routes sync on process state changes — no manual proxy config. The base domain is configurable in `appsettings.json`.
 
 **Schema-driven configuration** — App settings are defined by capability schemas. New capabilities surface in the UI without frontend changes. Override defaults per-app, see what's customized vs. inherited.
 
@@ -93,7 +96,42 @@ It was built for developers and AI harness engineers who run multiple local serv
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 22+](https://nodejs.org/) (for the dashboard)
-- [Caddy](https://caddyserver.com/) (optional — proxy features disabled gracefully without it)
+- [Caddy](https://caddyserver.com/) (for reverse proxy — optional, proxy features degrade gracefully without it)
+
+### Install Caddy
+
+Collabhost manages Caddy as a supervised process. Install the Caddy binary and tell Collabhost where to find it.
+
+**Windows:**
+
+```powershell
+winget install CaddyServer.Caddy
+```
+
+**Linux:**
+
+```bash
+# Debian/Ubuntu
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update && sudo apt install caddy
+
+# Or download the binary directly
+# https://caddyserver.com/docs/install
+```
+
+If `caddy` is on your PATH, Collabhost finds it automatically. Otherwise, set the path in `appsettings.json`:
+
+```json
+{
+  "Proxy": {
+    "BinaryPath": "/path/to/caddy"
+  }
+}
+```
+
+Collabhost starts Caddy as a managed system-service, allocates its admin port dynamically, and handles all proxy configuration through Caddy's JSON API. No Caddyfile editing required.
 
 ### Run with Aspire
 
@@ -137,7 +175,7 @@ Open the dashboard and click **Register App**. Pick an app type, point it at a d
 |-------|-----------|
 | Backend | .NET 10, C# Minimal API, EF Core, SQLite |
 | Frontend | React 18, TypeScript, Vite |
-| Design System | War Machine (custom — dark, monospace, industrial) |
+| Design System | *War Machine* (custom — dark, monospace, industrial) |
 | Reverse Proxy | Caddy (managed via JSON admin API) |
 | Orchestration | .NET Aspire, OpenTelemetry |
 | Testing | xUnit + Shouldly (backend), Vitest (frontend) |
@@ -163,9 +201,8 @@ collabhost/
 │       ├── pages/                 # Route pages
 │       ├── shared/                # Shared UI components
 │       ├── status/                # Status dots, strips, stats
-│       ├── styles/                # War Machine design tokens
+│       ├── styles/                # *War Machine* design tokens
 │       └── tables/                # Data tables and filters
-└── tools/                         # Development utilities
 ```
 
 ## Development
@@ -196,7 +233,7 @@ Collabhost has three layers:
 
 - **Caddy** is the front door — edge reverse proxy, TLS termination, routing
 - **ASP.NET Core** is the control tower — app registry, process supervision, auth
-- **React dashboard** is the operator console — the War Machine design system
+- **React dashboard** is the operator console — the *War Machine* design system
 
 Apps are registered with a slug, discovered from the filesystem, and supervised as managed processes. Caddy routes are synchronized automatically when process state changes. SQLite handles persistence with zero configuration.
 
@@ -208,6 +245,22 @@ Apps are registered with a slug, discovered from the filesystem, and supervised 
      and the Biome/Roslyn lint gates. -->
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and the pull request process.
+
+## Credits
+
+Collabhost is built by a human-AI collaborative team. The bots are autonomous AI agents on the [Collabot](https://github.com/MrBildo/collabot) platform --- they design, write code, review each other's work, and ship features alongside their human teammate.
+
+**Bill Wheelock** -- Concept, design, and technical leadership -- [mrbildo@mrbildo.net](mailto:mrbildo@mrbildo.net)
+
+**Bot Nolan** -- Project management -- [nolan@collabot.dev](mailto:nolan@collabot.dev)
+
+**Bot Dana** -- Logo, *War Machine* theme, frontend design, TypeScript -- [dana@collabot.dev](mailto:dana@collabot.dev)
+
+**Bot Remy** -- Backend design, architecture, C# -- [remy@collabot.dev](mailto:remy@collabot.dev)
+
+**Bot Marcus** -- Backend design, architecture, C# -- [marcus@collabot.dev](mailto:marcus@collabot.dev)
+
+**Bot Kai** -- Tooling, C# -- [kai@collabot.dev](mailto:kai@collabot.dev)
 
 ## License
 
