@@ -94,7 +94,7 @@ type AppListItem = {
 }
 
 type AppTypeRef = {
-  name: string
+  slug: string
   displayName: string
 }
 
@@ -128,8 +128,7 @@ type AppDetail = {
 }
 
 type AppTypeDetailRef = {
-  id: string
-  name: string
+  slug: string
   displayName: string
 }
 
@@ -259,8 +258,7 @@ type DashboardEvent = {
 // --- App Types ---
 
 type AppTypeListItem = {
-  id: string
-  name: string
+  slug: string
   displayName: string
   description: string | null
   tags: AppTag[]
@@ -276,8 +274,7 @@ type RegistrationSchema = {
 }
 
 type RegistrationAppType = {
-  id: string
-  name: string
+  slug: string
   displayName: string
   description: string | null
 }
@@ -302,7 +299,7 @@ type RegistrationField = {
 type CreateAppRequest = {
   name: string
   displayName: string
-  appTypeId: string
+  appTypeSlug: string
   values: Record<string, Record<string, unknown>>
 }
 

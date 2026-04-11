@@ -38,7 +38,6 @@ public static class AppTypeEndpoints
                 t => new AppTypeListItem
                 (
                     t.Slug,
-                    t.Slug,
                     t.DisplayName,
                     t.Description,
                     BuildTags(t),
@@ -73,7 +72,6 @@ public static class AppTypeEndpoints
         (
             new RegistrationAppType
             (
-                appType.Slug,
                 appType.Slug,
                 appType.DisplayName,
                 appType.Description
@@ -174,7 +172,7 @@ public static class AppTypeEndpoints
                             "Discovery Strategy",
                             "select",
                             false,
-                            FormatStrategyName(defaultStrategy),
+                            defaultStrategy.ToCamelCase(),
                             HelpText: "How Collabhost finds and launches this application",
                             Options:
                             [
@@ -182,7 +180,7 @@ public static class AppTypeEndpoints
                                 (
                                     v => new FieldOption
                                     (
-                                        FormatStrategyName(v),
+                                        v.ToCamelCase(),
                                         FormatDiscoveryStrategyLabel(v)
                                     )
                                 )
@@ -294,13 +292,6 @@ public static class AppTypeEndpoints
                 .. Enum.GetValues<DiscoveryStrategy>()
             ]
         };
-
-    private static string FormatStrategyName(DiscoveryStrategy strategy)
-    {
-        var name = strategy.ToString();
-
-        return char.ToLowerInvariant(name[0]) + name[1..];
-    }
 
     private static string FormatDiscoveryStrategyLabel(DiscoveryStrategy value) => value switch
     {

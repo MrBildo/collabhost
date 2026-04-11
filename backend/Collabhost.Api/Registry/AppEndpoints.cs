@@ -225,7 +225,6 @@ public static class AppEndpoints
             new AppTypeDetailRef
             (
                 appTypeDefinition?.Slug ?? app.AppTypeSlug,
-                appTypeDefinition?.Slug ?? app.AppTypeSlug,
                 appTypeDefinition?.DisplayName ?? app.AppTypeSlug
             ),
             app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
@@ -783,7 +782,7 @@ public static class AppEndpoints
             );
         }
 
-        var appType = typeStore.GetBySlug(request.AppTypeId);
+        var appType = typeStore.GetBySlug(request.AppTypeSlug);
 
         if (appType is null)
         {

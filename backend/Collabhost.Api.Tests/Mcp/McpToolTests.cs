@@ -53,7 +53,7 @@ public class McpToolTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "MCP Test App",
-                appTypeId = "static-site"
+                appTypeSlug = "static-site"
             },
             options: _jsonOptions
         );

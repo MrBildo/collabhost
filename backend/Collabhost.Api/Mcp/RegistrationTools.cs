@@ -7,6 +7,7 @@ using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
+using Collabhost.Api.Shared;
 using Collabhost.Api.Supervisor;
 
 using ModelContextProtocol.Protocol;
@@ -140,7 +141,7 @@ public class RegistrationTools
 
                 if (hasProcess)
                 {
-                    var processSection = EnsureSection(settingsObject, "process");
+                    var processSection = settingsObject.EnsureSection("process");
 
                     processSection["workingDirectory"] ??= JsonValue.Create(installDirectory);
                 }
@@ -150,7 +151,7 @@ public class RegistrationTools
 
                 if (hasArtifact)
                 {
-                    var artifactSection = EnsureSection(settingsObject, "artifact");
+                    var artifactSection = settingsObject.EnsureSection("artifact");
 
                     artifactSection["location"] ??= JsonValue.Create(installDirectory);
                 }
@@ -563,7 +564,7 @@ public class RegistrationTools
             {
                 return
                 (
-                    FormatStrategyName(DiscoveryStrategy.DotNetRuntimeConfiguration),
+                    DiscoveryStrategy.DotNetRuntimeConfiguration.ToCamelCase(),
                     [.. runtimeConfigs.Select(f => Path.GetFileName(f))]
                 );
             }
@@ -574,12 +575,12 @@ public class RegistrationTools
             {
                 return
                 (
-                    FormatStrategyName(DiscoveryStrategy.DotNetProject),
+                    DiscoveryStrategy.DotNetProject.ToCamelCase(),
                     [.. projects.Select(f => Path.GetFileName(f))]
                 );
             }
 
-            return (FormatStrategyName(DiscoveryStrategy.Manual), []);
+            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
         }
 
         if (string.Equals(appTypeSlug, "nodejs-app", StringComparison.Ordinal))
@@ -595,7 +596,7 @@ public class RegistrationTools
                     if (document.RootElement.TryGetProperty("scripts", out var scripts)
                         && scripts.TryGetProperty("start", out _))
                     {
-                        return (FormatStrategyName(DiscoveryStrategy.PackageJson), ["package.json"]);
+                        return (DiscoveryStrategy.PackageJson.ToCamelCase(), ["package.json"]);
                     }
                 }
                 catch (JsonException)
@@ -603,33 +604,13 @@ public class RegistrationTools
                     // Malformed package.json -- fall through to Manual
                 }
 
-                return (FormatStrategyName(DiscoveryStrategy.Manual), ["package.json"]);
+                return (DiscoveryStrategy.Manual.ToCamelCase(), ["package.json"]);
             }
 
-            return (FormatStrategyName(DiscoveryStrategy.Manual), []);
+            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
         }
 
-        return (FormatStrategyName(DiscoveryStrategy.Manual), []);
-    }
-
-    private static string FormatStrategyName(DiscoveryStrategy strategy)
-    {
-        var name = strategy.ToString();
-
-        return char.ToLowerInvariant(name[0]) + name[1..];
-    }
-
-    private static JsonObject EnsureSection(JsonObject parent, string key)
-    {
-        if (parent[key] is JsonObject existing)
-        {
-            return existing;
-        }
-
-        var section = new JsonObject();
-        parent[key] = section;
-
-        return section;
+        return (DiscoveryStrategy.Manual.ToCamelCase(), []);
     }
 }
 #pragma warning restore MA0011
@@ -637,13 +618,19 @@ public class RegistrationTools
 
 file static class RegistrationToolExtensions
 {
-    extension(string path)
+    extension(JsonObject parent)
     {
-        public bool IsValidPath()
+        public JsonObject EnsureSection(string key)
         {
-            var invalidChars = Path.GetInvalidPathChars();
+            if (parent[key] is JsonObject existing)
+            {
+                return existing;
+            }
 
-            return !path.AsSpan().ContainsAny(invalidChars);
+            var section = new JsonObject();
+            parent[key] = section;
+
+            return section;
         }
     }
 }

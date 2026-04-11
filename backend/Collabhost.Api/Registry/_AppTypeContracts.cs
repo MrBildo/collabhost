@@ -8,8 +8,7 @@ namespace Collabhost.Api.Registry;
 
 public record AppTypeListItem
 (
-    string Id,
-    string Name,
+    string Slug,
     string DisplayName,
     string? Description,
     List<AppTag> Tags,
@@ -27,8 +26,7 @@ public record RegistrationSchema
 
 public record RegistrationAppType
 (
-    string Id,
-    string Name,
+    string Slug,
     string DisplayName,
     string? Description
 );

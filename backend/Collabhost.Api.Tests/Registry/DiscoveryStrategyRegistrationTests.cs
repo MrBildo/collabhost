@@ -21,7 +21,7 @@ public class DiscoveryStrategyRegistrationTests(ApiFixture fixture)
     };
 
     // dotnet-app type slug (Phase 1b: CreateAppAsync now accepts slugs)
-    private const string _dotNetAppTypeId = "dotnet-app";
+    private const string _dotNetAppTypeSlug = "dotnet-app";
 
     [Fact]
     public async Task RegisterWithDiscoveryStrategyOverride_AppliesProcessOverride()
@@ -35,7 +35,7 @@ public class DiscoveryStrategyRegistrationTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "Discovery Strategy Test",
-                appTypeId = _dotNetAppTypeId,
+                appTypeSlug = _dotNetAppTypeSlug,
                 values = new Dictionary<string, object>(StringComparer.Ordinal)
                 {
                     ["discovery"] = new Dictionary<string, object>(StringComparer.Ordinal)
@@ -112,7 +112,7 @@ public class DiscoveryStrategyRegistrationTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "Default Strategy Test",
-                appTypeId = _dotNetAppTypeId
+                appTypeSlug = _dotNetAppTypeSlug
             };
 
             using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
