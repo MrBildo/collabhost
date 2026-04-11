@@ -3,7 +3,9 @@ using System.Globalization;
 using System.Threading.Channels;
 
 using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
@@ -15,6 +17,8 @@ public class ProxyManager
 (
     ICaddyClient caddyClient,
     AppStore appStore,
+    CapabilityStore capabilityStore,
+    TypeStore typeStore,
     ProcessSupervisor processSupervisor,
     IEventBus<ProcessStateChangedEvent> eventBus,
     ProxySettings settings,
@@ -27,6 +31,12 @@ public class ProxyManager
 
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly CapabilityStore _capabilityStore = capabilityStore
+        ?? throw new ArgumentNullException(nameof(capabilityStore));
+
+    private readonly TypeStore _typeStore = typeStore
+        ?? throw new ArgumentNullException(nameof(typeStore));
 
     private readonly ProcessSupervisor _processSupervisor = processSupervisor
         ?? throw new ArgumentNullException(nameof(processSupervisor));
@@ -259,18 +269,17 @@ public class ProxyManager
 
         foreach (var app in apps)
         {
-            var hasRouting = await _appStore.HasBindingAsync(app.AppTypeId, "routing", ct);
+            var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
 
             if (!hasRouting)
             {
                 continue;
             }
 
-            var routingConfiguration = await _appStore.ResolveCapabilityAsync<RoutingConfiguration>
+            var routingConfiguration = await _capabilityStore.ResolveAsync<RoutingConfiguration>
             (
-                app.AppTypeId,
-                app.Id,
                 "routing",
+                app,
                 ct
             );
 
@@ -291,11 +300,10 @@ public class ProxyManager
 
             if (routingConfiguration.ServeMode == ServeMode.FileServer)
             {
-                var artifactConfiguration = await _appStore.ResolveCapabilityAsync<ArtifactConfiguration>
+                var artifactConfiguration = await _capabilityStore.ResolveAsync<ArtifactConfiguration>
                 (
-                    app.AppTypeId,
-                    app.Id,
                     "artifact",
+                    app,
                     ct
                 );
 
@@ -338,23 +346,23 @@ public class ProxyManager
 
         foreach (var app in apps)
         {
-            var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
+            var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
 
             if (hasProcess)
             {
                 continue;
             }
 
-            var hasRouting = await _appStore.HasBindingAsync(app.AppTypeId, "routing", ct);
+            var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
 
             if (!hasRouting)
             {
                 continue;
             }
 
-            var autoStartConfiguration = await _appStore.ResolveCapabilityAsync<AutoStartConfiguration>
+            var autoStartConfiguration = await _capabilityStore.ResolveAsync<AutoStartConfiguration>
             (
-                app.AppTypeId, app.Id, "auto-start", ct
+                "auto-start", app, ct
             );
 
             if (autoStartConfiguration is null || !autoStartConfiguration.Enabled)

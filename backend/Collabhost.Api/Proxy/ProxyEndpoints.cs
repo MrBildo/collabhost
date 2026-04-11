@@ -4,6 +4,7 @@ using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
@@ -24,6 +25,7 @@ public static class ProxyEndpoints
     private static async Task<IResult> ListRoutesAsync
     (
         AppStore store,
+        TypeStore typeStore,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
         ProxySettings settings,
@@ -36,14 +38,9 @@ public static class ProxyEndpoints
 
         foreach (var app in apps)
         {
-            var bindings = await store.GetBindingsAsync(app.AppTypeId, ct);
+            var bindings = typeStore.GetBindings(app.AppTypeSlug);
 
-            var routingBinding = bindings.SingleOrDefault
-            (
-                b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-            );
-
-            if (routingBinding is null)
+            if (bindings is null || !bindings.TryGetValue("routing", out var routingBindingJson))
             {
                 continue;
             }
@@ -56,7 +53,7 @@ public static class ProxyEndpoints
 
             var routingConfiguration = CapabilityResolver.Resolve<RoutingConfiguration>
             (
-                routingBinding.DefaultConfigurationJson, overrideJson
+                routingBindingJson, overrideJson
             );
 
             var domain = routingConfiguration.DomainPattern

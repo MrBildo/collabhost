@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 using System.Globalization;
 
 using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
@@ -15,6 +17,8 @@ public class ProcessSupervisor
     IManagedProcessRunner runner,
     IProcessContainment containment,
     AppStore appStore,
+    CapabilityStore capabilityStore,
+    TypeStore typeStore,
     IEventBus<ProcessStateChangedEvent> eventBus,
     IEnumerable<IProcessArgumentProvider> argumentProviders,
     ActivityEventStore activityEventStore,
@@ -29,6 +33,12 @@ public class ProcessSupervisor
 
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly CapabilityStore _capabilityStore = capabilityStore
+        ?? throw new ArgumentNullException(nameof(capabilityStore));
+
+    private readonly TypeStore _typeStore = typeStore
+        ?? throw new ArgumentNullException(nameof(typeStore));
 
     private readonly IEventBus<ProcessStateChangedEvent> _eventBus = eventBus
         ?? throw new ArgumentNullException(nameof(eventBus));
@@ -59,9 +69,9 @@ public class ProcessSupervisor
 
             foreach (var app in apps)
             {
-                var autoStartConfiguration = await _appStore.ResolveCapabilityAsync<AutoStartConfiguration>
+                var autoStartConfiguration = await _capabilityStore.ResolveAsync<AutoStartConfiguration>
                 (
-                    app.AppTypeId, app.Id, "auto-start", cancellationToken
+                    "auto-start", app, cancellationToken
                 );
 
                 if (autoStartConfiguration is null || !autoStartConfiguration.Enabled)
@@ -69,10 +79,7 @@ public class ProcessSupervisor
                     continue;
                 }
 
-                var hasProcess = await _appStore.HasBindingAsync
-                (
-                    app.AppTypeId, "process", cancellationToken
-                );
+                var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
 
                 if (!hasProcess)
                 {
@@ -276,21 +283,21 @@ public class ProcessSupervisor
         var app = await _appStore.GetByIdAsync(appId, ct)
             ?? throw new InvalidOperationException("App not found.");
 
-        var hasProcess = await _appStore.HasBindingAsync(app.AppTypeId, "process", ct);
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
 
         if (!hasProcess)
         {
             throw new InvalidOperationException("This app type does not have a process capability.");
         }
 
-        var processConfiguration = await _appStore.ResolveCapabilityAsync<ProcessConfiguration>
+        var processConfiguration = await _capabilityStore.ResolveAsync<ProcessConfiguration>
         (
-            app.AppTypeId, app.Id, "process", ct
+            "process", app, ct
         ) ?? throw new InvalidOperationException("Process capability configuration could not be resolved.");
 
-        var artifactConfiguration = await _appStore.ResolveCapabilityAsync<ArtifactConfiguration>
+        var artifactConfiguration = await _capabilityStore.ResolveAsync<ArtifactConfiguration>
         (
-            app.AppTypeId, app.Id, "artifact", ct
+            "artifact", app, ct
         );
 
         if (artifactConfiguration is null || string.IsNullOrWhiteSpace(artifactConfiguration.Location))
@@ -328,9 +335,9 @@ public class ProcessSupervisor
 
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        var environmentConfiguration = await _appStore.ResolveCapabilityAsync<EnvironmentConfiguration>
+        var environmentConfiguration = await _capabilityStore.ResolveAsync<EnvironmentConfiguration>
         (
-            app.AppTypeId, app.Id, "environment-defaults", ct
+            "environment-defaults", app, ct
         );
 
         if (environmentConfiguration?.Variables is not null)
@@ -343,9 +350,9 @@ public class ProcessSupervisor
 
         var managed = new ManagedProcess(app.Id, app.Slug, app.DisplayName);
 
-        var portInjectionConfiguration = await _appStore.ResolveCapabilityAsync<PortInjectionConfiguration>
+        var portInjectionConfiguration = await _capabilityStore.ResolveAsync<PortInjectionConfiguration>
         (
-            app.AppTypeId, app.Id, "port-injection", ct
+            "port-injection", app, ct
         );
 
         if (portInjectionConfiguration is not null)
@@ -399,9 +406,9 @@ public class ProcessSupervisor
         // the grace period task handles the Starting -> Running transition
         managed.SetHandle(handle);
 
-        var restartConfiguration = await _appStore.ResolveCapabilityAsync<RestartConfiguration>
+        var restartConfiguration = await _capabilityStore.ResolveAsync<RestartConfiguration>
         (
-            app.AppTypeId, app.Id, "restart", ct
+            "restart", app, ct
         );
 
         _restartPolicies[appId] = restartConfiguration?.Policy ?? RestartPolicy.Never;
@@ -544,9 +551,9 @@ public class ProcessSupervisor
 
             if (app is not null)
             {
-                var processConfiguration = _appStore.ResolveCapabilityAsync<ProcessConfiguration>
+                var processConfiguration = _capabilityStore.ResolveAsync<ProcessConfiguration>
                 (
-                    app.AppTypeId, app.Id, "process", CancellationToken.None
+                    "process", app, CancellationToken.None
                 ).GetAwaiter().GetResult();
 
                 if (processConfiguration is not null)
@@ -665,9 +672,9 @@ public class ProcessSupervisor
 
             if (app is not null)
             {
-                var restartConfiguration = _appStore.ResolveCapabilityAsync<RestartConfiguration>
+                var restartConfiguration = _capabilityStore.ResolveAsync<RestartConfiguration>
                 (
-                    app.AppTypeId, app.Id, "restart", CancellationToken.None
+                    "restart", app, CancellationToken.None
                 ).GetAwaiter().GetResult();
 
                 if (restartConfiguration?.SuccessExitCodes is not null)
@@ -879,9 +886,9 @@ public class ProcessSupervisor
 
             if (app is not null)
             {
-                var processConfiguration = await _appStore.ResolveCapabilityAsync<ProcessConfiguration>
+                var processConfiguration = await _capabilityStore.ResolveAsync<ProcessConfiguration>
                 (
-                    app.AppTypeId, app.Id, "process", CancellationToken.None
+                    "process", app, CancellationToken.None
                 );
 
                 if (processConfiguration is not null)

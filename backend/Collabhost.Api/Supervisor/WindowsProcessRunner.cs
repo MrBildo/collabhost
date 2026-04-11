@@ -511,7 +511,15 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
 
         public void Dispose()
         {
-            _pipeReaderCancellation?.Cancel();
+            try
+            {
+                _pipeReaderCancellation?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // CTS may have been disposed by a concurrent Exited event callback
+            }
+
             _pipeReaderCancellation?.Dispose();
             _stdoutReadHandle?.Dispose();
             _stderrReadHandle?.Dispose();

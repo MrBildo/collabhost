@@ -134,10 +134,13 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         var exitedCode = -1;
         var exitedFired = new TaskCompletionSource<int>();
 
+        // Use a short sleep before exit to ensure the Exited handler is attached
+        // before the process terminates. Without the delay, "exit 7" can complete
+        // and fire the Exited event before the handler is wired on the next line.
         var configuration = new ProcessStartConfiguration
         (
             "/bin/sh",
-            "-c \"exit 7\"",
+            "-c \"sleep 0.1 && exit 7\"",
             null,
             new Dictionary<string, string>(StringComparer.Ordinal),
             (_, _) => { }

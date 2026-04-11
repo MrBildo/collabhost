@@ -1,0 +1,15 @@
+{
+  "slug": "static-site",
+  "displayName": "Static Site",
+  "description": "Static files served by Caddy",
+  "bindings": {
+    "artifact": {
+      "location": ""
+    },
+    "routing": {
+      "domainPattern": "{slug}.collab.internal",
+      "serveMode": "FileServer",
+      "spaFallback": false
+    }
+  }
+}

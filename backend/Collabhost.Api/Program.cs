@@ -3,6 +3,7 @@ using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Dashboard;
 using Collabhost.Api.Data;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Filesystem;
 using Collabhost.Api.Mcp;
@@ -40,6 +41,9 @@ var earlyLogger = earlyLoggerFactory.CreateLogger("Startup");
 
 builder.Services.AddCollabhostAuthorization(builder.Configuration, earlyLogger);
 
+// Type store
+builder.Services.AddTypeStore(builder.Configuration);
+
 // Subsystems
 builder.Services.AddActivityLog();
 builder.Services.AddRegistry();
@@ -70,6 +74,11 @@ if (app.Environment.IsDevelopment())
 
     await using var context = await db.CreateDbContextAsync();
     await context.Database.MigrateAsync();
+
+    // TypeStore startup gate -- load and validate built-in types before hosted services
+    var typeStore = app.Services.GetRequiredService<TypeStore>();
+    await typeStore.LoadAsync(CancellationToken.None);
+    typeStore.StartWatching();
 
     var proxySeeder = scope.ServiceProvider.GetRequiredService<ProxyAppSeeder>();
     await proxySeeder.SeedAsync(CancellationToken.None);

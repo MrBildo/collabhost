@@ -25,7 +25,7 @@ public class ProbeEndpointTests(ApiFixture fixture)
         {
             name = appSlug,
             displayName = "Probe Test",
-            appTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y"
+            appTypeSlug = "dotnet-app"
         });
 
         using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps")
@@ -70,7 +70,7 @@ public class ProbeEndpointTests(ApiFixture fixture)
         {
             name = appSlug,
             displayName = "No Tags Test",
-            appTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y"
+            appTypeSlug = "dotnet-app"
         });
 
         using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps")

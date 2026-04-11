@@ -14,17 +14,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     public DbSet<App> Apps => Set<App>();
 
-    public DbSet<AppType> AppTypes => Set<AppType>();
-
-    public DbSet<CapabilityBinding> CapabilityBindings => Set<CapabilityBinding>();
-
     public DbSet<CapabilityOverride> CapabilityOverrides => Set<CapabilityOverride>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
+    protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
-        SeedData.Apply(modelBuilder);
-    }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

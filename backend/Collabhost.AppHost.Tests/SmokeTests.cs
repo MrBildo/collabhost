@@ -159,7 +159,7 @@ public class SmokeTests(AppHostFixture fixture)
         var body = await response.Content.ReadAsStringAsync();
         var doc = JsonDocument.Parse(body);
 
-        doc.RootElement.GetProperty("appType").GetProperty("name").GetString().ShouldBe("dotnet-app");
+        doc.RootElement.GetProperty("appType").GetProperty("slug").GetString().ShouldBe("dotnet-app");
         doc.RootElement.GetProperty("sections").GetArrayLength().ShouldBeGreaterThanOrEqualTo(1);
     }
 
@@ -178,8 +178,8 @@ public class SmokeTests(AppHostFixture fixture)
         try
         {
             // Register two test apps
-            var createA = new { name = slugA, displayName = "Parallel A", appTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y" };
-            var createB = new { name = slugB, displayName = "Parallel B", appTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y" };
+            var createA = new { name = slugA, displayName = "Parallel A", appTypeSlug = "dotnet-app" };
+            var createB = new { name = slugB, displayName = "Parallel B", appTypeSlug = "dotnet-app" };
 
             using var createRequestA = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
             createRequestA.Headers.Add("X-User-Key", fixture.AdminKey);

@@ -1,3 +1,4 @@
+using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Registry;
 
@@ -10,12 +11,16 @@ namespace Collabhost.Api.Probes;
 public class ProbeService
 (
     AppStore appStore,
+    CapabilityStore capabilityStore,
     IMemoryCache cache,
     ILogger<ProbeService> logger
 )
 {
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly CapabilityStore _capabilityStore = capabilityStore
+        ?? throw new ArgumentNullException(nameof(capabilityStore));
 
     private readonly IMemoryCache _cache = cache
         ?? throw new ArgumentNullException(nameof(cache));
@@ -39,9 +44,9 @@ public class ProbeService
             return;
         }
 
-        var artifactConfiguration = await _appStore.ResolveCapabilityAsync<ArtifactConfiguration>
+        var artifactConfiguration = await _capabilityStore.ResolveAsync<ArtifactConfiguration>
         (
-            app.AppTypeId, app.Id, "artifact", ct
+            "artifact", app, ct
         );
 
         if (artifactConfiguration is null || string.IsNullOrWhiteSpace(artifactConfiguration.Location))

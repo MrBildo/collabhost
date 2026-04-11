@@ -1,0 +1,49 @@
+{
+  "slug": "dotnet-app",
+  "displayName": ".NET Application",
+  "description": "ASP.NET Core or .NET console application",
+  "metadata": {
+    "runtime": {
+      "name": ".NET",
+      "version": "10",
+      "targetFramework": "net10.0"
+    }
+  },
+  "bindings": {
+    "artifact": {
+      "location": ""
+    },
+    "process": {
+      "discoveryStrategy": "DotNetRuntimeConfiguration",
+      "shutdownTimeoutSeconds": 30
+    },
+    "port-injection": {
+      "environmentVariableName": "ASPNETCORE_URLS",
+      "portFormat": "http://localhost:{port}"
+    },
+    "routing": {
+      "domainPattern": "{slug}.collab.internal",
+      "serveMode": "ReverseProxy",
+      "spaFallback": false
+    },
+    "health-check": {
+      "endpoint": "/health",
+      "intervalSeconds": 30,
+      "timeoutSeconds": 5
+    },
+    "restart": {
+      "policy": "OnCrash"
+    },
+    "auto-start": {
+      "enabled": true
+    },
+    "environment-defaults": {
+      "variables": {
+        "ASPNETCORE_ENVIRONMENT": "Production",
+        "DOTNET_ENVIRONMENT": "Production",
+        "DOTNET_NOLOGO": "1",
+        "DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION": "true"
+      }
+    }
+  }
+}

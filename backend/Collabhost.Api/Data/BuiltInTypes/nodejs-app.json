@@ -1,0 +1,46 @@
+{
+  "slug": "nodejs-app",
+  "displayName": "Node.js Application",
+  "description": "Server-side JavaScript with npm",
+  "metadata": {
+    "runtime": {
+      "name": "Node.js",
+      "version": "22",
+      "packageManager": "npm"
+    }
+  },
+  "bindings": {
+    "artifact": {
+      "location": ""
+    },
+    "process": {
+      "discoveryStrategy": "PackageJson",
+      "shutdownTimeoutSeconds": 15
+    },
+    "port-injection": {
+      "environmentVariableName": "PORT",
+      "portFormat": "{port}"
+    },
+    "routing": {
+      "domainPattern": "{slug}.collab.internal",
+      "serveMode": "ReverseProxy",
+      "spaFallback": false
+    },
+    "health-check": {
+      "endpoint": "/health",
+      "intervalSeconds": 30,
+      "timeoutSeconds": 5
+    },
+    "restart": {
+      "policy": "OnCrash"
+    },
+    "auto-start": {
+      "enabled": true
+    },
+    "environment-defaults": {
+      "variables": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}

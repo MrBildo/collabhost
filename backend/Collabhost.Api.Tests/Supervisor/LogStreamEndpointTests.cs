@@ -716,7 +716,7 @@ public class LogStreamEndpointTests(ApiFixture fixture)
         {
             name = slug,
             displayName = "SSE Test App",
-            appTypeId = "01KN8K1MRT26VCX65J1ZSVWESB"
+            appTypeSlug = "static-site"
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");

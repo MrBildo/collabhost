@@ -20,8 +20,8 @@ public class RegistrationValidationTests(ApiFixture fixture)
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    // executable type ID from seed data
-    private const string _executableAppTypeId = "01KNA0A0ZRZE6W7RPX9BRREKNQ";
+    // executable type slug (Phase 1b: CreateAppAsync now accepts slugs)
+    private const string _executableAppTypeSlug = "executable";
 
     [Fact]
     public async Task RegisterWithInvalidSettings_ReturnsErrorAndDoesNotCreateApp()
@@ -34,7 +34,7 @@ public class RegistrationValidationTests(ApiFixture fixture)
         {
             name = slug,
             displayName = "Invalid Registration Test",
-            appTypeId = _executableAppTypeId,
+            appTypeSlug = _executableAppTypeSlug,
             values = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["process"] = new Dictionary<string, object>(StringComparer.Ordinal)
@@ -81,7 +81,7 @@ public class RegistrationValidationTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "Valid Registration Test",
-                appTypeId = _executableAppTypeId,
+                appTypeSlug = _executableAppTypeSlug,
                 values = new Dictionary<string, object>(StringComparer.Ordinal)
                 {
                     ["process"] = new Dictionary<string, object>(StringComparer.Ordinal)

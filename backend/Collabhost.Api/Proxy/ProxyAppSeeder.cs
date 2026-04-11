@@ -1,6 +1,7 @@
 using System.Diagnostics;
 
 using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Registry;
 
 using ActivityEvent = Collabhost.Api.ActivityLog.ActivityEvent;
@@ -10,6 +11,7 @@ namespace Collabhost.Api.Proxy;
 public class ProxyAppSeeder
 (
     AppStore appStore,
+    TypeStore typeStore,
     ProxySettings settings,
     ActivityEventStore activityEventStore,
     ILogger<ProxyAppSeeder> logger
@@ -17,6 +19,9 @@ public class ProxyAppSeeder
 {
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly TypeStore _typeStore = typeStore
+        ?? throw new ArgumentNullException(nameof(typeStore));
 
     private readonly ProxySettings _settings = settings
         ?? throw new ArgumentNullException(nameof(settings));
@@ -60,7 +65,7 @@ public class ProxyAppSeeder
             return;
         }
 
-        var appType = await _appStore.GetAppTypeBySlugAsync("system-service", cancellationToken);
+        var appType = _typeStore.GetBySlug("system-service");
 
         if (appType is null)
         {
@@ -73,7 +78,7 @@ public class ProxyAppSeeder
         {
             Slug = "proxy",
             DisplayName = "Proxy",
-            AppTypeId = appType.Id
+            AppTypeSlug = "system-service"
         };
 
         await _appStore.CreateAsync(proxyApp, cancellationToken);

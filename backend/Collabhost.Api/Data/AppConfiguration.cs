@@ -27,16 +27,7 @@ public class AppConfiguration : IEntityTypeConfiguration<App>
         builder.Property(a => a.DisplayName)
             .HasMaxLength(200);
 
-        builder.Property(a => a.AppTypeId)
-            .HasConversion
-            (
-                v => v.ToString(null, CultureInfo.InvariantCulture),
-                v => Ulid.Parse(v, CultureInfo.InvariantCulture)
-            )
-            .HasMaxLength(26);
-
-        builder.HasOne(a => a.AppType)
-            .WithMany()
-            .HasForeignKey(a => a.AppTypeId);
+        builder.Property(a => a.AppTypeSlug)
+            .HasMaxLength(100);
     }
 }

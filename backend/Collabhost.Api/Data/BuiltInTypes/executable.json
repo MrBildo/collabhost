@@ -1,0 +1,29 @@
+{
+  "slug": "executable",
+  "displayName": "Executable",
+  "description": "Generic binary with port injection and reverse proxy routing",
+  "bindings": {
+    "artifact": {
+      "location": ""
+    },
+    "process": {
+      "discoveryStrategy": "Manual",
+      "shutdownTimeoutSeconds": 10
+    },
+    "port-injection": {
+      "environmentVariableName": "PORT",
+      "portFormat": "{port}"
+    },
+    "routing": {
+      "domainPattern": "{slug}.collab.internal",
+      "serveMode": "ReverseProxy",
+      "spaFallback": false
+    },
+    "restart": {
+      "policy": "OnCrash"
+    },
+    "auto-start": {
+      "enabled": false
+    }
+  }
+}
