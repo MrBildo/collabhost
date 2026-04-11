@@ -47,6 +47,11 @@ public class ApiFixture : IAsyncLifetime
                     builder.UseSetting("Proxy:CertLifetime", "168h");
                     builder.UseSetting("Proxy:SelfPort", "58400");
 
+                    // Suppress verbose EF Core SQL and ASP.NET Core info logging during tests.
+                    // When dotnet test runs multiple projects concurrently, high-volume console
+                    // output deadlocks the .NET 10 terminal logger's pipe buffer on Linux.
+                    builder.UseSetting("Logging:LogLevel:Default", "Warning");
+
                     builder.ConfigureServices
                     (
                         services =>

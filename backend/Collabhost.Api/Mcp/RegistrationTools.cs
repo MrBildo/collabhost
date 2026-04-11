@@ -4,8 +4,10 @@ using System.Security;
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
+using Collabhost.Api.Shared;
 using Collabhost.Api.Supervisor;
 
 using ModelContextProtocol.Protocol;
@@ -19,6 +21,7 @@ namespace Collabhost.Api.Mcp;
 public class RegistrationTools
 (
     AppStore appStore,
+    TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
     ICurrentUser currentUser,
@@ -28,6 +31,9 @@ public class RegistrationTools
 {
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly TypeStore _typeStore = typeStore
+        ?? throw new ArgumentNullException(nameof(typeStore));
 
     private readonly ProcessSupervisor _supervisor = supervisor
         ?? throw new ArgumentNullException(nameof(supervisor));
@@ -77,7 +83,7 @@ public class RegistrationTools
             return McpResponseFormatter.InvalidParameters("installDirectory is required.");
         }
 
-        var appType = await _appStore.GetAppTypeBySlugAsync(appTypeSlug, ct);
+        var appType = _typeStore.GetBySlug(appTypeSlug);
 
         if (appType is null)
         {
@@ -131,31 +137,21 @@ public class RegistrationTools
             if (settingsObject is not null)
             {
                 // Apply installDirectory into the process capability if it has one
-                var hasProcess = await _appStore.HasBindingAsync(appType.Id, "process", ct);
+                var hasProcess = _typeStore.HasBinding(appType.Slug, "process");
 
                 if (hasProcess)
                 {
-                    if (!settingsObject.ContainsKey("process"))
-                    {
-                        settingsObject["process"] = new JsonObject();
-                    }
-
-                    var processSection = settingsObject["process"]!.AsObject();
+                    var processSection = settingsObject.EnsureSection("process");
 
                     processSection["workingDirectory"] ??= JsonValue.Create(installDirectory);
                 }
 
                 // Apply installDirectory into the artifact capability if it has one
-                var hasArtifact = await _appStore.HasBindingAsync(appType.Id, "artifact", ct);
+                var hasArtifact = _typeStore.HasBinding(appType.Slug, "artifact");
 
                 if (hasArtifact)
                 {
-                    if (!settingsObject.ContainsKey("artifact"))
-                    {
-                        settingsObject["artifact"] = new JsonObject();
-                    }
-
-                    var artifactSection = settingsObject["artifact"]!.AsObject();
+                    var artifactSection = settingsObject.EnsureSection("artifact");
 
                     artifactSection["location"] ??= JsonValue.Create(installDirectory);
                 }
@@ -187,7 +183,7 @@ public class RegistrationTools
         else
         {
             // No explicit settings -- inject installDirectory into capabilities if available
-            var hasProcess = await _appStore.HasBindingAsync(appType.Id, "process", ct);
+            var hasProcess = _typeStore.HasBinding(appType.Slug, "process");
 
             if (hasProcess)
             {
@@ -199,7 +195,7 @@ public class RegistrationTools
                 validatedOverrides.Add(("process", processOverride));
             }
 
-            var hasArtifact = await _appStore.HasBindingAsync(appType.Id, "artifact", ct);
+            var hasArtifact = _typeStore.HasBinding(appType.Slug, "artifact");
 
             if (hasArtifact)
             {
@@ -217,7 +213,7 @@ public class RegistrationTools
         {
             Slug = derivedSlug,
             DisplayName = name.Trim(),
-            AppTypeId = appType.Id
+            AppTypeSlug = appType.Slug
         };
 
         await _appStore.CreateAsync(app, ct);
@@ -234,8 +230,8 @@ public class RegistrationTools
         }
 
         // Routing-only apps (e.g. static sites) start with their route disabled
-        var hasRouting = await _appStore.HasBindingAsync(appType.Id, "routing", ct);
-        var hasProcessCapability = await _appStore.HasBindingAsync(appType.Id, "process", ct);
+        var hasRouting = _typeStore.HasBinding(appType.Slug, "routing");
+        var hasProcessCapability = _typeStore.HasBinding(appType.Slug, "process");
 
         if (hasRouting && !hasProcessCapability)
         {
@@ -381,7 +377,7 @@ public class RegistrationTools
             return BrowseRoots();
         }
 
-        if (!IsValidPath(path))
+        if (!path.IsValidPath())
         {
             return McpResponseFormatter.InvalidParameters
             (
@@ -456,7 +452,7 @@ public class RegistrationTools
             return McpResponseFormatter.InvalidParameters("appTypeSlug is required.");
         }
 
-        if (!IsValidPath(path))
+        if (!path.IsValidPath())
         {
             return McpResponseFormatter.InvalidParameters
             (
@@ -568,7 +564,7 @@ public class RegistrationTools
             {
                 return
                 (
-                    FormatStrategyName(DiscoveryStrategy.DotNetRuntimeConfiguration),
+                    DiscoveryStrategy.DotNetRuntimeConfiguration.ToCamelCase(),
                     [.. runtimeConfigs.Select(f => Path.GetFileName(f))]
                 );
             }
@@ -579,12 +575,12 @@ public class RegistrationTools
             {
                 return
                 (
-                    FormatStrategyName(DiscoveryStrategy.DotNetProject),
+                    DiscoveryStrategy.DotNetProject.ToCamelCase(),
                     [.. projects.Select(f => Path.GetFileName(f))]
                 );
             }
 
-            return (FormatStrategyName(DiscoveryStrategy.Manual), []);
+            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
         }
 
         if (string.Equals(appTypeSlug, "nodejs-app", StringComparison.Ordinal))
@@ -600,7 +596,7 @@ public class RegistrationTools
                     if (document.RootElement.TryGetProperty("scripts", out var scripts)
                         && scripts.TryGetProperty("start", out _))
                     {
-                        return (FormatStrategyName(DiscoveryStrategy.PackageJson), ["package.json"]);
+                        return (DiscoveryStrategy.PackageJson.ToCamelCase(), ["package.json"]);
                     }
                 }
                 catch (JsonException)
@@ -608,28 +604,33 @@ public class RegistrationTools
                     // Malformed package.json -- fall through to Manual
                 }
 
-                return (FormatStrategyName(DiscoveryStrategy.Manual), ["package.json"]);
+                return (DiscoveryStrategy.Manual.ToCamelCase(), ["package.json"]);
             }
 
-            return (FormatStrategyName(DiscoveryStrategy.Manual), []);
+            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
         }
 
-        return (FormatStrategyName(DiscoveryStrategy.Manual), []);
-    }
-
-    private static string FormatStrategyName(DiscoveryStrategy strategy)
-    {
-        var name = strategy.ToString();
-
-        return char.ToLowerInvariant(name[0]) + name[1..];
-    }
-
-    private static bool IsValidPath(string path)
-    {
-        var invalidChars = Path.GetInvalidPathChars();
-
-        return !path.AsSpan().ContainsAny(invalidChars);
+        return (DiscoveryStrategy.Manual.ToCamelCase(), []);
     }
 }
 #pragma warning restore MA0011
 #pragma warning restore MA0076
+
+file static class RegistrationToolExtensions
+{
+    extension(JsonObject parent)
+    {
+        public JsonObject EnsureSection(string key)
+        {
+            if (parent[key] is JsonObject existing)
+            {
+                return existing;
+            }
+
+            var section = new JsonObject();
+            parent[key] = section;
+
+            return section;
+        }
+    }
+}

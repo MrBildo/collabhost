@@ -4,6 +4,7 @@ using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Shared;
@@ -42,6 +43,7 @@ public static class AppEndpoints
     private static async Task<IResult> ListAppsAsync
     (
         AppStore store,
+        TypeStore typeStore,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
         CancellationToken ct
@@ -54,27 +56,15 @@ public static class AppEndpoints
         foreach (var app in apps)
         {
             var process = supervisor.GetProcess(app.Id);
-            var bindings = await store.GetBindingsAsync(app.AppTypeId, ct);
+            var bindings = typeStore.GetBindings(app.AppTypeSlug);
             var overrides = await store.GetOverridesAsync(app.Id, ct);
 
-            var hasProcess = bindings.Any
-            (
-                b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
-            );
-
-            var hasRouting = bindings.Any
-            (
-                b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-            );
-
-            var routingBinding = bindings.SingleOrDefault
-            (
-                b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-            );
+            var hasProcess = bindings?.ContainsKey("process") ?? false;
+            var hasRouting = bindings?.ContainsKey("routing") ?? false;
 
             RoutingConfiguration? routingConfiguration = null;
 
-            if (routingBinding is not null)
+            if (hasRouting && bindings is not null && bindings.TryGetValue("routing", out var routingBindingJson))
             {
                 var overrideJson = overrides.TryGetValue("routing", out var routingOverride)
                     ? routingOverride.ConfigurationJson
@@ -82,7 +72,7 @@ public static class AppEndpoints
 
                 routingConfiguration = CapabilityResolver.Resolve<RoutingConfiguration>
                 (
-                    routingBinding.DefaultConfigurationJson, overrideJson
+                    routingBindingJson, overrideJson
                 );
             }
 
@@ -93,6 +83,8 @@ public static class AppEndpoints
 
             var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
+            var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug);
+
             items.Add
             (
                 new AppListItem
@@ -100,7 +92,11 @@ public static class AppEndpoints
                     app.Id.ToString(),
                     app.Slug,
                     app.DisplayName,
-                    new AppTypeRef(app.AppType.Slug, app.AppType.DisplayName),
+                    new AppTypeRef
+                    (
+                        appTypeDefinition?.Slug ?? app.AppTypeSlug,
+                        appTypeDefinition?.DisplayName ?? app.AppTypeSlug
+                    ),
                     status.ToApiString(),
                     domain,
                     routeEnabled,
@@ -122,6 +118,7 @@ public static class AppEndpoints
     (
         string slug,
         AppStore store,
+        TypeStore typeStore,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
         ProbeService probeService,
@@ -136,28 +133,16 @@ public static class AppEndpoints
         }
 
         var process = supervisor.GetProcess(app.Id);
-        var bindings = await store.GetBindingsAsync(app.AppTypeId, ct);
+        var bindings = typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await store.GetOverridesAsync(app.Id, ct);
 
-        var hasProcess = bindings.Any
-        (
-            b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
-        );
-
-        var hasRouting = bindings.Any
-        (
-            b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-        );
+        var hasProcess = bindings?.ContainsKey("process") ?? false;
+        var hasRouting = bindings?.ContainsKey("routing") ?? false;
 
         // Routing
-        var routingBinding = bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-        );
-
         RoutingConfiguration? routingConfiguration = null;
 
-        if (routingBinding is not null)
+        if (hasRouting && bindings is not null && bindings.TryGetValue("routing", out var routingBindingJson))
         {
             var overrideJson = overrides.TryGetValue("routing", out var routingOverride)
                 ? routingOverride.ConfigurationJson
@@ -165,7 +150,7 @@ public static class AppEndpoints
 
             routingConfiguration = CapabilityResolver.Resolve<RoutingConfiguration>
             (
-                routingBinding.DefaultConfigurationJson, overrideJson
+                routingBindingJson, overrideJson
             );
         }
 
@@ -179,12 +164,7 @@ public static class AppEndpoints
         // Restart policy + auto-start
         string? restartPolicyValue = null;
 
-        var restartBinding = bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "restart", StringComparison.Ordinal)
-        );
-
-        if (restartBinding is not null)
+        if (bindings is not null && bindings.TryGetValue("restart", out var restartBindingJson))
         {
             var overrideJson = overrides.TryGetValue("restart", out var restartOverride)
                 ? restartOverride.ConfigurationJson
@@ -192,7 +172,7 @@ public static class AppEndpoints
 
             var restartConfiguration = CapabilityResolver.Resolve<RestartConfiguration>
             (
-                restartBinding.DefaultConfigurationJson, overrideJson
+                restartBindingJson, overrideJson
             );
 
             restartPolicyValue = restartConfiguration.Policy.ToString();
@@ -202,12 +182,7 @@ public static class AppEndpoints
 
         bool? autoStartValue = null;
 
-        var autoStartBinding = bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "auto-start", StringComparison.Ordinal)
-        );
-
-        if (autoStartBinding is not null)
+        if (bindings is not null && bindings.TryGetValue("auto-start", out var autoStartBindingJson))
         {
             var overrideJson = overrides.TryGetValue("auto-start", out var autoStartOverride)
                 ? autoStartOverride.ConfigurationJson
@@ -215,7 +190,7 @@ public static class AppEndpoints
 
             var autoStartConfiguration = CapabilityResolver.Resolve<AutoStartConfiguration>
             (
-                autoStartBinding.DefaultConfigurationJson, overrideJson
+                autoStartBindingJson, overrideJson
             );
 
             autoStartValue = autoStartConfiguration.Enabled;
@@ -240,6 +215,8 @@ public static class AppEndpoints
 
         var actions = BuildActions(hasProcess, hasRouting, status);
 
+        var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug);
+
         var detail = new AppDetail
         (
             app.Id.ToString(),
@@ -247,9 +224,8 @@ public static class AppEndpoints
             app.DisplayName,
             new AppTypeDetailRef
             (
-                app.AppType.Id.ToString(),
-                app.AppType.Slug,
-                app.AppType.DisplayName
+                appTypeDefinition?.Slug ?? app.AppTypeSlug,
+                appTypeDefinition?.DisplayName ?? app.AppTypeSlug
             ),
             app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
             status.ToApiString(),
@@ -275,6 +251,7 @@ public static class AppEndpoints
     (
         string slug,
         AppStore store,
+        TypeStore typeStore,
         CancellationToken ct
     )
     {
@@ -285,8 +262,9 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var bindings = await store.GetBindingsAsync(app.AppTypeId, ct);
+        var bindings = typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await store.GetOverridesAsync(app.Id, ct);
+        var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug);
 
         var sections = BuildSettingsSections(app, bindings, overrides);
 
@@ -295,7 +273,7 @@ public static class AppEndpoints
             app.Id.ToString(),
             app.Slug,
             app.DisplayName,
-            app.AppType.DisplayName,
+            appTypeDefinition?.DisplayName ?? app.AppTypeSlug,
             app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
             sections
         );
@@ -308,6 +286,7 @@ public static class AppEndpoints
         string slug,
         UpdateSettingsRequest request,
         AppStore store,
+        TypeStore typeStore,
         ProbeService probeService,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
@@ -321,7 +300,7 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var bindings = await store.GetBindingsAsync(app.AppTypeId, ct);
+        var bindings = typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await store.GetOverridesAsync(app.Id, ct);
 
         // Handle identity section changes
@@ -349,12 +328,7 @@ public static class AppEndpoints
                 continue;
             }
 
-            var binding = bindings.SingleOrDefault
-            (
-                b => string.Equals(b.CapabilitySlug, sectionKey, StringComparison.Ordinal)
-            );
-
-            if (binding is null)
+            if (bindings is null || !bindings.ContainsKey(sectionKey))
             {
                 continue;
             }
@@ -434,18 +408,21 @@ public static class AppEndpoints
             ct
         );
 
-        var freshApp = await store.GetBySlugAsync(slug, ct);
-        var freshBindings = await store.GetBindingsAsync(app.AppTypeId, ct);
-        var freshOverrides = await store.GetOverridesAsync(app.Id, ct);
+        var freshApp = await store.GetBySlugAsync(slug, ct)
+            ?? throw new InvalidOperationException($"App '{slug}' not found after save.");
 
-        var sections = BuildSettingsSections(freshApp!, freshBindings, freshOverrides);
+        var freshBindings = typeStore.GetBindings(freshApp.AppTypeSlug);
+        var freshOverrides = await store.GetOverridesAsync(app.Id, ct);
+        var appTypeDefinition = typeStore.GetBySlug(freshApp.AppTypeSlug);
+
+        var sections = BuildSettingsSections(freshApp, freshBindings, freshOverrides);
 
         var settings = new AppSettings
         (
-            freshApp!.Id.ToString(),
+            freshApp.Id.ToString(),
             freshApp.Slug,
             freshApp.DisplayName,
-            freshApp.AppType.DisplayName,
+            appTypeDefinition?.DisplayName ?? freshApp.AppTypeSlug,
             freshApp.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
             sections
         );
@@ -457,6 +434,7 @@ public static class AppEndpoints
     (
         string slug,
         AppStore store,
+        TypeStore typeStore,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
         ProbeService probeService,
@@ -472,8 +450,8 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
-        var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
+        var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
+        var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
 
         // Routing-only apps (e.g. static sites): enable route instead of starting a process
         if (!hasProcess && hasRouting)
@@ -543,6 +521,7 @@ public static class AppEndpoints
     (
         string slug,
         AppStore store,
+        TypeStore typeStore,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
         ICurrentUser currentUser,
@@ -557,8 +536,8 @@ public static class AppEndpoints
             return TypedResults.NotFound();
         }
 
-        var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
-        var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
+        var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
+        var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
 
         // Routing-only apps (e.g. static sites): disable route instead of stopping a process
         if (!hasProcess && hasRouting)
@@ -624,6 +603,7 @@ public static class AppEndpoints
     (
         string slug,
         AppStore store,
+        TypeStore typeStore,
         ProcessSupervisor supervisor,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
@@ -655,8 +635,8 @@ public static class AppEndpoints
                 ct
             );
 
-            var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
-            var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
+            var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
+            var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
             var actions = BuildActions(hasProcess, hasRouting, managed.State);
 
             return TypedResults.Ok
@@ -674,6 +654,7 @@ public static class AppEndpoints
     (
         string slug,
         AppStore store,
+        TypeStore typeStore,
         ProcessSupervisor supervisor,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
@@ -708,8 +689,8 @@ public static class AppEndpoints
             var process = supervisor.GetProcess(app.Id);
             var state = process?.State ?? ProcessState.Stopped;
 
-            var hasProcess = await store.HasBindingAsync(app.AppTypeId, "process", ct);
-            var hasRouting = await store.HasBindingAsync(app.AppTypeId, "routing", ct);
+            var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
+            var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
             var actions = BuildActions(hasProcess, hasRouting, state);
 
             return TypedResults.Ok
@@ -776,6 +757,7 @@ public static class AppEndpoints
     (
         CreateAppRequest request,
         AppStore store,
+        TypeStore typeStore,
         ProxyManager proxy,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
@@ -800,12 +782,7 @@ public static class AppEndpoints
             );
         }
 
-        if (!Ulid.TryParse(request.AppTypeId, out var appTypeId))
-        {
-            return TypedResults.Problem("Invalid app type ID.", statusCode: 400);
-        }
-
-        var appType = await store.GetAppTypeByIdAsync(appTypeId, ct);
+        var appType = typeStore.GetBySlug(request.AppTypeSlug);
 
         if (appType is null)
         {
@@ -898,7 +875,7 @@ public static class AppEndpoints
         {
             Slug = request.Name.Trim().ToLowerInvariant(),
             DisplayName = request.DisplayName,
-            AppTypeId = appTypeId
+            AppTypeSlug = appType.Slug
         };
 
         await store.CreateAsync(app, ct);
@@ -916,8 +893,8 @@ public static class AppEndpoints
 
         // Routing-only apps (e.g. static sites) start with their route disabled.
         // Process-based apps have routes tied to process state, so no explicit disable needed.
-        var hasRouting = await store.HasBindingAsync(appTypeId, "routing", ct);
-        var hasProcess = await store.HasBindingAsync(appTypeId, "process", ct);
+        var hasRouting = typeStore.HasBinding(appType.Slug, "routing");
+        var hasProcess = typeStore.HasBinding(appType.Slug, "process");
 
         if (hasRouting && !hasProcess)
         {
@@ -1052,7 +1029,7 @@ public static class AppEndpoints
     private static List<SettingsSection> BuildSettingsSections
     (
         App app,
-        IReadOnlyList<CapabilityBinding> bindings,
+        IReadOnlyDictionary<string, string>? bindings,
         IReadOnlyDictionary<string, CapabilityOverride> overrides
     )
     {
@@ -1085,23 +1062,28 @@ public static class AppEndpoints
             )
         };
 
-        // Capability sections
-        foreach (var binding in bindings.OrderBy(b => b.CapabilitySlug.GetCapabilityOrder()))
+        if (bindings is null)
         {
-            var definition = CapabilityCatalog.Get(binding.CapabilitySlug);
+            return sections;
+        }
+
+        // Capability sections
+        foreach (var (capabilitySlug, defaultConfigurationJson) in bindings.OrderBy(b => b.Key.GetCapabilityOrder()))
+        {
+            var definition = CapabilityCatalog.Get(capabilitySlug);
 
             if (definition is null)
             {
                 continue;
             }
 
-            var overrideJson = overrides.TryGetValue(binding.CapabilitySlug, out var capabilityOverride)
+            var overrideJson = overrides.TryGetValue(capabilitySlug, out var capabilityOverride)
                 ? capabilityOverride.ConfigurationJson
                 : null;
 
             var effectiveJson = CapabilityResolver.ResolveJson
             (
-                binding.DefaultConfigurationJson, overrideJson
+                defaultConfigurationJson, overrideJson
             );
 
             JsonObject? effectiveValues = null;
@@ -1110,7 +1092,7 @@ public static class AppEndpoints
             try
             {
                 effectiveValues = JsonNode.Parse(effectiveJson)?.AsObject();
-                defaultValues = JsonNode.Parse(binding.DefaultConfigurationJson)?.AsObject();
+                defaultValues = JsonNode.Parse(defaultConfigurationJson)?.AsObject();
             }
             catch (JsonException)
             {
@@ -1153,7 +1135,7 @@ public static class AppEndpoints
             (
                 new SettingsSection
                 (
-                    binding.CapabilitySlug,
+                    capabilitySlug,
                     definition.DisplayName,
                     fields
                 )

@@ -120,7 +120,7 @@ function AppDetailPage() {
     {
       key: 'type',
       label: 'Type',
-      value: <TypeBadge label={app.appType.name} />,
+      value: <TypeBadge label={app.appType.slug} />,
     },
     { key: 'registered', label: 'Registered', value: formatDateTime(app.registeredAt) },
   ]
@@ -208,7 +208,7 @@ function AppDetailPage() {
           <h1 className="text-sm" style={{ color: 'var(--wm-text-bright)', fontWeight: 700 }}>
             {app.displayName}
           </h1>
-          <TypeBadge label={app.appType.name} />
+          <TypeBadge label={app.appType.slug} />
           <StatusText status={app.status} />
           {app.domain && (
             <>

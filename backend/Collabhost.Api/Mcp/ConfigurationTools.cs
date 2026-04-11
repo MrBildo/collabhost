@@ -5,6 +5,7 @@ using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
@@ -20,6 +21,7 @@ namespace Collabhost.Api.Mcp;
 public class ConfigurationTools
 (
     AppStore appStore,
+    TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
     ProxySettings proxySettings,
@@ -30,6 +32,9 @@ public class ConfigurationTools
 {
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly TypeStore _typeStore = typeStore
+        ?? throw new ArgumentNullException(nameof(typeStore));
 
     private readonly ProcessSupervisor _supervisor = supervisor
         ?? throw new ArgumentNullException(nameof(supervisor));
@@ -71,7 +76,7 @@ public class ConfigurationTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var bindings = await _appStore.GetBindingsAsync(app.AppTypeId, ct);
+        var bindings = _typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
 
         List<object> sections =
@@ -108,80 +113,83 @@ public class ConfigurationTools
         ];
 
         // Capability sections
-        foreach (var binding in bindings.OrderBy(b => b.CapabilitySlug.GetCapabilityOrder()))
+        if (bindings is not null)
         {
-            var definition = CapabilityCatalog.Get(binding.CapabilitySlug);
-
-            if (definition is null)
+            foreach (var (capabilitySlug, defaultConfigurationJson) in bindings.OrderBy(b => b.Key.GetCapabilityOrder()))
             {
-                continue;
-            }
+                var definition = CapabilityCatalog.Get(capabilitySlug);
 
-            var overrideJson = overrides.TryGetValue(binding.CapabilitySlug, out var capabilityOverride)
-                ? capabilityOverride.ConfigurationJson
-                : null;
+                if (definition is null)
+                {
+                    continue;
+                }
 
-            var effectiveJson = CapabilityResolver.ResolveJson
-            (
-                binding.DefaultConfigurationJson, overrideJson
-            );
+                var overrideJson = overrides.TryGetValue(capabilitySlug, out var capabilityOverride)
+                    ? capabilityOverride.ConfigurationJson
+                    : null;
 
-            JsonObject? effectiveValues = null;
-            JsonObject? defaultValues = null;
+                var effectiveJson = CapabilityResolver.ResolveJson
+                (
+                    defaultConfigurationJson, overrideJson
+                );
 
-            try
-            {
-                effectiveValues = JsonNode.Parse(effectiveJson)?.AsObject();
-                defaultValues = JsonNode.Parse(binding.DefaultConfigurationJson)?.AsObject();
-            }
-            catch (JsonException)
-            {
-                continue;
-            }
+                JsonObject? effectiveValues = null;
+                JsonObject? defaultValues = null;
 
-            if (effectiveValues is null || defaultValues is null)
-            {
-                continue;
-            }
+                try
+                {
+                    effectiveValues = JsonNode.Parse(effectiveJson)?.AsObject();
+                    defaultValues = JsonNode.Parse(defaultConfigurationJson)?.AsObject();
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
 
-            var fields = new List<object>();
+                if (effectiveValues is null || defaultValues is null)
+                {
+                    continue;
+                }
 
-            foreach (var fieldDescriptor in definition.Schema)
-            {
-                var value = effectiveValues.GetFieldValue(fieldDescriptor.Key);
-                var defaultValue = defaultValues.GetFieldValue(fieldDescriptor.Key);
+                var fields = new List<object>();
 
-                fields.Add
+                foreach (var fieldDescriptor in definition.Schema)
+                {
+                    var value = effectiveValues.GetFieldValue(fieldDescriptor.Key);
+                    var defaultValue = defaultValues.GetFieldValue(fieldDescriptor.Key);
+
+                    fields.Add
+                    (
+                        new
+                        {
+                            key = fieldDescriptor.Key,
+                            label = fieldDescriptor.Label,
+                            type = fieldDescriptor.Type,
+                            value,
+                            defaultValue,
+                            editable = fieldDescriptor.Editable is not FieldEditableLocked,
+                            requiresRestart = fieldDescriptor.RequiresRestart
+                        }
+                    );
+                }
+
+                sections.Add
                 (
                     new
                     {
-                        key = fieldDescriptor.Key,
-                        label = fieldDescriptor.Label,
-                        type = fieldDescriptor.Type,
-                        value,
-                        defaultValue,
-                        editable = fieldDescriptor.Editable is not FieldEditableLocked,
-                        requiresRestart = fieldDescriptor.RequiresRestart
+                        key = capabilitySlug,
+                        title = definition.DisplayName,
+                        fields = (IReadOnlyList<object>)fields
                     }
                 );
             }
-
-            sections.Add
-            (
-                new
-                {
-                    key = binding.CapabilitySlug,
-                    title = definition.DisplayName,
-                    fields = (IReadOnlyList<object>)fields
-                }
-            );
         }
 
         var result = new
         {
             slug = app.Slug,
             displayName = app.DisplayName,
-            appType = app.AppType.Slug,
+            appType = app.AppTypeSlug,
             sections = (IReadOnlyList<object>)sections
         };
 
@@ -233,7 +241,7 @@ public class ConfigurationTools
             );
         }
 
-        var bindings = await _appStore.GetBindingsAsync(app.AppTypeId, ct);
+        var bindings = _typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
 
         // Handle identity section changes
@@ -265,12 +273,7 @@ public class ConfigurationTools
                 continue;
             }
 
-            var binding = bindings.SingleOrDefault
-            (
-                b => string.Equals(b.CapabilitySlug, sectionKey, StringComparison.Ordinal)
-            );
-
-            if (binding is null)
+            if (bindings is null || !bindings.ContainsKey(sectionKey))
             {
                 return McpResponseFormatter.InvalidParameters
                 (
@@ -413,14 +416,9 @@ public class ConfigurationTools
 
         foreach (var app in apps)
         {
-            var bindings = await _appStore.GetBindingsAsync(app.AppTypeId, ct);
+            var bindings = _typeStore.GetBindings(app.AppTypeSlug);
 
-            var routingBinding = bindings.SingleOrDefault
-            (
-                b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-            );
-
-            if (routingBinding is null)
+            if (bindings is null || !bindings.TryGetValue("routing", out var routingBindingJson))
             {
                 continue;
             }
@@ -433,7 +431,7 @@ public class ConfigurationTools
 
             var routingConfiguration = CapabilityResolver.Resolve<RoutingConfiguration>
             (
-                routingBinding.DefaultConfigurationJson, overrideJson
+                routingBindingJson, overrideJson
             );
 
             if (routingConfiguration is null)

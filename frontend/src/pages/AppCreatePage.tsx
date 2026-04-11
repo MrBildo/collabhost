@@ -57,7 +57,7 @@ function AppCreatePage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const selectedTypeData = appTypesQuery.data?.find((t) => t.name === selectedType)
+  const selectedTypeData = appTypesQuery.data?.find((t) => t.slug === selectedType)
   const schemaQuery = useRegistrationSchema(selectedType ?? '')
   const schema = schemaQuery.data
 
@@ -183,7 +183,7 @@ function AppCreatePage() {
     const request: CreateAppRequest = {
       name,
       displayName,
-      appTypeId: schema.appType.id,
+      appTypeSlug: schema.appType.slug,
       values: formValues,
     }
 
@@ -288,13 +288,13 @@ function AppCreatePage() {
             <div className="grid grid-cols-3 gap-2 mb-7">
               {appTypesQuery.data.map((appType) => (
                 <TypeCard
-                  key={appType.id}
-                  name={appType.name}
+                  key={appType.slug}
+                  name={appType.slug}
                   displayName={appType.displayName}
                   description={appType.description}
                   tags={appType.tags}
                   isSelected={false}
-                  onClick={() => handleTypeSelect(appType.name)}
+                  onClick={() => handleTypeSelect(appType.slug)}
                 />
               ))}
             </div>

@@ -8,11 +8,9 @@ public class App
 
     public required string DisplayName { get; set; }
 
-    public required Ulid AppTypeId { get; init; }
+    public required string AppTypeSlug { get; init; }
 
     public DateTime RegisteredAt { get; init; } = DateTime.UtcNow;
 
     public DateTime? ModifiedAt { get; set; }
-
-    public AppType AppType { get; init; } = default!;
 }

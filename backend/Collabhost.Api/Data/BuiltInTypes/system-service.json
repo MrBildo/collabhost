@@ -1,0 +1,20 @@
+{
+  "slug": "system-service",
+  "displayName": "System Service",
+  "description": "Infrastructure process with no routing or port injection",
+  "bindings": {
+    "artifact": {
+      "location": ""
+    },
+    "process": {
+      "discoveryStrategy": "Manual",
+      "shutdownTimeoutSeconds": 10
+    },
+    "restart": {
+      "policy": "OnCrash"
+    },
+    "auto-start": {
+      "enabled": true
+    }
+  }
+}

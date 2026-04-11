@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
@@ -89,45 +90,15 @@ public partial class WindowsJobObjectContainment(ILogger<WindowsJobObjectContain
                 return false;
             }
 
-            // Host is in a job. On Windows 8+, nested jobs work by default -- they only
-            // fail when the parent job restricts it (e.g., Aspire's DCP). Probe by trying
-            // to assign the current process to a temporary job. If it fails, the parent job
-            // blocks nesting and containment will not work for child processes either.
-            var securityAttributes = new SecurityAttributes
-            {
-                Length = (uint)Marshal.SizeOf<SecurityAttributes>(),
-                SecurityDescriptor = IntPtr.Zero,
-                InheritHandle = 0
-            };
-
-            using var probeJob = NativeMethods.CreateJobObject(ref securityAttributes, null);
-
-            if (probeJob.IsInvalid)
-            {
-                logger.LogInformation
-                (
-                    "Process containment unavailable: could not create probe job object " +
-                    "(typical under Aspire/Visual Studio). Managed processes will not have orphan protection"
-                );
-
-                return true;
-            }
-
-            if (!NativeMethods.AssignProcessToJobObject(probeJob, currentProcess))
-            {
-                logger.LogInformation
-                (
-                    "Process containment unavailable: host process is in a restricted job object " +
-                    "(typical under Aspire/Visual Studio). Managed processes will not have orphan protection"
-                );
-
-                return true;
-            }
-
-            // Nested assignment succeeded -- containment will work normally.
-            // The probe job is disposed here. Since we did not set KILL_ON_JOB_CLOSE,
-            // the process continues normally and leaves the probe job when the handle closes.
-            return false;
+            // Host is in a job. On Windows 10+, nested jobs work by default -- they only
+            // fail when the parent job restricts it (e.g., Aspire's DCP). Probe by spawning
+            // a short-lived child process and attempting to assign it to a temporary job.
+            // This tests the exact operation we will perform in production: child processes
+            // inherit the parent's job membership, and we need to assign them to our own job.
+            //
+            // Previous approach tested with the current process's pseudo-handle, which has
+            // special semantics and can succeed even when child assignment would fail.
+            return !ProbeChildJobAssignment(logger);
         }
         catch (Exception exception)
         {
@@ -135,6 +106,103 @@ public partial class WindowsJobObjectContainment(ILogger<WindowsJobObjectContain
         }
 
         return false;
+    }
+
+    private static bool ProbeChildJobAssignment(ILogger logger)
+    {
+        var securityAttributes = new SecurityAttributes
+        {
+            Length = (uint)Marshal.SizeOf<SecurityAttributes>(),
+            SecurityDescriptor = IntPtr.Zero,
+            InheritHandle = 0
+        };
+
+        using var probeJob = NativeMethods.CreateJobObject(ref securityAttributes, null);
+
+        if (probeJob.IsInvalid)
+        {
+            logger.LogInformation
+            (
+                "Process containment unavailable: could not create probe job object " +
+                "(typical under Aspire/Visual Studio). Managed processes will not have orphan protection"
+            );
+
+            return false;
+        }
+
+        // Spawn a short-lived child process to test job assignment. The child inherits
+        // the parent's job membership (just like managed app processes will).
+        try
+        {
+            using var probe = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = "/c exit 0",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            probe.Start();
+
+            var probeHandle = NativeMethods.OpenProcess
+            (
+                NativeMethods.ProcessAssignProcess,
+                false,
+                (uint)probe.Id
+            );
+
+            if (probeHandle == IntPtr.Zero)
+            {
+                logger.LogInformation
+                (
+                    "Process containment unavailable: could not open probe child process " +
+                    "(typical under Aspire/Visual Studio). Managed processes will not have orphan protection"
+                );
+
+                probe.Kill();
+
+                return false;
+            }
+
+            try
+            {
+                if (!NativeMethods.AssignProcessToJobObject(probeJob, probeHandle))
+                {
+                    logger.LogInformation
+                    (
+                        "Process containment unavailable: child process job assignment blocked by parent job " +
+                        "(typical under Aspire/Visual Studio). Managed processes will not have orphan protection"
+                    );
+
+                    return false;
+                }
+
+                // Child process successfully assigned to probe job -- containment will work.
+                return true;
+            }
+            finally
+            {
+                NativeMethods.CloseHandle(probeHandle);
+
+                if (!probe.HasExited)
+                {
+                    probe.Kill();
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning
+            (
+                exception,
+                "Process containment probe failed -- assuming containment unavailable"
+            );
+
+            return false;
+        }
     }
 
     // No subclasses expected -- private kernel handle wrapper

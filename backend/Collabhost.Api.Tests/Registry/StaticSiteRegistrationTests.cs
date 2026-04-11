@@ -33,7 +33,7 @@ public class StaticSiteRegistrationTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "Test Static Site",
-                appTypeId = "01KN8K1MRT26VCX65J1ZSVWESB"
+                appTypeSlug = "static-site"
             };
 
             using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
@@ -81,7 +81,7 @@ public class StaticSiteRegistrationTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "Test Static Route",
-                appTypeId = "01KN8K1MRT26VCX65J1ZSVWESB"
+                appTypeSlug = "static-site"
             };
 
             using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
@@ -132,7 +132,7 @@ public class StaticSiteRegistrationTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "Test Static Detail",
-                appTypeId = "01KN8K1MRT26VCX65J1ZSVWESB"
+                appTypeSlug = "static-site"
             };
 
             using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");

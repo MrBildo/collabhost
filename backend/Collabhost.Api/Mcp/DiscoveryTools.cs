@@ -4,6 +4,7 @@ using System.Reflection;
 
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
@@ -18,6 +19,7 @@ namespace Collabhost.Api.Mcp;
 public class DiscoveryTools
 (
     AppStore appStore,
+    TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
     ProbeService probeService
@@ -25,6 +27,9 @@ public class DiscoveryTools
 {
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly TypeStore _typeStore = typeStore
+        ?? throw new ArgumentNullException(nameof(typeStore));
 
     private readonly ProcessSupervisor _supervisor = supervisor
         ?? throw new ArgumentNullException(nameof(supervisor));
@@ -89,18 +94,11 @@ public class DiscoveryTools
         foreach (var app in apps)
         {
             var process = _supervisor.GetProcess(app.Id);
-            var bindings = await _appStore.GetBindingsAsync(app.AppTypeId, ct);
+            var bindings = _typeStore.GetBindings(app.AppTypeSlug);
             var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
 
-            var hasProcess = bindings.Any
-            (
-                b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
-            );
-
-            var hasRouting = bindings.Any
-            (
-                b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-            );
+            var hasProcess = bindings?.ContainsKey("process") ?? false;
+            var hasRouting = bindings?.ContainsKey("routing") ?? false;
 
             var (_, domain, routeEnabled) = ResolveRouting(app, bindings, overrides);
 
@@ -119,7 +117,7 @@ public class DiscoveryTools
                     slug = app.Slug,
                     displayName = app.DisplayName,
                     status = statusString,
-                    appType = app.AppType.Slug,
+                    appType = app.AppTypeSlug,
                     domain,
                     port = process?.Port,
                     pid = process?.Pid,
@@ -157,18 +155,11 @@ public class DiscoveryTools
         }
 
         var process = _supervisor.GetProcess(app.Id);
-        var bindings = await _appStore.GetBindingsAsync(app.AppTypeId, ct);
+        var bindings = _typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
 
-        var hasProcess = bindings.Any
-        (
-            b => string.Equals(b.CapabilitySlug, "process", StringComparison.Ordinal)
-        );
-
-        var hasRouting = bindings.Any
-        (
-            b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-        );
+        var hasProcess = bindings?.ContainsKey("process") ?? false;
+        var hasRouting = bindings?.ContainsKey("routing") ?? false;
 
         var (routingConfiguration, domain, routeEnabled) = ResolveRouting(app, bindings, overrides);
 
@@ -176,12 +167,7 @@ public class DiscoveryTools
 
         string? restartPolicy = null;
 
-        var restartBinding = bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "restart", StringComparison.Ordinal)
-        );
-
-        if (restartBinding is not null)
+        if (bindings is not null && bindings.TryGetValue("restart", out var restartBindingJson))
         {
             var overrideJson = overrides.TryGetValue("restart", out var restartOverride)
                 ? restartOverride.ConfigurationJson
@@ -189,7 +175,7 @@ public class DiscoveryTools
 
             var restartConfig = CapabilityResolver.Resolve<RestartConfiguration>
             (
-                restartBinding.DefaultConfigurationJson, overrideJson
+                restartBindingJson, overrideJson
             );
 
             if (restartConfig is not null)
@@ -201,12 +187,7 @@ public class DiscoveryTools
 
         bool? autoStart = null;
 
-        var autoStartBinding = bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "auto-start", StringComparison.Ordinal)
-        );
-
-        if (autoStartBinding is not null)
+        if (bindings is not null && bindings.TryGetValue("auto-start", out var autoStartBindingJson))
         {
             var overrideJson = overrides.TryGetValue("auto-start", out var autoStartOverride)
                 ? autoStartOverride.ConfigurationJson
@@ -214,7 +195,7 @@ public class DiscoveryTools
 
             var autoStartConfig = CapabilityResolver.Resolve<AutoStartConfiguration>
             (
-                autoStartBinding.DefaultConfigurationJson, overrideJson
+                autoStartBindingJson, overrideJson
             );
 
             autoStart = autoStartConfig?.Enabled;
@@ -233,13 +214,13 @@ public class DiscoveryTools
                     : "not-running";
         }
 
-        var capabilities = bindings.Select(b => b.CapabilitySlug).ToList();
+        var capabilities = bindings?.Keys.ToList() ?? [];
 
         var result = new
         {
             slug = app.Slug,
             displayName = app.DisplayName,
-            appType = app.AppType.Slug,
+            appType = app.AppTypeSlug,
             status = status.ToApiString(),
             pid = process?.Pid,
             port = process?.Port,
@@ -266,15 +247,18 @@ public class DiscoveryTools
         OpenWorld = false
     )]
     [Description("Lists all available application types with their display names, descriptions, capabilities, and registration schemas. Use this when registering a new app to discover valid app type slugs and understand what fields each type requires. The five built-in types are: dotnet-app, nodejs-app, static-site, executable, system-service.")]
-    public async Task<CallToolResult> ListAppTypesAsync(CancellationToken ct)
+#pragma warning disable IDE0060 // MCP framework requires CancellationToken parameter
+    public Task<CallToolResult> ListAppTypesAsync(CancellationToken ct)
+#pragma warning restore IDE0060
     {
-        var appTypes = await _appStore.ListAppTypesAsync(ct);
+        var appTypes = _typeStore.ListTypes();
 
         var items = new List<object>();
 
         foreach (var appType in appTypes)
         {
-            var capabilities = appType.Bindings.Select(b => b.CapabilitySlug).ToList();
+            var bindings = _typeStore.GetBindings(appType.Slug);
+            var capabilities = bindings?.Keys.ToList() ?? [];
 
             items.Add
             (
@@ -291,22 +275,17 @@ public class DiscoveryTools
         var header = "Use appType slug in register_app. Each type supports different capabilities.";
         var json = McpResponseFormatter.ToJson(items);
 
-        return McpResponseFormatter.Success($"{header}\n{json}");
+        return Task.FromResult(McpResponseFormatter.Success($"{header}\n{json}"));
     }
 
     private (RoutingConfiguration? config, string? domain, bool routeEnabled) ResolveRouting
     (
         App app,
-        IReadOnlyList<CapabilityBinding> bindings,
+        IReadOnlyDictionary<string, string>? bindings,
         IReadOnlyDictionary<string, CapabilityOverride> overrides
     )
     {
-        var routingBinding = bindings.SingleOrDefault
-        (
-            b => string.Equals(b.CapabilitySlug, "routing", StringComparison.Ordinal)
-        );
-
-        if (routingBinding is null)
+        if (bindings is null || !bindings.TryGetValue("routing", out var routingBindingJson))
         {
             return (null, null, false);
         }
@@ -317,7 +296,7 @@ public class DiscoveryTools
 
         var config = CapabilityResolver.Resolve<RoutingConfiguration>
         (
-            routingBinding.DefaultConfigurationJson, overrideJson
+            routingBindingJson, overrideJson
         );
 
         var domain = config?.DomainPattern

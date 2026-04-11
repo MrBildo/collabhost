@@ -33,7 +33,7 @@ public class SettingsRestartFlagTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "Restart Flag Test App",
-                appTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y"
+                appTypeSlug = "dotnet-app"
             };
 
             using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
@@ -146,7 +146,7 @@ public class SettingsRestartFlagTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "Static Site Restart Test",
-                appTypeId = "01KN8K1MRT26VCX65J1ZSVWESB"
+                appTypeSlug = "static-site"
             };
 
             using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
@@ -210,7 +210,7 @@ public class SettingsRestartFlagTests(ApiFixture fixture)
             {
                 name = slug,
                 displayName = "Identity Restart Test",
-                appTypeId = "01KN8K1MRQ0K06ADYJJ8VAXG5Y"
+                appTypeSlug = "dotnet-app"
             };
 
             using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");

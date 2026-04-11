@@ -21,7 +21,7 @@ public record AppListItem
     AppListActions Actions
 );
 
-public record AppTypeRef(string Name, string DisplayName);
+public record AppTypeRef(string Slug, string DisplayName);
 
 public record AppListActions(bool CanStart, bool CanStop);
 
@@ -50,7 +50,7 @@ public record AppDetail
     AppActions Actions
 );
 
-public record AppTypeDetailRef(string Id, string Name, string DisplayName);
+public record AppTypeDetailRef(string Slug, string DisplayName);
 
 // AppTag is used by AppType contracts (type-level metadata).
 // Removed from AppDetail -- replaced by probe system (card #68).
@@ -134,7 +134,7 @@ public record CreateAppRequest
 (
     string Name,
     string DisplayName,
-    string AppTypeId,
+    string AppTypeSlug,
     Dictionary<string, Dictionary<string, JsonElement>>? Values
 );
 

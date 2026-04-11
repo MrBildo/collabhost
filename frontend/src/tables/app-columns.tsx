@@ -53,7 +53,7 @@ function typeColumn(): Column<AppListItem> {
   return {
     key: 'type',
     header: 'Type',
-    render: (app) => <TypeBadge label={app.appType.name} />,
+    render: (app) => <TypeBadge label={app.appType.slug} />,
   }
 }
 

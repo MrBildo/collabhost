@@ -1,6 +1,7 @@
 using System.Security;
 
 using Collabhost.Api.Registry;
+using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.Filesystem;
 
@@ -23,7 +24,7 @@ public static class FilesystemEndpoints
         }
 
         // Validate the path is syntactically valid
-        if (!IsValidPath(path))
+        if (!path.IsValidPath())
         {
             return TypedResults.Problem
             (
@@ -122,7 +123,7 @@ public static class FilesystemEndpoints
             return TypedResults.Problem("appTypeSlug is required.", statusCode: 400);
         }
 
-        if (!IsValidPath(path))
+        if (!path.IsValidPath())
         {
             return TypedResults.Problem
             (
@@ -175,7 +176,7 @@ public static class FilesystemEndpoints
             {
                 return
                 (
-                    FormatStrategyName(DiscoveryStrategy.DotNetRuntimeConfiguration),
+                    DiscoveryStrategy.DotNetRuntimeConfiguration.ToCamelCase(),
                     [.. runtimeConfigs.Select(f => Path.GetFileName(f))]
                 );
             }
@@ -186,12 +187,12 @@ public static class FilesystemEndpoints
             {
                 return
                 (
-                    FormatStrategyName(DiscoveryStrategy.DotNetProject),
+                    DiscoveryStrategy.DotNetProject.ToCamelCase(),
                     [.. projects.Select(f => Path.GetFileName(f))]
                 );
             }
 
-            return (FormatStrategyName(DiscoveryStrategy.Manual), []);
+            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
         }
 
         if (string.Equals(appTypeSlug, "nodejs-app", StringComparison.Ordinal))
@@ -207,7 +208,7 @@ public static class FilesystemEndpoints
                     if (document.RootElement.TryGetProperty("scripts", out var scripts)
                         && scripts.TryGetProperty("start", out _))
                     {
-                        return (FormatStrategyName(DiscoveryStrategy.PackageJson), ["package.json"]);
+                        return (DiscoveryStrategy.PackageJson.ToCamelCase(), ["package.json"]);
                     }
                 }
                 catch (JsonException)
@@ -215,26 +216,12 @@ public static class FilesystemEndpoints
                     // Malformed package.json -- fall through to Manual
                 }
 
-                return (FormatStrategyName(DiscoveryStrategy.Manual), ["package.json"]);
+                return (DiscoveryStrategy.Manual.ToCamelCase(), ["package.json"]);
             }
 
-            return (FormatStrategyName(DiscoveryStrategy.Manual), []);
+            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
         }
 
-        return (FormatStrategyName(DiscoveryStrategy.Manual), []);
-    }
-
-    private static string FormatStrategyName(DiscoveryStrategy strategy)
-    {
-        var name = strategy.ToString();
-
-        return char.ToLowerInvariant(name[0]) + name[1..];
-    }
-
-    private static bool IsValidPath(string path)
-    {
-        var invalidChars = Path.GetInvalidPathChars();
-
-        return !path.AsSpan().ContainsAny(invalidChars);
+        return (DiscoveryStrategy.Manual.ToCamelCase(), []);
     }
 }
