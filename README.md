@@ -88,19 +88,15 @@ It runs natively on **Windows** and **Linux** with platform-specific process man
 
 ## Quick Start
 
-<!-- TODO [Bill]: Verify these steps match the actual first-run experience.
-     Especially the Caddy setup — decide if we want to keep it optional
-     for the README quick start or require it. -->
-
 ### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 22+](https://nodejs.org/) (for the dashboard)
-- [Caddy](https://caddyserver.com/) (for reverse proxy — optional, proxy features degrade gracefully without it)
+- [Caddy](https://caddyserver.com/) (recommended -- reverse proxy routing requires it, but Collabhost runs without it)
 
 ### Install Caddy
 
-Collabhost manages Caddy as a supervised process. Install the Caddy binary and tell Collabhost where to find it.
+Collabhost manages Caddy as a supervised process -- you install the binary, Collabhost handles the rest. Without Caddy, everything else works (app management, process supervision, logs, dashboard), but apps won't get automatic `{slug}.collab.internal` subdomain routes.
 
 **Windows:**
 
@@ -108,18 +104,16 @@ Collabhost manages Caddy as a supervised process. Install the Caddy binary and t
 winget install CaddyServer.Caddy
 ```
 
-**Linux:**
+**Linux (Debian/Ubuntu):**
 
 ```bash
-# Debian/Ubuntu
 sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
 sudo apt update && sudo apt install caddy
-
-# Or download the binary directly
-# https://caddyserver.com/docs/install
 ```
+
+See [caddyserver.com/docs/install](https://caddyserver.com/docs/install) for other platforms.
 
 If `caddy` is on your PATH, Collabhost finds it automatically. Otherwise, set the path in `appsettings.json`:
 
@@ -135,9 +129,11 @@ Collabhost starts Caddy as a managed system-service, allocates its admin port dy
 
 ### Run with Aspire
 
+The recommended development workflow uses .NET Aspire to orchestrate the API, the Vite dev server, and an OpenTelemetry dashboard together.
+
 ```bash
 # Clone the repo
-git clone https://github.com/collabhost/collabhost.git
+git clone https://github.com/MrBildo/collabhost.git
 cd collabhost
 
 # Install frontend dependencies
@@ -147,25 +143,23 @@ cd frontend && npm install && cd ..
 dotnet run --project backend/Collabhost.AppHost
 ```
 
-<!-- TODO [Bill]: Add the Aspire dashboard URL and the frontend URL
-     that operators should open after startup. -->
-
-The Aspire orchestrator starts the API, the Vite dev server, and an OpenTelemetry dashboard. Open the dashboard at `http://localhost:5173`.
+The Aspire dashboard URL is printed to the console at startup -- open it to see resource health, logs, and traces. The Collabhost dashboard is served by Vite on `http://localhost:5173`. The API runs on `http://localhost:58400`.
 
 ### Run standalone
 
+If you don't need the Aspire orchestrator, you can run the API and frontend independently.
+
 ```bash
-# Backend only
+# Backend (in one terminal)
 dotnet run --project backend/Collabhost.Api
 
-# Frontend only (in a second terminal)
-cd frontend && npm run dev
+# Frontend (in a second terminal)
+cd frontend && npm install && npm run dev
 ```
 
-### Register your first app
+The frontend dev server proxies API requests to `http://localhost:58400` automatically. Open `http://localhost:5173` to use the dashboard.
 
-<!-- TODO [Bill]: Decide if we want a CLI example, a curl example,
-     or just point them at the dashboard UI. -->
+### Register your first app
 
 Open the dashboard and click **Register App**. Pick an app type, point it at a directory, and hit create. Collabhost auto-discovers the start command and allocates a port. Click **Start** and watch the logs stream in.
 
