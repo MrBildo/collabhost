@@ -19,10 +19,6 @@
 
 ---
 
-<!-- TODO [Bill]: Write the real overview copy. The structure below is the target
-     tone — sell first (what problem does this solve?), then explain (how?).
-     Two paragraphs max before the screenshot. -->
-
 ## What is Collabhost?
 
 Collabhost gives you a single dashboard to manage everything running on your machine — .NET services, Node.js apps, MCP servers, static sites, and arbitrary executables. Register an app, point it at a directory, and Collabhost handles process supervision, reverse proxy routing, log aggregation, and crash recovery. No containers. No YAML. No cloud account.
@@ -218,11 +214,6 @@ npm run lint
 
 ### Architecture
 
-<!-- TODO [Bill]: Decide how deep to go here. Options:
-     1. Brief paragraph pointing to a CONTRIBUTING.md or docs/ folder
-     2. The mental model summary below (my recommendation for the README)
-     3. A full architecture doc linked from here -->
-
 Collabhost has three layers:
 
 - **Caddy** is the front door — edge reverse proxy, TLS termination, routing
@@ -232,11 +223,6 @@ Collabhost has three layers:
 Apps are registered with a slug, discovered from the filesystem, and supervised as managed processes. Caddy routes are synchronized automatically when process state changes. SQLite handles persistence with zero configuration.
 
 ## Contributing
-
-<!-- TODO [Bill]: Write CONTRIBUTING.md and link it here.
-     Recommend covering: dev setup, branch naming (feature/, bugfix/),
-     commit conventions (feat:, fix:, chore:), testing requirements,
-     and the Biome/Roslyn lint gates. -->
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and the pull request process.
 
