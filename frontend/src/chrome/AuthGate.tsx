@@ -1,4 +1,5 @@
 import { ActionButton } from '@/actions/ActionButton'
+import { LogoMark } from '@/chrome/LogoMark'
 import { useAuth } from '@/hooks/use-auth'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
@@ -30,9 +31,20 @@ function AuthGate({ children }: AuthGateProps) {
     <div className="flex items-center justify-center min-h-screen" style={{ background: 'var(--wm-bg)' }}>
       <div className="wm-auth-gate">
         <div className="mb-6">
-          <h1 className="wm-section-title" style={{ borderBottom: 'none', paddingBottom: 0 }}>
-            Collabhost
-          </h1>
+          <div className="flex items-center gap-3 mb-2">
+            <LogoMark size={40} />
+            <span
+              style={{
+                fontFamily: 'var(--wm-mono)',
+                fontSize: '22px',
+                fontWeight: 500,
+                letterSpacing: '0.04em',
+              }}
+            >
+              <span style={{ color: 'var(--wm-text-dim)' }}>collab</span>
+              <span style={{ color: 'var(--wm-amber)' }}>host</span>
+            </span>
+          </div>
           <p className="text-xs mt-2" style={{ color: 'var(--wm-text-dim)' }}>
             Enter your user key to continue.
           </p>

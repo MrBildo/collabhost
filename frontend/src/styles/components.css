@@ -512,11 +512,9 @@
 
 .wm-topbar__brand {
   font-family: var(--wm-mono);
-  font-weight: 700;
+  font-weight: 500;
   font-size: var(--wm-font-md);
-  color: var(--wm-amber);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   margin-right: 24px;
 }
 

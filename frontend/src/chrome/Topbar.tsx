@@ -1,8 +1,8 @@
+import { LogoMark } from '@/chrome/LogoMark'
 import { UserIndicator } from '@/chrome/UserIndicator'
 import { useCurrentUser } from '@/hooks/use-current-user'
 import { cn } from '@/lib/cn'
 import { ROUTES } from '@/lib/routes'
-import { StatusDot } from '@/status/StatusDot'
 import { NavLink } from 'react-router-dom'
 
 type NavItem = {
@@ -28,8 +28,11 @@ function Topbar() {
       <div className="flex items-center h-full px-4 mx-auto max-w-screen-xl w-full">
         {/* Brand */}
         <NavLink to={ROUTES.dashboard} className="wm-topbar__brand flex items-center gap-2">
-          <StatusDot status="running" />
-          Collabhost
+          <LogoMark size={24} />
+          <span>
+            <span style={{ color: 'var(--wm-text-dim)' }}>collab</span>
+            <span style={{ color: 'var(--wm-amber)' }}>host</span>
+          </span>
         </NavLink>
 
         {/* Nav links */}

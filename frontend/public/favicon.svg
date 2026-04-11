@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-180 -180 360 360">
+  <!-- Collabhost favicon — C contains H -->
+  <path
+    d="M10,-120 L-120,-120 L-120,120 L10,120"
+    fill="none" stroke="#777777" stroke-width="44"
+    stroke-linecap="square" stroke-linejoin="miter"
+  />
+  <path
+    d="M10,0 L140,0 M140,-120 L140,120"
+    fill="none" stroke="#f59e0b" stroke-width="24"
+    stroke-linecap="butt"
+  />
+  <circle cx="10" cy="0" r="24" fill="#f59e0b"/>
+</svg>
