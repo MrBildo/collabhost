@@ -1,43 +1,214 @@
-# Collabhost
+<p align="center">
+  <img src="frontend/public/favicon.svg" alt="Collabhost" width="80" />
+</p>
 
-A self-hosted application platform for managing local services, workers, and scheduled jobs.
+<h1 align="center">Collabhost</h1>
 
-## Prerequisites
+<p align="center">
+  A self-hosted control plane for your local services, workers, and scheduled jobs.
+</p>
 
-### Caddy (Reverse Proxy)
+<p align="center">
+  <!-- TODO: Replace with real badge URLs once CI and package registry are set up -->
+  <a href="#"><img alt="Build" src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" /></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
+  <a href="#"><img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4?style=flat-square" /></a>
+  <a href="#"><img alt="React 18" src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square" /></a>
+</p>
 
-Collabhost uses [Caddy](https://caddyserver.com/) as its reverse proxy. The proxy binary is optional for development -- if not found, proxy features are disabled gracefully.
+---
 
-**Option A: Local binary (recommended for development)**
+<!-- TODO [Bill]: Write the real overview copy. The structure below is the target
+     tone — sell first (what problem does this solve?), then explain (how?).
+     Two paragraphs max before the screenshot. -->
 
-Download the Caddy binary to `tools/caddy/` and set the absolute path in `appsettings.Development.json`:
+## What is Collabhost?
 
-```json
-{
-  "Proxy": {
-    "BinaryPath": "<absolute-path-to-repo>/tools/caddy/caddy.exe"
-  }
-}
-```
+Collabhost gives you a single dashboard to manage everything running on your machine — .NET services, Node.js apps, MCP servers, static sites, and arbitrary executables. Register an app, point it at a directory, and Collabhost handles process supervision, reverse proxy routing, log aggregation, and crash recovery. No containers. No YAML. No cloud account.
 
-**Option B: Install globally**
+It was built for developers and AI harness engineers who run multiple local services and need operational visibility without the overhead of a full platform. Think of it as a lightweight, self-hosted Heroku for your workstation — a control plane that stays out of your way until something goes wrong.
 
-```powershell
-winget install CaddyServer.Caddy
-```
+<!-- SCREENSHOT SECTION
+     ==================
+     Bill — here's what I recommend capturing:
 
-When installed globally, the default `BinaryPath` of `"caddy"` in `appsettings.json` will resolve it from PATH.
+     1. **Hero screenshot** (required)
+        The Dashboard page with 4-6 apps in mixed states (running, stopped, one crashed).
+        This shows the stats strip, app table, and activity feed all at once.
+        Ideal viewport: 1280x800 or 1440x900. Dark theme (it's the only theme).
+        Save as: docs/images/dashboard.png
+
+     2. **App detail screenshot** (optional but high impact)
+        An app detail page for a running Node.js or .NET app showing:
+        - The identity header with status dot and action bar
+        - A few lines of log output in the log viewer
+        - The route indicator showing the .collab.internal domain
+        Save as: docs/images/app-detail.png
+
+     3. **Registration flow** (optional)
+        The two-step registration: type picker grid, then the schema-driven form.
+        Shows that adding a new app is a 30-second operation.
+        Save as: docs/images/register-app.png
+
+     Place screenshots in a docs/images/ directory.
+     Delete this comment block after adding them.
+-->
+
+<p align="center">
+  <!-- TODO: Replace with actual screenshot once captured -->
+  <img src="docs/images/dashboard.png" alt="Collabhost Dashboard" width="900" />
+</p>
+
+## Features
+
+**Process supervision** — Start, stop, restart, and kill managed processes. Crash detection with automatic restart and exponential backoff. Stdout/stderr captured into searchable, streaming log viewers.
+
+**Reverse proxy** — Every app gets a `{slug}.collab.internal` route, automatically configured through [Caddy](https://caddyserver.com/). HTTPS via Caddy's internal CA. Routes sync on process state changes — no manual config.
+
+**Schema-driven configuration** — App settings are defined by capability schemas. New capabilities surface in the UI without frontend changes. Override defaults per-app, see what's customized vs. inherited.
+
+**Multi-runtime support** — Five built-in app types out of the box:
+
+| Type | What it runs |
+|------|-------------|
+| `dotnet-app` | .NET applications (auto-discovers project files) |
+| `nodejs-app` | Node.js applications (reads package.json scripts) |
+| `static-site` | Static file directories (served via Caddy file_server) |
+| `executable` | Arbitrary binaries and scripts |
+| `system-service` | Platform services managed by Collabhost itself |
+
+**Operational dashboard** — Real-time stats, app table with inline actions, and a live activity feed. Everything an operator needs on one screen.
+
+**User management** — Header-based auth with admin and agent roles. One-time API key reveal on creation. Role-based access control for the dashboard.
+
+**Technology probing** — Automatic detection of runtimes, frameworks, and dependencies for registered apps. No manual tagging required.
 
 ## Quick Start
 
-```powershell
-# Start with Aspire (recommended)
-dotnet run --project backend/Collabhost.AppHost
+<!-- TODO [Bill]: Verify these steps match the actual first-run experience.
+     Especially the Caddy setup — decide if we want to keep it optional
+     for the README quick start or require it. -->
 
-# Frontend only
+### Prerequisites
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [Node.js 22+](https://nodejs.org/) (for the dashboard)
+- [Caddy](https://caddyserver.com/) (optional — proxy features disabled gracefully without it)
+
+### Run with Aspire
+
+```bash
+# Clone the repo
+git clone https://github.com/collabhost/collabhost.git
+cd collabhost
+
+# Install frontend dependencies
+cd frontend && npm install && cd ..
+
+# Start everything (API + dashboard + telemetry)
+dotnet run --project backend/Collabhost.AppHost
+```
+
+<!-- TODO [Bill]: Add the Aspire dashboard URL and the frontend URL
+     that operators should open after startup. -->
+
+The Aspire orchestrator starts the API, the Vite dev server, and an OpenTelemetry dashboard. Open the dashboard at `http://localhost:5173`.
+
+### Run standalone
+
+```bash
+# Backend only
+dotnet run --project backend/Collabhost.Api
+
+# Frontend only (in a second terminal)
 cd frontend && npm run dev
 ```
 
+### Register your first app
+
+<!-- TODO [Bill]: Decide if we want a CLI example, a curl example,
+     or just point them at the dashboard UI. -->
+
+Open the dashboard and click **Register App**. Pick an app type, point it at a directory, and hit create. Collabhost auto-discovers the start command and allocates a port. Click **Start** and watch the logs stream in.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | .NET 10, C# Minimal API, EF Core, SQLite |
+| Frontend | React 18, TypeScript, Vite |
+| Design System | War Machine (custom — dark, monospace, industrial) |
+| Reverse Proxy | Caddy (managed via JSON admin API) |
+| Orchestration | .NET Aspire, OpenTelemetry |
+| Testing | xUnit + Shouldly (backend), Vitest (frontend) |
+| Linting | Roslyn analyzers (backend), Biome (frontend) |
+
+## Project Structure
+
+```
+collabhost/
+├── backend/
+│   ├── Collabhost.AppHost/        # Aspire orchestrator
+│   ├── Collabhost.Api/            # Main API (registry, supervisor, proxy)
+│   ├── Collabhost.Api.Tests/      # Integration tests
+│   └── Collabhost.ServiceDefaults/
+├── frontend/
+│   └── src/
+│       ├── actions/               # Action buttons and bars
+│       ├── api/                   # Typed fetch client and endpoints
+│       ├── chrome/                # Layout, topbar, auth gate
+│       ├── forms/                 # Schema-driven form fields
+│       ├── hooks/                 # TanStack Query hooks
+│       ├── log/                   # Log viewer with ANSI rendering
+│       ├── pages/                 # Route pages
+│       ├── shared/                # Shared UI components
+│       ├── status/                # Status dots, strips, stats
+│       ├── styles/                # War Machine design tokens
+│       └── tables/                # Data tables and filters
+└── tools/                         # Development utilities
+```
+
+## Development
+
+### Build and test
+
+```bash
+# Backend
+cd backend
+dotnet build Collabhost.slnx --no-incremental
+dotnet test
+
+# Frontend
+cd frontend
+npm run build
+npm run test
+npm run lint
+```
+
+### Architecture
+
+<!-- TODO [Bill]: Decide how deep to go here. Options:
+     1. Brief paragraph pointing to a CONTRIBUTING.md or docs/ folder
+     2. The mental model summary below (my recommendation for the README)
+     3. A full architecture doc linked from here -->
+
+Collabhost has three layers:
+
+- **Caddy** is the front door — edge reverse proxy, TLS termination, routing
+- **ASP.NET Core** is the control tower — app registry, process supervision, auth
+- **React dashboard** is the operator console — the War Machine design system
+
+Apps are registered with a slug, discovered from the filesystem, and supervised as managed processes. Caddy routes are synchronized automatically when process state changes. SQLite handles persistence with zero configuration.
+
+## Contributing
+
+<!-- TODO [Bill]: Write CONTRIBUTING.md and link it here.
+     Recommend covering: dev setup, branch naming (feature/, bugfix/),
+     commit conventions (feat:, fix:, chore:), testing requirements,
+     and the Biome/Roslyn lint gates. -->
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and the pull request process.
+
 ## License
 
-MIT
+[MIT](LICENSE)
