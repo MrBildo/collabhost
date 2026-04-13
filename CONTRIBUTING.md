@@ -15,7 +15,7 @@ Thanks for your interest in contributing. This guide covers everything you need 
 Clone the repo and install frontend dependencies:
 
 ```bash
-git clone https://github.com/collabhost/collabhost.git
+git clone https://github.com/MrBildo/collabhost.git
 cd collabhost
 cd frontend && npm install
 ```
