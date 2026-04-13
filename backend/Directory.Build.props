@@ -12,6 +12,14 @@
     <NoWarn>$(NoWarn);CA1873;CS1591;S3881;S6966</NoWarn>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <Authors>Bill Wheelock</Authors>
+    <Copyright>Copyright (c) 2026 Bill Wheelock</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MrBildo/collabhost</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Meziantou.Analyzer" Version="3.0.28" PrivateAssets="all" />
     <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" />
