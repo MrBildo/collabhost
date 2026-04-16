@@ -71,52 +71,6 @@ public class TypeStoreTests
     }
 
     [Fact]
-    public async Task LoadAsync_DotNetApp_HasMetadata()
-    {
-        var store = CreateTypeStore();
-
-        await store.LoadAsync();
-
-        var type = store.GetBySlug("dotnet-app");
-
-        type.ShouldNotBeNull();
-        type.Metadata.ShouldNotBeNull();
-        type.Metadata!.Runtime.ShouldNotBeNull();
-        type.Metadata.Runtime!.Name.ShouldBe(".NET");
-        type.Metadata.Runtime.Version.ShouldBe("10");
-        type.Metadata.Runtime.TargetFramework.ShouldBe("net10.0");
-    }
-
-    [Fact]
-    public async Task LoadAsync_NodeJsApp_HasMetadata()
-    {
-        var store = CreateTypeStore();
-
-        await store.LoadAsync();
-
-        var type = store.GetBySlug("nodejs-app");
-
-        type.ShouldNotBeNull();
-        type.Metadata.ShouldNotBeNull();
-        type.Metadata!.Runtime.ShouldNotBeNull();
-        type.Metadata.Runtime!.Name.ShouldBe("Node.js");
-        type.Metadata.Runtime.PackageManager.ShouldBe("npm");
-    }
-
-    [Fact]
-    public async Task LoadAsync_StaticSite_HasNoMetadata()
-    {
-        var store = CreateTypeStore();
-
-        await store.LoadAsync();
-
-        var type = store.GetBySlug("static-site");
-
-        type.ShouldNotBeNull();
-        type.Metadata.ShouldBeNull();
-    }
-
-    [Fact]
     public async Task LoadAsync_AllTypesAreBuiltIn()
     {
         var store = CreateTypeStore();

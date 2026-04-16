@@ -2,13 +2,6 @@
   "slug": "nodejs-app",
   "displayName": "Node.js Application",
   "description": "Server-side JavaScript with npm",
-  "metadata": {
-    "runtime": {
-      "name": "Node.js",
-      "version": "22",
-      "packageManager": "npm"
-    }
-  },
   "bindings": {
     "artifact": {
       "location": ""
