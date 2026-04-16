@@ -21,13 +21,6 @@ public class TypeStore
     private readonly ILogger<TypeStore> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
-    private static readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
-    };
-
     private volatile TypeStoreSnapshot _snapshot = new
     (
         [],
@@ -419,20 +412,11 @@ public class TypeStore
                     ? descriptionElement.GetString()
                     : null;
 
-            AppTypeMetadata? metadata = null;
-
-            if (root.TryGetProperty("metadata", out var metadataElement)
-                && metadataElement.ValueKind == JsonValueKind.Object)
-            {
-                metadata = JsonSerializer.Deserialize<AppTypeMetadata>(metadataElement.GetRawText(), _jsonOptions);
-            }
-
             var typeDefinition = new AppType
             {
                 Slug = slug,
                 DisplayName = displayName,
                 Description = description,
-                Metadata = metadata,
                 IsBuiltIn = isBuiltIn
             };
 

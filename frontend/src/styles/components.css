@@ -982,31 +982,6 @@
   line-height: 1.4;
 }
 
-.wm-type-card__tags {
-  display: flex;
-  gap: 4px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
-
-.wm-type-card__tag {
-  font-family: var(--wm-mono);
-  font-size: var(--wm-font-2xs);
-  padding: 2px 5px;
-  border-radius: var(--wm-radius-sm);
-  background: var(--wm-bg-inset);
-  color: var(--wm-text-dim);
-  border: 1px solid var(--wm-border);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.wm-type-card--selected .wm-type-card__tag {
-  background: rgba(245, 158, 11, 0.08);
-  border-color: rgba(245, 158, 11, 0.2);
-  color: var(--wm-amber);
-}
-
 /* === Confirm Dialog === */
 
 dialog.wm-dialog-overlay {

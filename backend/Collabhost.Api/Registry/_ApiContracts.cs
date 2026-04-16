@@ -52,10 +52,6 @@ public record AppDetail
 
 public record AppTypeDetailRef(string Slug, string DisplayName);
 
-// AppTag is used by AppType contracts (type-level metadata).
-// Removed from AppDetail -- replaced by probe system (card #68).
-public record AppTag(string Label, string Group);
-
 public record AppResources(double? CpuPercent, double? MemoryMb, int? HandleCount);
 
 public record AppRoute(string Domain, string Target, bool Tls);

@@ -11,7 +11,6 @@ public record AppTypeListItem
     string Slug,
     string DisplayName,
     string? Description,
-    List<AppTag> Tags,
     bool IsBuiltIn
 );
 
@@ -20,7 +19,6 @@ public record AppTypeListItem
 public record RegistrationSchema
 (
     RegistrationAppType AppType,
-    List<AppTag> Tags,
     List<RegistrationSection> Sections
 );
 

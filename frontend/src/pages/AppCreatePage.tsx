@@ -292,7 +292,6 @@ function AppCreatePage() {
                   name={appType.slug}
                   displayName={appType.displayName}
                   description={appType.description}
-                  tags={appType.tags}
                   isSelected={false}
                   onClick={() => handleTypeSelect(appType.slug)}
                 />
