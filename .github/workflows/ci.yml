@@ -7,26 +7,86 @@ on:
     branches: [main, 'release/*']
 
 jobs:
-  backend:
-    name: Backend
+  build-and-format:
+    name: Build & Format
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
       - name: Restore
-        run: dotnet restore backend/Collabhost.slnx
+        run: dotnet restore Collabhost.slnx
       - name: Build
-        run: dotnet build backend/Collabhost.slnx --no-incremental --no-restore
+        run: dotnet build Collabhost.slnx --no-incremental --no-restore
       - name: Format check
-        run: dotnet format backend/Collabhost.slnx --verify-no-changes --no-restore
+        run: dotnet format Collabhost.slnx --verify-no-changes --no-restore
+
+  api-tests:
+    name: API Tests (${{ matrix.os }})
+    needs: build-and-format
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Collabhost.slnx
+      - name: Build
+        run: dotnet build Collabhost.slnx --no-incremental --no-restore
       - name: Test
-        run: dotnet test backend/ --no-build --verbosity normal
+        run: dotnet test Collabhost.Api.Tests/Collabhost.Api.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=api-test-results.trx"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-results-${{ matrix.os }}
+          path: backend/Collabhost.Api.Tests/TestResults/api-test-results.trx
+
+  smoke-tests:
+    name: Smoke Tests (Aspire)
+    needs: build-and-format
+    runs-on: ubuntu-latest
+    env:
+      ASPIRE_ALLOW_UNSECURED_TRANSPORT: true
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Collabhost.slnx
+      - name: Build
+        run: dotnet build Collabhost.slnx --no-incremental --no-restore
+      - name: Test
+        run: dotnet test Collabhost.AppHost.Tests/Collabhost.AppHost.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=smoke-test-results.trx"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: backend/Collabhost.AppHost.Tests/TestResults/smoke-test-results.trx
 
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,19 +96,13 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install
         run: npm ci
-        working-directory: frontend
       - name: Lint
         run: npm run lint
-        working-directory: frontend
       - name: Format check
         run: npm run format:check
-        working-directory: frontend
       - name: Type check
         run: npx tsc -b
-        working-directory: frontend
       - name: Test
         run: npm run test
-        working-directory: frontend
       - name: Build
         run: npx vite build
-        working-directory: frontend
