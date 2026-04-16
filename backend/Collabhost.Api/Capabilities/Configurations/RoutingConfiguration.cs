@@ -4,7 +4,7 @@ namespace Collabhost.Api.Capabilities.Configurations;
 
 public class RoutingConfiguration
 {
-    public string DomainPattern { get; set; } = "{slug}.collab.internal";
+    public string DomainPattern { get; set; } = "{slug}.{baseDomain}";
 
     public ServeMode ServeMode { get; set; } = ServeMode.ReverseProxy;
 

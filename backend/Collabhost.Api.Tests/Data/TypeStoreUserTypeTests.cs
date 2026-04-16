@@ -2,6 +2,7 @@ using System.Globalization;
 
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
+using Collabhost.Api.Proxy;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -40,11 +41,21 @@ public class TypeStoreUserTypeTests : IDisposable
         Directory.CreateDirectory(_userTypesDirectory);
     }
 
+    private static readonly ProxySettings _defaultProxySettings = new()
+    {
+        BaseDomain = "collab.internal",
+        BinaryPath = "caddy",
+        ListenAddress = ":443",
+        CertLifetime = "168h",
+        SelfPort = 58400
+    };
+
     private TypeStore CreateTypeStore() =>
         new
         (
             new EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = _userTypesDirectory },
+            _defaultProxySettings,
             NullLogger<TypeStore>.Instance
         );
 
@@ -53,6 +64,7 @@ public class TypeStoreUserTypeTests : IDisposable
         (
             eventBus,
             new TypeStoreSettings { UserTypesDirectory = _userTypesDirectory },
+            _defaultProxySettings,
             NullLogger<TypeStore>.Instance
         );
 

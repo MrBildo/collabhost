@@ -15,7 +15,7 @@
       "portFormat": "{port}"
     },
     "routing": {
-      "domainPattern": "{slug}.collab.internal",
+      "domainPattern": "{slug}.{baseDomain}",
       "serveMode": "ReverseProxy",
       "spaFallback": false
     },

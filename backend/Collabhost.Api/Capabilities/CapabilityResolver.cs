@@ -55,6 +55,12 @@ public static partial class CapabilityResolver
         return defaults.ToJsonString(_jsonOptions);
     }
 
+    // Replaces {slug} and {baseDomain} tokens in a domain pattern. Pass-through for custom patterns.
+    public static string ResolveDomain(string domainPattern, string slug, string baseDomain) =>
+        domainPattern
+            .Replace("{slug}", slug, StringComparison.OrdinalIgnoreCase)
+            .Replace("{baseDomain}", baseDomain, StringComparison.OrdinalIgnoreCase);
+
     public static IReadOnlyList<string> ValidateEdits
     (
         string capabilitySlug,

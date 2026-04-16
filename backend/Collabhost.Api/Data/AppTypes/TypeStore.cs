@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Threading.Channels;
 
 using Collabhost.Api.Events;
+using Collabhost.Api.Proxy;
 
 namespace Collabhost.Api.Data.AppTypes;
 
@@ -9,6 +10,7 @@ public class TypeStore
 (
     IEventBus<TypeStoreReloadedEvent> eventBus,
     TypeStoreSettings settings,
+    ProxySettings proxySettings,
     ILogger<TypeStore> logger
 ) : IDisposable
 {
@@ -17,6 +19,9 @@ public class TypeStore
 
     private readonly TypeStoreSettings _settings = settings
         ?? throw new ArgumentNullException(nameof(settings));
+
+    private readonly ProxySettings _proxySettings = proxySettings
+        ?? throw new ArgumentNullException(nameof(proxySettings));
 
     private readonly ILogger<TypeStore> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -45,7 +50,9 @@ public class TypeStore
 
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
-        var builtInSources = await ReadEmbeddedResourcesAsync(cancellationToken);
+        var rawBuiltInSources = await ReadEmbeddedResourcesAsync(cancellationToken);
+
+        var builtInSources = ApplyTokens(rawBuiltInSources);
 
         var builtInErrors = TypeStoreValidator.Validate(builtInSources);
 
@@ -71,7 +78,7 @@ public class TypeStore
 
         // Load user types from the scan directory
         var userTypesDirectory = ResolveUserTypesDirectory();
-        var userSources = ReadUserTypesDirectory(userTypesDirectory);
+        var userSources = ApplyTokens(ReadUserTypesDirectory(userTypesDirectory));
 
         if (userSources.Count > 0)
         {
@@ -246,7 +253,7 @@ public class TypeStore
         cancellationToken.ThrowIfCancellationRequested();
 
         var userTypesDirectory = ResolveUserTypesDirectory();
-        var userSources = ReadUserTypesDirectory(userTypesDirectory);
+        var userSources = ApplyTokens(ReadUserTypesDirectory(userTypesDirectory));
 
         if (userSources.Count == 0)
         {
@@ -388,7 +395,7 @@ public class TypeStore
 
     private static TypeStoreSnapshot BuildSnapshot
     (
-        IReadOnlyList<(string ResourceName, string Json)> sources,
+        List<(string Name, string Json)> sources,
         bool isBuiltIn
     )
     {
@@ -396,16 +403,16 @@ public class TypeStore
         var typesBySlug = new Dictionary<string, AppType>(sources.Count, StringComparer.Ordinal);
         var bindingsByTypeSlug = new Dictionary<string, IReadOnlyDictionary<string, string>>(sources.Count, StringComparer.Ordinal);
 
-        foreach (var (resourceName, json) in sources)
+        foreach (var (name, json) in sources)
         {
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
 
             var slug = root.GetProperty("slug").GetString()
-                ?? throw new InvalidOperationException($"Null slug in validated resource '{resourceName}'.");
+                ?? throw new InvalidOperationException($"Null slug in validated resource '{name}'.");
 
             var displayName = root.GetProperty("displayName").GetString()
-                ?? throw new InvalidOperationException($"Null displayName in validated resource '{resourceName}'.");
+                ?? throw new InvalidOperationException($"Null displayName in validated resource '{name}'.");
 
             var description = root.TryGetProperty("description", out var descriptionElement)
                 && descriptionElement.ValueKind == JsonValueKind.String
@@ -481,6 +488,22 @@ public class TypeStore
             allTypesBySlug.ToFrozenDictionary(StringComparer.Ordinal),
             allBindingsByTypeSlug.ToFrozenDictionary(StringComparer.Ordinal)
         );
+    }
+
+    // Replaces {baseDomain} tokens in raw JSON with the configured base domain.
+    // Applied to both built-in and user-defined type sources before snapshot construction.
+    private List<(string Name, string Json)> ApplyTokens(IEnumerable<(string Name, string Json)> sources)
+    {
+        var result = new List<(string Name, string Json)>();
+
+        foreach (var (name, json) in sources)
+        {
+            var resolved = json.Replace("{baseDomain}", _proxySettings.BaseDomain, StringComparison.OrdinalIgnoreCase);
+
+            result.Add((name, resolved));
+        }
+
+        return result;
     }
 
     public void Dispose()
