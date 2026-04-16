@@ -10,11 +10,6 @@ type AppStatus = 'running' | 'stopped' | 'crashed' | 'starting' | 'stopping' | '
 
 type HealthStatus = 'healthy' | 'unhealthy' | 'degraded' | 'unknown'
 
-type AppTag = {
-  label: string
-  group: 'runtime' | 'framework' | 'tooling'
-}
-
 // --- Probes ---
 
 type DotnetRuntimeProbe = {
@@ -261,7 +256,6 @@ type AppTypeListItem = {
   slug: string
   displayName: string
   description: string | null
-  tags: AppTag[]
   isBuiltIn: boolean
 }
 
@@ -269,7 +263,6 @@ type AppTypeListItem = {
 
 type RegistrationSchema = {
   appType: RegistrationAppType
-  tags: AppTag[]
   sections: RegistrationSection[]
 }
 
@@ -395,7 +388,6 @@ export type {
   CreateUserRequest,
   AppStatus,
   HealthStatus,
-  AppTag,
   ProbeEntry,
   DotnetRuntimeProbe,
   DotnetDependenciesProbe,

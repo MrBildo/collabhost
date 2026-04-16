@@ -22,6 +22,7 @@ public class DiscoveryTools
     TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
+    ProxySettings proxySettings,
     ProbeService probeService
 )
 {
@@ -36,6 +37,9 @@ public class DiscoveryTools
 
     private readonly ProxyManager _proxy = proxy
         ?? throw new ArgumentNullException(nameof(proxy));
+
+    private readonly ProxySettings _proxySettings = proxySettings
+        ?? throw new ArgumentNullException(nameof(proxySettings));
 
     private readonly ProbeService _probeService = probeService
         ?? throw new ArgumentNullException(nameof(probeService));
@@ -299,8 +303,9 @@ public class DiscoveryTools
             routingBindingJson, overrideJson
         );
 
-        var domain = config?.DomainPattern
-            .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
+        var domain = config is not null
+            ? CapabilityResolver.ResolveDomain(config.DomainPattern, app.Slug, _proxySettings.BaseDomain)
+            : null;
 
         var routeEnabled = config is not null && _proxy.IsRouteEnabled(app.Slug);
 

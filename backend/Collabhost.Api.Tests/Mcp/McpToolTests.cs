@@ -77,9 +77,10 @@ public class McpToolTests(ApiFixture fixture)
         var typeStore = _services.GetRequiredService<TypeStore>();
         var supervisor = _services.GetRequiredService<ProcessSupervisor>();
         var proxy = _services.GetRequiredService<ProxyManager>();
+        var proxySettings = _services.GetRequiredService<ProxySettings>();
         var probeService = _services.GetRequiredService<ProbeService>();
 
-        return new DiscoveryTools(appStore, typeStore, supervisor, proxy, probeService);
+        return new DiscoveryTools(appStore, typeStore, supervisor, proxy, proxySettings, probeService);
     }
 
     private LifecycleTools CreateLifecycleTools()

@@ -46,6 +46,7 @@ public static class AppEndpoints
         TypeStore typeStore,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
+        ProxySettings proxySettings,
         CancellationToken ct
     )
     {
@@ -76,8 +77,9 @@ public static class AppEndpoints
                 );
             }
 
-            var domain = routingConfiguration?.DomainPattern
-                .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
+            var domain = routingConfiguration is not null
+                ? CapabilityResolver.ResolveDomain(routingConfiguration.DomainPattern, app.Slug, proxySettings.BaseDomain)
+                : null;
 
             var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
@@ -121,6 +123,7 @@ public static class AppEndpoints
         TypeStore typeStore,
         ProcessSupervisor supervisor,
         ProxyManager proxy,
+        ProxySettings proxySettings,
         ProbeService probeService,
         CancellationToken ct
     )
@@ -154,8 +157,9 @@ public static class AppEndpoints
             );
         }
 
-        var domain = routingConfiguration?.DomainPattern
-            .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
+        var domain = routingConfiguration is not null
+            ? CapabilityResolver.ResolveDomain(routingConfiguration.DomainPattern, app.Slug, proxySettings.BaseDomain)
+            : null;
 
         var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 

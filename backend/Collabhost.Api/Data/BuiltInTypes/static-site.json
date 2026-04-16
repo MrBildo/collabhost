@@ -7,7 +7,7 @@
       "location": ""
     },
     "routing": {
-      "domainPattern": "{slug}.collab.internal",
+      "domainPattern": "{slug}.{baseDomain}",
       "serveMode": "FileServer",
       "spaFallback": false
     }

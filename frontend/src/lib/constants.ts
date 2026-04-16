@@ -1,7 +1,5 @@
 const API_BASE = '/api/v1'
 
-const BASE_DOMAIN = 'collab.internal'
-
 const POLL_INTERVALS = {
   apps: 3_000,
   appDetail: 3_000,
@@ -16,4 +14,4 @@ const AUTH_STORAGE_KEY = 'collabhost-user-key'
 
 const LOG_BUFFER_CAP = 1_000
 
-export { API_BASE, BASE_DOMAIN, POLL_INTERVALS, AUTH_STORAGE_KEY, LOG_BUFFER_CAP }
+export { API_BASE, POLL_INTERVALS, AUTH_STORAGE_KEY, LOG_BUFFER_CAP }

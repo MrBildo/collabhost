@@ -407,7 +407,7 @@ public class ConfigurationTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Lists all proxy routes currently configured in Caddy. Each route shows the app slug, external domain ({slug}.collab.internal), upstream target, and whether the route is active. Use this to verify route configuration after starting or stopping an app.")]
+    [Description("Lists all proxy routes currently configured in Caddy. Each route shows the app slug, external domain ({slug}.<configured-base-domain>), upstream target, and whether the route is active. Use this to verify route configuration after starting or stopping an app.")]
     public async Task<CallToolResult> ListRoutesAsync(CancellationToken ct)
     {
         var apps = await _appStore.ListAsync(ct);
@@ -439,8 +439,10 @@ public class ConfigurationTools
                 continue;
             }
 
-            var domain = routingConfiguration.DomainPattern
-                .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
+            var domain = CapabilityResolver.ResolveDomain
+            (
+                routingConfiguration.DomainPattern, app.Slug, _proxySettings.BaseDomain
+            );
 
             var process = _supervisor.GetProcess(app.Id);
 

@@ -1,5 +1,6 @@
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
+using Collabhost.Api.Proxy;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -11,13 +12,36 @@ namespace Collabhost.Api.Tests.Data;
 
 public class TypeStoreTests
 {
-    private static TypeStore CreateTypeStore() =>
-        new
+    private static readonly ProxySettings _defaultProxySettings = new()
+    {
+        BaseDomain = "collab.internal",
+        BinaryPath = "caddy",
+        ListenAddress = ":443",
+        CertLifetime = "168h",
+        SelfPort = 58400
+    };
+
+    private static TypeStore CreateTypeStore(string? baseDomain = null)
+    {
+        var proxySettings = baseDomain is null
+            ? _defaultProxySettings
+            : new ProxySettings
+            {
+                BaseDomain = baseDomain,
+                BinaryPath = "caddy",
+                ListenAddress = ":443",
+                CertLifetime = "168h",
+                SelfPort = 58400
+            };
+
+        return new
         (
             new EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-usertypes-" + Guid.NewGuid().ToString("N", System.Globalization.CultureInfo.InvariantCulture)) },
+            proxySettings,
             NullLogger<TypeStore>.Instance
         );
+    }
 
     [Fact]
     public async Task LoadAsync_LoadsAllFiveBuiltInTypes()
@@ -68,52 +92,6 @@ public class TypeStoreTests
 
         type.ShouldNotBeNull();
         type.DisplayName.ShouldBe(".NET Application");
-    }
-
-    [Fact]
-    public async Task LoadAsync_DotNetApp_HasMetadata()
-    {
-        var store = CreateTypeStore();
-
-        await store.LoadAsync();
-
-        var type = store.GetBySlug("dotnet-app");
-
-        type.ShouldNotBeNull();
-        type.Metadata.ShouldNotBeNull();
-        type.Metadata!.Runtime.ShouldNotBeNull();
-        type.Metadata.Runtime!.Name.ShouldBe(".NET");
-        type.Metadata.Runtime.Version.ShouldBe("10");
-        type.Metadata.Runtime.TargetFramework.ShouldBe("net10.0");
-    }
-
-    [Fact]
-    public async Task LoadAsync_NodeJsApp_HasMetadata()
-    {
-        var store = CreateTypeStore();
-
-        await store.LoadAsync();
-
-        var type = store.GetBySlug("nodejs-app");
-
-        type.ShouldNotBeNull();
-        type.Metadata.ShouldNotBeNull();
-        type.Metadata!.Runtime.ShouldNotBeNull();
-        type.Metadata.Runtime!.Name.ShouldBe("Node.js");
-        type.Metadata.Runtime.PackageManager.ShouldBe("npm");
-    }
-
-    [Fact]
-    public async Task LoadAsync_StaticSite_HasNoMetadata()
-    {
-        var store = CreateTypeStore();
-
-        await store.LoadAsync();
-
-        var type = store.GetBySlug("static-site");
-
-        type.ShouldNotBeNull();
-        type.Metadata.ShouldBeNull();
     }
 
     [Fact]
@@ -217,5 +195,27 @@ public class TypeStoreTests
         envJson.ShouldContain("DOTNET_ENVIRONMENT");
         envJson.ShouldContain("DOTNET_NOLOGO");
         envJson.ShouldContain("DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION");
+    }
+
+    [Theory]
+    [InlineData("dotnet-app")]
+    [InlineData("nodejs-app")]
+    [InlineData("static-site")]
+    [InlineData("executable")]
+    public async Task LoadAsync_RoutingBinding_DomainPattern_ContainsConfiguredBaseDomain(string appTypeSlug)
+    {
+        var store = CreateTypeStore(baseDomain: "test.internal");
+
+        await store.LoadAsync();
+
+        var bindings = store.GetBindings(appTypeSlug);
+
+        bindings.ShouldNotBeNull();
+        bindings.ShouldContainKey("routing");
+
+        var routingJson = bindings["routing"];
+
+        routingJson.ShouldContain("test.internal");
+        routingJson.ShouldNotContain("collab.internal");
     }
 }

@@ -40,7 +40,6 @@ public static class AppTypeEndpoints
                     t.Slug,
                     t.DisplayName,
                     t.Description,
-                    BuildTags(t),
                     t.IsBuiltIn
                 )
             )
@@ -64,8 +63,6 @@ public static class AppTypeEndpoints
 
         var bindings = typeStore.GetBindings(slug);
 
-        var tags = BuildTags(appType);
-
         var sections = BuildRegistrationSections(appType, bindings);
 
         var schema = new RegistrationSchema
@@ -76,7 +73,6 @@ public static class AppTypeEndpoints
                 appType.DisplayName,
                 appType.Description
             ),
-            tags,
             sections
         );
 
@@ -234,43 +230,6 @@ public static class AppTypeEndpoints
         {
             return false;
         }
-    }
-
-    private static List<AppTag> BuildTags(AppType appType)
-    {
-        var tags = new List<AppTag>();
-
-        if (appType.Metadata is null)
-        {
-            return tags;
-        }
-
-        var metadata = appType.Metadata;
-
-        if (metadata.Runtime is not null)
-        {
-            var label = !string.IsNullOrWhiteSpace(metadata.Runtime.Version)
-                ? $"{metadata.Runtime.Name} {metadata.Runtime.Version}"
-                : metadata.Runtime.Name;
-
-            tags.Add(new AppTag(label, "runtime"));
-
-            if (!string.IsNullOrWhiteSpace(metadata.Runtime.PackageManager))
-            {
-                tags.Add(new AppTag(metadata.Runtime.PackageManager, "tooling"));
-            }
-        }
-
-        if (metadata.Framework is not null)
-        {
-            var label = !string.IsNullOrWhiteSpace(metadata.Framework.Version)
-                ? $"{metadata.Framework.Name} {metadata.Framework.Version}"
-                : metadata.Framework.Name;
-
-            tags.Add(new AppTag(label, "framework"));
-        }
-
-        return tags;
     }
 
     private static IReadOnlyList<DiscoveryStrategy> GetValidStrategiesForAppType(string appTypeSlug) =>
