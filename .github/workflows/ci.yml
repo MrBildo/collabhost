@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, 'release/*']
+
+jobs:
+  build-and-format:
+    name: Build & Format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Collabhost.slnx
+      - name: Build
+        run: dotnet build Collabhost.slnx --no-incremental --no-restore
+      - name: Format check
+        run: dotnet format Collabhost.slnx --verify-no-changes --no-restore
+
+  api-tests:
+    name: API Tests (${{ matrix.os }})
+    needs: build-and-format
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Collabhost.slnx
+      - name: Build
+        run: dotnet build Collabhost.slnx --no-incremental --no-restore
+      - name: Test
+        run: dotnet test Collabhost.Api.Tests/Collabhost.Api.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=api-test-results.trx"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-results-${{ matrix.os }}
+          path: backend/Collabhost.Api.Tests/TestResults/api-test-results.trx
+
+  smoke-tests:
+    name: Smoke Tests (Aspire)
+    needs: build-and-format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ASPIRE_ALLOW_UNSECURED_TRANSPORT: true
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Collabhost.slnx
+      - name: Build
+        run: dotnet build Collabhost.slnx --no-incremental --no-restore
+      - name: Trust dev certificate
+        run: |
+          EXIT_CODE=0
+          dotnet dev-certs https --trust || EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ] && [ $EXIT_CODE -ne 4 ]; then
+            echo "dotnet dev-certs https --trust failed with exit code $EXIT_CODE"
+            exit $EXIT_CODE
+          fi
+        env:
+          WSL_INTEROP: ""
+      - name: Test
+        run: dotnet test Collabhost.AppHost.Tests/Collabhost.AppHost.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=smoke-test-results.trx"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: backend/Collabhost.AppHost.Tests/TestResults/smoke-test-results.trx
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Format check
+        run: npm run format:check
+      - name: Type check
+        run: npx tsc -b
+      - name: Test
+        run: npm run test
+      - name: Build
+        run: npx vite build
