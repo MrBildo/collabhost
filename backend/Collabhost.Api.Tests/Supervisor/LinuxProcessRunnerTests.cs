@@ -28,6 +28,51 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         }
     }
 
+    // Process.HasExited becomes true when the OS process terminates, but the
+    // OutputDataReceived event is delivered asynchronously from the pipe read
+    // thread. On CI runners under load, the event can arrive after HasExited
+    // is already true. This helper polls the captured output collection until
+    // the expected token appears or the timeout expires.
+    private static async Task WaitForOutputAsync
+    (
+        ConcurrentBag<string> captured,
+        string expectedToken,
+        int timeoutSeconds = 10
+    )
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (captured.Any(line => line.Contains(expectedToken, StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+    }
+
+    private static async Task WaitForOutputAsync<T>
+    (
+        ConcurrentBag<T> captured,
+        Func<T, bool> predicate,
+        int timeoutSeconds = 10
+    )
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (captured.Any(predicate))
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+    }
+
     [SkippableFact]
     [Trait("Platform", "linux")]
     public async Task Start_CapturesStdoutFromProcess()
@@ -48,6 +93,7 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         using var handle = _runner.Start(configuration);
 
         await WaitForExitAsync(handle);
+        await WaitForOutputAsync(captured, "hello-stdout");
 
         handle.HasExited.ShouldBeTrue();
 
@@ -74,6 +120,7 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         using var handle = _runner.Start(configuration);
 
         await WaitForExitAsync(handle);
+        await WaitForOutputAsync(captured, entry => entry.Line.Contains("hello-stderr", StringComparison.Ordinal));
 
         handle.HasExited.ShouldBeTrue();
 
@@ -270,6 +317,7 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         using var handle = _runner.Start(configuration);
 
         await WaitForExitAsync(handle);
+        await WaitForOutputAsync(captured, "graceful-shutdown-test");
 
         handle.HasExited.ShouldBeTrue();
 
@@ -294,6 +342,8 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         );
 
         var result = await _runner.RunToCompletionAsync(configuration, TimeSpan.FromSeconds(10));
+
+        await WaitForOutputAsync(captured, "run-to-completion-test");
 
         result.ExitCode.ShouldBe(0);
         result.TimedOut.ShouldBeFalse();
@@ -422,6 +472,8 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         using var handle = _runner.Start(configuration);
 
         await WaitForExitAsync(handle);
+        await WaitForOutputAsync(captured, entry => entry.Line.Contains("setsid-stdout", StringComparison.Ordinal));
+        await WaitForOutputAsync(captured, entry => entry.Line.Contains("setsid-stderr", StringComparison.Ordinal));
 
         handle.HasExited.ShouldBeTrue();
 
@@ -457,6 +509,7 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         using var handle = _runner.Start(configuration);
 
         await WaitForExitAsync(handle);
+        await WaitForOutputAsync(captured, "env-propagation-verified");
 
         handle.HasExited.ShouldBeTrue();
 

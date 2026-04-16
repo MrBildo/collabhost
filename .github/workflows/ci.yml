@@ -58,6 +58,7 @@ jobs:
     name: Smoke Tests (Aspire)
     needs: build-and-format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       ASPIRE_ALLOW_UNSECURED_TRANSPORT: true
     defaults:

@@ -45,6 +45,23 @@ public class AppHostFixture : IAsyncLifetime
             logging.SetMinimumLevel(LogLevel.Warning);
         });
 
+        // Accept untrusted dev certificates for AppHost-level health checks in CI.
+        // Aspire's WithHttpHealthCheck polls the resource's HTTPS endpoint from inside
+        // the AppHost process. On CI runners the Aspire dev cert is not trusted, so the
+        // health check fails with UntrustedRoot every 5 seconds and the test hangs until
+        // the WaitForResourceHealthyAsync timeout expires. Accepting any server certificate
+        // here allows the health check to succeed over HTTPS without a trusted cert.
+        appHost.Services.ConfigureHttpClientDefaults(http =>
+        {
+#pragma warning disable MA0039 // Intentional: test fixture must accept untrusted Aspire dev certs in CI
+            http.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback =
+                    HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            });
+#pragma warning restore MA0039
+        });
+
         _app = await appHost.BuildAsync();
 
         await _app.StartAsync();
