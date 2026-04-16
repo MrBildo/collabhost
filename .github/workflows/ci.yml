@@ -73,6 +73,16 @@ jobs:
         run: dotnet restore Collabhost.slnx
       - name: Build
         run: dotnet build Collabhost.slnx --no-incremental --no-restore
+      - name: Trust dev certificate
+        run: |
+          EXIT_CODE=0
+          dotnet dev-certs https --trust || EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ] && [ $EXIT_CODE -ne 4 ]; then
+            echo "dotnet dev-certs https --trust failed with exit code $EXIT_CODE"
+            exit $EXIT_CODE
+          fi
+        env:
+          WSL_INTEROP: ""
       - name: Test
         run: dotnet test Collabhost.AppHost.Tests/Collabhost.AppHost.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=smoke-test-results.trx"
       - name: Upload test results
