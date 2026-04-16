@@ -8,7 +8,7 @@ public static class McpServerInstructions
         Apps are identified by slug (lowercase, hyphenated, e.g. 'my-api-server').
         Five app types: dotnet-app, nodejs-app, static-site, executable, system-service.
         Static sites toggle Caddy routing on start/stop -- no process involved.
-        Each running app gets a route: {slug}.collab.internal.
+        Each running app gets a route: {slug}.<configured-base-domain>.
 
         Workflows:
         - Discovery: list_apps first to get slugs, then get_app for full details including

@@ -83,6 +83,7 @@ public class RouteExplicitStateTests
         (
             new Collabhost.Api.Events.EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-notexist") },
+            new ProxySettings { BaseDomain = "collab.internal", BinaryPath = "caddy", ListenAddress = ":443", CertLifetime = "168h", SelfPort = 58400 },
             NullLogger<TypeStore>.Instance
         );
         var capabilityStore = new CapabilityStore(typeStore, appStore, NullLogger<CapabilityStore>.Instance);

@@ -56,8 +56,10 @@ public static class ProxyEndpoints
                 routingBindingJson, overrideJson
             );
 
-            var domain = routingConfiguration.DomainPattern
-                .Replace("{slug}", app.Slug, StringComparison.OrdinalIgnoreCase);
+            var domain = CapabilityResolver.ResolveDomain
+            (
+                routingConfiguration.DomainPattern, app.Slug, settings.BaseDomain
+            );
 
             var process = supervisor.GetProcess(app.Id);
 

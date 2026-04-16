@@ -311,4 +311,28 @@ public class CapabilityResolverTests
         errors.Count.ShouldBe(1);
         errors[0].ShouldContain("Invalid key");
     }
+
+    [Fact]
+    public void ResolveDomain_ReplacesSlugAndBaseDomain()
+    {
+        var result = CapabilityResolver.ResolveDomain("{slug}.{baseDomain}", "my-app", "test.internal");
+
+        result.ShouldBe("my-app.test.internal");
+    }
+
+    [Fact]
+    public void ResolveDomain_CustomDomainWithoutTokens_PassesThrough()
+    {
+        var result = CapabilityResolver.ResolveDomain("custom.example.com", "my-app", "test.internal");
+
+        result.ShouldBe("custom.example.com");
+    }
+
+    [Fact]
+    public void ResolveDomain_SlugOnlyToken_ReplacesSlug()
+    {
+        var result = CapabilityResolver.ResolveDomain("{slug}.collab.internal", "my-app", "test.internal");
+
+        result.ShouldBe("my-app.collab.internal");
+    }
 }
