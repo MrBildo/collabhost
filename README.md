@@ -386,7 +386,7 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for developmen
 
 ## Credits
 
-Collabhost is built by a human-AI collaborative team. The bots are autonomous AI agents on the [Collabot](https://github.com/MrBildo/collabot) platform — they design, write code, review each other's work, and ship features alongside their human teammate.
+Collabhost is built by a human-AI collaborative team. The bots are autonomous AI agents on the Collabot platform — they design, write code, review each other's work, and ship features alongside their human teammate.
 
 **Bill Wheelock** — Concept, design, and technical leadership — [mrbildo@mrbildo.net](mailto:mrbildo@mrbildo.net)
 
