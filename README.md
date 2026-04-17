@@ -5,7 +5,7 @@
 <h1 align="center">Collabhost</h1>
 
 <p align="center">
-  A self-hosted control plane for your local services, MCP servers, and AI agent workflows.<br/>
+  A self-hosted control plane for your workstation — operated from a dashboard, or driven by agents through a built-in MCP server.<br/>
   Cross-platform. Windows and Linux.
 </p>
 
@@ -20,9 +20,11 @@
 
 ## What is Collabhost?
 
-Collabhost gives you a single dashboard to manage everything running on your machine — .NET services, Node.js apps, MCP servers, static sites, and arbitrary executables. Register an app, point it at a directory, and Collabhost handles process supervision, reverse proxy routing, log aggregation, and crash recovery. No containers. No YAML. No cloud account.
+Collabhost gives you a single control plane for everything running on your machine — .NET services, Node.js apps, static sites, MCP servers, and arbitrary executables. Register an app, point it at a directory, and Collabhost handles process supervision, reverse proxy routing, log aggregation, and crash recovery. No containers. No YAML. No cloud account.
 
-**Built for AI agent workflows.** Collabhost is designed with AI agents as first-class operators. Manage MCP servers alongside your application stack, provide agents with API access through scoped user keys, and give both humans and agents a unified control plane for the services they depend on. If you're building an AI harness, agent framework, or multi-agent system that needs to manage local infrastructure, Collabhost is the platform layer.
+**Two first-class audiences.** An operator runs Collabhost from a War Machine dashboard — tables, log streams, inline actions. An agent runs Collabhost through a built-in MCP server — the same surface, exposed as tools over Streamable HTTP. Register an app from the UI or from Claude Code. Start, stop, tail logs, update settings. Humans and agents share one platform, one auth model, and one source of truth.
+
+If you're building an AI harness, agent framework, or multi-agent system that needs to manage local infrastructure, Collabhost is the layer that sits underneath. See [For Agents](#for-agents) for MCP configuration.
 
 It runs natively on **Windows** and **Linux** with platform-specific process management — no WSL required on Windows, no emulation layer on Linux. Think of it as a lightweight, self-hosted Heroku for your workstation — a control plane that stays out of your way until something goes wrong.
 
@@ -34,11 +36,15 @@ It runs natively on **Windows** and **Linux** with platform-specific process man
 
 ## Features
 
-**Process supervision** — Start, stop, restart, and kill managed processes with platform-native implementations for both Windows and Linux. On Windows: processes launch via `CreateProcess` with dedicated process groups, graceful shutdown via `GenerateConsoleCtrlEvent`, and orphan protection through Win32 Job Objects that guarantee child process cleanup even if Collabhost crashes. On Linux: process groups with `SIGTERM`/`SIGKILL` lifecycle and cgroup-based containment. Crash detection with automatic restart and configurable exponential backoff. Stdout/stderr captured into in-memory ring buffers with streaming log viewers.
+**Built-in MCP server** — A Model Context Protocol endpoint at `/mcp` exposes the operator surface as tools. 18 tools across discovery, lifecycle, configuration, registration, and activity. Agents register apps, start and stop processes, tail logs, update settings, and browse the host filesystem — programmatically, over Streamable HTTP. Role-aware: administrators see everything, agents see 17 of 18 tools (everything except `delete_app`). See [For Agents](#for-agents) for setup.
+
+**Operator dashboard** — Real-time stats, app table with inline actions, live activity feed, and streaming log viewers. Everything an operator needs on one screen. The War Machine design system — dark, monospace, industrial — is built for density and quick action.
+
+**Process supervision** — Start, stop, restart, and kill managed processes with platform-native implementations for both Windows and Linux. On Windows: processes launch via `CreateProcess` with dedicated process groups, graceful shutdown via `GenerateConsoleCtrlEvent`, and orphan protection through Win32 Job Objects that guarantee child process cleanup even if Collabhost crashes. On Linux: process groups with `SIGTERM`/`SIGKILL` lifecycle and cgroup-based containment. Crash detection with automatic restart and configurable exponential backoff. Stdout/stderr captured into in-memory ring buffers.
 
 **Reverse proxy** — Every app gets a subdomain route automatically configured through [Caddy](https://caddyserver.com/). HTTPS via Caddy's internal CA. Routes sync on process state changes — no manual proxy config. The base domain is configurable in `appsettings.json`.
 
-**Schema-driven configuration** — App settings are defined by capability schemas. New capabilities surface in the UI without frontend changes. Override defaults per-app, see what's customized vs. inherited.
+**Schema-driven configuration** — App settings are defined by capability schemas. New capabilities surface in the UI and through MCP without frontend or tool changes. Override defaults per-app, see what's customized vs. inherited.
 
 **Multi-runtime support** — Five built-in app types out of the box:
 
@@ -50,11 +56,9 @@ It runs natively on **Windows** and **Linux** with platform-specific process man
 | `executable` | Arbitrary binaries and scripts |
 | `system-service` | Platform services managed by Collabhost itself |
 
-**Operational dashboard** — Real-time stats, app table with inline actions, and a live activity feed. Everything an operator needs on one screen.
+**User management** — Header-based auth with administrator and agent roles. One-time API key reveal on creation. The same key authenticates the dashboard, the REST API, and the MCP server — mint a key for an agent and it can operate the platform.
 
-**User management** — Header-based auth with admin and agent roles. One-time API key reveal on creation. Role-based access control for the dashboard.
-
-**Technology probing** — Automatic detection of runtimes, frameworks, and dependencies for registered apps. No manual tagging required.
+**Technology probing** — Automatic detection of runtimes, frameworks, and dependencies for registered apps. No manual tagging required. Surfaces in the dashboard and in `get_app` MCP responses.
 
 ## A tour
 
@@ -189,7 +193,72 @@ The frontend dev server proxies API requests to `http://localhost:58400` automat
 
 ### Register your first app
 
-Open the dashboard and click **Register App**. Pick an app type, point it at a directory, and hit create. Collabhost auto-discovers the start command and allocates a port. Click **Start** and watch the logs stream in.
+**From the dashboard:** Open the dashboard and click **Register App**. Pick an app type, point it at a directory, and hit create. Collabhost auto-discovers the start command and allocates a port. Click **Start** and watch the logs stream in.
+
+**From an agent:** See [For Agents](#for-agents) below. An agent calls `list_app_types`, `browse_filesystem`, `detect_strategy`, `register_app`, and `start_app` — the same flow, scripted.
+
+## For Agents
+
+Collabhost exposes an MCP (Model Context Protocol) server so agents can operate the platform directly — no custom HTTP client, no REST adapter. If your agent speaks MCP, it speaks Collabhost.
+
+### Endpoint
+
+| | |
+|---|---|
+| URL | `http://localhost:58400/mcp` |
+| Transport | Streamable HTTP (stateless) |
+| Auth | `X-User-Key` header with a user's ULID key |
+| Server name | `collabhost` |
+
+The API port defaults to `58400` in `backend/Collabhost.Api/Properties/launchSettings.json`. Change it there if it conflicts with something else on your host.
+
+### Configure an agent client
+
+Claude Code, and any other client that reads project-scoped `.mcp.json`, connects with this config:
+
+```json
+{
+  "mcpServers": {
+    "collabhost": {
+      "type": "http",
+      "url": "http://localhost:58400/mcp",
+      "headers": {
+        "X-User-Key": "<your-agent-key>"
+      }
+    }
+  }
+}
+```
+
+Drop that in your project's `.mcp.json` (or the equivalent for your client) and your agent has Collabhost as a tool surface. Other MCP-speaking clients typically accept the same three pieces of information in their own configuration format: transport type (`http`), endpoint URL, and the `X-User-Key` header.
+
+### Mint an agent key
+
+1. Sign in to the dashboard as an administrator.
+2. Open **Users** from the topbar.
+3. Click **Create User**, pick the **Agent** role, give it a name, and create.
+4. The key is revealed **once** on creation. Copy it into your MCP config. If you lose it, deactivate the user and mint a new one.
+
+### Roles
+
+| Role | Access |
+|------|--------|
+| Administrator | Full tool surface (18 tools) plus user management through the REST API. |
+| Agent | 17 of 18 tools. Everything except `delete_app` — deletion is an administrator-only action. |
+
+### Tool surface
+
+18 tools, grouped by workflow:
+
+- **Discovery (4)** — `get_system_status`, `list_apps`, `get_app`, `list_app_types`. The agent's starting point: what's on the platform, what's running, what can it register.
+- **Lifecycle (5)** — `start_app`, `stop_app`, `restart_app`, `kill_app`, `get_logs`. Full process control. `get_logs` is token-budgeted for LLM context.
+- **Configuration (4)** — `get_settings`, `update_settings`, `list_routes`, `reload_proxy`. Read and change schema-driven settings, inspect Caddy routes.
+- **Registration (4)** — `register_app`, `delete_app`, `browse_filesystem`, `detect_strategy`. End-to-end app setup. `browse_filesystem` lets agents locate install directories interactively; `detect_strategy` reports what Collabhost can auto-discover for a given path and app type.
+- **Activity (1)** — `list_events`. Recent state changes and operator actions, filterable by app, event type, or category.
+
+Each tool has a full description, parameter schema, and read-only/destructive/idempotent annotations. The MCP server also ships `ServerInstructions` describing common workflows (registration, lifecycle, diagnostics) so a freshly-connected agent has a usable mental model without reading the source.
+
+Apps are identified by **slug** throughout (e.g. `my-api-server`), not by ULID. Agents use the same identifier operators see in the URL bar.
 
 ## Tech Stack
 
@@ -248,13 +317,14 @@ npm run lint
 
 ### Architecture
 
-Collabhost has three layers:
+Collabhost has four layers:
 
 - **Caddy** is the front door — edge reverse proxy, TLS termination, routing
-- **ASP.NET Core** is the control tower — app registry, process supervision, auth
+- **ASP.NET Core** is the control tower — app registry, process supervision, auth, and the MCP endpoint
 - **React dashboard** is the operator console — the *War Machine* design system
+- **MCP server** is the agent console — the same operator surface, exposed as tools at `/mcp`
 
-Apps are registered with a slug, discovered from the filesystem, and supervised as managed processes. Caddy routes are synchronized automatically when process state changes. SQLite handles persistence with zero configuration.
+Apps are registered with a slug, discovered from the filesystem, and supervised as managed processes. Caddy routes are synchronized automatically when process state changes. SQLite handles persistence with zero configuration. The REST API and MCP endpoint are parallel presentation surfaces over the same shared services — anything an operator can do from the dashboard, an agent can do from an MCP client.
 
 ## Contributing
 
