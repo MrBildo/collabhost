@@ -111,7 +111,7 @@ It runs natively on **Windows** and **Linux** with platform-specific process man
   <img src="docs/screenshots/routes.png" alt="Routes table showing Caddy proxy configuration" width="900" />
 </p>
 
-<p align="center"><sub>Routes. Every app gets an automatic <code>{slug}.collab.internal</code> subdomain with HTTPS.</sub></p>
+<p align="center"><sub>Routes. Every app gets an automatic <code>{slug}.collab.internal</code> subdomain with HTTPS (the base domain is configurable).</sub></p>
 
 ## Quick Start
 
@@ -147,12 +147,13 @@ If `caddy` is on your PATH, Collabhost finds it automatically. Otherwise, set th
 ```json
 {
   "Proxy": {
-    "BinaryPath": "/path/to/caddy"
+    "BinaryPath": "/path/to/caddy",
+    "BaseDomain": "collab.internal"
   }
 }
 ```
 
-Collabhost starts Caddy as a managed system-service, allocates its admin port dynamically, and handles all proxy configuration through Caddy's JSON API. No Caddyfile editing required.
+`BaseDomain` defaults to `collab.internal` — change it to use any domain you control. Collabhost starts Caddy as a managed system-service, allocates its admin port dynamically, and handles all proxy configuration through Caddy's JSON API. No Caddyfile editing required.
 
 ### Run with Aspire
 
