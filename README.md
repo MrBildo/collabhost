@@ -10,11 +10,10 @@
 </p>
 
 <p align="center">
-  <!-- TODO: Replace with real badge URLs once CI and package registry are set up -->
-  <a href="#"><img alt="Build" src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" /></a>
+  <a href="https://github.com/MrBildo/collabhost/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/MrBildo/collabhost/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
-  <a href="#"><img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4?style=flat-square" /></a>
-  <a href="#"><img alt="React 18" src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square" /></a>
+  <a href="https://dot.net/download"><img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4?style=flat-square" /></a>
+  <a href="https://nodejs.org/"><img alt="Node 22+" src="https://img.shields.io/badge/node-22%2B-339933?style=flat-square" /></a>
 </p>
 
 ---
@@ -27,36 +26,11 @@ Collabhost gives you a single dashboard to manage everything running on your mac
 
 It runs natively on **Windows** and **Linux** with platform-specific process management — no WSL required on Windows, no emulation layer on Linux. Think of it as a lightweight, self-hosted Heroku for your workstation — a control plane that stays out of your way until something goes wrong.
 
-<!-- SCREENSHOT SECTION
-     ==================
-     Bill — here's what I recommend capturing:
-
-     1. **Hero screenshot** (required)
-        The Dashboard page with 4-6 apps in mixed states (running, stopped, one crashed).
-        This shows the stats strip, app table, and activity feed all at once.
-        Ideal viewport: 1280x800 or 1440x900. Dark theme (it's the only theme).
-        Save as: docs/images/dashboard.png
-
-     2. **App detail screenshot** (optional but high impact)
-        An app detail page for a running Node.js or .NET app showing:
-        - The identity header with status dot and action bar
-        - A few lines of log output in the log viewer
-        - The route indicator showing the proxy domain
-        Save as: docs/images/app-detail.png
-
-     3. **Registration flow** (optional)
-        The two-step registration: type picker grid, then the schema-driven form.
-        Shows that adding a new app is a 30-second operation.
-        Save as: docs/images/register-app.png
-
-     Place screenshots in a docs/images/ directory.
-     Delete this comment block after adding them.
--->
-
 <p align="center">
-  <!-- TODO: Replace with actual screenshot once captured -->
-  <img src="docs/images/dashboard.png" alt="Collabhost Dashboard" width="900" />
+  <img src="docs/screenshots/dashboard.png" alt="Collabhost Dashboard — stats, app table, and activity feed" width="900" />
 </p>
+
+<p align="center"><sub>The dashboard. Process supervision, routing, and a live activity feed on one screen.</sub></p>
 
 ## Features
 
@@ -82,17 +56,74 @@ It runs natively on **Windows** and **Linux** with platform-specific process man
 
 **Technology probing** — Automatic detection of runtimes, frameworks, and dependencies for registered apps. No manual tagging required.
 
+## A tour
+
+<p align="center">
+  <img src="docs/screenshots/apps.png" alt="App list with filter chips and search" width="900" />
+</p>
+
+<p align="center"><sub>App list. Filter by state, search, start and stop with one click.</sub></p>
+
+<br/>
+
+<p align="center">
+  <img src="docs/screenshots/app-detail.png" alt="App detail with log viewer and route info" width="900" />
+</p>
+
+<p align="center"><sub>App detail. PID, port, uptime, route target, and live log streaming.</sub></p>
+
+<br/>
+
+<p align="center">
+  <img src="docs/screenshots/app-detail-tech.png" alt="Technology tab with runtime and dependency detection" width="900" />
+</p>
+
+<p align="center"><sub>Technology probe. Collabhost detects runtimes, frameworks, and notable dependencies automatically.</sub></p>
+
+<br/>
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" alt="Schema-driven app settings" width="900" />
+</p>
+
+<p align="center"><sub>Schema-driven settings. Every capability surfaces here without frontend changes.</sub></p>
+
+<br/>
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/register-type-picker.png" alt="App type picker" />
+      <br/>
+      <sub>Register, step 1. Pick a type.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/screenshots/register-form.png" alt="Schema-driven registration form" />
+      <br/>
+      <sub>Register, step 2. Configure.</sub>
+    </td>
+  </tr>
+</table>
+
+<br/>
+
+<p align="center">
+  <img src="docs/screenshots/routes.png" alt="Routes table showing Caddy proxy configuration" width="900" />
+</p>
+
+<p align="center"><sub>Routes. Every app gets an automatic <code>{slug}.collab.internal</code> subdomain with HTTPS.</sub></p>
+
 ## Quick Start
 
 ### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 22+](https://nodejs.org/) (for the dashboard)
-- [Caddy](https://caddyserver.com/) (recommended -- reverse proxy routing requires it, but Collabhost runs without it)
+- [Caddy](https://caddyserver.com/) (recommended — required for reverse proxy routing; Collabhost runs without it, but apps won't get automatic subdomains)
 
 ### Install Caddy
 
-Collabhost manages Caddy as a supervised process -- you install the binary, Collabhost handles the rest. Without Caddy, everything else works (app management, process supervision, logs, dashboard), but apps won't get automatic `{slug}.collab.internal` subdomain routes.
+Collabhost manages Caddy as a supervised process — you install the binary, Collabhost handles the rest. Without Caddy, everything else works (app management, process supervision, logs, dashboard), but apps won't get automatic `{slug}.collab.internal` subdomain routes.
 
 **Windows:**
 
@@ -139,7 +170,7 @@ cd frontend && npm install && cd ..
 dotnet run --project backend/Collabhost.AppHost
 ```
 
-The Aspire dashboard URL is printed to the console at startup -- open it to see resource health, logs, and traces. The Collabhost dashboard is served by Vite on `http://localhost:5173`. The API runs on `http://localhost:58400`.
+The Aspire dashboard URL is printed to the console at startup — open it to see resource health, logs, and traces. The Collabhost dashboard is served by Vite on `http://localhost:5173`. The API runs on `http://localhost:58400`.
 
 ### Run standalone
 
@@ -164,7 +195,7 @@ Open the dashboard and click **Register App**. Pick an app type, point it at a d
 | Layer | Technology |
 |-------|-----------|
 | Backend | .NET 10, C# Minimal API, EF Core, SQLite |
-| Frontend | React 18, TypeScript, Vite |
+| Frontend | React 19, TypeScript, Vite |
 | Design System | *War Machine* (custom — dark, monospace, industrial) |
 | Reverse Proxy | Caddy (managed via JSON admin API) |
 | Orchestration | .NET Aspire, OpenTelemetry |
@@ -179,6 +210,7 @@ collabhost/
 │   ├── Collabhost.AppHost/        # Aspire orchestrator
 │   ├── Collabhost.Api/            # Main API (registry, supervisor, proxy)
 │   ├── Collabhost.Api.Tests/      # Integration tests
+│   ├── Collabhost.AppHost.Tests/  # Aspire smoke tests
 │   └── Collabhost.ServiceDefaults/
 ├── frontend/
 │   └── src/
@@ -189,6 +221,7 @@ collabhost/
 │       ├── hooks/                 # TanStack Query hooks
 │       ├── log/                   # Log viewer with ANSI rendering
 │       ├── pages/                 # Route pages
+│       ├── probes/                # Technology probe panels
 │       ├── shared/                # Shared UI components
 │       ├── status/                # Status dots, strips, stats
 │       ├── styles/                # *War Machine* design tokens
@@ -228,19 +261,19 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for developmen
 
 ## Credits
 
-Collabhost is built by a human-AI collaborative team. The bots are autonomous AI agents on the [Collabot](https://github.com/MrBildo/collabot) platform --- they design, write code, review each other's work, and ship features alongside their human teammate.
+Collabhost is built by a human-AI collaborative team. The bots are autonomous AI agents on the [Collabot](https://github.com/MrBildo/collabot) platform — they design, write code, review each other's work, and ship features alongside their human teammate.
 
-**Bill Wheelock** -- Concept, design, and technical leadership -- [mrbildo@mrbildo.net](mailto:mrbildo@mrbildo.net)
+**Bill Wheelock** — Concept, design, and technical leadership — [mrbildo@mrbildo.net](mailto:mrbildo@mrbildo.net)
 
-**Bot Nolan** -- Project management -- [nolan@collabot.dev](mailto:nolan@collabot.dev)
+**Bot Nolan** — Project management — [nolan@collabot.dev](mailto:nolan@collabot.dev)
 
-**Bot Dana** -- Logo, *War Machine* theme, frontend design, TypeScript -- [dana@collabot.dev](mailto:dana@collabot.dev)
+**Bot Dana** — Logo, *War Machine* theme, frontend design, TypeScript — [dana@collabot.dev](mailto:dana@collabot.dev)
 
-**Bot Remy** -- Backend design, architecture, C# -- [remy@collabot.dev](mailto:remy@collabot.dev)
+**Bot Remy** — Backend design, architecture, C# — [remy@collabot.dev](mailto:remy@collabot.dev)
 
-**Bot Marcus** -- Backend design, architecture, C# -- [marcus@collabot.dev](mailto:marcus@collabot.dev)
+**Bot Marcus** — Backend design, architecture, C# — [marcus@collabot.dev](mailto:marcus@collabot.dev)
 
-**Bot Kai** -- Tooling, C# -- [kai@collabot.dev](mailto:kai@collabot.dev)
+**Bot Kai** — Tooling, C# — [kai@collabot.dev](mailto:kai@collabot.dev)
 
 ## License
 
