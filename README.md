@@ -6,7 +6,7 @@
 
 <p align="center">
   A self-hosted control plane for your workstation — operated from a dashboard, or driven by agents through a built-in MCP server.<br/>
-  Cross-platform. Windows and Linux.
+  First-class on Windows and Linux. Runs on macOS as best-effort.
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@ Collabhost gives you a single control plane for everything running on your machi
 
 If you're building an AI harness, agent framework, or multi-agent system that needs to manage local infrastructure, Collabhost is the layer that sits underneath. See [For Agents](#for-agents) for MCP configuration.
 
-It runs natively on **Windows** and **Linux** with platform-specific process management — no WSL required on Windows, no emulation layer on Linux. Think of it as a lightweight, self-hosted Heroku for your workstation — a control plane that stays out of your way until something goes wrong.
+It runs natively on **Windows** and **Linux** with platform-specific process management — no WSL required on Windows, no emulation layer on Linux. macOS works too, in a best-effort mode with reduced process containment — see [Platform support](#platform-support) for the tier breakdown. Think of it as a lightweight, self-hosted Heroku for your workstation — a control plane that stays out of your way until something goes wrong.
 
 <p align="center">
   <img src="docs/screenshots/dashboard.png" alt="Collabhost Dashboard — stats, app table, and activity feed" width="900" />
@@ -59,6 +59,18 @@ It runs natively on **Windows** and **Linux** with platform-specific process man
 **User management** — Header-based auth with administrator and agent roles. One-time API key reveal on creation. The same key authenticates the dashboard, the REST API, and the MCP server — mint a key for an agent and it can operate the platform.
 
 **Technology probing** — Automatic detection of runtimes, frameworks, and dependencies for registered apps. No manual tagging required. Surfaces in the dashboard and in `get_app` MCP responses.
+
+## Platform support
+
+Process supervision is the piece of Collabhost that differs most by platform. The control plane itself — API, dashboard, MCP server, SQLite, Caddy integration — runs identically everywhere .NET 10 does. Process containment does not.
+
+| Platform | Tier | How processes are supervised |
+|---|---|---|
+| **Windows** | **First-class** | `CreateProcess` P/Invoke with dedicated process groups, graceful shutdown via `GenerateConsoleCtrlEvent`, orphan protection through Win32 Job Objects. |
+| **Linux** | **First-class** | `setsid` process groups with `SIGTERM`/`SIGKILL` lifecycle, cgroup v2 containment. Orphan-proof. |
+| macOS | *Best-effort* | `FallbackProcessRunner`. Processes start and stop. No Job Objects, no cgroups, no orphan protection — if Collabhost crashes, child processes may outlive it. |
+
+Windows and Linux are the supported deployment targets. macOS is supported for local development and tinkering; don't expect parity.
 
 ## A tour
 
@@ -142,6 +154,12 @@ sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
 sudo apt update && sudo apt install caddy
+```
+
+**macOS** (best-effort — see [Platform support](#platform-support)):
+
+```bash
+brew install caddy
 ```
 
 See [caddyserver.com/docs/install](https://caddyserver.com/docs/install) for other platforms.
