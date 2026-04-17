@@ -209,6 +209,42 @@ cd frontend && npm install && npm run dev
 
 The frontend dev server proxies API requests to `http://localhost:58400` automatically. Open `http://localhost:5173` to use the dashboard.
 
+### Initial admin key
+
+On first run, Collabhost seeds a single Admin user into SQLite. If `Auth:AdminKey` is set in config, that value becomes the key. Otherwise, a ULID is generated automatically. Either way, the key is printed to stdout:
+
+```
+[Collabhost] Admin key: 01JRSB8XH7D4Z2K9N0MFQPTVCW
+```
+
+Copy that key and paste it into the dashboard's API key prompt. It's stored in your browser's `localStorage` — you won't be asked again on that machine.
+
+**Set your own key** (recommended for any persistent deployment). Add it to a gitignored `appsettings.Development.json` alongside the main `appsettings.json`:
+
+```json
+{
+  "Auth": {
+    "AdminKey": "<your-ulid>"
+  }
+}
+```
+
+Or pass it as an environment variable:
+
+```bash
+Auth__AdminKey=<your-ulid> dotnet run --project backend/Collabhost.Api
+```
+
+To generate a fresh ULID:
+
+```bash
+dotnet run --file tools/generate-ids.cs
+```
+
+Requires .NET 10 — the script uses the `#:package` syntax introduced in .NET 10's script runner.
+
+The config key is also a permanent bypass: it authenticates even if the database user is later deleted (for example, after a factory reset). Use the dashboard's **Users** page for day-to-day key management — mint agent keys, deactivate users, and create additional administrator accounts from there.
+
 ### Register your first app
 
 **From the dashboard:** Open the dashboard and click **Register App**. Pick an app type, point it at a directory, and hit create. Collabhost auto-discovers the start command and allocates a port. Click **Start** and watch the logs stream in.
