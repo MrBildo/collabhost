@@ -155,13 +155,10 @@
         background: rgba(245, 158, 11, 0.05);
       }
 
-      /* Muted chip — signals best-effort / lower tier (used for macOS).
-         Dashed border + reduced opacity communicates "present but not first-class". */
-      .chip--muted {
-        color: #555555;
-        border: 1px dashed #333333;
-        background: transparent;
-        opacity: 0.75;
+      /* Subtler chip — macOS is a sibling platform, just slightly dimmer.
+         Same border style, same background. Mild opacity only. */
+      .chip--subtler {
+        opacity: 0.85;
       }
 
       /* Top/bottom corner rules — schematic frame */
@@ -264,7 +261,7 @@
         </div>
         <div class="meta">
           <span class="chip">Windows &middot; Linux</span>
-          <span class="chip chip--muted">macOS &middot; Best-effort</span>
+          <span class="chip chip--subtler">macOS</span>
         </div>
       </div>
     </div>
