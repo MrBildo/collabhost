@@ -131,8 +131,9 @@
       .meta {
         display: flex;
         align-items: center;
-        gap: 20px;
-        margin-top: 8px;
+        gap: 16px;
+        margin-top: 4px;
+        flex-wrap: wrap;
       }
 
       .chip {
@@ -152,6 +153,15 @@
         color: var(--wm-amber);
         border-color: rgba(245, 158, 11, 0.3);
         background: rgba(245, 158, 11, 0.05);
+      }
+
+      /* Muted chip — signals best-effort / lower tier (used for macOS).
+         Dashed border + reduced opacity communicates "present but not first-class". */
+      .chip--muted {
+        color: #555555;
+        border: 1px dashed #333333;
+        background: transparent;
+        opacity: 0.75;
       }
 
       /* Top/bottom corner rules — schematic frame */
@@ -247,10 +257,14 @@
         </div>
         <div class="tagline">Self-hosted application platform</div>
         <div class="meta">
-          <span class="chip chip--accent">.NET 10</span>
+          <span class="chip chip--accent">MCP &middot; Agent-first</span>
+          <span class="chip">.NET 10</span>
           <span class="chip">React 19</span>
           <span class="chip">Caddy</span>
+        </div>
+        <div class="meta">
           <span class="chip">Windows &middot; Linux</span>
+          <span class="chip chip--muted">macOS &middot; Best-effort</span>
         </div>
       </div>
     </div>
