@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Collabhost — Social Preview</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --wm-bg: #111111;
+        --wm-bg-inset: #0d0d0d;
+        --wm-border: #2a2a2a;
+        --wm-text: #d4d4d4;
+        --wm-text-dim: #777777;
+        --wm-text-bright: #f0f0f0;
+        --wm-amber: #f59e0b;
+        --wm-mono: "IBM Plex Mono", "Cascadia Code", ui-monospace, monospace;
+        --wm-sans: "IBM Plex Sans", -apple-system, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        width: 1280px;
+        height: 640px;
+      }
+
+      body {
+        background: var(--wm-bg);
+        color: var(--wm-text);
+        font-family: var(--wm-mono);
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* Subtle grid texture — schematic/engineering aesthetic */
+      .grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(to right, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+        background-size: 40px 40px;
+        pointer-events: none;
+      }
+
+      /* Vignette — keep the center bright, edges recede */
+      .vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse at center,
+          transparent 50%,
+          rgba(0, 0, 0, 0.35) 100%
+        );
+        pointer-events: none;
+      }
+
+      /* Amber glow behind the host node */
+      .glow {
+        position: absolute;
+        top: 50%;
+        left: 330px;
+        width: 280px;
+        height: 280px;
+        transform: translate(-50%, -50%);
+        background: radial-gradient(
+          circle,
+          rgba(245, 158, 11, 0.22) 0%,
+          rgba(245, 158, 11, 0.08) 35%,
+          transparent 65%
+        );
+        pointer-events: none;
+      }
+
+      .stage {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        padding: 0 80px;
+        gap: 72px;
+      }
+
+      .mark {
+        flex-shrink: 0;
+        width: 280px;
+        height: 280px;
+      }
+
+      .content {
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+      }
+
+      .wordmark {
+        font-family: var(--wm-mono);
+        font-weight: 500;
+        font-size: 128px;
+        line-height: 1;
+        letter-spacing: -0.01em;
+      }
+
+      .wordmark .collab {
+        color: var(--wm-text-dim);
+      }
+
+      .wordmark .host {
+        color: var(--wm-amber);
+      }
+
+      .tagline {
+        font-family: var(--wm-mono);
+        font-weight: 400;
+        font-size: 32px;
+        color: var(--wm-text);
+        letter-spacing: 0.02em;
+      }
+
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        margin-top: 8px;
+      }
+
+      .chip {
+        font-family: var(--wm-mono);
+        font-weight: 500;
+        font-size: 16px;
+        color: var(--wm-text-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        padding: 8px 14px;
+        border: 1px solid var(--wm-border);
+        border-radius: 3px;
+        background: var(--wm-bg-inset);
+      }
+
+      .chip--accent {
+        color: var(--wm-amber);
+        border-color: rgba(245, 158, 11, 0.3);
+        background: rgba(245, 158, 11, 0.05);
+      }
+
+      /* Top/bottom corner rules — schematic frame */
+      .rule {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-family: var(--wm-mono);
+        font-weight: 500;
+        font-size: 14px;
+        color: var(--wm-text-dim);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .rule--top {
+        top: 40px;
+        left: 80px;
+      }
+
+      .rule--bottom {
+        bottom: 40px;
+        right: 80px;
+      }
+
+      .rule__dot {
+        width: 8px;
+        height: 8px;
+        background: var(--wm-amber);
+        border-radius: 50%;
+        box-shadow: 0 0 12px rgba(245, 158, 11, 0.8);
+      }
+
+      .rule__line {
+        width: 40px;
+        height: 1px;
+        background: var(--wm-border);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grid"></div>
+    <div class="vignette"></div>
+    <div class="glow"></div>
+
+    <div class="rule rule--top">
+      <span class="rule__dot"></span>
+      <span>Collabhost</span>
+      <span class="rule__line"></span>
+      <span style="color: var(--wm-text)">v0.1</span>
+    </div>
+
+    <div class="rule rule--bottom">
+      <span style="color: var(--wm-text)">github.com/MrBildo/collabhost</span>
+      <span class="rule__line"></span>
+      <span>MIT</span>
+    </div>
+
+    <div class="stage">
+      <svg
+        class="mark"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="-180 -180 360 360"
+        aria-hidden="true"
+      >
+        <!-- C bracket — the container shape (gray, heavy) -->
+        <path
+          d="M10,-120 L-120,-120 L-120,120 L10,120"
+          fill="none"
+          stroke="#777777"
+          stroke-width="44"
+          stroke-linecap="square"
+          stroke-linejoin="miter"
+        />
+
+        <!-- H — crossbar + right vertical (amber, lighter weight) -->
+        <path
+          d="M10,0 L140,0 M140,-120 L140,120"
+          fill="none"
+          stroke="#f59e0b"
+          stroke-width="24"
+          stroke-linecap="butt"
+        />
+
+        <!-- Host node — junction where H exits C -->
+        <circle cx="10" cy="0" r="24" fill="#f59e0b" />
+      </svg>
+
+      <div class="content">
+        <div class="wordmark">
+          <span class="collab">collab</span><span class="host">host</span>
+        </div>
+        <div class="tagline">Self-hosted application platform</div>
+        <div class="meta">
+          <span class="chip chip--accent">.NET 10</span>
+          <span class="chip">React 19</span>
+          <span class="chip">Caddy</span>
+          <span class="chip">Windows &middot; Linux</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
