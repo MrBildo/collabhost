@@ -2,11 +2,11 @@
 
 **Card:** #153 -- Implement "Release"
 **Author:** Remy (backend lead)
-**Status:** R2 -- revised post-#156/#159/#158 design work. Ready for Marcus + Dana R2 review.
-**Hard prerequisites:** #156 (production startup -- migrations, seeding, data safety, admin key behavior)
+**Status:** R2.1 -- locked decisions from Marcus + Dana R2 review incorporated. Ready for Bill sign-off.
+**Hard prerequisites:** #156 (production startup -- migrations, seeding, data safety, admin key behavior). Gates **Phase 4b** only; Phase 4a can land without it (R2.1 split).
 **Soft prerequisites:** #158 (admin key UX research -- informs INSTALL.md phrasing only)
-**Related cards:** #104 (future user-configuration / hot-reload surface), #154 (CVE response), #155 (README restructure), #157 (dry-run workflow follow-up), #159 (settings resolution architecture, locked)
-**Date:** 2026-04-18 (R2 revision)
+**Related cards:** #104 (future user-configuration / hot-reload surface), #154 (CVE response), #155 (README restructure), #157 (dry-run workflow follow-up), #159 (settings resolution architecture, locked), **#161** (smart-merge of shipped `appsettings.json` defaults -- parking), **#162** (structured log-directory for pre-crash diagnostics), **#163** (bundled Caddy PATH-collision rename), **#164** (installer transcript UAT), **#165** (`Proxy:SelfPort` cross-validation startup warning)
+**Date:** 2026-04-18 (R2 revision); 2026-04-18 (R2.1 polish)
 
 ---
 
@@ -19,6 +19,9 @@ The shape of the pipeline is: an operator publishes a GitHub Release at tag `v{s
 The bar is higher than Collaboard's shipped pipeline in four places: **one** frontend build shared across matrix legs, bundled Caddy (resolved via a locked precedence chain at startup), SHA256 checksums and verification, and macOS Gatekeeper guidance shipped inside the archive. Everything else inherits Collaboard's "manual release trigger, self-contained single-file publish, GitHub Releases as hosting" skeleton.
 
 ### 1.1 What changed from R1 (reviewer orientation)
+
+**R2.1 note.** This revision is a bounded polish pass incorporating Bill's locked decisions from the R2 review (Marcus + Dana). No new design surface, no new questions. Key landed decisions: `appsettings.json` preserved on reinstall (§2.5, §9.7); env vars framed as per-invocation startup-script overrides (§12); all four Proxy settings gain env-var overrides in Phase 3 (§12.3); `/version` shape reconciled to `{version, commit, platform}` (§8.4); Phase 4 split into 4a (workflow) + 4b (installer, gated on #156) (§18); `proxyState` locked to a 5-value enum with concurrency note (§6.4.2); `Program.cs` env-var precedence one-liner (§12.3.1). All nine R2 questions closed (§17.2). See Appendix A for the R2.1 change highlights.
+
 
 R1 of this spec used "escape hatch" and "fallback chain" vocabulary drawn from infrastructure patterns I'd used elsewhere. Bill's review + the #159 discussion locked a different and cleaner model: **configuration resolves once at startup into a single source of truth**, with a fixed precedence `CLI args > env vars > appsettings.json > hardcoded default`. "Configuration resolution" / "precedence chain" replaces "escape hatch" vocabulary throughout R2. See §2.5.
 
@@ -49,7 +52,7 @@ These are fixed inputs. The spec designs around them -- it does not re-argue the
 | 9 | Archive contents: Collabhost binary (renamed `collabhost[.exe]`, no longer `Collabhost.Api`), Caddy binary, `appsettings.json`, `INSTALL.md`, `LICENSES/caddy-LICENSE`, `LICENSES/caddy-NOTICE`. **(R2 -- binary rename)** |
 | 10 | SHA256 per archive + aggregate `checksums.txt` (standard `sha256sum -c` format). Install scripts verify before extracting. |
 | 11 | Caddy bundled. Pinned version. Per-platform download during workflow. Binary resolution at startup is a single-pass precedence chain: (1) `COLLABHOST_CADDY_PATH` env var, (2) `Proxy:BinaryPath` from `appsettings.json` if set, (3) bundled sidecar next to the Collabhost binary. **Probe A (external-Caddy auto-detection on `localhost:2019`) is dropped** per Bill's ruling. Post-launch admin-API probe with 3-5s timeout; on failure, soft-fail with visibility (proxy subsystem disabled this boot, `proxyState` surfaced in `/status` + dashboard). **(R2)** |
-| 12 | Install mechanism: Aspire model. `install.sh` + `install.ps1`. Download-then-execute primary. Piped `curl \| bash` / `iwr \| iex` documented as shortcut. Location `$HOME/.collabhost/bin`, user-space. OS/arch detection, SHA256 verification, PATH integration. Merge-safe -- preserves `data/`. `dotnet tool install` and `winget` noted as v1+ follow-ups, NOT built here. **(R2 -- `appsettings.Local.json` removed from the preservation list: production deployments use a single `appsettings.json`, not `.Local`; see §12.)** |
+| 12 | Install mechanism: Aspire model. `install.sh` + `install.ps1`. Download-then-execute primary. Piped `curl \| bash` / `iwr \| iex` documented as shortcut. Location `$HOME/.collabhost/bin`, user-space. OS/arch detection, SHA256 verification, PATH integration. Merge-safe -- **preserves `data/` AND `appsettings.json`** (R2.1). `dotnet tool install` and `winget` noted as v1+ follow-ups, NOT built here. **(R2.1 -- `appsettings.json` confirmed preserved; it's the operator's persistent configuration file. Smart-merge of shipped defaults is parking card #161.)** |
 | 13 | Install scripts hosted via GitHub Pages, source `main:/docs`. Public URL `https://mrbildo.github.io/collabhost/install.sh`. Future `docs/CNAME` for `collabhost.dev` noted but not day-1. |
 | 14 | Data path default `./data/` relative to binary. Every operator-configurable path in the shipped settings surface exposes a `COLLABHOST_*` env var override. The full resolution model is in §2.5. **(R2 -- reframed: "env-var floor" → "precedence chain, one source of truth at startup".)** |
 | 15 | Admin key behavior is owned by **card #156** (production startup). Three scenarios (blind first run, configured first run, override on subsequent boot) are specified there. INSTALL.md section is owned here; the *UX surface* (where stdout output lands, recovery if missed, capture format) is owned by **#158**. This spec references both rather than re-specifying. **(R2 -- was "log to stdout per #152, override via `Admin:AuthKey`"; superseded.)** |
@@ -77,7 +80,11 @@ CLI args are future (not introduced in v1). Env vars and `appsettings.json` are 
 
 **The admin key is a documented exception to "env var → resolved value."** It still resolves once at startup, but its destination is the SQLite DB (seed and/or override) rather than the in-memory configuration. Timing is the same (single-pass, startup). Behavior is owned by #156.
 
-**`appsettings.json` vs `appsettings.Local.json` vs `appsettings.Production.json`.** Production deployments use **a single `appsettings.json`** -- the one shipped in the archive, which operators may edit in place. `.Local.json` is a dev-only convention (already used for local overrides during development). There is no `appsettings.Production.json`. Operators who want to keep their changes separate from the shipped file can set env vars instead.
+**`appsettings.json` vs `appsettings.Local.json` vs `appsettings.Production.json`.** Production deployments use **a single `appsettings.json`** -- the one shipped in the archive, which operators may edit in place. `.Local.json` is a dev-only convention (already used for local overrides during development). There is no `appsettings.Production.json`.
+
+**`appsettings.json` is the operator's persistent configuration file.** Reinstall (§9.7) **preserves** it. This implies a discipline: every new shipped key in v0.2.0+ must have a working in-code default so an operator still booting on their old `appsettings.json` is not broken when a new key lands. Smart-merge of shipped defaults into the operator's file is a future improvement (parking card **#161**).
+
+**Env vars as the other customization surface.** Operators who prefer to keep customization out of `appsettings.json` set env vars in the startup script that launches Collabhost (e.g., a `.sh` or `.ps1` wrapper). See §12 for the framing and §13 for operator-facing examples.
 
 **Vocabulary for the rest of the spec.** "Configuration resolution" = the whole single-pass mechanism. "Precedence chain" = the `CLI > env > config > default` ordering. "Env-var override" = the intermediate source in the chain. The term "escape hatch" from R1 is retired.
 
@@ -565,13 +572,18 @@ async function VerifyCaddyReady(caddyClient, logger) -> bool:
 
 1. Log at `LogLevel.Error` with a clear remediation message pointing at `COLLABHOST_CADDY_PATH` and the bundled binary's expected location.
 2. Disable the proxy subsystem for this process lifetime. `ProxyManager` stops attempting to sync routes; no further Caddy admin API calls happen.
-3. **Surface the state externally.** Extend `GET /api/v1/status` to include a `proxyState` field with values:
+3. **Surface the state externally.** Extend `GET /api/v1/status` to include a `proxyState` field. **Locked 5-value enum (R2.1):**
+   - `"starting"` -- default initial value until `VerifyCaddyReady` resolves. Covers the window between `ProxyManager.StartAsync` and probe completion (≤5s). Explicit so queries during startup don't receive null/unknown.
    - `"running"` -- Caddy is up, admin API reachable, route sync is active.
-   - `"disabled"` -- no Caddy binary was resolved (ResolveCaddyBinary returned null).
    - `"failed"` -- Caddy was launched but the admin-API probe failed within the 5s budget. The most operationally actionable state.
+   - `"disabled"` -- no Caddy binary was resolved (ResolveCaddyBinary returned null).
    - `"stopped"` -- proxy app is explicitly not running (operator stopped it via the UI / API).
-   - (Future, if COLLABHOST_CADDY_ADOPT_EXISTING lands: `"external"`.)
+   - (Future, if COLLABHOST_CADDY_ADOPT_EXISTING lands: `"external"`. Not in v1.)
 4. The dashboard's existing `StatusStrip` consumes `proxyState` and shows a visible-but-non-blocking indicator. Dana owns the UI affordance; this spec names the contract.
+
+**Internal representation.** `ProxyManager.CurrentState` is a C# enum (`ProxyState { Starting, Running, Failed, Disabled, Stopped }`). String form is produced only at the endpoint boundary (e.g., JSON converter or `ToString().ToLowerInvariant()`). Keeps the rest of the codebase type-safe; keeps the wire shape stable.
+
+**Concurrency note.** `CurrentState` is written by the proxy startup / probe path (background work started from `StartAsync`) and read by request threads serving `GET /api/v1/status`. Both surfaces must be safe without locking. Use either a `volatile` enum field or `Interlocked.Exchange` for state transitions; reads of an aligned 32-bit enum are atomic in .NET, but `volatile` makes the read visibility ordering explicit for consumers. This is load-bearing -- a torn read that presents `"starting"` forever (missed transition to `"failed"`) would silently defeat the whole visibility contract.
 
 The difference from R1: R1 framed this as "soft-fail and log fatal." Marcus's pushback was that logs aren't visibility -- operators never tail logs during routine runs, and the dashboard currently has no way to say "proxy is dead." `/status`'s `proxyState` field is the visibility contract. This is what makes soft-fail safe.
 
@@ -591,7 +603,7 @@ Concrete list of files this introduces or changes in scope-of-#153. The `IsDevel
 | `backend/Collabhost.Api/Proxy/CaddyResolver.cs` (NEW) | The precedence chain from §6.4.1 as a pure static function. No I/O outside `File.Exists` and env-var reads. No probe against `localhost:2019` (Probe A is dropped). |
 | `backend/Collabhost.Api/Proxy/_Registration.cs` | Wire `CaddyResolver` as the binary resolver for `ProxyAppSeeder`. No changes to `HttpClient<CaddyClient>` setup -- the admin port is still OS-allocated via `PortAllocator` and wired through the bootstrap config. |
 | `backend/Collabhost.Api/Proxy/ProxyManager.cs` | On startup, after Supervisor promotes Caddy to `Running`, await `VerifyCaddyReady` (§6.4.2). On success, proceed to route sync. On failure, set internal proxy state to `"failed"`, emit an error log with remediation text, and stop attempting sync for this process lifetime. Existing 2-second startup-delay code stays for now; can be revisited. |
-| `backend/Collabhost.Api/System/SystemEndpoints.cs` | Add `proxyState` to the `GET /api/v1/status` response (§6.4.2). Values: `"running" \| "disabled" \| "failed" \| "stopped"`. Source: `ProxyManager` exposes a `CurrentState` property (new) that `SystemEndpoints` reads. |
+| `backend/Collabhost.Api/System/SystemEndpoints.cs` | Add `proxyState` to the `GET /api/v1/status` response (§6.4.2). Values: `"starting" \| "running" \| "failed" \| "disabled" \| "stopped"`. Source: `ProxyManager` exposes a `CurrentState` property (new, `ProxyState` enum) that `SystemEndpoints` reads; string form produced only at the endpoint boundary. |
 | `backend/Collabhost.Api/Proxy/ProxyManager.cs` (continuation) | Publicly expose `CurrentState` so `SystemEndpoints` and any dashboard-side consumers can read it. |
 | `backend/Collabhost.Api/Proxy/CaddyClient.cs` | Narrow the blanket `catch` at line ~32 to `HttpRequestException` / `TaskCanceledException` / `OperationCanceledException`. Marcus's O5 finding from R1 -- load-bearing for the new probe. |
 
@@ -683,22 +695,25 @@ Update three call sites to use `VersionInfo.Current`. This also fixes the drift 
 
 ### 8.4 `/api/v1/version` endpoint contract
 
-New endpoint in `SystemEndpoints`:
+New endpoint in `SystemEndpoints`. **Locked shape (per Bill's ruling in #153 description and §17.3 row 6): `/version` is the build-identity endpoint; it carries `version`, `commit`, and `platform`.** `/status` is the runtime-state endpoint and carries `version` + runtime fields (`proxyState`, etc.) -- the two endpoints split diagnostic concerns deliberately.
 
 ```
 GET /api/v1/version
 
 Response 200:
 {
-  "version": "0.1.0"
+  "version":  "0.1.0",
+  "commit":   "abc1234",
+  "platform": "linux-x64"
 }
 ```
 
 - Public, no auth required (like `/api/v1/status`).
-- Returns `VersionInfo.Current`.
-- No extra fields in v1 -- resist the urge to stuff in commit hash, build date, etc. If operators ask later, add as a `detail` sub-object; don't change the shape of `version`.
+- `version` -- from `VersionInfo.Current` (commit-hash suffix stripped per §8.6).
+- `commit` -- the short commit hash parsed from the raw `InformationalVersion` (the suffix that §8.6 strips from `version`). Empty string if the build wasn't stamped with SourceLink.
+- `platform` -- the RID the binary was published for (`linux-x64`, `osx-arm64`, `win-x64`, etc.). Injected at publish time (`-p:RuntimeIdentifier=$RID` already on the command; surface it to the binary via an MSBuild property or a generated constant).
 
-The existing `/api/v1/status` endpoint already returns `version` as part of the `SystemStatus` record. Keep that -- it's useful for the dashboard. The new `/api/v1/version` is a cleaner single-purpose endpoint for scripting ("what version is running?").
+The existing `/api/v1/status` endpoint already returns `version` as part of the `SystemStatus` record. Keep that -- it's useful for the dashboard. The new `/api/v1/version` is a scripting-friendly single-purpose endpoint for build identity, distinct from runtime state on `/status`.
 
 ### 8.5 `--version` CLI flag contract
 
@@ -898,12 +913,12 @@ PowerShell's User PATH modification is non-interactive and requires no admin. Th
 ### 9.7 Merge-safe update behavior
 
 **Preserve on re-run:**
-- `data/` directory (and everything inside) -- the SQLite database, any user-type JSONs once they've been synced, logs (if adopted -- §17.2 Q3).
+- `data/` directory (and everything inside) -- the SQLite database, any user-type JSONs once they've been synced, logs (see card **#162** for the log-directory follow-up).
+- `appsettings.json` -- **locked (R2.1): the operator's persistent configuration file.** Never overwritten on reinstall. The discipline that makes this safe: every new shipped key in v0.2.0+ must have a working in-code default so an operator on an older `appsettings.json` still boots. Smart-merge of shipped defaults into the operator's file is parking card **#161**.
 
 **Overwrite on re-run:**
 - `collabhost` binary
 - `caddy` binary
-- `appsettings.json` (shipped defaults) -- see the "open design tension" note below. Operator overrides in env vars (§12.3) are persistent and not affected by reinstall.
 - `INSTALL.md`
 - `LICENSES/`
 
@@ -924,10 +939,15 @@ ARCHIVE_ROOT="$TMP_EXTRACT/collabhost-${VERSION}-${RID}"
 # Overwrite files that are part of the bundle
 cp "$ARCHIVE_ROOT/collabhost"         "$INSTALL_PATH/" 2>/dev/null || true
 cp "$ARCHIVE_ROOT/caddy"              "$INSTALL_PATH/" 2>/dev/null || true
-cp "$ARCHIVE_ROOT/appsettings.json"   "$INSTALL_PATH/"
 cp "$ARCHIVE_ROOT/INSTALL.md"         "$INSTALL_PATH/"
 mkdir -p "$INSTALL_PATH/LICENSES"
 cp "$ARCHIVE_ROOT/LICENSES/"*         "$INSTALL_PATH/LICENSES/"
+
+# Preserve appsettings.json if it already exists -- operator's persistent file.
+# Only seed from the archive on first install.
+if [ ! -f "$INSTALL_PATH/appsettings.json" ]; then
+  cp "$ARCHIVE_ROOT/appsettings.json" "$INSTALL_PATH/"
+fi
 
 # Preserve data/ -- never copy it from the archive (it isn't in the archive anyway).
 # Just leave it alone on disk.
@@ -947,14 +967,9 @@ fi
 
 The critical property: the archive never contains `data/`, so there's nothing to accidentally overwrite. We just don't touch it on disk. Merge-safe by construction.
 
-**Open design tension: `appsettings.json` on reinstall.** The single-file production model (§2.5) says operators can edit `appsettings.json` in place *or* use env vars. The installer has to choose one of two behaviors, and they're in tension:
+**Reinstall behavior for `appsettings.json` -- locked (R2.1): preserve.** Rationale: env vars are framed as **per-invocation overrides** set in the operator's startup script (§12), not as the primary persistent-customization channel. Operators who choose to keep customization in `appsettings.json` (edit-in-place) need their edits to survive upgrade. The cost: operators on v0.1.0's shipped `appsettings.json` don't automatically pick up a new shipped key in v0.2.0. Mitigation is a discipline rule -- every new shipped key in v0.2.0+ must have a working in-code default so boots don't break. Smart-merge of shipped defaults is parking card **#161**.
 
-- **Option A -- Always overwrite.** Every reinstall brings in the new shipped defaults; operator edits to the file are lost. Safe for the "I only use env vars" operator, destructive for the "I edited the file" operator. Matches Aspire's model.
-- **Option B -- Preserve if-exists.** If `appsettings.json` already exists at the install path, don't overwrite. Protects operator edits but means reinstalls never pick up new shipped defaults (e.g., a new key added in v0.2.0 with a sensible default).
-
-R2 leans **Option A + loud warning in installer stdout and INSTALL.md** -- env vars are the blessed override mechanism, and the shipped defaults need to evolve. But this is a judgment call that affects the operator contract and I want Bill's confirmation before Phase 5 implementation. See §17.2 Q7.
-
-The critical property that is not in tension: `data/` (the SQLite DB, user-type JSONs once DB-seeded, logs) is never touched by the installer. The archive doesn't contain `data/`. Merge-safe for operator data, by construction.
+The critical property: neither `appsettings.json` nor `data/` is touched by the installer on re-run. The archive doesn't contain `data/`. Merge-safe for operator data and operator configuration, by construction.
 
 ### 9.8 Uninstall
 
@@ -1109,7 +1124,26 @@ INSTALL.md updates: "The `install.sh` script runs these commands for you automat
 
 ## 12. Configuration resolution: settings surface and env-var overrides
 
-This section replaces R1's "env var floor" framing. The resolution model is §2.5 (single-pass, `CLI > env > appsettings.json > default`). Here we enumerate which production settings get which env-var overrides, grounded in the **settings audit** (`.agents/temp/settings-audit-shipped.md`) produced during #159.
+This section replaces R1's "env var floor" framing. The resolution model is §2.5 (single-pass, `CLI > env > appsettings.json > default`). Here we enumerate which production settings get which env-var overrides, grounded in the **settings audit** (committed to this branch at `.agents/temp/settings-audit.md` and `.agents/temp/settings-audit-shipped.md`) produced during #159.
+
+**Env-var framing (R2.1 clarification).** Env vars are **per-invocation overrides** that the operator sets in the startup script that launches Collabhost -- a `.sh` or `.ps1` wrapper -- not system-scoped or user-profile-scoped variables. Example shapes:
+
+```bash
+# startup.sh (operator's wrapper on Linux / macOS)
+#!/usr/bin/env bash
+export COLLABHOST_DATA_PATH=/srv/collabhost/data
+export COLLABHOST_PROXY_BASE_DOMAIN=collabhost.lan
+exec ./collabhost
+```
+
+```powershell
+# startup.ps1 (operator's wrapper on Windows)
+$env:COLLABHOST_DATA_PATH = "D:\collabhost\data"
+$env:COLLABHOST_PROXY_BASE_DOMAIN = "collabhost.lan"
+& .\collabhost.exe
+```
+
+Operators who prefer to edit `appsettings.json` in place are equally supported -- reinstall preserves that file (§9.7). The two customization surfaces are complementary: `appsettings.json` for persistent per-host config, env vars for per-invocation overrides layered on top (per the §2.5 precedence chain).
 
 ### 12.1 What the audit found
 
@@ -1150,18 +1184,34 @@ Both `./db/` and `./data/` resolve relative to `AppContext.BaseDirectory`, which
 
 ### 12.3 Env-var overrides shipped in v1
 
-**The canonical list:**
+**The canonical list (R2.1 -- expanded per Bill's ruling on R2-Q4 to cover all four Proxy settings):**
 
 | Env var | Overrides | Shape |
 |---------|-----------|-------|
 | `COLLABHOST_DATA_PATH` | Effective parent directory for SQLite DB (connection string derived from this) | Absolute directory path |
 | `COLLABHOST_USER_TYPES_PATH` | `TypeStore:UserTypesDirectory` | Absolute directory path |
 | `COLLABHOST_CADDY_PATH` | Used by `CaddyResolver` (§6.4.1) at precedence 1 | Absolute file path |
+| `COLLABHOST_PROXY_BASE_DOMAIN` | `Proxy:BaseDomain` | Domain suffix (e.g., `collab.internal`, `collabhost.lan`) |
+| `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec (e.g., `:443`, `:8443`) |
+| `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string (e.g., `168h`, `720h`) |
+| `COLLABHOST_PROXY_SELF_PORT` | `Proxy:SelfPort` | Integer port (1-65535) |
+
+All seven follow the §2.5 precedence: **env > appsettings.json > default**. Read sites are each subsystem's `_Registration.cs`; all reads are explicit top-level env vars (see §12.4 for the rationale against double-underscore nesting).
 
 **What's deliberately not in the list:**
 - `COLLABHOST_TOOLS_PATH` (R1 proposal) -- the setting it would override is dead config being removed.
 - `COLLABHOST_TEMP_PATH` (R1 proposal) -- the temp path is `Path.GetTempPath()/collabhost/`. OS-standard temp handling is correct here; introducing a project-specific env-var override for scratch files adds a surface without a real user need. Revisit if an operator surfaces a real use case.
-- Proxy-specific knobs (`COLLABHOST_PROXY_LISTEN_ADDRESS`, `COLLABHOST_BASE_DOMAIN`, `COLLABHOST_PROXY_SELF_PORT`, `COLLABHOST_CERT_LIFETIME`): these are `appsettings.json` entries today. An operator with a good reason to change them can edit the shipped file. Env-var duplicates add noise for settings that almost never change at deployment time. Added to the §17.2 open-questions list as "should any of these get an env-var override?" for Bill's call before Phase 3 ships.
+
+### 12.3.1 `Program.cs` env-var precedence fix (dev-only)
+
+The current `Program.cs` config wiring loads `appsettings.Local.json` after `AddEnvironmentVariables`, which violates the §2.5 precedence (`env > appsettings.json`) in dev. Production is unaffected (no `.Local.json` ships). Fix is a one-liner -- re-register env vars after the `.Local.json` `AddJsonFile`:
+
+```csharp
+// Program.cs -- after builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true):
+builder.Configuration.AddEnvironmentVariables();
+```
+
+This re-applies the env-var source so env vars sit above both `appsettings.json` and `.Local.json` as §2.5 requires. The fix is additive (no removals) and dev-only in effect. Lands as part of Phase 3 alongside the other env-var reader work.
 
 ### 12.4 Why explicit top-level env vars, not ASP.NET Core double-underscore nesting
 
@@ -1204,13 +1254,13 @@ The INSTALL.md reader is **post-download, pre-success**. Their goal is "get from
 2. **Your admin key** (R2 top-level promotion per Dana) -- where it appears on first run, how to capture it, what to do if you missed it. Cross-reference to #156's behavioral model + #158's UX decisions when they land.
 3. **Opening the dashboard** (R2 new) -- exact URL (`http://localhost:58400`), what the operator should see, what a healthy first-load looks like.
 4. **What's in this archive** -- file list with one-line purpose. Mirrors §5.2.
-5. **Configuration** (R2 reframed) -- the single-file `appsettings.json` model (§2.5), env-var overrides from §12.3, precedence, which settings are operator-knobs vs framework-standard.
+5. **Configuration** (R2.1 reframed) -- the single-file `appsettings.json` model (§2.5, preserved on reinstall), env-var overrides framed as **per-invocation** (set in the operator's `.sh` / `.ps1` startup wrapper, not system- or user-scoped), precedence per §2.5. Include both a `.sh` and `.ps1` example snippet from §12. Distinguish operator knobs from framework-standard (`ASPNETCORE_ENVIRONMENT`, `Logging:*`, `OTEL_*`).
 6. **macOS: first-run quarantine** -- the exact text from §11.1. Primary audience is the manual-download operator; `install.sh` runs `xattr -d` automatically (§11.2).
 7. **Verifying the install** (R2 new per Dana) -- the positive signals:
    - `collabhost --version` prints `Collabhost 0.1.0`.
    - `curl http://localhost:58400/api/v1/status` returns JSON with `"status": "running"` and `proxyState` (see §6.4.2).
    - Dashboard loads.
-8. **Updating** -- "re-run the install script; `data/` is preserved." Call out the `appsettings.json` behavior explicitly (pending §17.2 Q7).
+8. **Updating** -- "re-run the install script; `data/` **and** `appsettings.json` are preserved. The binary, Caddy, INSTALL.md, and LICENSES/ are overwritten." Note the discipline that protects operators on older `appsettings.json`: every new shipped key has a working in-code default. Smart-merge is a future follow-up (#161).
 9. **Troubleshooting** -- expanded list:
    - **Caddy did not start** (`proxyState` in `/status` = `"failed"`). Try setting `COLLABHOST_CADDY_PATH` to a known-working Caddy, or check bundled binary permissions.
    - **Port 443 already in use** (another proxy or service on the host). Edit `Proxy:ListenAddress` in `appsettings.json`.
@@ -1218,10 +1268,10 @@ The INSTALL.md reader is **post-download, pre-success**. Their goal is "get from
    - **collabhost won't launch on macOS** -- link back to §11.
    - **SQLite file permission errors on Linux** -- check `$HOME/.collabhost/bin/data/` ownership.
    - **Admin key missing from scrollback** (Dana R1) -- recovery path is TBD pending #156/#158. Placeholder section with "see GitHub release notes for {version}" until the cards land.
-   - **Binary crashes before I see anything** -- `data/logs/` path (if adopted per Dana's friction-point 5; open question §17.2 Q8).
+   - **Binary crashes before I see anything** -- v0.1.0 workaround: run `collabhost > collabhost.log 2>&1` (documented in INSTALL.md Troubleshooting). Structured log-directory support is card **#162**.
 10. **Uninstall** -- `rm -rf $HOME/.collabhost`.
 11. **Verifying checksums** -- for manual downloaders. Examples with versioned filename: `sha256sum -c collabhost-0.1.0-linux-x64.tar.gz.sha256`.
-12. **Environment variables reference** (R2 new) -- canonical list from §12.3, with shape (file vs directory) and example values.
+12. **Environment variables reference** (R2 new) -- canonical list from §12.3, with shape (file vs directory vs domain vs port) and example values. Introduce the list with the per-invocation framing (startup-script wrappers, not system/user scope).
 
 ### 13.2 What goes where (INSTALL.md vs README post-#155)
 
@@ -1231,10 +1281,11 @@ Linked from README post-#155: yes, from the "Installation" section.
 
 ### 13.3 Contents pending prerequisite cards
 
-Two INSTALL.md sections have placeholder status until their source cards land:
+One INSTALL.md section has placeholder status until its source cards land:
 
 - **Admin key** -- the exact message format, the recovery flow, and the capture location (stdout alone vs stdout + file vs prompt) all depend on #156 (behavior) and #158 (UX research). R2 INSTALL.md draft uses a `{PLACEHOLDER}` block with a TODO comment pointing at the cards, and the final wording is filled in when those cards resolve. **This is a blocker for shipping v0.1.0 -- not for merging this spec.**
-- **Post-install log location** -- depends on whether Dana's "logs to `data/logs/`" proposal is adopted. See §17.2 Q8.
+
+The installer transcript itself (the exact stdout an operator sees on first install vs reinstall) is called out as card **#164** -- normative UAT of the end-to-end install flow, scheduled after Phase 5 lands. Log-directory work is card **#162** (see §17.2 R2-Q3).
 
 ---
 
@@ -1279,9 +1330,9 @@ R1 of this spec proposed moving `ProxyAppSeeder.SeedAsync` out of `Program.cs`'s
 - Declares #156 a **hard prerequisite** for any production deployment of Collabhost.
 - Does not specify migration behavior, backup logic, or the seeding contract. Those are #156's deliverables (spec at `.agents/specs/production-startup.md`, per #156 acceptance criteria).
 - Does not rewrite `Program.cs`'s startup block.
-- Inherits from #156 whatever production posture the design lands on. This spec's Phase 4 (workflow + bundle) cannot ship a working production release until #156 is implemented.
+- Inherits from #156 whatever production posture the design lands on. This spec's Phase 4b (installer + INSTALL.md) cannot ship a working production release until #156 is implemented. **Phase 4a (workflow + bundle) can land independently of #156** (R2.1 split).
 
-Concretely: the phased implementation (§18) sequences #156's work before Phase 4 of #153. If #156 slips, #153 Phase 4 slips with it -- but Phases 1-3 of #153 can still merge independently.
+Concretely: the phased implementation (§18) allows Phase 4a to ship alongside Phases 1-3, and gates Phase 4b on #156. If #156 slips, only Phase 4b and Phase 5 slip with it -- Phases 1-3 and 4a of #153 can still merge independently.
 
 ---
 
@@ -1312,14 +1363,16 @@ Note: no `ExistingCaddyProbeTests` in R2. R1's Probe A is dropped (§6.4), so th
 **`ProxyManagerVerifyCaddyReadyTests`:** (post-launch probe with soft-fail)
 - `VerifyCaddyReady_HealthyImmediately_ReturnsTrue` -- local HTTP listener returns 200 on first call.
 - `VerifyCaddyReady_SlowStart_ReturnsTrueWithinDeadline` -- listener returns 503 for 2s, then 200. Assert true within 5s.
-- `VerifyCaddyReady_NeverReady_ReturnsFalseAndProxyStateFailed` -- listener returns 503 forever. Assert false, assert `ProxyManager.CurrentState == "failed"` after call.
+- `VerifyCaddyReady_NeverReady_ReturnsFalseAndProxyStateFailed` -- listener returns 503 forever. Assert false, assert `ProxyManager.CurrentState == ProxyState.Failed` after call.
 - `VerifyCaddyReady_HangingConnection_TimesOutAndRetries` -- listener accepts but never responds. Assert per-attempt timeout kicks in (1s), loop continues, eventually returns false at 5s.
 
 **`SystemStatus` proxyState field:**
+- `GetStatus_ProxyStarting_ReturnsStarting` -- default initial state before probe completes.
 - `GetStatus_ProxyRunning_ReturnsRunning`
 - `GetStatus_ProxyFailed_ReturnsFailed`
 - `GetStatus_ProxyDisabled_ReturnsDisabled`
 - `GetStatus_ProxyStopped_ReturnsStopped`
+- `CurrentState_ConcurrentReadWrite_DoesNotTear` -- exercises the `volatile` / `Interlocked` guarantee from §6.4.2. One thread transitions Starting→Failed in a tight loop while another reads; assert read always returns either Starting or Failed, never a torn or invalid value.
 
 **CLI `--version` flag:**
 - Integration-ish test in `Collabhost.Api.Tests`: launch the published binary (or the built assembly) with `args = ["--version"]`. Assert stdout equals `Collabhost {VersionInfo.Current}\n` and exit code is 0. Because `Program.cs` short-circuits, the web host never starts.
@@ -1454,32 +1507,30 @@ Not prescribed here. Early (0.1.x) expect several releases per month as bugs sha
 | Self-contained single-file bundle size too large | Medium | Low | Already called out in §5.3. Not blocking v1. `PublishTrimmed` available as a follow-up optimization. |
 | Pinned Caddy has a CVE before we notice | Medium | Medium-High | Card #154 owns this process. We acknowledge the exposure here and push response logic out. |
 | Tag-regex gate rejects a legitimate tag someone wants to ship | Low | Low | Error message is clear, fix is a single line in `publish.yml`. |
-| **#156 does not land before Phase 4** | **Medium** | **Critical** | **Phase 4 cannot ship a working production release without #156's production startup posture. Phased implementation (§18) gates Phase 4 explicitly on #156 being merged. Phases 1-3 of #153 ship independently and derisk the work.** |
+| **#156 does not land before Phase 4b** | **Medium** | **Critical** | **Phase 4b (installer + INSTALL.md) cannot ship a working production release without #156's production startup posture. Phased implementation (§18) gates Phase 4b explicitly on #156 being merged. Phases 1-3 and Phase 4a of #153 ship independently and derisk the work.** (R2.1 split reduces blast radius of #156 slipping.) |
 | `COLLABHOST_DATA_PATH` env var collides with a pre-existing user env var | Very Low | Low | Prefix `COLLABHOST_` is unique enough. |
 | Binary rename (`Collabhost.Api` → `collabhost`) breaks local dev tooling or docs | Low | Low | `AssemblyName` override is publish-time only; `dotnet run` during dev still produces `Collabhost.Api.exe`. Docs pass in #155 updates any stale references. |
-| Proxy `proxyState` field is new contract surface -- downstream consumers not yet updated | Medium | Low-Medium | Dana owns dashboard rendering; add field with default `"running"` fallback so legacy readers don't break. See §17.2 Q6. |
+| Proxy `proxyState` field is new contract surface -- downstream consumers not yet updated | Medium | Low-Medium | Dana owns dashboard rendering. 5-value enum locked (§6.4.2): `starting \| running \| failed \| disabled \| stopped`. Default is `"starting"` so queries during boot always receive a valid value. |
 
 ### 17.2 Open questions
 
-**R1's six questions are all closed (§17.3).** The R2 list is new.
+**R1's six questions are all closed (§17.3). All nine R2 questions are now closed below (R2.1).**
 
-1. **Proxy `SelfPort` cross-validation.** Audit Observation O5: `Proxy:SelfPort` (58400 default) must match the actual API listen port, but nothing cross-validates them. If an operator changes the Kestrel listen port without updating `SelfPort`, the Caddy reverse-proxy back-route breaks silently. Propose: add a startup check that compares `ProxySettings.SelfPort` to the configured listen port and logs a warning on mismatch. Out of strict #153 scope -- file as a standalone card? Bill's call.
+| # | Question | Resolution |
+|---|----------|------------|
+| R2-Q1 | Proxy `SelfPort` cross-validation startup warning | **Card #165** -- filed as a standalone follow-up. Out of #153's scope. |
+| R2-Q2 | Caddy download SHA256 verification inside the workflow | **In scope for Phase 4a** (§18). Ship it -- ~6 lines of bash per leg, low cost / high safety when Caddy's download endpoint is ever compromised. |
+| R2-Q3 | Log directory for pre-crash diagnostics | **Card #162** -- filed. v0.1.0 workaround in INSTALL.md Troubleshooting: `collabhost > collabhost.log 2>&1`. |
+| R2-Q4 | Env-var overrides for the broader `Proxy:*` set | **Resolved (R2.1):** ship env vars for all four (`BASE_DOMAIN`, `LISTEN_ADDRESS`, `CERT_LIFETIME`, `SELF_PORT`) in Phase 3. See §12.3. |
+| R2-Q5 | `install.ps1` User PATH vs Machine PATH | **Implementation-time decision.** Stay User-only in v1 (matches `install.sh` `~/.bashrc` behavior). Revisit if operators ask; no standalone card. |
+| R2-Q6 | `proxyState` wire shape for startup window | **Resolved (R2.1):** `"starting"` is the default/initial state. Five-value enum locked in §6.4.2: `starting \| running \| failed \| disabled \| stopped`. |
+| R2-Q7 | Reinstall behavior for `appsettings.json` | **Resolved (R2.1): preserve.** `appsettings.json` is the operator's persistent configuration file. Discipline: new shipped keys in v0.2.0+ must have in-code defaults. Smart-merge is card **#161**. Env vars are a per-invocation customization surface, not a replacement for file edits. See §2.5, §9.7. |
+| R2-Q8 | Pre-release tag conventions (`v0.1.1-rc.1`) | **Out of v0.1.0 scope.** Decision 5 holds (no pre-release conventions in v1). Revisit alongside dry-run workflow (#157) if operators ask. No standalone card. |
+| R2-Q9 | `Collabhost.Api` → `collabhost` rename ripple (AssemblyName + InternalsVisibleTo) | **Confirmed no ripple by Marcus R2 review.** `InternalsVisibleTo` binds by assembly name; csproj remains `Collabhost.Api.csproj`, so test internals access still resolves. Close. |
 
-2. **Caddy download checksum verification inside the workflow.** §6.2 notes we skip this in v1. Caddy publishes SHA256 sums alongside each release. Adding verification is ~6 lines of bash per leg. My recommendation: add it to Phase 4 directly. Low cost, high safety when Caddy's GitHub Releases endpoint ever gets compromised or mirrored. Bill's call on scope creep.
-
-3. **Log directory for pre-crash diagnostics.** Dana's R1 friction-point 5: if the binary crashes before the operator sees stdout, there's no log to read. Propose: write Collabhost's own stdout/stderr to `{DataPath}/logs/collabhost-{timestamp}.log` with rotation. This is a ~30-line addition to the Supervisor / Platform startup. In scope of #153? Or push to a follow-up card?
-
-4. **Env-var overrides for `Proxy:*` settings.** §12.3 doesn't ship env vars for `BaseDomain`, `ListenAddress`, `CertLifetime`, `SelfPort`. These are edit-in-`appsettings.json` only. If Bill thinks any of these should have env vars in v1, add them to §12.3 -- one line each.
-
-5. **`install.ps1` User PATH vs Machine PATH.** §9.6 writes to User PATH (no admin). Some operators will expect System PATH. Propose: stay User-only in v1 (matches `install.sh` `~/.bashrc` behavior). Revisit if operators ask.
-
-6. **`proxyState` wire shape for null/unknown case.** The `SystemStatus` response currently returns data even if the proxy subsystem hasn't completed startup yet. If Collabhost is queried *during* startup (before `VerifyCaddyReady` completes), what should `proxyState` return? Propose: `"starting"` as a fifth value, with a narrow window (≤5s) where this is expected. Alternatively, `null` until probe completes. Dana's preference on which is more dashboard-friendly.
-
-7. **Reinstall behavior for `appsettings.json`.** §9.7: install script overwrites the shipped `appsettings.json` on reinstall. Operator edits to that file are lost. Env vars (§12.3) are the persistent override path. This is the "single-file model" (§2.5) in action, but it's a change from the R1 "preserve appsettings.Local.json" framing. Want Bill's explicit sign-off since it affects the operator contract for upgrades.
-
-8. **Pre-release / staging / daily tracks.** §9.4 says we don't support `--quality` (Aspire-style). Still holds? Once we ship v0.1.0, do we want a `v0.1.1-rc.1` path for dry-runs against real operators? (Dry-run workflow is #157's job. This is the tag-convention question, distinct from the workflow question.)
-
-9. **`Collabhost.Api` → `collabhost` rename ripple effects.** §3.6 applies `-p:AssemblyName=collabhost` at publish. The published `collabhost.exe` has an internal `InternalsVisibleTo` that points at `Collabhost.Api.Tests` (or whatever the actual internals friend is). This still works because `InternalsVisibleTo` is per-assembly-name; our csproj is still `Collabhost.Api.csproj` so the internals assembly name is unchanged. But I want to verify this end-to-end at Phase 4 implementation time -- the combination of `AssemblyName` override + `InternalsVisibleTo` is an uncommon config.
+**Adjacent follow-ups filed during R2 review:**
+- Card **#163** -- PATH collision avoidance (rename bundled `caddy` → `caddy-collabhost` at bundle time to avoid collision with a system-installed Caddy on the operator's PATH). Investigated separately because it crosses §6.4.1 (resolver) and §5.1 (archive layout) boundaries.
+- Card **#164** -- normative installer transcript UAT (the exact stdout an operator sees on first install vs reinstall). Scheduled after Phase 5 lands.
 
 ### 17.3 R1 open questions -- closed status
 
@@ -1507,25 +1558,32 @@ Confirmed or newly raised during R2:
 
 ## 18. Implementation Plan
 
-Phased to keep review and merge units manageable. Each phase is a candidate branch/card. Review gates noted between phases. R2 reorders Phase 2 and Phase 3 per Marcus's argument, and gates Phase 4 on **#156** landing first.
+Phased to keep review and merge units manageable. Each phase is a candidate branch/card. Review gates noted between phases. R2 reorders Phase 2 and Phase 3 per Marcus's argument. R2.1 splits Phase 4 into **4a (workflow + bundle)** and **4b (installer + INSTALL.md)**; only 4b is gated on **#156**.
 
-### Phase ordering (R2)
+### Phase ordering (R2.1)
 
 ```
 Phase 1 (version helper)  ──────────────────┐
                                             │
-Phase 3 (env-var overrides + data path)  ──┤
+Phase 3 (env-var overrides + data path + Program.cs precedence fix)  ──┤
                                             │
 Phase 2 (Caddy resolver + probe + proxyState) ─┐
                                                 │
+Phase 4a (release workflow + bundle + checksums)  ──┐
+                                                     │ (depends only on Phases 1-3)
                                       [#156 lands: production startup]
-                                                │
-Phase 4 (release workflow + bundle + checksums) ──┐
-                                                    │
-                                Phase 5 (install scripts + Pages) ──>  v0.1.0 release
+                                                     │
+                                          Phase 4b (installer + INSTALL.md)  ──┐
+                                                                                │ (depends on #156
+                                                                                │  because INSTALL.md
+                                                                                │  needs the production-
+                                                                                │  startup story true)
+                                                 Phase 5 (GitHub Pages + README) ──>  v0.1.0 release
 ```
 
-Phases 1 and 3 are fully independent. Phase 2 reads `VersionInfo.Current` from Phase 1 (for log messages) and the `COLLABHOST_CADDY_PATH` reader from Phase 3. Phase 4 depends on everything above it **plus #156** (which is a separate card, not a phase here). Phase 5 runs against Phase 4's artifacts.
+**Phase 4 split (R2.1 -- per Marcus's R2-C1).** Phase 4a produces the build artifacts (workflow, archives, checksums) and depends only on Phases 1-3. Phase 4b produces the operator-facing installer + INSTALL.md, and depends on **#156** landing because INSTALL.md has to document the production-startup story truthfully. This reduces the blast radius of #156 slipping: the workflow can land and be exercised against a sacrificial tag even while #156 is in flight, and the installer-level UAT only begins after the production-startup posture is real.
+
+Phases 1 and 3 are fully independent. Phase 2 reads `VersionInfo.Current` from Phase 1 (for log messages) and the `COLLABHOST_CADDY_PATH` reader from Phase 3. Phase 4a depends on Phases 1-3. Phase 4b depends on Phase 4a + **#156**. Phase 5 runs against Phase 4b's artifacts.
 
 ### Phase 1: Version helper + CLI flag + endpoint
 
@@ -1546,10 +1604,13 @@ Phases 1 and 3 are fully independent. Phase 2 reads `VersionInfo.Current` from P
 
 **Branch:** `feature/153-03-env-var-overrides`
 **Scope:**
-- Implement env-var readers for `COLLABHOST_DATA_PATH`, `COLLABHOST_USER_TYPES_PATH`, `COLLABHOST_CADDY_PATH` (§12.3).
+- Implement env-var readers for **all seven** operator env vars (§12.3):
+  - `COLLABHOST_DATA_PATH`, `COLLABHOST_USER_TYPES_PATH`, `COLLABHOST_CADDY_PATH`
+  - `COLLABHOST_PROXY_BASE_DOMAIN`, `COLLABHOST_PROXY_LISTEN_ADDRESS`, `COLLABHOST_PROXY_CERT_LIFETIME`, `COLLABHOST_PROXY_SELF_PORT`
 - Move default SQLite path from `./db/collabhost.db` to `./data/collabhost.db`.
+- `Program.cs` env-var precedence fix (§12.3.1): re-register `AddEnvironmentVariables()` after the `.Local.json` `AddJsonFile` so env vars sit above `.Local.json` in dev. Dev-only effect.
 - Wire `COLLABHOST_CADDY_PATH` through `ProxyAppSeeder.ResolveBinaryPath` (existing code path) -- full `CaddyResolver` refactor lands in Phase 2 but the env-var read itself is additive.
-- Update `Data/_Registration.cs`, `Data/AppTypes/_Registration.cs` for their respective env-var paths.
+- Update `Data/_Registration.cs`, `Data/AppTypes/_Registration.cs`, `Proxy/_Registration.cs` for their respective env-var paths.
 - Unit tests for each env-var reader (set → wins, unset → config-fallback, config-unset → hardcoded-default).
 
 **Why second (was third in R1):** Marcus's argument -- Phase 3 is additive (env vars with no readers are inert until readers land), and it gives us an incrementally useful first merge (operators can override paths via env) without dragging the Caddy resolver change with it. Also decouples env-var-reading from resolver-priority-chain concerns: Phase 3 is "read env vars," Phase 2 is "apply precedence when multiple sources disagree."
@@ -1580,46 +1641,59 @@ Phases 1 and 3 are fully independent. Phase 2 reads `VersionInfo.Current` from P
 
 **Not a phase here -- a hard prerequisite card.**
 
-Before Phase 4 ships:
+Before Phase 4b ships:
 - Migration posture is decided (auto-migrate vs explicit, backup discipline).
 - `IsDevelopment()` gates in `Program.cs` are removed with the designed replacement.
 - `ProxyAppSeeder.SeedAsync`, TypeStore load, migrations all run in production.
 - INSTALL.md has a data-recovery section.
 - Admin key behavior (3-scenario model) is implemented per #156.
 
-Phase 4 of #153 cannot produce a working production release until #156 is merged. Phases 1-3 of #153 can merge independently of #156.
+Phase 4b of #153 cannot produce a working production release until #156 is merged. **Phase 4a (workflow + bundle) can land without #156** -- it produces archives whose CI plumbing is correct; whether the archives actually boot in production depends on #156. Phases 1-3 and Phase 4a of #153 can merge independently of #156.
 
-### Phase 4: Release workflow + Caddy bundle + checksums
+### Phase 4a: Release workflow + Caddy bundle + checksums
 
-**Branch:** `feature/153-04-publish-workflow`
-**Prerequisite:** #156 merged. Phases 1-3 merged.
+**Branch:** `feature/153-04a-publish-workflow`
+**Prerequisite:** Phases 1-3 merged. **Does NOT depend on #156.**
 **Scope:**
 - `.github/workflows/publish.yml` (new) -- versioned archive names, `-p:AssemblyName=collabhost`, native runners per leg.
 - `caddy.version` file at repo root.
-- `release-assets/INSTALL.md`, `release-assets/caddy-LICENSE`, `release-assets/caddy-NOTICE`.
-- Caddy download SHA256 verification step (§17.2 Q2 -- recommend including).
-- Optional: cut a sacrificial `v0.0.1-alpha.0` tag against a test branch for first-run E2E validation. (Dry-run workflow #157 replaces this later.)
+- `release-assets/INSTALL.md` (placeholder until Phase 4b), `release-assets/caddy-LICENSE`, `release-assets/caddy-NOTICE`.
+- **Caddy download SHA256 verification step** (R2-Q2 resolved in scope): verify each downloaded Caddy binary against its upstream `*.txt` (or `checksums.txt`) entry before bundling.
+- Optional: cut a sacrificial `v0.0.1-alpha.0` tag against a test branch for first-run E2E validation of the workflow. (Dry-run workflow #157 replaces this later.)
 
-**Why fourth:** depends on Phases 1-3 being merged (the workflow exercises the full stack) and #156 (the artifact the workflow produces must actually run in production).
+**Why this phase can land without #156:** the workflow produces archives. Whether the archives contain a *correct production runtime* depends on #156. Landing 4a first lets the workflow bake and fail fast on build-matrix issues, cross-platform quirks, and checksum plumbing -- independent of the production-startup posture.
 
-**Review gate:** Marcus for workflow architecture, Dana for any user-facing language in INSTALL.md / installer output.
+**Review gate:** Marcus for workflow architecture.
 
-### Phase 5: Install scripts + GitHub Pages
+### Phase 4b: Installer + INSTALL.md
 
-**Branch:** `feature/153-05-install-scripts`
-**Prerequisite:** Phase 4 merged (install scripts are meaningless without a release to download from).
+**Branch:** `feature/153-04b-installer`
+**Prerequisite:** Phase 4a merged. **#156 merged** (INSTALL.md documents the production-startup story; that story must be true).
 **Scope:**
-- `docs/install.sh`, `docs/install.ps1`, `docs/index.html`.
+- `docs/install.sh`, `docs/install.ps1`.
 - Version-substituted URL templates (§9.3).
+- macOS auto-`xattr` block in `install.sh` with stdout confirmation line (§11.2).
+- Reinstall-preserve logic for `appsettings.json` (§9.7) and `data/`.
+- Final INSTALL.md content for the shipped archive -- fills in the admin-key behavior (#156) and the per-invocation env-var section (§12).
+
+**Why this phase depends on #156:** INSTALL.md's "Your admin key," "Configuration," "Updating," and "Verifying the install" sections all describe behavior that #156 owns (admin-key scenarios, migration posture, production boot). Shipping those sections before #156 lands means documenting future behavior as present behavior.
+
+**Review gate:** Dana for installer stdout UX + INSTALL.md readability, Marcus for the script logic. Both scripts reviewed together since they must stay in sync.
+
+### Phase 5: GitHub Pages + README
+
+**Branch:** `feature/153-05-pages-readme`
+**Prerequisite:** Phase 4b merged (install scripts must exist before being hosted).
+**Scope:**
+- `docs/index.html` landing page.
 - Enable GitHub Pages in repo settings (manual op, not a PR).
-- macOS auto-`xattr` block in `install.sh` with stdout confirmation line.
 - Coordinated README pointer to install commands (#155).
 
-**Review gate:** Dana for the landing page + installer stdout UX (Dana's R1 friction-points 1-5), Marcus for the script logic. Both scripts reviewed together since they must stay in sync.
+**Review gate:** Dana for the landing page. Small scope.
 
 ### Post-merge -- v0.1.0 release
 
-After all five phases + #156 merge:
+After Phases 1-3, 4a, 4b, 5 + #156 all merge:
 1. Cut the `v0.1.0` tag and release. (§16.1.)
 2. Smoke-test the install flow on all three OSes.
 3. Verify dashboard loads, `proxyState` is `"running"`, admin key is captured per #156/#158.
@@ -1640,19 +1714,32 @@ After all five phases + #156 merge:
 ## Appendix A: One-page summary for review (R2)
 
 - **Workflow:** `publish.yml` on `release: [published]`. Jobs: `extract-version` → `build-frontend` → `build-matrix (5 RIDs, native runners)` → `publish-checksums`.
-- **Caddy:** pinned in `caddy.version` (recommend `2.11.2`). Downloaded per-platform in-workflow. Shipped in-archive with `caddy-LICENSE` + `caddy-NOTICE`. SHA256 verification of the download is an open recommendation (§17.2 Q2).
+- **Caddy:** pinned in `caddy.version` (recommend `2.11.2`). Downloaded per-platform in-workflow. Shipped in-archive with `caddy-LICENSE` + `caddy-NOTICE`. SHA256 verification of the download is in scope for Phase 4a (R2.1).
 - **Archive:** `collabhost-{version}-{rid}.(zip|tar.gz)`. Contents: `collabhost[.exe]` (renamed from `Collabhost.Api[.exe]`) + `caddy[.exe]` + `appsettings.json` + `INSTALL.md` + `LICENSES/`.
 - **Checksums:** per-archive `.sha256` + aggregated `checksums.txt`. Install scripts verify before extracting.
 - **Version:** `v{semver}` tag → `-p:Version=` → one static helper (`Platform/VersionInfo`) → `GET /api/v1/version` + `--version` CLI flag. `--version` stdout format: `Collabhost 0.1.0` (locked).
 - **Caddy resolution (R2):** `COLLABHOST_CADDY_PATH` > `Proxy:BinaryPath` from `appsettings.json` > bundled sidecar. **Probe A dropped.** Post-launch probe with per-attempt 1s / deadline 5s; soft-fail with visibility (`proxyState` in `/status`, dashboard signal).
-- **Install scripts:** `docs/install.sh` + `docs/install.ps1`. Aspire model. `$HOME/.collabhost/bin`. `data/` preserved on reinstall; `appsettings.json` overwrite behavior is an open question (§17.2 Q7). Hosted on GitHub Pages. macOS auto-`xattr` with stdout confirmation.
-- **Env-var overrides (R2, scoped to audit):** `COLLABHOST_DATA_PATH`, `COLLABHOST_USER_TYPES_PATH`, `COLLABHOST_CADDY_PATH`. `COLLABHOST_TOOLS_PATH` dropped (source config is dead). `COLLABHOST_TEMP_PATH` deferred (no real user need).
-- **Configuration resolution model (locked on #159):** single-pass reduction at startup. Precedence `CLI > env > appsettings.json > default`. Single `appsettings.json` in production (no `.Production.json`, no `.Local.json`).
+- **Install scripts:** `docs/install.sh` + `docs/install.ps1`. Aspire model. `$HOME/.collabhost/bin`. **`data/` and `appsettings.json` preserved on reinstall (R2.1).** Hosted on GitHub Pages. macOS auto-`xattr` with stdout confirmation.
+- **Env-var overrides (R2.1 -- expanded to all four Proxy settings):** `COLLABHOST_DATA_PATH`, `COLLABHOST_USER_TYPES_PATH`, `COLLABHOST_CADDY_PATH`, `COLLABHOST_PROXY_BASE_DOMAIN`, `COLLABHOST_PROXY_LISTEN_ADDRESS`, `COLLABHOST_PROXY_CERT_LIFETIME`, `COLLABHOST_PROXY_SELF_PORT`. `COLLABHOST_TOOLS_PATH` dropped (source config is dead). `COLLABHOST_TEMP_PATH` deferred (no real user need). **Env vars framed as per-invocation overrides set in the operator's `.sh` / `.ps1` startup wrapper, not system/user-scoped.**
+- **Configuration resolution model (locked on #159):** single-pass reduction at startup. Precedence `CLI > env > appsettings.json > default`. Single `appsettings.json` in production (no `.Production.json`, no `.Local.json`). Operator's `appsettings.json` is persistent and preserved across reinstalls.
 - **Admin key:** behavior owned by **#156**; UX surface owned by **#158**. This spec references, does not respecify.
-- **Hard prerequisite:** **#156** (production startup posture). Without it, Phase 4 cannot produce a working production release.
-- **Phased implementation:** 5 branches, most-to-least isolatable. Order: Phase 1 (version) → Phase 3 (env-var overrides, was 3 in R1) → Phase 2 (Caddy resolver + proxyState, was 2 in R1 → now gated on Phase 3) → **[#156 lands]** → Phase 4 (workflow) → Phase 5 (install scripts).
+- **Hard prerequisite:** **#156** (production startup posture). Gates **Phase 4b** only (R2.1 split); Phase 4a (workflow + bundle) can land independently.
+- **Phased implementation:** 6 branches. Order: Phase 1 (version) → Phase 3 (env-var overrides) → Phase 2 (Caddy resolver + proxyState) → Phase 4a (workflow + bundle) → **[#156 lands]** → Phase 4b (installer + INSTALL.md) → Phase 5 (GitHub Pages + README).
 
-### R2 change highlights for reviewers
+### R2.1 change highlights for reviewers
+
+This is a **polish pass on R2**, not a fresh round. Convergence on the decisions Bill locked after Marcus's and Dana's R2 reviews.
+
+1. **R2.1: `appsettings.json` reinstall = preserve** (§2.5, §9.7). R2 had leaned overwrite. Env vars are reframed as per-invocation (operator's startup-script wrapper); `appsettings.json` is the operator's persistent config file. Smart-merge of shipped defaults is parking card **#161**.
+2. **R2.1: Env-var framing = per-invocation** (§12, §13.1). Operators set env vars in `.sh` / `.ps1` startup wrappers, not in `~/.bashrc` or Windows system properties. §12 and §13 show both example shapes.
+3. **R2.1: Proxy env vars expanded to all four** (§12.3, Phase 3 scope). `BASE_DOMAIN`, `LISTEN_ADDRESS`, `CERT_LIFETIME`, `SELF_PORT` all ship in Phase 3 alongside the three path env vars.
+4. **R2.1: `/version` shape reconciled** (§8.4 vs §17.3). Per Bill's locked ruling, `/version` returns `{ version, commit, platform }`; `/status` continues to carry runtime state.
+5. **R2.1: Phase 4 split 4a + 4b** (§18). 4a (workflow + bundle) depends only on Phases 1-3. 4b (installer + INSTALL.md) depends on **#156**. Reduces blast radius of #156 slipping.
+6. **R2.1: `proxyState` 5-value enum locked** (§6.4.2). `starting \| running \| failed \| disabled \| stopped`. Internal C# enum, string only at the endpoint boundary. Concurrency note added (volatile / Interlocked).
+7. **R2.1: `Program.cs` env-var precedence one-liner** (§12.3.1). Dev-only fix: re-add `AddEnvironmentVariables()` after the `.Local.json` `AddJsonFile`. Lands in Phase 3.
+8. **R2.1: §17.2 questions closed.** All nine R2 questions resolved (5 in this revision, 4 deferred to follow-up cards #161-#165). Installer-transcript UAT is card **#164**, PATH-collision rename is card **#163**.
+
+### R2 change highlights (retained for history)
 
 1. **"Escape hatch" vocabulary retired.** Replaced by "configuration resolution" / "precedence chain" per the locked model (§2.5).
 2. **Probe A dropped entirely** (§6.4). No external-Caddy auto-adoption in v1.
@@ -1661,7 +1748,7 @@ After all five phases + #156 merge:
 5. **`--version` format is `Collabhost {semver}`** (§8.5).
 6. **Env-var list scoped to the shipped settings audit** (§12). Dead `COLLABHOST_TOOLS_PATH` removed.
 7. **#156 is a hard prerequisite** (§14.6 and phase plan). #153 does not specify production startup behavior.
-8. **R1's 6 open questions closed; 9 new/carried-over questions in §17.2** -- most are minor, three (Q3 log dir, Q7 appsettings overwrite, Q2 Caddy checksum) deserve explicit calls before Phases 4-5.
+8. **R1's 6 open questions closed; 9 new/carried-over questions in §17.2** -- closed in R2.1 (see above).
 
 ---
 
