@@ -48,7 +48,13 @@ public class ProxyAppSeeder
             return;
         }
 
-        var resolvedPath = ResolveBinaryPath(_settings.BinaryPath);
+        // COLLABHOST_CADDY_PATH env var takes precedence over Proxy:BinaryPath (§12.3)
+        var binaryPath = Environment.GetEnvironmentVariable("COLLABHOST_CADDY_PATH")
+            is { Length: > 0 } envPath
+            ? envPath
+            : _settings.BinaryPath;
+
+        var resolvedPath = ResolveBinaryPath(binaryPath);
 
         if (resolvedPath is null)
         {
@@ -59,7 +65,7 @@ public class ProxyAppSeeder
                 "  Windows: winget install CaddyServer.Caddy\n" +
                 "  Or download to tools/caddy/ and set Proxy:BinaryPath in appsettings.Development.json\n" +
                 "  General: https://caddyserver.com/docs/install",
-                _settings.BinaryPath
+                binaryPath
             );
 
             return;
