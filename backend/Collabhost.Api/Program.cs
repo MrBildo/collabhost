@@ -32,6 +32,36 @@ builder.Configuration.AddEnvironmentVariables();
 // Aspire service defaults
 builder.AddServiceDefaults();
 
+// Startup phase 2 -- Environment preflight (§5). Runs before DI is built and before any hosted
+// service wires itself up. A halt here means we never touch the DB.
+var (_, resolvedDataDir) = DataRegistration.ResolveConnectionString(builder.Configuration);
+var effectiveDataDir = resolvedDataDir ?? Path.Combine(AppContext.BaseDirectory, "data");
+
+using (var preflightLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole()))
+{
+    var preflightLogger = preflightLoggerFactory.CreateLogger("StartupPreflight");
+    var preflightResult = StartupPreflight.Validate(effectiveDataDir, preflightLogger);
+
+    if (!preflightResult.Success)
+    {
+        preflightLogger.LogCritical
+        (
+            "Startup preflight failed: {Summary}",
+            preflightResult.FailureSummary
+        );
+
+        StartupStderr.Write
+        (
+            summary: preflightResult.FailureSummary!,
+            details: preflightResult.FailureDetails,
+            recoverySteps: preflightResult.RecoverySteps,
+            exitCode: 10
+        );
+
+        return 10;
+    }
+}
+
 // JSON: accept string enum values (e.g. "administrator", "agent") in request bodies
 builder.Services.ConfigureHttpJsonOptions
 (
@@ -79,15 +109,80 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
+// Startup phase 4+5 -- Pre-migration backup + schema migration (§6, §7). Runs unconditionally
+// in every environment, including Production. On failure, halt before any hosted service starts.
+var toSemver = VersionInfo.Current;
+var fromSemver = BootVersionTracker.Read(effectiveDataDir, app.Logger);
+var backupsDir = Path.Combine(effectiveDataDir, StartupPreflight.BackupsSubdirectory);
+var migrationRunner = app.Services.GetRequiredService<MigrationRunner>();
+
+try
+{
+    var migrationOutcome = await migrationRunner.MigrateWithBackupAsync
+    (
+        effectiveDataDir,
+        backupsDir,
+        fromSemver,
+        toSemver,
+        CancellationToken.None
+    );
+
+    if (migrationOutcome.Migrated)
+    {
+        app.Logger.LogInformation
+        (
+            "Schema migrated from {FromSemver} to {ToSemver}. Backup: {BackupPath}. Applied: {Count}",
+            fromSemver,
+            toSemver,
+            migrationOutcome.BackupPath ?? "(first-run, no backup)",
+            migrationOutcome.AppliedMigrations.Count
+        );
+    }
+}
+catch (MigrationFailedException ex)
+{
+    app.Logger.LogCritical
+    (
+        ex,
+        "Startup halted during schema migration: {Summary}. Backup={BackupPath} Migration={MigrationAttempted}",
+        ex.Summary,
+        ex.BackupPath ?? "(none)",
+        ex.MigrationAttempted ?? "(pre-flight)"
+    );
+
+    var details = new List<(string Label, string Value)>();
+
+    if (ex.BackupPath is not null)
+    {
+        details.Add(("Backup created at", ex.BackupPath));
+    }
+
+    if (ex.MigrationAttempted is not null)
+    {
+        details.Add(("Migration attempted", ex.MigrationAttempted));
+    }
+
+    if (ex.InnerException is not null)
+    {
+        details.Add(("Exception", $"{ex.InnerException.GetType().Name}: {ex.InnerException.Message}"));
+    }
+
+    StartupStderr.Write
+    (
+        summary: ex.Summary,
+        details: details,
+        recoverySteps: ex.RecoverySteps,
+        exitCode: ex.ExitCode
+    );
+
+    return ex.ExitCode;
+}
+
 if (app.Environment.IsDevelopment())
 {
+    // TypeStore + ProxyAppSeeder gates remain in #156.1. Lifted in #156.2.
     await using var scope = app.Services.CreateAsyncScope();
-    var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
 
-    await using var context = await db.CreateDbContextAsync();
-    await context.Database.MigrateAsync();
-
-    // TypeStore startup gate -- load and validate built-in types before hosted services
     var typeStore = app.Services.GetRequiredService<TypeStore>();
     await typeStore.LoadAsync(CancellationToken.None);
     typeStore.StartWatching();
@@ -98,6 +193,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 }
+
+// Write the last-boot-version sentinel once the host is fully started (§6.2.1).
+app.Lifetime.ApplicationStarted.Register
+(
+    () => BootVersionTracker.Write(effectiveDataDir, toSemver, app.Logger)
+);
 
 // Middleware
 app.UseCollabhostAuthorization();
