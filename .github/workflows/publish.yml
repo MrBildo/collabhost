@@ -198,9 +198,13 @@ jobs:
             chmod +x "${CADDY_BIN}"
           fi
 
-      # Self-contained single-file publish. AssemblyName=collabhost renames the
-      # output binary from Collabhost.Api[.exe] to collabhost[.exe] (spec §3.6,
-      # locked decision 9). Not trimmed, not ReadyToRun (locked decision 3).
+      # Self-contained single-file publish. The output binary is renamed from
+      # Collabhost.Api[.exe] to collabhost[.exe] by a PublishSingleFile-scoped
+      # <AssemblyName> property in Collabhost.Api.csproj. That property lives in
+      # the csproj rather than here as -p:AssemblyName=collabhost because a CLI
+      # MSBuild global property propagates to every project in the restore graph
+      # (Collabhost.ServiceDefaults in our case), which makes NuGet restore fail
+      # with "Ambiguous project name 'collabhost'". Not trimmed, not ReadyToRun.
       - name: Publish
         shell: bash
         working-directory: backend
@@ -215,7 +219,6 @@ jobs:
             -r "${RID}" \
             --self-contained \
             -p:PublishSingleFile=true \
-            -p:AssemblyName=collabhost \
             -p:Version="${VER}" \
             -o "../publish/collabhost-${VER}-${RID}"
 
