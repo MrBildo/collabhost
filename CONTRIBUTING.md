@@ -38,7 +38,7 @@ Caddy is the reverse proxy layer. You can develop without it -- proxy features j
 }
 ```
 
-**Global install:** `winget install CaddyServer.Caddy` (Windows) or `sudo apt install caddy` (Linux). The default config resolves `caddy` from `PATH`.
+**Global install:** `winget install CaddyServer.Caddy` (Windows) or `sudo apt install caddy` (Linux). To point Collabhost at a system-installed Caddy, set `COLLABHOST_CADDY_PATH` to the absolute path before launching, or set `Proxy:BinaryPath` in `appsettings.Development.json`.
 
 ## Build and Run
 
@@ -99,16 +99,19 @@ collabhost/
 │       ├── chrome/                # Layout, topbar, auth gate
 │       ├── forms/                 # Schema-driven form fields
 │       ├── hooks/                 # TanStack Query hooks
+│       ├── lib/                   # Shared utilities
 │       ├── log/                   # Log viewer with ANSI rendering
 │       ├── pages/                 # Route pages
 │       ├── probes/                # Technology probe panels
 │       ├── shared/                # Shared UI components
 │       ├── status/                # Status dots, strips, stats
 │       ├── styles/                # *War Machine* design tokens
-│       └── tables/                # Data tables and filters
-└── docs/
-    ├── install.sh                 # End-user installer (Linux / macOS)
-    └── install.ps1                # End-user installer (Windows)
+│       ├── tables/                # Data tables and filters
+│       └── test/                  # Vitest setup and shared test helpers
+├── docs/
+│   ├── install.sh                 # End-user installer (Linux / macOS)
+│   └── install.ps1                # End-user installer (Windows)
+└── tools/                         # Seed utilities and local dev helpers (e.g. generate-ids.cs)
 ```
 
 ## Testing

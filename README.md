@@ -6,7 +6,7 @@
 
 <p align="center">
   A self-hosted control plane for your workstation — operated from a dashboard, or driven by agents through a built-in MCP server.<br/>
-  First-class on Windows and Linux. Runs on macOS as best-effort.
+  Native process supervision on Windows and Linux. Runs on macOS with a fallback runner.
 </p>
 
 <p align="center">
@@ -22,11 +22,11 @@
 
 Collabhost gives you a single control plane for everything running on your machine — .NET services, Node.js apps, static sites, MCP servers, and arbitrary executables. Register an app, point it at a directory, and Collabhost handles process supervision, reverse proxy routing, log aggregation, and crash recovery. No containers. No YAML. No cloud account.
 
-**Two first-class audiences.** An operator runs Collabhost from a War Machine dashboard — tables, log streams, inline actions. An agent runs Collabhost through a built-in MCP server — the same surface, exposed as tools over Streamable HTTP. Register an app from the UI or from Claude Code. Start, stop, tail logs, update settings. Humans and agents share one platform, one auth model, and one source of truth.
+**Two primary audiences.** An operator runs Collabhost from a War Machine dashboard — tables, log streams, inline actions. An agent runs Collabhost through a built-in MCP server — the same surface, exposed as tools over Streamable HTTP. Register an app from the UI or from Claude Code. Start, stop, tail logs, update settings. Humans and agents share one platform, one auth model, and one source of truth.
 
 If you're building an AI harness, agent framework, or multi-agent system that needs to manage local infrastructure, Collabhost is the layer that sits underneath. See [For Agents](#for-agents) for MCP configuration.
 
-It runs natively on **Windows** and **Linux** with platform-specific process management — no WSL required on Windows, no emulation layer on Linux. macOS works too, in a best-effort mode with reduced process containment — see [Platform support](#platform-support) for the tier breakdown. Think of it as a lightweight, self-hosted Heroku for your workstation — a control plane that stays out of your way until something goes wrong.
+It runs natively on **Windows** and **Linux** with platform-specific process management — no WSL required on Windows, no emulation layer on Linux. macOS runs the same control plane with a fallback process runner that has reduced containment — see [Platform support](#platform-support) for what differs. Think of it as a lightweight, self-hosted Heroku for your workstation — a control plane that stays out of your way until something goes wrong.
 
 <p align="center">
   <img src="docs/screenshots/dashboard.png" alt="Collabhost Dashboard — stats, app table, and activity feed" width="900" />
@@ -80,38 +80,23 @@ Copy that key, open the dashboard at `http://localhost:58400`, and paste it into
 
 Re-running the installer is upgrade-safe: your `appsettings.json` and `data/` directory are preserved across versions. For full operator documentation — reinstall, upgrade, uninstall, configuration, troubleshooting — see the `INSTALL.md` shipped inside the release archive (or in your install directory after the first run).
 
-### Install Caddy (recommended)
+### Caddy is bundled
 
-Collabhost manages Caddy as a supervised process — you install the binary, Collabhost handles the rest. Without Caddy, everything else works (app management, process supervision, logs, dashboard), but apps won't get automatic `{slug}.collab.internal` subdomain routes.
+The installer ships Caddy next to the Collabhost binary — Collabhost finds it automatically. No separate install step. On first launch, Collabhost starts the bundled Caddy as a supervised process and every registered app gets an automatic `{slug}.collab.internal` subdomain route.
 
-**Windows:**
+If you'd rather use a system-installed Caddy, point Collabhost at it by either (a) setting `COLLABHOST_CADDY_PATH` to the absolute path before launching, or (b) setting `Proxy:BinaryPath` in `appsettings.json`. The env var takes precedence over the config file, and both take precedence over the bundled sidecar. `BaseDomain` defaults to `collab.internal` — change it to use any domain you control.
 
-```powershell
-winget install CaddyServer.Caddy
-```
+If no Caddy binary is found, everything else still works (app management, process supervision, logs, dashboard) — apps just don't get automatic subdomain routes.
 
-**Linux (Debian/Ubuntu):**
+### Register your first app
 
-```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update && sudo apt install caddy
-```
+**From the dashboard:** Open `http://localhost:58400` and click **Register App**. Pick an app type, point it at a directory, and hit create. Collabhost auto-discovers the start command and allocates a port. Click **Start** and watch the logs stream in.
 
-**macOS** (best-effort — see [Platform support](#platform-support)):
-
-```bash
-brew install caddy
-```
-
-See [caddyserver.com/docs/install](https://caddyserver.com/docs/install) for other platforms.
-
-If `caddy` is on your `PATH`, Collabhost finds it automatically. Otherwise, set the path in `appsettings.json` next to the Collabhost binary, or export `COLLABHOST_CADDY_PATH` before launching. `BaseDomain` defaults to `collab.internal` — change it to use any domain you control.
+**From an agent:** See [For Agents](#for-agents) below. An agent calls `list_app_types`, `browse_filesystem`, `detect_strategy`, `register_app`, and `start_app` — the same flow, scripted.
 
 ## Features
 
-**Built-in MCP server** — A Model Context Protocol endpoint at `/mcp` exposes the operator surface as tools. 18 tools across discovery, lifecycle, configuration, registration, and activity. Agents register apps, start and stop processes, tail logs, update settings, and browse the host filesystem — programmatically, over Streamable HTTP. Role-aware: administrators see everything, agents see 17 of 18 tools (everything except `delete_app`). See [For Agents](#for-agents) for setup.
+**Built-in MCP server** — A Model Context Protocol endpoint at `/mcp` exposes the operator surface as tools. 18 tools across discovery, lifecycle, configuration, registration, and activity. Agents register apps, start and stop processes, tail logs, update settings, and browse the host filesystem — programmatically, over Streamable HTTP. Role-aware: administrators see everything, agents see 16 of 18 tools (everything except `delete_app` and `list_events`). See [For Agents](#for-agents) for setup.
 
 **Operator dashboard** — Real-time stats, app table with inline actions, live activity feed, and streaming log viewers. Everything an operator needs on one screen. The War Machine design system — dark, monospace, industrial — is built for density and quick action.
 
@@ -139,13 +124,13 @@ If `caddy` is on your `PATH`, Collabhost finds it automatically. Otherwise, set 
 
 Process supervision is the piece of Collabhost that differs most by platform. The control plane itself — API, dashboard, MCP server, SQLite, Caddy integration — runs identically everywhere .NET 10 does. Process containment does not.
 
-| Platform | Tier | How processes are supervised |
-|---|---|---|
-| **Windows** | **First-class** | `CreateProcess` P/Invoke with dedicated process groups, graceful shutdown via `GenerateConsoleCtrlEvent`, orphan protection through Win32 Job Objects. |
-| **Linux** | **First-class** | `setsid` process groups with `SIGTERM`/`SIGKILL` lifecycle, cgroup v2 containment. Orphan-proof. |
-| macOS | *Best-effort* | `FallbackProcessRunner`. Processes start and stop. No Job Objects, no cgroups, no orphan protection — if Collabhost crashes, child processes may outlive it. |
+| Platform | How processes are supervised |
+|---|---|
+| **Windows** | `CreateProcess` P/Invoke with dedicated process groups, graceful shutdown via `GenerateConsoleCtrlEvent`, orphan protection through Win32 Job Objects. |
+| **Linux** | `setsid` process groups with `SIGTERM`/`SIGKILL` lifecycle, cgroup v2 containment. Orphan-proof. |
+| **macOS** | `FallbackProcessRunner`. Processes start and stop, stdout/stderr capture works, and hard kill is available. No graceful shutdown (no `SIGTERM`-equivalent signal handling), no Job Object-equivalent isolation, no orphan protection — if Collabhost crashes, child processes may outlive it. |
 
-Windows and Linux are the supported deployment targets. macOS is supported for local development and tinkering; don't expect parity.
+Windows and Linux are the recommended deployment targets. macOS runs the platform but with the gaps above — it's best suited for local development rather than long-running production workloads.
 
 ## A tour
 
@@ -204,12 +189,6 @@ Windows and Linux are the supported deployment targets. macOS is supported for l
 
 <p align="center"><sub>Routes. Every app gets an automatic <code>{slug}.collab.internal</code> subdomain with HTTPS (the base domain is configurable).</sub></p>
 
-## Register your first app
-
-**From the dashboard:** Open `http://localhost:58400` and click **Register App**. Pick an app type, point it at a directory, and hit create. Collabhost auto-discovers the start command and allocates a port. Click **Start** and watch the logs stream in.
-
-**From an agent:** See [For Agents](#for-agents) below. An agent calls `list_app_types`, `browse_filesystem`, `detect_strategy`, `register_app`, and `start_app` — the same flow, scripted.
-
 ## For Agents
 
 Collabhost exposes an MCP (Model Context Protocol) server so agents can operate the platform directly — no custom HTTP client, no REST adapter. If your agent speaks MCP, it speaks Collabhost.
@@ -257,7 +236,7 @@ Drop that in your project's `.mcp.json` (or the equivalent for your client) and 
 | Role | Access |
 |------|--------|
 | Administrator | Full tool surface (18 tools) plus user management through the REST API. |
-| Agent | 17 of 18 tools. Everything except `delete_app` — deletion is an administrator-only action. |
+| Agent | 16 of 18 tools. Everything except `delete_app` (deletion is administrator-only) and `list_events` (activity log is administrator-only). |
 
 ### Tool surface
 
@@ -266,8 +245,8 @@ Drop that in your project's `.mcp.json` (or the equivalent for your client) and 
 - **Discovery (4)** — `get_system_status`, `list_apps`, `get_app`, `list_app_types`. The agent's starting point: what's on the platform, what's running, what can it register.
 - **Lifecycle (5)** — `start_app`, `stop_app`, `restart_app`, `kill_app`, `get_logs`. Full process control. `get_logs` is token-budgeted for LLM context.
 - **Configuration (4)** — `get_settings`, `update_settings`, `list_routes`, `reload_proxy`. Read and change schema-driven settings, inspect Caddy routes.
-- **Registration (4)** — `register_app`, `delete_app`, `browse_filesystem`, `detect_strategy`. End-to-end app setup. `browse_filesystem` lets agents locate install directories interactively; `detect_strategy` reports what Collabhost can auto-discover for a given path and app type.
-- **Activity (1)** — `list_events`. Recent state changes and operator actions, filterable by app, event type, or category.
+- **Registration (4)** — `register_app`, `delete_app`, `browse_filesystem`, `detect_strategy`. End-to-end app setup. `browse_filesystem` lets agents locate install directories iteratively; `detect_strategy` reports what Collabhost can auto-discover for a given path and app type.
+- **Activity (1)** — `list_events` (administrator-only). Recent state changes and operator actions, filterable by app, event type, or category.
 
 Each tool has a full description, parameter schema, and read-only/destructive/idempotent annotations. The MCP server also ships `ServerInstructions` describing common workflows (registration, lifecycle, diagnostics) so a freshly-connected agent has a usable mental model without reading the source.
 
