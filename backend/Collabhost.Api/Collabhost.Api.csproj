@@ -5,6 +5,19 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <!-- Rename the published binary from Collabhost.Api[.exe] to collabhost[.exe]
+       for self-contained publish only. Scoped to PublishSingleFile so local dev
+       builds and tests still produce Collabhost.Api.dll, which keeps Aspire
+       resource names, launchSettings, and test project references undisturbed.
+       Declared inside the csproj rather than via `-p:AssemblyName=collabhost` on
+       the publish CLI because a command-line MSBuild global property propagates
+       to every project in the restore graph (Collabhost.ServiceDefaults in our
+       case), which causes NuGet restore to emit
+       `error: Ambiguous project name 'collabhost'`. -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <AssemblyName>collabhost</AssemblyName>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Collabhost.Api.Tests" />
   </ItemGroup>
