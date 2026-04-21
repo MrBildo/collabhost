@@ -69,7 +69,7 @@ public class TypeStore
                 );
             }
 
-            throw new TypeStoreValidationException(builtInErrors);
+            throw new TypeStoreValidationException(builtInErrors, isBuiltIn: true);
         }
 
         var builtInSnapshot = BuildSnapshot(builtInSources, true);
@@ -97,7 +97,7 @@ public class TypeStore
                     );
                 }
 
-                throw new TypeStoreValidationException(userErrors);
+                throw new TypeStoreValidationException(userErrors, isBuiltIn: false);
             }
 
             var userSnapshot = BuildSnapshot(userSources, false);

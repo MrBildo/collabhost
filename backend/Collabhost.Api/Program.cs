@@ -36,11 +36,12 @@ builder.AddServiceDefaults();
 // service wires itself up. A halt here means we never touch the DB.
 var (_, resolvedDataDir) = DataRegistration.ResolveConnectionString(builder.Configuration);
 var effectiveDataDir = resolvedDataDir ?? Path.Combine(AppContext.BaseDirectory, "data");
+var effectiveUserTypesDir = TypeStoreRegistration.ResolveEffectiveUserTypesDirectory(builder.Configuration);
 
 using (var preflightLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole()))
 {
     var preflightLogger = preflightLoggerFactory.CreateLogger("StartupPreflight");
-    var preflightResult = StartupPreflight.Validate(effectiveDataDir, preflightLogger);
+    var preflightResult = StartupPreflight.Validate(effectiveDataDir, effectiveUserTypesDir, preflightLogger);
 
     if (!preflightResult.Success)
     {
@@ -181,18 +182,105 @@ catch (MigrationFailedException ex)
     return ex.ExitCode;
 }
 
+// Startup phase 6 -- TypeStore.LoadAsync (§8). Runs unconditionally in every environment.
+// Built-in validation failure is a packaging bug (exit 30); user-type validation failure is an
+// operator configuration error (exit 31). Separate exit codes let bundled smoke tests distinguish
+// "our package broke" from "operator configured wrong."
+var typeStore = app.Services.GetRequiredService<TypeStore>();
+
+try
+{
+    await typeStore.LoadAsync(CancellationToken.None);
+}
+catch (TypeStoreValidationException ex)
+{
+    if (ex.IsBuiltIn)
+    {
+        app.Logger.LogCritical
+        (
+            ex,
+            "Startup halted: built-in type validation failed ({ErrorCount} errors) -- packaging bug",
+            ex.Errors.Count
+        );
+
+        StartupStderr.Write
+        (
+            summary: "built-in type validation failed -- this is a packaging bug",
+            details: BuildTypeStoreErrorDetails(ex.Errors),
+            recoverySteps:
+            [
+                "File an issue at https://github.com/MrBildo/collabhost/issues and include this stderr block.",
+                "Re-install the previous Collabhost version from releases."
+            ],
+            exitCode: 30
+        );
+
+        return 30;
+    }
+
+    app.Logger.LogCritical
+    (
+        ex,
+        "Startup halted: user-type validation failed ({ErrorCount} errors) in {Directory}",
+        ex.Errors.Count,
+        effectiveUserTypesDir
+    );
+
+    StartupStderr.Write
+    (
+        summary: $"invalid user type JSON in '{effectiveUserTypesDir}'",
+        details: BuildTypeStoreErrorDetails(ex.Errors),
+        recoverySteps:
+        [
+            $"Inspect the files listed above in {effectiveUserTypesDir}.",
+            "Fix or remove the invalid file(s) and restart Collabhost."
+        ],
+        exitCode: 31
+    );
+
+    return 31;
+}
+
+// Startup phase 7 -- ProxyAppSeeder (§9). Idempotent: a first boot seeds, subsequent boots no-op.
+// Unexpected throws (DB write failure, transaction rollback, etc.) halt with exit 40.
+await using (var seederScope = app.Services.CreateAsyncScope())
+{
+    var proxySeeder = seederScope.ServiceProvider.GetRequiredService<ProxyAppSeeder>();
+
+    try
+    {
+        await proxySeeder.SeedAsync(CancellationToken.None);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogCritical(ex, "Startup halted: proxy app seeder threw unexpectedly");
+
+        StartupStderr.Write
+        (
+            summary: "proxy app seeding failed",
+            details: [("Exception", $"{ex.GetType().Name}: {ex.Message}")],
+            recoverySteps:
+            [
+                "This usually indicates database corruption or a transaction rollback.",
+                "File an issue at https://github.com/MrBildo/collabhost/issues and include this stderr block.",
+                "If the issue persists, restore the most recent pre-migration backup from data/backups/."
+            ],
+            exitCode: 40
+        );
+
+        return 40;
+    }
+}
+
+// Startup phase 9 -- TypeStore.StartWatching (§8.3). FileSystemWatcher for hot-reload of user
+// types. Stays enabled in Production; ReloadAsync handles runtime errors non-fatally (keep
+// current snapshot + warn). LoadAsync is the boot-critical path; StartWatching is operational.
+typeStore.StartWatching();
+
+// Dev-only surface (OpenAPI + CORS) stays gated. These are developer conveniences, not
+// production behavior.
 if (app.Environment.IsDevelopment())
 {
-    // TypeStore + ProxyAppSeeder gates remain in #156.1. Lifted in #156.2.
-    await using var scope = app.Services.CreateAsyncScope();
-
-    var typeStore = app.Services.GetRequiredService<TypeStore>();
-    await typeStore.LoadAsync(CancellationToken.None);
-    typeStore.StartWatching();
-
-    var proxySeeder = scope.ServiceProvider.GetRequiredService<ProxyAppSeeder>();
-    await proxySeeder.SeedAsync(CancellationToken.None);
-
     app.MapOpenApi();
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 }
@@ -230,3 +318,19 @@ app.MapDefaultEndpoints();
 await app.RunAsync();
 
 return 0;
+
+// Helper for composing TypeStore validation errors into the StartupStderr detail shape.
+static IReadOnlyList<(string Label, string Value)> BuildTypeStoreErrorDetails
+(
+    IReadOnlyList<TypeStoreValidationError> errors
+)
+{
+    var details = new List<(string Label, string Value)>(errors.Count);
+
+    foreach (var error in errors)
+    {
+        details.Add(($"{error.Source}: {error.FieldPath}", error.Message));
+    }
+
+    return details;
+}

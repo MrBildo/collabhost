@@ -4,7 +4,12 @@ public static class StartupPreflight
 {
     public const string BackupsSubdirectory = "backups";
 
-    public static PreflightResult Validate(string dataDirectory, ILogger? logger = null)
+    public static PreflightResult Validate
+    (
+        string dataDirectory,
+        string? userTypesDirectory = null,
+        ILogger? logger = null
+    )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
 
@@ -68,14 +73,49 @@ public static class StartupPreflight
             );
         }
 
+        // (4) User-types directory. Created if missing so operators can drop *.json files
+        // into it without a restart-then-discover loop. See §8.3 / §8.5 of the spec.
+        var userTypesCreated = false;
+
+        if (!string.IsNullOrWhiteSpace(userTypesDirectory))
+        {
+            var existed = Directory.Exists(userTypesDirectory);
+
+            if (!TryEnsureDirectory(userTypesDirectory, out var userTypesError))
+            {
+                return PreflightResult.Fail
+                (
+                    summary: "user-types directory not writable",
+                    details: [("Path", userTypesDirectory), ("Error", userTypesError ?? "unknown")],
+                    recoverySteps:
+                    [
+                        "Verify filesystem permissions on the configured user-types directory.",
+                        "Override the location with the COLLABHOST_USER_TYPES_PATH environment variable if needed."
+                    ]
+                );
+            }
+
+            userTypesCreated = !existed;
+
+            if (userTypesCreated)
+            {
+                logger?.LogInformation
+                (
+                    "User-types directory initialized at {Directory} -- drop *.json files here to register custom app types.",
+                    userTypesDirectory
+                );
+            }
+        }
+
         logger?.LogInformation
         (
-            "Startup preflight ok: data={DataDirectory} backups={BackupsDirectory}",
+            "Startup preflight ok: data={DataDirectory} backups={BackupsDirectory} userTypes={UserTypesDirectory}",
             dataDirectory,
-            backupsDirectory
+            backupsDirectory,
+            userTypesDirectory ?? "(not resolved)"
         );
 
-        return PreflightResult.Ok(dataDirectory, backupsDirectory);
+        return PreflightResult.Ok(dataDirectory, backupsDirectory, userTypesDirectory, userTypesCreated);
     }
 
     private static bool TryEnsureDirectory(string path, out string? error)
@@ -129,6 +169,8 @@ public sealed record PreflightResult
         bool success,
         string? dataDirectory,
         string? backupsDirectory,
+        string? userTypesDirectory,
+        bool userTypesDirectoryCreated,
         string? failureSummary,
         IReadOnlyList<(string Label, string Value)>? failureDetails,
         IReadOnlyList<string>? recoverySteps
@@ -137,6 +179,8 @@ public sealed record PreflightResult
         Success = success;
         DataDirectory = dataDirectory;
         BackupsDirectory = backupsDirectory;
+        UserTypesDirectory = userTypesDirectory;
+        UserTypesDirectoryCreated = userTypesDirectoryCreated;
         FailureSummary = failureSummary;
         FailureDetails = failureDetails ?? [];
         RecoverySteps = recoverySteps ?? [];
@@ -148,18 +192,30 @@ public sealed record PreflightResult
 
     public string? BackupsDirectory { get; }
 
+    public string? UserTypesDirectory { get; }
+
+    public bool UserTypesDirectoryCreated { get; }
+
     public string? FailureSummary { get; }
 
     public IReadOnlyList<(string Label, string Value)> FailureDetails { get; }
 
     public IReadOnlyList<string> RecoverySteps { get; }
 
-    public static PreflightResult Ok(string dataDirectory, string backupsDirectory) =>
+    public static PreflightResult Ok
+    (
+        string dataDirectory,
+        string backupsDirectory,
+        string? userTypesDirectory = null,
+        bool userTypesDirectoryCreated = false
+    ) =>
         new
         (
             success: true,
             dataDirectory: dataDirectory,
             backupsDirectory: backupsDirectory,
+            userTypesDirectory: userTypesDirectory,
+            userTypesDirectoryCreated: userTypesDirectoryCreated,
             failureSummary: null,
             failureDetails: null,
             recoverySteps: null
@@ -176,6 +232,8 @@ public sealed record PreflightResult
             success: false,
             dataDirectory: null,
             backupsDirectory: null,
+            userTypesDirectory: null,
+            userTypesDirectoryCreated: false,
             failureSummary: summary,
             failureDetails: details,
             recoverySteps: recoverySteps

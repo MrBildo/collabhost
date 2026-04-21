@@ -109,4 +109,39 @@ public class StartupPreflightTests : IDisposable
     [Fact]
     public void Validate_ThrowsOnEmptyDataDirectory() =>
         Should.Throw<ArgumentException>(() => StartupPreflight.Validate(string.Empty));
+
+    [Fact]
+    public void Validate_CreatesMissingUserTypesDirectory_FlagsAsCreated()
+    {
+        var userTypesDir = Path.Combine(_rootDirectory, "user-types");
+
+        var result = StartupPreflight.Validate(_rootDirectory, userTypesDir);
+
+        result.Success.ShouldBeTrue();
+        result.UserTypesDirectory.ShouldBe(userTypesDir);
+        result.UserTypesDirectoryCreated.ShouldBeTrue();
+        Directory.Exists(userTypesDir).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Validate_ExistingUserTypesDirectory_NotFlaggedAsCreated()
+    {
+        var userTypesDir = Path.Combine(_rootDirectory, "user-types");
+        Directory.CreateDirectory(userTypesDir);
+
+        var result = StartupPreflight.Validate(_rootDirectory, userTypesDir);
+
+        result.Success.ShouldBeTrue();
+        result.UserTypesDirectoryCreated.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Validate_NullUserTypesDirectory_SkipsUserTypesCheck()
+    {
+        var result = StartupPreflight.Validate(_rootDirectory, userTypesDirectory: null);
+
+        result.Success.ShouldBeTrue();
+        result.UserTypesDirectory.ShouldBeNull();
+        result.UserTypesDirectoryCreated.ShouldBeFalse();
+    }
 }

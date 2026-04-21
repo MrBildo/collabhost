@@ -77,4 +77,27 @@ public class TypeStoreRegistrationTests
             Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", null);
         }
     }
+
+    [Fact]
+    public void ResolveEffectiveUserTypesDirectory_AbsolutePath_ReturnedAsIs()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", null);
+
+        var absolute = OperatingSystem.IsWindows() ? @"C:\custom\user-types" : "/custom/user-types";
+        var config = ConfigWith("TypeStore:UserTypesDirectory", absolute);
+
+        var result = TypeStoreRegistration.ResolveEffectiveUserTypesDirectory(config);
+
+        result.ShouldBe(absolute);
+    }
+
+    [Fact]
+    public void ResolveEffectiveUserTypesDirectory_RelativePath_ComposedAgainstBaseDirectory()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", null);
+
+        var result = TypeStoreRegistration.ResolveEffectiveUserTypesDirectory(EmptyConfig());
+
+        result.ShouldBe(Path.Combine(AppContext.BaseDirectory, "UserTypes"));
+    }
 }
