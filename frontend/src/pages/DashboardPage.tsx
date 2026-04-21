@@ -1,6 +1,8 @@
 import { ActionButton } from '@/actions/ActionButton'
 import { useApps, useStartApp, useStopApp } from '@/hooks/use-apps'
 import { useDashboardEvents, useDashboardStats } from '@/hooks/use-dashboard'
+import { useSystemStatus } from '@/hooks/use-system-status'
+import { POLL_INTERVALS } from '@/lib/constants'
 import { formatMemory } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
@@ -8,7 +10,9 @@ import { ErrorBanner } from '@/shared/ErrorBanner'
 import { EventList } from '@/shared/EventList'
 import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
+import type { StatusCell } from '@/status/StatusStrip'
 import { StatusStrip } from '@/status/StatusStrip'
+import { buildProxyStateCell } from '@/status/proxyStateCell'
 import { DataTable } from '@/tables/DataTable'
 import { buildDashboardColumns } from '@/tables/app-columns'
 import { Link, useNavigate } from 'react-router-dom'
@@ -18,17 +22,20 @@ function DashboardPage() {
   const statsQuery = useDashboardStats()
   const appsQuery = useApps()
   const eventsQuery = useDashboardEvents()
+  const systemStatusQuery = useSystemStatus({ refetchInterval: POLL_INTERVALS.dashboard })
   const startMutation = useStartApp()
   const stopMutation = useStopApp()
 
   const stats = statsQuery.data
   const apps = appsQuery.data ?? []
+  const systemStatus = systemStatusQuery.data
 
   const isLoading = statsQuery.isLoading || appsQuery.isLoading
   const error = statsQuery.error || appsQuery.error
 
-  const statusCells = stats
+  const statusCells: StatusCell[] = stats
     ? [
+        ...(systemStatus ? [buildProxyStateCell(systemStatus.proxyState)] : []),
         { label: 'Total Apps', value: stats.totalApps, detail: `${stats.appTypes} app types`, color: 'amber' as const },
         { label: 'Running', value: stats.running, color: 'green' as const },
         {

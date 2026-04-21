@@ -354,12 +354,15 @@ type CreateUserRequest = {
 
 // --- System ---
 
+type ProxyState = 'starting' | 'running' | 'failed' | 'disabled' | 'stopped'
+
 type SystemStatus = {
   status: string
   version: string
   hostname: string
   uptimeSeconds: number
   timestamp: string
+  proxyState: ProxyState
 }
 
 // --- Filesystem ---
@@ -428,6 +431,7 @@ export type {
   RouteListResponse,
   RouteEntry,
   SystemStatus,
+  ProxyState,
   DetectStrategyResponse,
   FilesystemBrowseResponse,
   DirectoryEntry,
