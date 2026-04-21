@@ -6,7 +6,8 @@ public record SystemStatus
     string Version,
     string Hostname,
     double UptimeSeconds,
-    string Timestamp
+    string Timestamp,
+    string ProxyState
 );
 
 public record VersionResponse

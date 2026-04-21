@@ -56,11 +56,22 @@ public class ProxyManager
     private readonly ConcurrentDictionary<string, bool> _routeStates = new(StringComparer.Ordinal);
     private readonly Channel<bool> _syncChannel = Channel.CreateBounded<bool>(1);
 
+    // Written by proxy startup / probe / event handler threads, read by /status request threads.
+    // volatile ensures read visibility ordering without locking (§6.4.2 "Concurrency note"):
+    // reads of an aligned 32-bit enum are atomic in .NET; volatile prevents torn state
+    // presentation (e.g., stuck on "starting" after a transition to "failed").
+    private volatile ProxyState _currentState = ProxyState.Starting;
+
+    // Once the post-launch probe fails, disable further sync attempts for this process lifetime.
+    private volatile bool _proxyDisabled;
+
     private IDisposable? _subscription;
     private Task? _processorTask;
     private CancellationTokenSource? _shutdownCancellation;
     private string? _proxyAppSlug;
     private bool _disposed;
+
+    public ProxyState CurrentState => _currentState;
 
     public void EnableRoute(string slug)
     {
@@ -98,10 +109,16 @@ public class ProxyManager
 
         if (proxyApp is null)
         {
+            // CaddyResolver (§6.4.1) returned null, so ProxyAppSeeder did not register a proxy app.
+            // Surface this externally via proxyState='disabled' on /api/v1/status (§6.4.2).
+            _currentState = ProxyState.Disabled;
+
             _logger.LogWarning
             (
-                "No proxy app registered -- proxy route sync is disabled. " +
-                "Ensure the proxy binary is available and restart Collabhost"
+                "No proxy app registered -- proxy subsystem disabled. " +
+                "No Caddy binary was resolved via COLLABHOST_CADDY_PATH, Proxy:BinaryPath, " +
+                "or the bundled sidecar. proxyState on /api/v1/status will report 'disabled'. " +
+                "Install Caddy or set COLLABHOST_CADDY_PATH and restart Collabhost."
             );
 
             return;
@@ -125,14 +142,18 @@ public class ProxyManager
         // Process-based apps are handled by ProcessSupervisor; routing-only apps need route enabling here.
         await EnableAutoStartRoutesAsync(cancellationToken);
 
-        // Check if the proxy process is already running (auto-started before we subscribed)
+        // Check if the proxy process is already running (auto-started before we subscribed).
+        // Run the probe the same way we would on a Running-event transition so that
+        // CurrentState converges correctly even when the process beat us to startup.
         var managed = _processSupervisor.GetProcess(proxyApp.Id);
 
         if (managed is not null && managed.IsRunning)
         {
-            _logger.LogInformation("Proxy process already running -- triggering initial route sync");
+            _logger.LogInformation("Proxy process already running -- probing admin API readiness");
 
-            RequestSync();
+#pragma warning disable VSTHRD110, MA0134, CS4014, CA2016, MA0040
+            Task.Run(() => ProbeAndActivateAsync(_shutdownCancellation.Token));
+#pragma warning restore VSTHRD110, MA0134, CS4014, CA2016, MA0040
         }
     }
 
@@ -165,6 +186,11 @@ public class ProxyManager
 
     public async Task SyncRoutesAsync(CancellationToken ct = default)
     {
+        if (_proxyDisabled)
+        {
+            return;
+        }
+
         try
         {
             var routeEntries = await LoadRoutableAppsAsync(ct);
@@ -192,14 +218,50 @@ public class ProxyManager
         }
     }
 
+    // Post-launch admin-API probe (§6.4.2). Soft-fail with visibility:
+    // on success -> ProxyState.Running and route sync is activated.
+    // on timeout -> ProxyState.Failed, proxy subsystem disabled for this process lifetime,
+    //              and loud error log pointing at COLLABHOST_CADDY_PATH / bundled fallback.
+    internal async Task<bool> VerifyCaddyReadyAsync(CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        var perAttemptTimeout = TimeSpan.FromSeconds(1);
+
+        while (DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
+        {
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            linkedCts.CancelAfter(perAttemptTimeout);
+
+            // TimeoutException / HttpRequestException are caught inside IsReadyAsync
+            // (returns false). Per-attempt deadline hits here via the linked CTS.
+            if (await _caddyClient.IsReadyAsync(linkedCts.Token))
+            {
+                return true;
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     private async Task ProcessSyncRequestsAsync(CancellationToken ct)
     {
         try
         {
             await foreach (var _ in _syncChannel.Reader.ReadAllAsync(ct))
             {
-                // Small delay to allow the Caddy admin API to become ready after process start
-                await Task.Delay(TimeSpan.FromSeconds(2), ct);
+                if (_proxyDisabled)
+                {
+                    continue;
+                }
 
                 await SyncRoutesAsync(ct);
             }
@@ -236,28 +298,70 @@ public class ProxyManager
         switch (processEvent.NewState)
         {
             case ProcessState.Running:
-                _logger.LogInformation("Proxy process is running -- triggering route sync");
-                RequestSync();
+                _logger.LogInformation("Proxy process is running -- probing admin API readiness");
+                // Fire-and-forget: probe runs off the event-bus callback so we don't block
+                // the supervisor. State transitions + logging happen inside.
+#pragma warning disable VSTHRD110, MA0134, CS4014, CA2016, MA0040
+                Task.Run(() => ProbeAndActivateAsync(_shutdownCancellation?.Token ?? CancellationToken.None));
+#pragma warning restore VSTHRD110, MA0134, CS4014, CA2016, MA0040
                 break;
 
             case ProcessState.Crashed:
-                _logger.LogWarning("Proxy process crashed -- admin API is unavailable");
+                _currentState = ProxyState.Failed;
+                _logger.LogWarning("Proxy process crashed -- admin API is unavailable (proxyState='failed')");
                 break;
 
             case ProcessState.Fatal:
-                _logger.LogError("Proxy process entered fatal state -- admin API is unavailable");
+                _currentState = ProxyState.Failed;
+                _proxyDisabled = true;
+                _logger.LogError("Proxy process entered fatal state -- admin API is unavailable (proxyState='failed')");
                 break;
 
             case ProcessState.Stopped:
-                _logger.LogInformation("Proxy process stopped -- admin API is unavailable");
+                // Operator stopped the proxy via UI/API (host shutdown uses StopAsync, not an event).
+                _currentState = ProxyState.Stopped;
+                _logger.LogInformation("Proxy process stopped -- admin API is unavailable (proxyState='stopped')");
                 break;
 
-            // Backoff, Starting, Stopping, Restarting -- no route action needed
+            // Backoff, Starting, Stopping, Restarting -- no state transition needed
             case ProcessState.Backoff:
             case ProcessState.Starting:
             case ProcessState.Stopping:
             case ProcessState.Restarting:
                 break;
+        }
+    }
+
+    private async Task ProbeAndActivateAsync(CancellationToken ct)
+    {
+        try
+        {
+            var ready = await VerifyCaddyReadyAsync(ct);
+
+            if (ready)
+            {
+                _currentState = ProxyState.Running;
+                _logger.LogInformation("Caddy admin API is ready -- proxy subsystem activated (proxyState='running')");
+                RequestSync();
+                return;
+            }
+
+            // Soft-fail with visibility (§6.4.2).
+            _currentState = ProxyState.Failed;
+            _proxyDisabled = true;
+
+            _logger.LogError
+            (
+                "Caddy admin API did not become ready within 5s -- proxy subsystem disabled for this process lifetime " +
+                "(proxyState='failed'). Check Caddy logs, verify COLLABHOST_CADDY_PATH or the bundled binary, " +
+                "and restart Collabhost. The registry, supervisor, dashboard, and managed-app operations continue to function; " +
+                "HTTPS routing to {{slug}}.{BaseDomain} is offline until the proxy is restored.",
+                _settings.BaseDomain
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during shutdown
         }
     }
 

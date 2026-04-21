@@ -23,15 +23,26 @@ public class CaddyClient
 
     public async Task<bool> IsReadyAsync(CancellationToken ct = default)
     {
+        // Narrow catches for readiness probe: only transport-level / timeout failures
+        // are expected during Caddy warm-up. Any other exception (programmer error,
+        // auth config error) must propagate so we don't silently hide real bugs
+        // behind a "not ready" result. (Marcus O5, load-bearing for §6.4.2 probe.)
         try
         {
             var response = await _httpClient.GetAsync(new Uri("config/", UriKind.Relative), ct);
 
             return response.IsSuccessStatusCode;
         }
-        catch (Exception ex)
+        catch (HttpRequestException ex)
         {
-            _logger.LogDebug(ex, "Caddy admin API not ready");
+            _logger.LogDebug(ex, "Caddy admin API not reachable yet");
+
+            return false;
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // Per-attempt timeout hit (not caller cancellation) -- treat as not-ready.
+            _logger.LogDebug(ex, "Caddy admin API readiness probe timed out");
 
             return false;
         }
@@ -61,9 +72,15 @@ public class CaddyClient
 
             return false;
         }
-        catch (Exception ex)
+        catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "Failed to load proxy config");
+            _logger.LogError(ex, "Failed to load proxy config -- transport error");
+
+            return false;
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "Failed to load proxy config -- request timed out");
 
             return false;
         }
@@ -90,9 +107,15 @@ public class CaddyClient
 
             return node as JsonObject;
         }
-        catch (Exception ex)
+        catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "Failed to get proxy config");
+            _logger.LogError(ex, "Failed to get proxy config -- transport error");
+
+            return null;
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "Failed to get proxy config -- request timed out");
 
             return null;
         }

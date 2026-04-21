@@ -60,8 +60,10 @@ public static class ProxyRegistration
             ? envBaseDomain
             : section["BaseDomain"] ?? "collab.internal";
 
-        var binaryPath = section["BinaryPath"]
-            ?? "caddy";
+        // BinaryPath is optional -- CaddyResolver (§6.4.1) falls through to the bundled
+        // sidecar when this is null/empty. The COLLABHOST_CADDY_PATH env var is read
+        // directly by CaddyResolver and does not need threading through settings.
+        var binaryPath = section["BinaryPath"];
 
         var envListenAddress = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_LISTEN_ADDRESS");
 
