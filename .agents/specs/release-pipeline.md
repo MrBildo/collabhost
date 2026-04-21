@@ -447,6 +447,8 @@ The .NET self-contained + single-file + native-libs-for-self-extract footprint i
 - Source code -- available via the GitHub repo.
 - Caddy source -- Apache 2.0 does not require source distribution. We distribute the upstream binary + LICENSE + NOTICE, which is compliant.
 - `install.sh` / `install.ps1` -- these live in `docs/` for GitHub Pages hosting. They are not inside the archive because the archive is what the install script produces.
+- `collabhost.pdb` -- `dotnet publish -p:PublishSingleFile=true` emits debug symbols as a sibling `.pdb` file by default. We do not ship it: it's ~10-50 MB of dead weight in a distributed archive, and a crash report trace from an operator can be re-symbolicated from the tagged commit's build output on demand. The archive contract is enforced by the Phase 4a workflow's explicit allow-list stage step, not by publish flags.
+- `*.staticwebassets.endpoints.json` / `*.staticwebassets.runtime.json` -- ASP.NET Core static-web-assets manifests. Emitted by publish as an implementation artifact of the SPA-as-static-assets pipeline; the runtime needs neither at load time because the SPA is served from `wwwroot/` via the standard static-files middleware + fallback route. Allow-list stage step drops them.
 
 ---
 
@@ -463,7 +465,7 @@ Contents (example):
 
 **Why this and not MSBuild property / `deps.json` / env var in the workflow:**
 
-- The workflow reads it in a single step (`VER=$(cat caddy.version)`). Simple.
+- The workflow reads it in a single step with whitespace stripping (`VER=$(tr -d '[:space:]' < caddy.version)`). Simple. The `tr` strip handles editors that add a trailing newline to the file — without it, the newline flows into `curl` URLs and produces embedded `%0A`, which upstream GitHub Releases reject with a 404 that's hard to diagnose.
 - The install scripts and docs can reference it for operator messaging without touching MSBuild.
 - It's a one-liner to bump. A PR that changes Caddy is a single-file diff -- trivial to review.
 - It lives next to `.editorconfig`, `nuget.config`, `aspire.config.json`, etc. Repo-root config files are where we keep other cross-cutting pins.
@@ -475,14 +477,14 @@ Contents (example):
 
 ### 6.2 How the workflow downloads Caddy per platform
 
-Single step per matrix leg (already shown in section 3.6). Key properties:
+Three-step flow per matrix leg (download asset, download upstream checksums, verify, extract):
 
 - **URL template:** `https://github.com/caddyserver/caddy/releases/download/v${VER}/${ASSET}`. Stable, public, HTTPS, no auth needed.
 - **Asset naming:** Caddy's release assets follow the pattern `caddy_{version}_{os}_{arch}.{ext}`. The matrix row carries the right filename pattern; the workflow substitutes `{CADDY_VER}` and then fetches.
 - **Retry:** `curl --retry 3 --retry-delay 5` for transient GitHub 5xx.
-- **No checksum verification on the Caddy download** (in v1). Caddy publishes checksums in a sibling file; we could add verification, and should. Left as a listed risk in section 17 with a trivial mitigation ready.
-- **Extraction:** `unzip -p` on Windows (`.zip`), `tar -xzf` elsewhere. Only the `caddy`/`caddy.exe` binary is extracted; Caddy's archive also contains `LICENSE`, `README.md`, etc., which we do not need (we ship our own `caddy-LICENSE` / `caddy-NOTICE`).
-- **Permission bit:** `chmod +x caddy-download/caddy || true`. `true` because Windows doesn't need it.
+- **SHA-512 verification against upstream.** After fetching the platform asset, the workflow fetches `caddy_{version}_checksums.txt` from the same release and pulls the expected hash by exact filename match (`awk -v name="${ASSET}" '$2 == name {print $1}'` — exact field match avoids GNU-vs-BSD grep regex differences). Upstream publishes **SHA-512** (128 hex chars per line), not SHA-256 — the workflow matches upstream's published integrity guarantee rather than introducing a second algorithm. Mismatch fails the leg before extraction, so a tampered or corrupted asset never reaches `dotnet publish`. Our own archive checksums (`.sha256` files + `checksums.txt` attached to the release) remain SHA-256 per locked decision 9 — that's a different trust domain (we sign our own output; we verify upstream's). See Appendix A for the two algorithms' roles.
+- **Extraction:** `unzip -o` on Windows (`.zip`), `tar -xzf` elsewhere. Only the `caddy`/`caddy.exe` binary is extracted; Caddy's archive also contains `LICENSE`, `README.md`, etc., which we do not need (we ship our own `caddy-LICENSE` / `caddy-NOTICE`).
+- **Permission bit:** `chmod +x caddy-download/caddy` guarded by an `if [[ "${RID}" != win-x64 ]]` check. Letting a Unix-leg chmod fail silently (via `|| true`) would mask a genuine filesystem problem; the guard makes chmod's success or failure meaningful on every leg that executes it.
 
 ### 6.3 License file handling
 
@@ -1486,6 +1488,10 @@ Steps:
 **Tag rejected by `extract-version`.**
 - Tag does not match `^v\d+\.\d+\.\d+$`. Likely a typo or a pre-release tag (which v1 does not support). Delete the tag, re-tag correctly, re-publish.
 
+**Re-publishing a tag silently replaces existing archives.**
+- Every `gh release upload` step in the workflow runs with `--clobber`, which overwrites any asset on the release that has the same filename. This is correct for the matrix-re-run case (one leg failed, re-run it; the partial from the failed attempt is replaced). It is also what happens if an operator re-publishes an existing tag: the whole archive set is replaced and the only external signal is the release asset's modified-time.
+- **Playbook posture:** do not re-publish tags. If a release needs correction, cut the next patch version (`v0.1.0` → `v0.1.1`). The workflow's `Log existing release assets` step writes a warning to the matrix-leg log when it detects pre-existing archives for the current tag, so the overwrite is visible in the CI log — but the workflow does not refuse to proceed. Refuse-on-existing is rejected on purpose: it would block legitimate matrix re-runs, which are the common case.
+
 ### 16.3 Frequency expectation
 
 Not prescribed here. Early (0.1.x) expect several releases per month as bugs shake out. Later, a "meaningful changes accumulate" cadence matching PocketBase / Vaultwarden. Specific release cadence is not a release-pipeline concern.
@@ -1511,6 +1517,8 @@ Not prescribed here. Early (0.1.x) expect several releases per month as bugs sha
 | `COLLABHOST_DATA_PATH` env var collides with a pre-existing user env var | Very Low | Low | Prefix `COLLABHOST_` is unique enough. |
 | Binary rename (`Collabhost.Api` → `collabhost`) breaks local dev tooling or docs | Low | Low | `AssemblyName` override is publish-time only; `dotnet run` during dev still produces `Collabhost.Api.exe`. Docs pass in #155 updates any stale references. |
 | Proxy `proxyState` field is new contract surface -- downstream consumers not yet updated | Medium | Low-Medium | Dana owns dashboard rendering. 5-value enum locked (§6.4.2): `starting \| running \| failed \| disabled \| stopped`. Default is `"starting"` so queries during boot always receive a valid value. |
+| Build artifacts leak into shipped archive (PDB, SWA endpoint manifest, future SDK-emitted files) | Medium | Low-Medium | Phase 4a workflow's `Stage archive` step is an **explicit allow-list re-stage**: only the six contract items (`collabhost[.exe]`, `caddy[.exe]`, `appsettings.json`, `INSTALL.md`, `LICENSES/caddy-LICENSE`, `LICENSES/caddy-NOTICE`) are copied into a clean `archive-stage/` directory. A post-archival `Verify archive contents` step unpacks the archive in a temp directory and asserts all six entries are present — extra entries are dropped by the allow-list; missing entries fail the leg. Keeps the contract enforced at archival time rather than inferred from publish flags. |
+| Caddy download passes but upstream checksum file is corrupted / missing / tampered | Low | High | SHA-512 verify against the per-release `caddy_<version>_checksums.txt`. Mismatch or absent entry fails the leg before extraction. Clear error message includes the expected-vs-actual hash. See §6.2. |
 
 ### 17.2 Open questions
 
@@ -1658,12 +1666,14 @@ Phase 4b of #153 cannot produce a working production release until #156 is merge
 - `.github/workflows/publish.yml` (new) -- versioned archive names, `-p:AssemblyName=collabhost`, native runners per leg.
 - `caddy.version` file at repo root.
 - `release-assets/INSTALL.md` (placeholder until Phase 4b), `release-assets/caddy-LICENSE`, `release-assets/caddy-NOTICE`.
-- **Caddy download SHA256 verification step** (R2-Q2 resolved in scope): verify each downloaded Caddy binary against its upstream `*.txt` (or `checksums.txt`) entry before bundling.
+- **Caddy download SHA-512 verification step** (R2-Q2 resolved in scope; algorithm corrected from "SHA256" during implementation because upstream publishes SHA-512): verify each downloaded Caddy binary against its upstream `caddy_<version>_checksums.txt` entry before bundling.
 - Optional: cut a sacrificial `v0.0.1-alpha.0` tag against a test branch for first-run E2E validation of the workflow. (Dry-run workflow #157 replaces this later.)
 
 **Why this phase can land without #156:** the workflow produces archives. Whether the archives contain a *correct production runtime* depends on #156. Landing 4a first lets the workflow bake and fail fast on build-matrix issues, cross-platform quirks, and checksum plumbing -- independent of the production-startup posture.
 
 **Review gate:** Marcus for workflow architecture.
+
+**Post-hoc implementation shape (PR #92):** the spec above is the high-level brief; the landed workflow has a 4-job graph: `extract-version` → `build-frontend` → `build-matrix` (5 RIDs, `fail-fast: false`, native runners) → `publish-checksums`. Each matrix leg runs `Download and verify Caddy` (SHA-512), `Publish`, `Stage archive` (explicit allow-list re-stage of the six contract items into `archive-stage/`), `Archive`, `Verify archive contents` (unpack + assert the six items), `Checksum`, `Log existing release assets`, `Upload release assets`. `timeout-minutes: 30` on matrix legs, `15` on the other three jobs. Per-leg checksum artifacts retain for 7 days so `publish-checksums` can be re-run after a late aggregation failure without re-running the matrix. `--clobber` on every `gh release upload`; re-publish-tag overwrites are logged (not blocked) per the playbook posture in §16.2.
 
 ### Phase 4b: Installer + INSTALL.md
 
@@ -1714,9 +1724,9 @@ After Phases 1-3, 4a, 4b, 5 + #156 all merge:
 ## Appendix A: One-page summary for review (R2)
 
 - **Workflow:** `publish.yml` on `release: [published]`. Jobs: `extract-version` → `build-frontend` → `build-matrix (5 RIDs, native runners)` → `publish-checksums`.
-- **Caddy:** pinned in `caddy.version` (recommend `2.11.2`). Downloaded per-platform in-workflow. Shipped in-archive with `caddy-LICENSE` + `caddy-NOTICE`. SHA256 verification of the download is in scope for Phase 4a (R2.1).
-- **Archive:** `collabhost-{version}-{rid}.(zip|tar.gz)`. Contents: `collabhost[.exe]` (renamed from `Collabhost.Api[.exe]`) + `caddy[.exe]` + `appsettings.json` + `INSTALL.md` + `LICENSES/`.
-- **Checksums:** per-archive `.sha256` + aggregated `checksums.txt`. Install scripts verify before extracting.
+- **Caddy:** pinned in `caddy.version` (recommend `2.11.2`). Downloaded per-platform in-workflow. Shipped in-archive with `caddy-LICENSE` + `caddy-NOTICE`. **Upstream integrity check: SHA-512** — matches what Caddy publishes (`caddy_<version>_checksums.txt` is SHA-512, not SHA-256). Hash mismatch fails the leg before extraction.
+- **Archive:** `collabhost-{version}-{rid}.(zip|tar.gz)`. Explicit allow-list stage step so only the six contract items land in the archive, regardless of what `dotnet publish` emits alongside. Contents: `collabhost[.exe]` (renamed from `Collabhost.Api[.exe]`) + `caddy[.exe]` + `appsettings.json` + `INSTALL.md` + `LICENSES/`. Post-archival `Verify archive contents` step asserts the six items are present.
+- **Checksums:** **our own archives are SHA-256** (per-archive `.sha256` + aggregated `checksums.txt`). Install scripts verify before extracting. Two trust domains, two algorithms: SHA-512 to match what upstream Caddy publishes, SHA-256 for the archives we publish ourselves (locked decision 9).
 - **Version:** `v{semver}` tag → `-p:Version=` → one static helper (`Platform/VersionInfo`) → `GET /api/v1/version` + `--version` CLI flag. `--version` stdout format: `Collabhost 0.1.0` (locked).
 - **Caddy resolution (R2):** `COLLABHOST_CADDY_PATH` > `Proxy:BinaryPath` from `appsettings.json` > bundled sidecar. **Probe A dropped.** Post-launch probe with per-attempt 1s / deadline 5s; soft-fail with visibility (`proxyState` in `/status`, dashboard signal).
 - **Install scripts:** `docs/install.sh` + `docs/install.ps1`. Aspire model. `$HOME/.collabhost/bin`. **`data/` and `appsettings.json` preserved on reinstall (R2.1).** Hosted on GitHub Pages. macOS auto-`xattr` with stdout confirmation.
