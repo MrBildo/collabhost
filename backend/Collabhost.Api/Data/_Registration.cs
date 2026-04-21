@@ -18,6 +18,8 @@ public static class DataRegistration
 
             services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(connectionString));
 
+            services.AddSingleton<MigrationRunner>();
+
             return services;
         }
     }

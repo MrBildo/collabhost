@@ -132,7 +132,7 @@ Yes. Small, cheap, high-signal. The failure mode for "skip preflight" is cryptic
 1. **Data directory is writable.** Resolve the effective data directory (per §7.2), create it if missing (0700 on POSIX), try to write + delete a sentinel file. Fail with clear message + exit code 10 (§12.1) if not writable.
 2. **`AppContext.BaseDirectory` is readable.** We need the embedded-resource assembly and the bundled Caddy sidecar both accessible. Any read failure is a packaging bug, not a runtime condition.
 3. **Caddy binary resolves or soft-fails cleanly.** `CaddyResolver` runs as Phase 2 of #153. Its result is captured and fed forward to §9. If it fails, the proxy subsystem enters `disabled` at boot (§9) -- not a startup halt.
-4. **Last-booted version read.** Reads `{dataDirectory}/.last-boot-version` per §6.2.1. Missing or malformed → `unknown`. Never halts.
+4. **User-types directory is created if missing.** Pointer only -- see §8.3 for rationale and §8.5 for mechanics. Preflight owns the filesystem prep; `TypeStore` owns the load semantics.
 
 **What we deliberately do NOT check at preflight:**
 
@@ -142,7 +142,9 @@ Yes. Small, cheap, high-signal. The failure mode for "skip preflight" is cryptic
 
 ### 5.3 Code seam
 
-New class `Platform/StartupPreflight.cs` with a single `ValidateAsync(IHostEnvironment, IConfiguration, ILogger) -> PreflightResult` method. Called from `Program.cs` after configuration is built and before the scope is created.
+New class `Platform/StartupPreflight.cs` with a single `Validate(dataDirectory, ILogger) -> PreflightResult` method. Called from `Program.cs` after configuration is built and before the scope is created. The method is synchronous because all checks are filesystem I/O against a small set of known paths; making it `async` would add surface with no contended-workload benefit, and the no-sentinel-read rule (see §6.2.1) means there is nothing in the preflight that blocks on I/O worth yielding for.
+
+The backups subdirectory name is exposed as a `public const string BackupsSubdirectory` on `StartupPreflight`. `Program.cs` composes the backups path once (`Path.Combine(effectiveDataDir, StartupPreflight.BackupsSubdirectory)`) and feeds it into `MigrationRunner.MigrateWithBackupAsync`. Preflight creates the directory; the compose site is a single `Path.Combine` in `Program.cs`. No duplicate path construction across §5 and §6.
 
 ---
 
@@ -177,8 +179,8 @@ To fill `{fromSemver}` we need to know the version of the binary that last succe
 **Decision -- plain-text sentinel file: `{dataDirectory}/.last-boot-version`.**
 
 - Single line containing the semver of the last binary that completed startup (e.g., `v0.1.0\n`).
-- Read during §5 preflight, cached in the startup context for the migration runner to consume.
-- Written at the end of successful startup (post-Kestrel-listen), atomically via write-to-temp + rename.
+- Read at the migration call site in `Program.cs` as input to the `MigrationRunner`. Preflight validates the filesystem; the sentinel is purely a migration-runner input so it lives at the migration seam, not in `PreflightResult`. This keeps `StartupPreflight` focused on "is the environment usable?" and avoids conflating it with "what does the migration runner need as input?"
+- Written after `IHostApplicationLifetime.ApplicationStarted` fires (which is post-hosted-services-start and post-Kestrel-listen on the production host), atomically via write-to-temp + rename.
 - 0600 on POSIX. Owned by the Collabhost process user.
 - Missing file → `fromSemver = "unknown"`. Malformed contents (not a valid semver pattern) → same. No halt; the worst case is a cosmetic backup filename.
 - Not backed up separately. It's a derived-from-runtime artifact, not operator state.
@@ -227,7 +229,7 @@ This section is content #156 owns but the actual INSTALL.md file is written as p
 
 ### 6.7 Code seam
 
-New class `Data/MigrationRunner.cs` with two methods, plus a small `Platform/BootVersionTracker.cs` helper for the §6.2.1 sentinel file (read in preflight, write on successful boot):
+New class `Data/MigrationRunner.cs` with two methods, plus a small `Platform/BootVersionTracker.cs` helper for the §6.2.1 sentinel file (read at the migration call site in `Program.cs` just before `MigrateWithBackupAsync` so the semver is an input the runner receives rather than a side-effect it reads; written on `ApplicationStarted`):
 
 ```csharp
 public sealed class MigrationRunner
@@ -657,9 +659,9 @@ Focused -- not a test-plan inventory. Remy sequences within the PRs.
 
 ### 16.1 Unit tests (new)
 
-- `MigrationRunnerTests` -- first boot creates DB, normal boot no-ops, pending migrations trigger backup, backup retention rolls at 5, filename-collision exit path, backup filename reflects `{fromSemver}`/`{toSemver}` including the `unknown` fallback.
-- `StartupPreflightTests` -- writable dir → ok, unwritable dir → exit code 10, missing user-types dir → created, missing/malformed `.last-boot-version` → `unknown` without halt.
-- `BootVersionTrackerTests` -- read missing → `unknown`, read valid semver → returned, write is atomic (temp + rename), round-trip after write.
+- `MigrationRunnerTests` -- first boot creates DB, normal boot no-ops, pending migrations trigger backup, backup retention rolls at 5, filename-collision exit path (exit 11), DB-locked exit path (exit 11), generic migration-throw exit path (exit 20), backup filename reflects `{fromSemver}`/`{toSemver}` including the `unknown` fallback.
+- `StartupPreflightTests` -- writable dir → ok, unwritable dir → exit code 10, missing user-types dir → created (per §8.5).
+- `BootVersionTrackerTests` -- read missing → `unknown`, read valid semver → returned, malformed contents → `unknown` without halt, write is atomic (temp + rename), round-trip after write.
 - `UserSeedServiceTests` -- add scenario 3 cases (configured key matches existing user → no-op; doesn't match → new admin created), env var `COLLABHOST_ADMIN_KEY` overrides `Auth:AdminKey` when both set.
 
 ### 16.2 Integration tests (existing, updated)
