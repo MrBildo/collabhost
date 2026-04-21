@@ -132,6 +132,7 @@ Yes. Small, cheap, high-signal. The failure mode for "skip preflight" is cryptic
 1. **Data directory is writable.** Resolve the effective data directory (per §7.2), create it if missing (0700 on POSIX), try to write + delete a sentinel file. Fail with clear message + exit code 10 (§12.1) if not writable.
 2. **`AppContext.BaseDirectory` is readable.** We need the embedded-resource assembly and the bundled Caddy sidecar both accessible. Any read failure is a packaging bug, not a runtime condition.
 3. **Caddy binary resolves or soft-fails cleanly.** `CaddyResolver` runs as Phase 2 of #153. Its result is captured and fed forward to §9. If it fails, the proxy subsystem enters `disabled` at boot (§9) -- not a startup halt.
+4. **User-types directory is created if missing.** Pointer only -- see §8.3 for rationale and §8.5 for mechanics. Preflight owns the filesystem prep; `TypeStore` owns the load semantics.
 
 **What we deliberately do NOT check at preflight:**
 
