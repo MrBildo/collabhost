@@ -81,6 +81,11 @@ public static class CaddyResolver
         return ResolveFromPath(binaryPath);
     }
 
+    // 2 second upper bound on PATH lookup. Normal completion is milliseconds; the timeout
+    // defends against pathological environments (antivirus interposition, network drives on
+    // %PATH%) hanging the API startup path, which calls Resolve during ProxyAppSeeder.SeedAsync.
+    private static readonly TimeSpan _pathLookupTimeout = TimeSpan.FromSeconds(2);
+
     private static string? ResolveFromPath(string binaryName)
     {
         var command = OperatingSystem.IsWindows() ? "where" : "which";
@@ -101,13 +106,29 @@ public static class CaddyResolver
 
             process.Start();
 
-            var output = process.StandardOutput.ReadToEnd().Trim();
+            // WaitForExit(timeout) bounds the wall clock. Reading stdout after the child has
+            // exited is safe. Calling ReadToEnd() before WaitForExit would block indefinitely
+            // on a stuck child -- defeating the timeout entirely.
+            if (!process.WaitForExit((int)_pathLookupTimeout.TotalMilliseconds))
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (Exception)
+                {
+                    // Best-effort kill. The process may have exited between WaitForExit returning
+                    // false and our Kill call, or the OS may deny access.
+                }
 
-            process.WaitForExit();
+                return null;
+            }
+
+            var output = process.StandardOutput.ReadToEnd().Trim();
 
             if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
             {
-                // 'where' on Windows may return multiple lines -- take the first.
+                // 'where' on Windows may return multiple lines. Take the first.
                 var firstLine = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)[0];
 
                 return firstLine;

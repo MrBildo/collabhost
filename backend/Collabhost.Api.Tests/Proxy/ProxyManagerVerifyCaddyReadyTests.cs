@@ -1,3 +1,5 @@
+using System.Reflection;
+
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
@@ -92,6 +94,117 @@ public class ProxyManagerVerifyCaddyReadyTests
         var manager = CreateProxyManager(new ScriptedCaddyClient(alwaysReady: true));
 
         manager.CurrentState.ShouldBe(ProxyState.Starting);
+    }
+
+    [Fact]
+    public async Task ProbeAndActivate_NeverReady_TransitionsToFailedAndDisables()
+    {
+        // MED-5: assert the downstream side-effects of the soft-fail path, not just the
+        // VerifyCaddyReadyAsync return value. After the 5s probe budget exhausts, the
+        // probe-and-activate flow must leave _currentState == Failed and _proxyDisabled == true.
+        var caddy = new ScriptedCaddyClient(alwaysReady: false);
+        var manager = CreateProxyManager(caddy);
+
+        await manager.ProbeAndActivateAsync(CancellationToken.None);
+
+        manager.CurrentState.ShouldBe(ProxyState.Failed);
+        GetProxyDisabled(manager).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ProbeAndActivate_ReadyFromStarting_TransitionsToRunning()
+    {
+        var caddy = new ScriptedCaddyClient(alwaysReady: true);
+        var manager = CreateProxyManager(caddy);
+
+        manager.CurrentState.ShouldBe(ProxyState.Starting);
+
+        await manager.ProbeAndActivateAsync(CancellationToken.None);
+
+        manager.CurrentState.ShouldBe(ProxyState.Running);
+        GetProxyDisabled(manager).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ProbeAndActivate_CrashedMidProbe_LeavesStateAsFailed()
+    {
+        // MED-4: directed race test for the MED-1 CAS fix.
+        //
+        // Scenario: probe is mid-flight when a Crashed event fires. Previous code
+        // (unconditional write) would overwrite Failed with Running and mask the crash.
+        // After the CAS fix, the probe's late Running write must be suppressed -- state
+        // stays at Failed. This test drives that interleave deterministically via a gated
+        // CaddyClient: the probe blocks inside IsReadyAsync until we flip the state to
+        // Failed, then releases, reads "ready=true", and attempts its CAS.
+        using var gate = new ManualResetEventSlim(initialState: false);
+        using var caddy = new GatedCaddyClient(gate, readyAfterGate: true);
+        var manager = CreateProxyManager(caddy);
+
+        manager.CurrentState.ShouldBe(ProxyState.Starting);
+
+        // Start the probe on a background thread. It will block inside IsReadyAsync
+        // waiting on the gate.
+        var probeTask = Task.Run(() => manager.ProbeAndActivateAsync(CancellationToken.None));
+
+        // Wait until the probe has entered IsReadyAsync (caddy client set the arrival flag).
+        caddy.WaitForArrival(TimeSpan.FromSeconds(2)).ShouldBeTrue();
+
+        // Simulate the Crashed event handler landing while the probe is still blocked.
+        // Direct field write mimics what HandleProxyAppStateChange would do.
+        SetCurrentState(manager, ProxyState.Failed);
+
+        // Release the probe. It observes ready=true, tries to CAS from Starting->Running,
+        // sees the field is already Failed, and must suppress the write.
+        gate.Set();
+
+        await probeTask;
+
+        manager.CurrentState.ShouldBe(ProxyState.Failed);
+    }
+
+    [Fact]
+    public async Task ProbeAndActivate_StoppedMidProbeNeverReady_LeavesStateAsStopped()
+    {
+        // Companion to the Crashed-mid-probe race: during the 5s probe budget a Stopped
+        // event lands, then the probe never sees Caddy ready. The probe's Failed write
+        // must also CAS from Starting, so Stopped is preserved.
+        var caddy = new ScriptedCaddyClient(alwaysReady: false);
+        var manager = CreateProxyManager(caddy);
+
+        // Pretend the event handler wrote Stopped while the probe was mid-loop.
+        SetCurrentState(manager, ProxyState.Stopped);
+
+        await manager.ProbeAndActivateAsync(CancellationToken.None);
+
+        manager.CurrentState.ShouldBe(ProxyState.Stopped);
+        // _proxyDisabled still latches -- the probe is giving up on this process lifetime
+        // even though it defers to the event handler for the public-facing state.
+        GetProxyDisabled(manager).ShouldBeTrue();
+    }
+
+    private static bool GetProxyDisabled(ProxyManager manager)
+    {
+        var field = typeof(ProxyManager).GetField
+        (
+            "_proxyDisabled",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
+
+        field.ShouldNotBeNull();
+
+        return (bool)field.GetValue(manager)!;
+    }
+
+    private static void SetCurrentState(ProxyManager manager, ProxyState state)
+    {
+        var field = typeof(ProxyManager).GetField
+        (
+            "_currentState",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
+
+        field.ShouldNotBeNull();
+        field.SetValue(manager, (int)state);
     }
 
     private static ProxyManager CreateProxyManager(ICaddyClient caddy)
@@ -209,4 +322,33 @@ file sealed class UnusedProcessRunner : IManagedProcessRunner
         CancellationToken ct = default
     ) =>
         throw new NotSupportedException("Not used in probe tests");
+}
+
+// Blocks inside IsReadyAsync until the gate is signalled. Used to orchestrate the
+// directed MED-1 race (probe mid-flight when an event-handler write lands).
+file sealed class GatedCaddyClient(ManualResetEventSlim gate, bool readyAfterGate) : ICaddyClient, IDisposable
+{
+    private readonly ManualResetEventSlim _gate = gate;
+    private readonly bool _readyAfterGate = readyAfterGate;
+    private readonly ManualResetEventSlim _arrival = new(initialState: false);
+
+    public bool WaitForArrival(TimeSpan timeout) =>
+        _arrival.Wait(timeout);
+
+    public Task<bool> IsReadyAsync(CancellationToken ct = default)
+    {
+        _arrival.Set();
+        _gate.Wait(ct);
+
+        return Task.FromResult(_readyAfterGate);
+    }
+
+    public Task<bool> LoadConfigAsync(System.Text.Json.Nodes.JsonObject config, CancellationToken ct = default) =>
+        Task.FromResult(true);
+
+    public Task<System.Text.Json.Nodes.JsonObject?> GetConfigAsync(CancellationToken ct = default) =>
+        Task.FromResult<System.Text.Json.Nodes.JsonObject?>(null);
+
+    public void Dispose() =>
+        _arrival.Dispose();
 }

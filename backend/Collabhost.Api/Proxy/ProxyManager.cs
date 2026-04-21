@@ -56,11 +56,14 @@ public class ProxyManager
     private readonly ConcurrentDictionary<string, bool> _routeStates = new(StringComparer.Ordinal);
     private readonly Channel<bool> _syncChannel = Channel.CreateBounded<bool>(1);
 
-    // Written by proxy startup / probe / event handler threads, read by /status request threads.
-    // volatile ensures read visibility ordering without locking (§6.4.2 "Concurrency note"):
-    // reads of an aligned 32-bit enum are atomic in .NET; volatile prevents torn state
-    // presentation (e.g., stuck on "starting" after a transition to "failed").
-    private volatile ProxyState _currentState = ProxyState.Starting;
+    // Backing store is int so Interlocked.CompareExchange can operate directly on it.
+    // Writes from the field initializer (Starting), StartAsync disabled path (Disabled),
+    // the event handler (Failed / Stopped / Starting), and ProbeAndActivateAsync (CAS from Starting).
+    // Reads from /status request threads via CurrentState.
+    // Ordering is enforced by Interlocked for CAS and Volatile.Read for the property accessor.
+    // Aligned 32-bit reads are atomic in .NET, and Volatile.Read pairs with the Interlocked
+    // writes to guarantee visibility (§6.4.2 "Concurrency note").
+    private int _currentState = (int)ProxyState.Starting;
 
     // Once the post-launch probe fails, disable further sync attempts for this process lifetime.
     private volatile bool _proxyDisabled;
@@ -71,7 +74,7 @@ public class ProxyManager
     private string? _proxyAppSlug;
     private bool _disposed;
 
-    public ProxyState CurrentState => _currentState;
+    public ProxyState CurrentState => (ProxyState)Volatile.Read(ref _currentState);
 
     public void EnableRoute(string slug)
     {
@@ -111,7 +114,7 @@ public class ProxyManager
         {
             // CaddyResolver (§6.4.1) returned null, so ProxyAppSeeder did not register a proxy app.
             // Surface this externally via proxyState='disabled' on /api/v1/status (§6.4.2).
-            _currentState = ProxyState.Disabled;
+            Interlocked.Exchange(ref _currentState, (int)ProxyState.Disabled);
 
             _logger.LogWarning
             (
@@ -298,7 +301,13 @@ public class ProxyManager
         switch (processEvent.NewState)
         {
             case ProcessState.Running:
-                _logger.LogInformation("Proxy process is running -- probing admin API readiness");
+                // Re-enter the Starting window before spawning the probe so /status reports
+                // 'starting' during the ≤5s probe budget -- otherwise a restart from a terminal
+                // state (Stopped/Failed) would keep reporting the old state until the probe
+                // finishes. Unconditional Exchange: a fresh Running event is the authoritative
+                // signal that the probe window has opened (HIGH-1).
+                Interlocked.Exchange(ref _currentState, (int)ProxyState.Starting);
+                _logger.LogInformation("Proxy process is running -- probing admin API readiness (proxyState='starting')");
                 // Fire-and-forget: probe runs off the event-bus callback so we don't block
                 // the supervisor. State transitions + logging happen inside.
 #pragma warning disable VSTHRD110, MA0134, CS4014, CA2016, MA0040
@@ -307,19 +316,19 @@ public class ProxyManager
                 break;
 
             case ProcessState.Crashed:
-                _currentState = ProxyState.Failed;
+                Interlocked.Exchange(ref _currentState, (int)ProxyState.Failed);
                 _logger.LogWarning("Proxy process crashed -- admin API is unavailable (proxyState='failed')");
                 break;
 
             case ProcessState.Fatal:
-                _currentState = ProxyState.Failed;
+                Interlocked.Exchange(ref _currentState, (int)ProxyState.Failed);
                 _proxyDisabled = true;
                 _logger.LogError("Proxy process entered fatal state -- admin API is unavailable (proxyState='failed')");
                 break;
 
             case ProcessState.Stopped:
                 // Operator stopped the proxy via UI/API (host shutdown uses StopAsync, not an event).
-                _currentState = ProxyState.Stopped;
+                Interlocked.Exchange(ref _currentState, (int)ProxyState.Stopped);
                 _logger.LogInformation("Proxy process stopped -- admin API is unavailable (proxyState='stopped')");
                 break;
 
@@ -332,7 +341,13 @@ public class ProxyManager
         }
     }
 
-    private async Task ProbeAndActivateAsync(CancellationToken ct)
+    // Runs on a Task.Run thread spawned from the event handler or StartAsync. All state writes
+    // are CAS-from-Starting per MED-1. The probe owns transitions out of the Starting window
+    // and nothing else. If a Crashed, Fatal, or Stopped event moved the state to a terminal
+    // value while the probe was mid-poll, the CAS fails and the probe's late write is discarded.
+    // The outer Exception catch guarantees any unexpected exception still leaves the subsystem
+    // in a defensive terminal state instead of silently disappearing into an unobserved task.
+    internal async Task ProbeAndActivateAsync(CancellationToken ct)
     {
         try
         {
@@ -340,15 +355,52 @@ public class ProxyManager
 
             if (ready)
             {
-                _currentState = ProxyState.Running;
+                var previous = (ProxyState)Interlocked.CompareExchange
+                (
+                    ref _currentState,
+                    (int)ProxyState.Running,
+                    (int)ProxyState.Starting
+                );
+
+                if (previous != ProxyState.Starting)
+                {
+                    _logger.LogInformation
+                    (
+                        "Caddy admin API became ready but state already transitioned to {State} -- " +
+                        "leaving state as-is (late probe write suppressed)",
+                        previous
+                    );
+
+                    return;
+                }
+
                 _logger.LogInformation("Caddy admin API is ready -- proxy subsystem activated (proxyState='running')");
                 RequestSync();
                 return;
             }
 
-            // Soft-fail with visibility (§6.4.2).
-            _currentState = ProxyState.Failed;
+            // Soft-fail with visibility (§6.4.2). CAS from Starting so that a Crashed/Fatal
+            // event landing during the probe window keeps the event-handler's terminal write.
+            var failedFromStarting = Interlocked.CompareExchange
+            (
+                ref _currentState,
+                (int)ProxyState.Failed,
+                (int)ProxyState.Starting
+            ) == (int)ProxyState.Starting;
+
             _proxyDisabled = true;
+
+            if (!failedFromStarting)
+            {
+                _logger.LogWarning
+                (
+                    "Caddy admin API did not become ready within 5s, but state already transitioned " +
+                    "to {State} -- proxy subsystem disabled; leaving state as-is.",
+                    CurrentState
+                );
+
+                return;
+            }
 
             _logger.LogError
             (
@@ -362,6 +414,16 @@ public class ProxyManager
         catch (OperationCanceledException)
         {
             // Expected during shutdown
+        }
+        catch (Exception ex)
+        {
+            // MED-2: an unexpected exception in the fire-and-forget probe would otherwise vanish
+            // into TaskScheduler.UnobservedTaskException. Transition to the most defensive
+            // terminal state (Failed + disabled) so /status reflects reality.
+            Interlocked.Exchange(ref _currentState, (int)ProxyState.Failed);
+            _proxyDisabled = true;
+
+            _logger.LogError(ex, "Proxy probe aborted unexpectedly -- proxy subsystem disabled (proxyState='failed')");
         }
     }
 
