@@ -189,13 +189,14 @@ fi
 
 # ---- Extract -----------------------------------------------------------------
 
+# The archive is flat -- the six contract items sit at the archive root, no
+# wrapping directory. Extract straight into EXTRACT_DIR and copy from there.
 EXTRACT_DIR="${TMP_DIR}/extract"
 mkdir -p "${EXTRACT_DIR}"
 tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "${EXTRACT_DIR}"
 
-ARCHIVE_ROOT="${EXTRACT_DIR}/collabhost-${VERSION}-${RID}"
-if [ ! -d "${ARCHIVE_ROOT}" ]; then
-  echo "Archive layout unexpected: ${ARCHIVE_ROOT} not found after extract." >&2
+if [ ! -f "${EXTRACT_DIR}/collabhost" ]; then
+  echo "Archive layout unexpected: collabhost binary not found at archive root after extract." >&2
   exit 1
 fi
 
@@ -211,19 +212,19 @@ fi
 mkdir -p "${INSTALL_PATH}"
 
 # Overwrite files that are part of the bundle.
-cp "${ARCHIVE_ROOT}/collabhost" "${INSTALL_PATH}/"
-cp "${ARCHIVE_ROOT}/caddy"      "${INSTALL_PATH}/"
-cp "${ARCHIVE_ROOT}/INSTALL.md" "${INSTALL_PATH}/"
+cp "${EXTRACT_DIR}/collabhost" "${INSTALL_PATH}/"
+cp "${EXTRACT_DIR}/caddy"      "${INSTALL_PATH}/"
+cp "${EXTRACT_DIR}/INSTALL.md" "${INSTALL_PATH}/"
 
 mkdir -p "${INSTALL_PATH}/LICENSES"
 # Clear then copy -- keeps LICENSES/ in sync with what the archive ships.
 rm -f "${INSTALL_PATH}/LICENSES/"*
-cp "${ARCHIVE_ROOT}/LICENSES/"* "${INSTALL_PATH}/LICENSES/"
+cp "${EXTRACT_DIR}/LICENSES/"* "${INSTALL_PATH}/LICENSES/"
 
 # Preserve appsettings.json if it already exists. Only seed from the archive on
 # first install. On upgrade the operator's edits survive (spec §9.7, R2.1).
 if [ ! -f "${INSTALL_PATH}/appsettings.json" ]; then
-  cp "${ARCHIVE_ROOT}/appsettings.json" "${INSTALL_PATH}/"
+  cp "${EXTRACT_DIR}/appsettings.json" "${INSTALL_PATH}/"
 fi
 
 if [ -n "${IS_REINSTALL}" ]; then

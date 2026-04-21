@@ -159,15 +159,23 @@ try
     } | Out-Null
 
     Write-Host 'Verifying SHA-256...'
-    # sha256sum output: "<hash>  <filename>" (two spaces). Match on filename in column 2.
+    # sha256sum output: "<hash>  <filename>" (two spaces). Match on filename
+    # in column 2. sha256sum -b (binary mode, used by Git-Bash on Windows)
+    # emits "<hash>  *<filename>" -- strip the leading '*' before comparison
+    # so the installer tolerates either mode regardless of what published
+    # the checksum.
     $expected = $null
     foreach ($line in Get-Content -LiteralPath $ChecksumsPath)
     {
         $parts = $line -split '\s+', 2
-        if ($parts.Count -eq 2 -and $parts[1].Trim() -eq $Archive)
+        if ($parts.Count -eq 2)
         {
-            $expected = $parts[0].ToLowerInvariant()
-            break
+            $name = $parts[1].Trim().TrimStart('*')
+            if ($name -eq $Archive)
+            {
+                $expected = $parts[0].ToLowerInvariant()
+                break
+            }
         }
     }
 
@@ -209,14 +217,17 @@ try
 
     # ---- Extract ------------------------------------------------------------
 
+    # The archive is flat -- the six contract items sit at the archive root,
+    # no wrapping directory. Extract straight into ExtractDir and copy from
+    # there.
     $ExtractDir = Join-Path $TmpDir 'extract'
     New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
     Expand-Archive -LiteralPath $ArchivePath -DestinationPath $ExtractDir -Force
 
-    $ArchiveRoot = Join-Path $ExtractDir "collabhost-$VersionNumber-$Rid"
-    if (-not (Test-Path -LiteralPath $ArchiveRoot -PathType Container))
+    $CollabhostSrc = Join-Path $ExtractDir 'collabhost.exe'
+    if (-not (Test-Path -LiteralPath $CollabhostSrc -PathType Leaf))
     {
-        throw "Archive layout unexpected: $ArchiveRoot not found after extract."
+        throw "Archive layout unexpected: collabhost.exe not found at archive root after extract."
     }
 
     # ---- Install (reinstall-safe) -------------------------------------------
@@ -233,9 +244,9 @@ try
     }
 
     # Overwrite files that are part of the bundle.
-    Copy-Item -LiteralPath (Join-Path $ArchiveRoot 'collabhost.exe') -Destination $InstallPath -Force
-    Copy-Item -LiteralPath (Join-Path $ArchiveRoot 'caddy.exe')      -Destination $InstallPath -Force
-    Copy-Item -LiteralPath (Join-Path $ArchiveRoot 'INSTALL.md')     -Destination $InstallPath -Force
+    Copy-Item -LiteralPath $CollabhostSrc                         -Destination $InstallPath -Force
+    Copy-Item -LiteralPath (Join-Path $ExtractDir 'caddy.exe')    -Destination $InstallPath -Force
+    Copy-Item -LiteralPath (Join-Path $ExtractDir 'INSTALL.md')   -Destination $InstallPath -Force
 
     # LICENSES: mirror bash -- keep the directory, clear its contents, copy new
     # files into it. Avoids the "Copy-Item -Recurse into an existing dir nests
@@ -246,13 +257,13 @@ try
         New-Item -ItemType Directory -Path $LicensesDst -Force | Out-Null
     }
     Get-ChildItem -LiteralPath $LicensesDst -File -Force | Remove-Item -Force
-    Copy-Item -Path (Join-Path $ArchiveRoot 'LICENSES\*') -Destination $LicensesDst -Force
+    Copy-Item -Path (Join-Path $ExtractDir 'LICENSES\*') -Destination $LicensesDst -Force
 
     # Preserve appsettings.json if it already exists. Only seed from the archive
     # on first install. On upgrade the operator's edits survive (spec section 9.7, R2.1).
     if (-not (Test-Path -LiteralPath $AppSettingsDst))
     {
-        Copy-Item -LiteralPath (Join-Path $ArchiveRoot 'appsettings.json') -Destination $InstallPath -Force
+        Copy-Item -LiteralPath (Join-Path $ExtractDir 'appsettings.json') -Destination $InstallPath -Force
     }
 
     if ($IsReinstall)
