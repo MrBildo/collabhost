@@ -89,6 +89,67 @@ public class ProxyManagerVerifyCaddyReadyTests
     }
 
     [Fact]
+    public async Task VerifyCaddyReadyAsync_PerAttemptTimeoutThrows_LoopContinuesToSuccess()
+    {
+        // Regression for #153 Phase 2 cold-boot bug: when IsReadyAsync throws
+        // OperationCanceledException because the per-attempt linked CTS tripped (for
+        // example, when a resilience pipeline eats the 1s budget during connection
+        // acquisition), the probe loop must treat the exception as a per-attempt timeout
+        // and continue, not let it propagate up to ProbeAndActivateAsync's outer OCE
+        // catch and silently terminate the probe.
+        //
+        // Scenario: first attempt throws OCE (simulating the per-attempt CTS firing
+        // mid-call); subsequent attempts return healthy. The probe must reach success.
+        var caddy = new OceThenReadyCaddyClient(oceCountBeforeReady: 1);
+        var manager = CreateProxyManager(caddy);
+
+        var result = await manager.VerifyCaddyReadyAsync(CancellationToken.None);
+
+        result.ShouldBeTrue();
+        caddy.CallCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task VerifyCaddyReadyAsync_EveryAttemptThrowsPerAttemptOce_ReturnsFalseAfter5s()
+    {
+        // Companion to the loop-continues test: if every attempt throws the per-attempt
+        // OCE, the probe must still exhaust its 5s budget and return false (so
+        // ProbeAndActivateAsync transitions to Failed + _proxyDisabled). Previously this
+        // would bubble OCE into ProbeAndActivateAsync's outer catch and leave the state
+        // at Starting forever.
+        var caddy = new OceThenReadyCaddyClient(oceCountBeforeReady: int.MaxValue);
+        var manager = CreateProxyManager(caddy);
+
+        var start = DateTime.UtcNow;
+
+        var result = await manager.VerifyCaddyReadyAsync(CancellationToken.None);
+
+        var elapsed = DateTime.UtcNow - start;
+
+        result.ShouldBeFalse();
+        elapsed.ShouldBeInRange(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(7));
+    }
+
+    [Fact]
+    public async Task ProbeAndActivate_PerAttemptOceOnFirstAttempt_StillReachesRunning()
+    {
+        // End-to-end regression for the cold-boot bug. Before the fix, the per-attempt
+        // OCE on the first IsReadyAsync call would propagate out of VerifyCaddyReadyAsync
+        // and be swallowed by ProbeAndActivateAsync's "Expected during shutdown" catch.
+        // The probe task would vanish and _currentState would stay at Starting for the
+        // process lifetime. After the fix, the loop continues and the state reaches
+        // Running on the next successful attempt.
+        var caddy = new OceThenReadyCaddyClient(oceCountBeforeReady: 1);
+        var manager = CreateProxyManager(caddy);
+
+        manager.CurrentState.ShouldBe(ProxyState.Starting);
+
+        await manager.ProbeAndActivateAsync(CancellationToken.None);
+
+        manager.CurrentState.ShouldBe(ProxyState.Running);
+    }
+
+    [Fact]
     public void CurrentState_InitialValue_IsStarting()
     {
         var manager = CreateProxyManager(new ScriptedCaddyClient(alwaysReady: true));
@@ -291,6 +352,43 @@ file sealed class ScriptedCaddyClient : ICaddyClient
         return _alwaysReady || (_readyAfterCalls > 0 && current >= _readyAfterCalls)
             ? Task.FromResult(true)
             : Task.FromResult(false);
+    }
+
+    public Task<bool> LoadConfigAsync(System.Text.Json.Nodes.JsonObject config, CancellationToken ct = default) =>
+        Task.FromResult(true);
+
+    public Task<System.Text.Json.Nodes.JsonObject?> GetConfigAsync(CancellationToken ct = default) =>
+        Task.FromResult<System.Text.Json.Nodes.JsonObject?>(null);
+}
+
+// Throws OperationCanceledException for the first N calls (simulating the per-attempt
+// CTS tripping mid-IsReadyAsync), then returns healthy. Drives the regression tests for
+// the #153 Phase 2 cold-boot stuck-starting bug.
+file sealed class OceThenReadyCaddyClient
+(
+    int oceCountBeforeReady
+)
+    : ICaddyClient
+{
+    private readonly int _oceCountBeforeReady = oceCountBeforeReady;
+    private int _callCount;
+
+    public int CallCount => _callCount;
+
+    public Task<bool> IsReadyAsync(CancellationToken ct = default)
+    {
+        var current = Interlocked.Increment(ref _callCount);
+
+        if (current <= _oceCountBeforeReady)
+        {
+            // Mirror what the real CaddyClient does when its linked CTS trips during
+            // HttpClient.GetAsync: the underlying TaskCanceledException has
+            // ct.IsCancellationRequested == true, so CaddyClient's narrow catch filter
+            // rejects it and the exception propagates out.
+            return Task.FromException<bool>(new OperationCanceledException(ct));
+        }
+
+        return Task.FromResult(true);
     }
 
     public Task<bool> LoadConfigAsync(System.Text.Json.Nodes.JsonObject config, CancellationToken ct = default) =>

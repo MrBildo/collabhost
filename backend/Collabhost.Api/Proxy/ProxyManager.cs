@@ -235,11 +235,25 @@ public class ProxyManager
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             linkedCts.CancelAfter(perAttemptTimeout);
 
-            // TimeoutException / HttpRequestException are caught inside IsReadyAsync
-            // (returns false). Per-attempt deadline hits here via the linked CTS.
-            if (await _caddyClient.IsReadyAsync(linkedCts.Token))
+            try
             {
-                return true;
+                // TimeoutException / HttpRequestException are caught inside IsReadyAsync
+                // (returns false). Per-attempt deadline hits here via the linked CTS --
+                // when that fires, IsReadyAsync's `when (!ct.IsCancellationRequested)`
+                // filter rejects the cancellation (the linked token IS cancelled) and
+                // TaskCanceledException propagates out. That's a per-attempt timeout, not
+                // a caller-cancellation: swallow it here and loop to the next attempt.
+                // Outer `ct` cancellation is re-raised below so the probe exits cleanly
+                // on shutdown.
+                if (await _caddyClient.IsReadyAsync(linkedCts.Token))
+                {
+                    return true;
+                }
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // Per-attempt timeout tripped the linked CTS. Fall through to the inter-
+                // attempt delay and try again until the 5s budget exhausts.
             }
 
             try
