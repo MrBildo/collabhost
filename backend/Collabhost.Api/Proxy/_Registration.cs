@@ -51,21 +51,29 @@ public static class ProxyRegistration
     {
         var section = configuration.GetSection(ProxySettings.SectionName);
 
-        // Each setting follows §12.3 precedence: env var > appsettings.json > hardcoded default
-        var baseDomain = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_BASE_DOMAIN")
-            ?? section["BaseDomain"]
-            ?? "collab.internal";
+        // Each setting follows §12.3 precedence: env var > appsettings.json > hardcoded default.
+        // IsNullOrWhiteSpace is used for env-var checks so that accidentally whitespace-only
+        // values (e.g. trailing space in a shell script) fall through to config rather than winning.
+        var envBaseDomain = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_BASE_DOMAIN");
+
+        var baseDomain = !string.IsNullOrWhiteSpace(envBaseDomain)
+            ? envBaseDomain
+            : section["BaseDomain"] ?? "collab.internal";
 
         var binaryPath = section["BinaryPath"]
             ?? "caddy";
 
-        var listenAddress = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_LISTEN_ADDRESS")
-            ?? section["ListenAddress"]
-            ?? ":443";
+        var envListenAddress = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_LISTEN_ADDRESS");
 
-        var certLifetime = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_CERT_LIFETIME")
-            ?? section["CertLifetime"]
-            ?? "168h";
+        var listenAddress = !string.IsNullOrWhiteSpace(envListenAddress)
+            ? envListenAddress
+            : section["ListenAddress"] ?? ":443";
+
+        var envCertLifetime = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_CERT_LIFETIME");
+
+        var certLifetime = !string.IsNullOrWhiteSpace(envCertLifetime)
+            ? envCertLifetime
+            : section["CertLifetime"] ?? "168h";
 
         var selfPort = ResolveSelfPort(section);
 

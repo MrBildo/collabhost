@@ -29,9 +29,10 @@ public class DataRegistrationTests
         {
             var config = ConfigWith("ConnectionStrings:Host", "Data Source=./other/collabhost.db");
 
-            var result = DataRegistration.ResolveConnectionString(config);
+            var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config);
 
-            result.ShouldBe($"Data Source={Path.Combine(dataPath, "collabhost.db")}");
+            connectionString.ShouldBe($"Data Source={Path.Combine(dataPath, "collabhost.db")}");
+            dataDir.ShouldBe(dataPath);
         }
         finally
         {
@@ -46,9 +47,9 @@ public class DataRegistrationTests
 
         var config = ConfigWith("ConnectionStrings:Host", "Data Source=/custom/path/collabhost.db");
 
-        var result = DataRegistration.ResolveConnectionString(config);
+        var (connectionString, _) = DataRegistration.ResolveConnectionString(config);
 
-        result.ShouldBe("Data Source=/custom/path/collabhost.db");
+        connectionString.ShouldBe("Data Source=/custom/path/collabhost.db");
     }
 
     [Fact]
@@ -56,9 +57,9 @@ public class DataRegistrationTests
     {
         Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", null);
 
-        var result = DataRegistration.ResolveConnectionString(EmptyConfig());
+        var (connectionString, _) = DataRegistration.ResolveConnectionString(EmptyConfig());
 
-        result.ShouldBe("Data Source=./data/collabhost.db");
+        connectionString.ShouldBe("Data Source=./data/collabhost.db");
     }
 
     [Fact]
@@ -70,13 +71,31 @@ public class DataRegistrationTests
         {
             var config = ConfigWith("ConnectionStrings:Host", "Data Source=./data/collabhost.db");
 
-            var result = DataRegistration.ResolveConnectionString(config);
+            var (connectionString, _) = DataRegistration.ResolveConnectionString(config);
 
-            result.ShouldBe("Data Source=./data/collabhost.db");
+            connectionString.ShouldBe("Data Source=./data/collabhost.db");
         }
         finally
         {
             Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", null);
         }
+    }
+
+    [Fact]
+    public void ResolveConnectionString_ConfigWithAdditionalParams_ExtractsDataDirCleanly()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", null);
+
+        var config = ConfigWith
+        (
+            "ConnectionStrings:Host",
+            "Data Source=./data/collabhost.db;Cache=Shared;Mode=ReadWriteCreate"
+        );
+
+        var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config);
+
+        connectionString.ShouldBe("Data Source=./data/collabhost.db;Cache=Shared;Mode=ReadWriteCreate");
+        // Path.GetDirectoryName is platform-sensitive: use it on both sides for a stable cross-platform assertion
+        dataDir.ShouldBe(Path.GetDirectoryName("./data/collabhost.db"));
     }
 }

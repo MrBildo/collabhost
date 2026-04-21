@@ -23,8 +23,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
-// Re-register env vars so they sit above appsettings.Local.json in the §2.5 precedence chain
-// (env > appsettings.json > default). Dev-only effect -- production does not ship .Local.json.
+// WebApplication.CreateBuilder adds an env-var provider at builder-construction time, but it
+// sits below any sources added later. The .Local.json load above now shadows env vars in dev.
+// Re-adding here pushes env vars back to the top of the provider chain per §2.5 precedence
+// (env > appsettings.json > default). Dev-only effect -- .Local.json does not ship to production.
 builder.Configuration.AddEnvironmentVariables();
 
 // Aspire service defaults

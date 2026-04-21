@@ -69,6 +69,25 @@ public class ProxyRegistrationTests
         result.BaseDomain.ShouldBe("collab.internal");
     }
 
+    [Fact]
+    public void ResolveSettings_BaseDomainEnvVarWhitespace_FallsBackToConfig()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_PROXY_BASE_DOMAIN", "   ");
+
+        try
+        {
+            var config = ConfigWithProxy(("BaseDomain", "custom.internal"));
+
+            var result = ProxyRegistration.ResolveSettings(config);
+
+            result.BaseDomain.ShouldBe("custom.internal");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COLLABHOST_PROXY_BASE_DOMAIN", null);
+        }
+    }
+
     // --- COLLABHOST_PROXY_LISTEN_ADDRESS ---
 
     [Fact]
@@ -112,6 +131,25 @@ public class ProxyRegistrationTests
         result.ListenAddress.ShouldBe(":443");
     }
 
+    [Fact]
+    public void ResolveSettings_ListenAddressEnvVarWhitespace_FallsBackToConfig()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_PROXY_LISTEN_ADDRESS", "   ");
+
+        try
+        {
+            var config = ConfigWithProxy(("ListenAddress", ":9443"));
+
+            var result = ProxyRegistration.ResolveSettings(config);
+
+            result.ListenAddress.ShouldBe(":9443");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COLLABHOST_PROXY_LISTEN_ADDRESS", null);
+        }
+    }
+
     // --- COLLABHOST_PROXY_CERT_LIFETIME ---
 
     [Fact]
@@ -153,6 +191,25 @@ public class ProxyRegistrationTests
         var result = ProxyRegistration.ResolveSettings(EmptyConfig());
 
         result.CertLifetime.ShouldBe("168h");
+    }
+
+    [Fact]
+    public void ResolveSettings_CertLifetimeEnvVarWhitespace_FallsBackToConfig()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_PROXY_CERT_LIFETIME", "   ");
+
+        try
+        {
+            var config = ConfigWithProxy(("CertLifetime", "336h"));
+
+            var result = ProxyRegistration.ResolveSettings(config);
+
+            result.CertLifetime.ShouldBe("336h");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COLLABHOST_PROXY_CERT_LIFETIME", null);
+        }
     }
 
     // --- COLLABHOST_PROXY_SELF_PORT ---

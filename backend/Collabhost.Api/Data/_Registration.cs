@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+
 namespace Collabhost.Api.Data;
 
 public static class DataRegistration
@@ -6,12 +8,9 @@ public static class DataRegistration
     {
         public IServiceCollection AddDataAccess(IConfiguration configuration)
         {
-            var connectionString = ResolveConnectionString(configuration);
+            var (connectionString, dataDir) = ResolveConnectionString(configuration);
 
             // Ensure the data directory exists on first boot (§12.2)
-            var dbPath = connectionString.Replace("Data Source=", "", StringComparison.Ordinal);
-            var dataDir = Path.GetDirectoryName(dbPath);
-
             if (!string.IsNullOrEmpty(dataDir))
             {
                 Directory.CreateDirectory(dataDir);
@@ -24,13 +23,25 @@ public static class DataRegistration
     }
 
     // Internal visibility for unit tests
-    internal static string ResolveConnectionString(IConfiguration configuration)
+    internal static (string ConnectionString, string? DataDir) ResolveConnectionString(IConfiguration configuration)
     {
         // COLLABHOST_DATA_PATH: env var wins over appsettings, then hardcoded default (§12.3 precedence)
         var dataPath = Environment.GetEnvironmentVariable("COLLABHOST_DATA_PATH");
 
-        return !string.IsNullOrWhiteSpace(dataPath)
-            ? $"Data Source={Path.Combine(dataPath, "collabhost.db")}"
-            : configuration.GetConnectionString("Host") ?? "Data Source=./data/collabhost.db";
+        if (!string.IsNullOrWhiteSpace(dataPath))
+        {
+            var dbFile = Path.Combine(dataPath, "collabhost.db");
+
+            return ($"Data Source={dbFile}", dataPath);
+        }
+
+        var configuredConnectionString = configuration.GetConnectionString("Host")
+            ?? "Data Source=./data/collabhost.db";
+
+        var configuredDataDir = new SqliteConnectionStringBuilder(configuredConnectionString).DataSource is { } src
+            ? Path.GetDirectoryName(src)
+            : null;
+
+        return (configuredConnectionString, configuredDataDir);
     }
 }

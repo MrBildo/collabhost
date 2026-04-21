@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Data.AppTypes;
@@ -48,10 +49,18 @@ public class ProxyAppSeeder
             return;
         }
 
-        // COLLABHOST_CADDY_PATH env var takes precedence over Proxy:BinaryPath (§12.3)
-        var binaryPath = Environment.GetEnvironmentVariable("COLLABHOST_CADDY_PATH")
-            is { Length: > 0 } envPath
-            ? envPath
+        // COLLABHOST_CADDY_PATH env var takes precedence over Proxy:BinaryPath (§12.3).
+        // Phase 3 is additive glue: read the env var and pass it through. If the env var is
+        // set but the path does not exist, ResolveBinaryPath returns null and the proxy is
+        // disabled -- it does NOT fall through to the config/bundled path.
+#pragma warning disable MA0026 // tracked: Phase 2 owns the full §6.4.1 fall-through chain
+        // TODO (#153 Phase 2): §6.4.1 fall-through to config/bundled if env-set path is missing.
+#pragma warning restore MA0026
+        // The full CaddyResolver refactor in Phase 2 owns the complete precedence chain.
+        var caddyPathEnv = Environment.GetEnvironmentVariable("COLLABHOST_CADDY_PATH");
+
+        var binaryPath = !string.IsNullOrWhiteSpace(caddyPathEnv)
+            ? caddyPathEnv
             : _settings.BinaryPath;
 
         var resolvedPath = ResolveBinaryPath(binaryPath);
@@ -100,7 +109,7 @@ public class ProxyAppSeeder
                     EventType = ActivityEventTypes.AppSeeded,
                     ActorId = ActivityActor.SystemId,
                     ActorName = ActivityActor.SystemName,
-                    AppId = proxyApp.Id.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+                    AppId = proxyApp.Id.ToString(null, CultureInfo.InvariantCulture),
                     AppSlug = proxyApp.Slug
                 },
                 CancellationToken.None
