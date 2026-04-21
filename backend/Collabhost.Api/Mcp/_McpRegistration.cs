@@ -1,4 +1,4 @@
-using System.Reflection;
+using Collabhost.Api.Platform;
 
 using ModelContextProtocol.Protocol;
 
@@ -10,17 +10,13 @@ public static class McpRegistration
     {
         public IServiceCollection AddMcp()
         {
-            var version = typeof(Program).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                ?.InformationalVersion ?? "0.0.0";
-
             services
                 .AddMcpServer(options =>
                 {
                     options.ServerInfo = new Implementation
                     {
                         Name = "collabhost",
-                        Version = version
+                        Version = VersionInfo.Current
                     };
 
                     options.ServerInstructions = McpServerInstructions.Content;

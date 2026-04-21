@@ -110,8 +110,9 @@ public class AuthorizationMiddleware
             }
         }
 
-        // Status endpoint is public for read-only health monitoring
+        // Status and version endpoints are public for read-only health monitoring and build identity
         return method.Equals("GET", StringComparison.OrdinalIgnoreCase)
-            && path.Equals("/api/v1/status", StringComparison.OrdinalIgnoreCase);
+            && (path.Equals("/api/v1/status", StringComparison.OrdinalIgnoreCase)
+                || path.Equals("/api/v1/version", StringComparison.OrdinalIgnoreCase));
     }
 }

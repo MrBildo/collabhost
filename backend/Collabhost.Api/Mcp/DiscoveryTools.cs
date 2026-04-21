@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Globalization;
-using System.Reflection;
 
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Platform;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
@@ -57,10 +57,6 @@ public class DiscoveryTools
     [Description("Returns system hostname, Collabhost version, and uptime. Use this to identify the host and verify the platform version. This tool does not require any apps to be registered.")]
     public static CallToolResult GetSystemStatus()
     {
-        var version = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion ?? "0.0.0";
-
         var uptimeSeconds = Math.Round((DateTime.UtcNow - _startedAt).TotalSeconds, 1);
 
         var uptimeFormatted = FormatUptime(uptimeSeconds);
@@ -68,7 +64,7 @@ public class DiscoveryTools
         var result = new
         {
             hostname = Environment.MachineName,
-            version,
+            version = VersionInfo.Current,
             uptimeSeconds,
             uptimeFormatted
         };
