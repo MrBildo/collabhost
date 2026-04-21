@@ -25,10 +25,18 @@ public record TypeStoreSnapshot
 
 public record TypeStoreValidationError(string Source, string FieldPath, string Message);
 
-public class TypeStoreValidationException(IReadOnlyList<TypeStoreValidationError> errors)
-    : Exception(FormatMessage(errors))
+public class TypeStoreValidationException
+(
+    IReadOnlyList<TypeStoreValidationError> errors,
+    bool isBuiltIn
+) : Exception(FormatMessage(errors))
 {
     public IReadOnlyList<TypeStoreValidationError> Errors { get; } = errors;
+
+    // True if the validation failure is in a built-in embedded resource (packaging bug).
+    // False if it is in an operator-provided user-type JSON file (operator configuration error).
+    // See §8.2 of the production-startup spec.
+    public bool IsBuiltIn { get; } = isBuiltIn;
 
     private static string FormatMessage(IReadOnlyList<TypeStoreValidationError> errors)
     {
@@ -43,10 +51,8 @@ public static class TypeStoreRegistration
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddTypeStore(IConfiguration configuration)
+        public IServiceCollection AddTypeStore(TypeStoreSettings settings)
         {
-            var settings = ResolveSettings(configuration);
-
             services.AddSingleton(settings);
             services.AddSingleton<TypeStore>();
             services.AddSingleton<IEventBus<TypeStoreReloadedEvent>, EventBus<TypeStoreReloadedEvent>>();
@@ -66,4 +72,12 @@ public static class TypeStoreRegistration
             : configuration.GetSection(TypeStoreSettings.SectionName).Get<TypeStoreSettings>()
                 ?? new TypeStoreSettings { UserTypesDirectory = "UserTypes" };
     }
+
+    // Resolves the effective user-types directory the TypeStore will scan. Relative paths are
+    // composed against AppContext.BaseDirectory to match TypeStore.ResolveUserTypesDirectory.
+    // Used by StartupPreflight so preflight and the runtime resolve to the same path.
+    public static string ResolveEffectiveUserTypesDirectory(TypeStoreSettings settings) =>
+        Path.IsPathRooted(settings.UserTypesDirectory)
+            ? settings.UserTypesDirectory
+            : Path.Combine(AppContext.BaseDirectory, settings.UserTypesDirectory);
 }

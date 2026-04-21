@@ -157,6 +157,10 @@ public class TypeStoreUserTypeTests : IDisposable
         exception.Errors.ShouldContain(error =>
             error.FieldPath == "slug"
             && error.Message.Contains("conflicts with a built-in type", StringComparison.Ordinal));
+
+        // User-type failures flag IsBuiltIn=false so Program.cs can exit 31 (operator error),
+        // not 30 (packaging bug). Spec §8.2.
+        exception.IsBuiltIn.ShouldBeFalse();
     }
 
     [Fact]

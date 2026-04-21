@@ -12,6 +12,7 @@ public class AppHostFixture : IAsyncLifetime
 {
     private DistributedApplication? _app;
     private string? _dbDirectory;
+    private string? _userTypesDirectory;
 
     // A known admin key injected via env var so tests can authenticate
     public string AdminKey { get; } = "01SMOKE0TEST0KEY000000000";
@@ -24,6 +25,13 @@ public class AppHostFixture : IAsyncLifetime
         _dbDirectory = Path.Combine(Path.GetTempPath(), "collabhost-smoke", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_dbDirectory);
 
+        // Isolated user-types directory so the post-#156.2 preflight doesn't create a
+        // UserTypes folder next to the test binaries.
+        _userTypesDirectory = Path.Combine
+        (
+            Path.GetTempPath(), "collabhost-smoke-usertypes", Guid.NewGuid().ToString("N")
+        );
+
         var dbPath = Path.Combine(_dbDirectory, "collabhost.db");
 
         // Override the connection string via env var -- Aspire passes this to the API process
@@ -31,6 +39,9 @@ public class AppHostFixture : IAsyncLifetime
 
         // Set a known admin key for auth
         Environment.SetEnvironmentVariable("Auth__AdminKey", AdminKey);
+
+        // Point the production-startup preflight + TypeStore at the isolated directory
+        Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", _userTypesDirectory);
 
         var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.Collabhost_AppHost>();
@@ -83,12 +94,25 @@ public class AppHostFixture : IAsyncLifetime
 
         Environment.SetEnvironmentVariable("ConnectionStrings__Host", null);
         Environment.SetEnvironmentVariable("Auth__AdminKey", null);
+        Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", null);
 
         if (_dbDirectory is not null && Directory.Exists(_dbDirectory))
         {
             try
             {
                 Directory.Delete(_dbDirectory, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup
+            }
+        }
+
+        if (_userTypesDirectory is not null && Directory.Exists(_userTypesDirectory))
+        {
+            try
+            {
+                Directory.Delete(_userTypesDirectory, recursive: true);
             }
             catch
             {

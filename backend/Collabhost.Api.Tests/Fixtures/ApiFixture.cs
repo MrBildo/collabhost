@@ -14,6 +14,7 @@ public class ApiFixture : IAsyncLifetime
 {
     private WebApplicationFactory<Program> _factory = null!;
     private string? _dbDirectory;
+    private string? _userTypesDirectory;
 
     public const string AdminKey = "01INTEG0TEST0KEY00000000";
 
@@ -25,12 +26,25 @@ public class ApiFixture : IAsyncLifetime
 
     public Task InitializeAsync()
     {
+        // Null the env var so a developer shell with COLLABHOST_USER_TYPES_PATH set does not
+        // shadow the UseSetting path below. Env var takes precedence in TypeStoreRegistration
+        // (§12.3 precedence: env > config > default) so without this the test would silently
+        // use the developer's path instead of the per-test temp dir.
+        Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", null);
+
         _dbDirectory = Path.Combine
         (
             Path.GetTempPath(), "collabhost-api-tests", Guid.NewGuid().ToString("N")
         );
 
         Directory.CreateDirectory(_dbDirectory);
+
+        // Isolated per-test user-types directory. Preflight creates it if missing; we want a
+        // clean slate so test runs don't leave a stray 'UserTypes' dir next to the test binaries.
+        _userTypesDirectory = Path.Combine
+        (
+            Path.GetTempPath(), "collabhost-api-tests-usertypes", Guid.NewGuid().ToString("N")
+        );
 
         var dbPath = Path.Combine(_dbDirectory, "collabhost.db");
 
@@ -41,6 +55,7 @@ public class ApiFixture : IAsyncLifetime
                 {
                     builder.UseSetting("ConnectionStrings:Host", $"Data Source={dbPath}");
                     builder.UseSetting("Auth:AdminKey", AdminKey);
+                    builder.UseSetting("TypeStore:UserTypesDirectory", _userTypesDirectory);
                     builder.UseSetting("Proxy:BaseDomain", "test.internal");
                     builder.UseSetting("Proxy:AdminApiUrl", "http://localhost:29999");
                     builder.UseSetting("Proxy:BinaryPath", "caddy");
@@ -86,6 +101,18 @@ public class ApiFixture : IAsyncLifetime
             try
             {
                 Directory.Delete(_dbDirectory, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup
+            }
+        }
+
+        if (_userTypesDirectory is not null && Directory.Exists(_userTypesDirectory))
+        {
+            try
+            {
+                Directory.Delete(_userTypesDirectory, recursive: true);
             }
             catch
             {
