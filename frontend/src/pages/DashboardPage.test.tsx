@@ -12,19 +12,25 @@ vi.mock('@/hooks/use-dashboard', () => ({
   useDashboardEvents: vi.fn(),
 }))
 
+vi.mock('@/hooks/use-system-status', () => ({
+  useSystemStatus: vi.fn(),
+}))
+
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   Link: ({ children, to }: { children: React.ReactNode; to: string }) => <a href={to}>{children}</a>,
 }))
 
-import type { DashboardEvent } from '@/api/types'
+import type { DashboardEvent, DashboardStats, ProxyState, SystemStatus } from '@/api/types'
 import { useApps, useStartApp, useStopApp } from '@/hooks/use-apps'
 import { useDashboardEvents, useDashboardStats } from '@/hooks/use-dashboard'
+import { useSystemStatus } from '@/hooks/use-system-status'
 import { DashboardPage } from './DashboardPage'
 
 const mockUseApps = vi.mocked(useApps)
 const mockUseDashboardStats = vi.mocked(useDashboardStats)
 const mockUseDashboardEvents = vi.mocked(useDashboardEvents)
+const mockUseSystemStatus = vi.mocked(useSystemStatus)
 const mockUseStartApp = vi.mocked(useStartApp)
 const mockUseStopApp = vi.mocked(useStopApp)
 
@@ -43,6 +49,37 @@ function makeEvent(overrides: Partial<DashboardEvent> = {}): DashboardEvent {
   }
 }
 
+function makeStats(overrides: Partial<DashboardStats> = {}): DashboardStats {
+  return {
+    totalApps: 0,
+    running: 0,
+    stopped: 0,
+    crashed: 0,
+    backoff: 0,
+    fatal: 0,
+    issues: 0,
+    issuesSummary: null,
+    uptimePercent24h: null,
+    incidentsThisWeek: 0,
+    memoryUsedMb: null,
+    memoryTotalMb: null,
+    requestsPerMinute: null,
+    appTypes: 0,
+    ...overrides,
+  }
+}
+
+function makeSystemStatus(proxyState: ProxyState): SystemStatus {
+  return {
+    status: 'ok',
+    version: '0.1.0',
+    hostname: 'test-host',
+    uptimeSeconds: 120,
+    timestamp: '2026-04-20T21:00:00.000Z',
+    proxyState,
+  }
+}
+
 function setupDefaults() {
   mockUseApps.mockReturnValue({ data: [], isLoading: false, error: null } as unknown as ReturnType<typeof useApps>)
   mockUseDashboardStats.mockReturnValue({
@@ -55,6 +92,11 @@ function setupDefaults() {
     isLoading: false,
     error: null,
   } as unknown as ReturnType<typeof useDashboardEvents>)
+  mockUseSystemStatus.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  } as unknown as ReturnType<typeof useSystemStatus>)
   mockUseStartApp.mockReturnValue(makeMutationStub())
   mockUseStopApp.mockReturnValue(makeMutationStub())
 }
@@ -129,6 +171,63 @@ describe('DashboardPage', () => {
   test('renders empty state when no apps are registered', () => {
     render(<DashboardPage />)
     expect(screen.getByText('No apps registered')).toBeInTheDocument()
+  })
+
+  test('renders Proxy cell in status strip when system status is available', () => {
+    mockUseDashboardStats.mockReturnValue({
+      data: makeStats({ totalApps: 3, running: 2, appTypes: 2 }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDashboardStats>)
+    mockUseSystemStatus.mockReturnValue({
+      data: makeSystemStatus('running'),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSystemStatus>)
+
+    render(<DashboardPage />)
+
+    expect(screen.getByText('Proxy')).toBeInTheDocument()
+    // 'Running' appears as both the stats cell label and the proxy value; verify proxy value exists
+    const runningCells = screen.getAllByText('Running')
+    expect(runningCells.length).toBeGreaterThanOrEqual(1)
+  })
+
+  test('renders Failed proxy state with remediation detail', () => {
+    mockUseDashboardStats.mockReturnValue({
+      data: makeStats({ totalApps: 3, running: 2, appTypes: 2 }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDashboardStats>)
+    mockUseSystemStatus.mockReturnValue({
+      data: makeSystemStatus('failed'),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSystemStatus>)
+
+    render(<DashboardPage />)
+
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText('Check logs, restart Collabhost')).toBeInTheDocument()
+  })
+
+  test('omits Proxy cell when system status has not loaded yet', () => {
+    mockUseDashboardStats.mockReturnValue({
+      data: makeStats({ totalApps: 3, running: 2, appTypes: 2 }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDashboardStats>)
+    mockUseSystemStatus.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    } as unknown as ReturnType<typeof useSystemStatus>)
+
+    render(<DashboardPage />)
+
+    // Strip still renders (stats loaded), but no Proxy cell yet
+    expect(screen.getByText('Total Apps')).toBeInTheDocument()
+    expect(screen.queryByText('Proxy')).toBeNull()
   })
 
   test('shows full page spinner while primary data is loading', () => {

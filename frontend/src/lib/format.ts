@@ -1,4 +1,4 @@
-import type { AppStatus, HealthStatus, UserRole } from '@/api/types'
+import type { AppStatus, HealthStatus, ProxyState, UserRole } from '@/api/types'
 
 function formatUptime(seconds: number | null | undefined): string {
   if (seconds == null) return '--'
@@ -108,6 +108,30 @@ function formatRole(role: UserRole): string {
   return ROLE_LABELS[role] ?? role
 }
 
+const PROXY_STATE_LABELS: Record<ProxyState, string> = {
+  starting: 'Starting',
+  running: 'Running',
+  failed: 'Failed',
+  disabled: 'Disabled',
+  stopped: 'Stopped',
+}
+
+function formatProxyState(state: ProxyState): string {
+  return PROXY_STATE_LABELS[state] ?? state
+}
+
+const PROXY_STATE_DETAILS: Record<ProxyState, string | undefined> = {
+  starting: 'Warming up',
+  running: undefined,
+  failed: 'Check logs, restart Collabhost',
+  disabled: 'Install Caddy or set COLLABHOST_CADDY_PATH',
+  stopped: 'Proxy app stopped',
+}
+
+function proxyStateDetail(state: ProxyState): string | undefined {
+  return PROXY_STATE_DETAILS[state]
+}
+
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return '--'
   const date = new Date(iso)
@@ -130,4 +154,6 @@ export {
   toSlug,
   formatRole,
   formatDate,
+  formatProxyState,
+  proxyStateDetail,
 }

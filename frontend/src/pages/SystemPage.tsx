@@ -1,8 +1,10 @@
 import { useSystemStatus } from '@/hooks/use-system-status'
-import { formatUptimeLong } from '@/lib/format'
+import { formatProxyState, formatUptimeLong, proxyStateDetail } from '@/lib/format'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { Spinner } from '@/shared/Spinner'
+import type { StatusCell } from '@/status/StatusStrip'
 import { StatusStrip } from '@/status/StatusStrip'
+import { buildProxyStateCell, proxyStateColor } from '@/status/proxyStateCell'
 
 function formatStatusLabel(value: string): string {
   if (value === 'ok') return 'OK'
@@ -15,17 +17,31 @@ function displayVersion(version: string): string {
   return version.slice(0, plusIndex)
 }
 
+function proxyColorVar(color: 'amber' | 'green' | 'red' | 'default'): string {
+  switch (color) {
+    case 'green':
+      return 'var(--wm-green)'
+    case 'red':
+      return 'var(--wm-red)'
+    case 'amber':
+      return 'var(--wm-amber)'
+    default:
+      return 'var(--wm-text-dim)'
+  }
+}
+
 function SystemPage() {
   const statusQuery = useSystemStatus()
   const status = statusQuery.data
 
-  const statusCells = status
+  const statusCells: StatusCell[] = status
     ? [
         {
           label: 'Status',
           value: formatStatusLabel(status.status),
           color: status.status === 'ok' ? ('green' as const) : ('red' as const),
         },
+        buildProxyStateCell(status.proxyState),
         { label: 'Hostname', value: status.hostname },
         { label: 'Version', value: displayVersion(status.version), color: 'amber' as const },
         { label: 'Uptime', value: formatUptimeLong(status.uptimeSeconds) },
@@ -90,6 +106,19 @@ function SystemPage() {
                     style={{ color: status.status === 'ok' ? 'var(--wm-green)' : 'var(--wm-red)' }}
                   >
                     {formatStatusLabel(status.status)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="text-xs font-semibold" style={{ color: 'var(--wm-text-dim)' }}>
+                    Proxy
+                  </td>
+                  <td className="text-xs" style={{ color: proxyColorVar(proxyStateColor(status.proxyState)) }}>
+                    {formatProxyState(status.proxyState)}
+                    {proxyStateDetail(status.proxyState) && (
+                      <span style={{ color: 'var(--wm-text-dim)', marginLeft: 8 }}>
+                        — {proxyStateDetail(status.proxyState)}
+                      </span>
+                    )}
                   </td>
                 </tr>
                 <tr>

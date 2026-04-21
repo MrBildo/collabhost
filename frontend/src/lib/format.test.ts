@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'vitest'
-import { formatEnumLabel, formatMemory, formatStatus, formatUptime, formatUptimeLong, toSlug } from './format'
+import {
+  formatEnumLabel,
+  formatMemory,
+  formatProxyState,
+  formatStatus,
+  formatUptime,
+  formatUptimeLong,
+  proxyStateDetail,
+  toSlug,
+} from './format'
 
 describe('formatUptime', () => {
   test('returns -- for null', () => {
@@ -144,5 +153,37 @@ describe('toSlug', () => {
 
   test('handles mixed case with numbers', () => {
     expect(toSlug('Collabhost V2 API')).toBe('collabhost-v2-api')
+  })
+})
+
+describe('formatProxyState', () => {
+  test('capitalizes all five states', () => {
+    expect(formatProxyState('starting')).toBe('Starting')
+    expect(formatProxyState('running')).toBe('Running')
+    expect(formatProxyState('failed')).toBe('Failed')
+    expect(formatProxyState('disabled')).toBe('Disabled')
+    expect(formatProxyState('stopped')).toBe('Stopped')
+  })
+})
+
+describe('proxyStateDetail', () => {
+  test('running has no detail (healthy steady state)', () => {
+    expect(proxyStateDetail('running')).toBeUndefined()
+  })
+
+  test('failed names the operator action', () => {
+    expect(proxyStateDetail('failed')).toBe('Check logs, restart Collabhost')
+  })
+
+  test('disabled points at the env var and installer', () => {
+    expect(proxyStateDetail('disabled')).toBe('Install Caddy or set COLLABHOST_CADDY_PATH')
+  })
+
+  test('starting is transient warm-up text', () => {
+    expect(proxyStateDetail('starting')).toBe('Warming up')
+  })
+
+  test('stopped is informational', () => {
+    expect(proxyStateDetail('stopped')).toBe('Proxy app stopped')
   })
 })
