@@ -19,7 +19,18 @@ if (args.Any(a => a is "--version" or "-v"))
     return 0;
 }
 
-var builder = WebApplication.CreateBuilder(args);
+// Anchor the host's content root to the binary directory, not the shell's CWD. Without this
+// an installed operator running `collabhost` from any directory other than the install dir
+// gets Kestrel + Host defaults (appsettings.json invisible, WebRootPath pointing at CWD,
+// relative data/ landing in the operator's current shell location). See card #164.
+var builder = WebApplication.CreateBuilder
+(
+    new WebApplicationOptions
+    {
+        Args = args,
+        ContentRootPath = AppContext.BaseDirectory
+    }
+);
 
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
