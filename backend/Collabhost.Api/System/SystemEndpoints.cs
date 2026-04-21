@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reflection;
 
 using Microsoft.AspNetCore.Http.HttpResults;
 
@@ -14,20 +13,17 @@ public static class SystemEndpoints
         var group = routes.MapGroup("/api/v1").WithTags("System");
 
         group.MapGet("/status", GetStatus);
+        group.MapGet("/version", GetVersion);
     }
 
     private static Ok<SystemStatus> GetStatus()
     {
-        var version = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion ?? "0.0.0";
-
         var uptimeSeconds = (DateTime.UtcNow - _startedAt).TotalSeconds;
 
         var status = new SystemStatus
         (
             "ok",
-            version,
+            VersionInfo.Current,
             Environment.MachineName,
             Math.Round(uptimeSeconds, 1),
             DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
@@ -35,4 +31,15 @@ public static class SystemEndpoints
 
         return TypedResults.Ok(status);
     }
+
+    private static Ok<VersionResponse> GetVersion() =>
+        TypedResults.Ok
+        (
+            new VersionResponse
+            (
+                VersionInfo.Current,
+                VersionInfo.Commit,
+                VersionInfo.Platform
+            )
+        );
 }

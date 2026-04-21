@@ -8,3 +8,10 @@ public record SystemStatus
     double UptimeSeconds,
     string Timestamp
 );
+
+public record VersionResponse
+(
+    string Version,
+    string Commit,
+    string Platform
+);

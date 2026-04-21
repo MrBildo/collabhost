@@ -57,6 +57,21 @@ public class SmokeTests(AppHostFixture fixture)
     }
 
     [Fact]
+    public async Task VersionEndpoint_ReturnsOk_WithoutAuth()
+    {
+        var response = await _client.GetAsync("/api/v1/version");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+
+        doc.RootElement.GetProperty("version").GetString().ShouldNotBeNullOrWhiteSpace();
+        doc.RootElement.GetProperty("commit").GetString().ShouldNotBeNull();
+        doc.RootElement.GetProperty("platform").GetString().ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task AppsEndpoint_RejectsMissingAuth()
     {
         var response = await _client.GetAsync("/api/v1/apps");

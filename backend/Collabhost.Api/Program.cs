@@ -13,6 +13,12 @@ using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
+if (args.Any(a => a is "--version" or "-v"))
+{
+    Console.WriteLine($"Collabhost {VersionInfo.Current}");
+    return 0;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
@@ -108,3 +114,5 @@ app.MapFallbackToFile("index.html");
 app.MapDefaultEndpoints();
 
 await app.RunAsync();
+
+return 0;
