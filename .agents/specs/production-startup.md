@@ -144,6 +144,8 @@ Yes. Small, cheap, high-signal. The failure mode for "skip preflight" is cryptic
 
 New class `Platform/StartupPreflight.cs` with a single `Validate(dataDirectory, ILogger) -> PreflightResult` method. Called from `Program.cs` after configuration is built and before the scope is created. The method is synchronous because all checks are filesystem I/O against a small set of known paths; making it `async` would add surface with no contended-workload benefit, and the no-sentinel-read rule (see §6.2.1) means there is nothing in the preflight that blocks on I/O worth yielding for.
 
+The backups subdirectory name is exposed as a `public const string BackupsSubdirectory` on `StartupPreflight`. `Program.cs` composes the backups path once (`Path.Combine(effectiveDataDir, StartupPreflight.BackupsSubdirectory)`) and feeds it into `MigrationRunner.MigrateWithBackupAsync`. Preflight creates the directory; the compose site is a single `Path.Combine` in `Program.cs`. No duplicate path construction across §5 and §6.
+
 ---
 
 ## 6. Pre-Migration Backup
