@@ -26,6 +26,12 @@ public class ApiFixture : IAsyncLifetime
 
     public Task InitializeAsync()
     {
+        // Null the env var so a developer shell with COLLABHOST_USER_TYPES_PATH set does not
+        // shadow the UseSetting path below. Env var takes precedence in TypeStoreRegistration
+        // (§12.3 precedence: env > config > default) so without this the test would silently
+        // use the developer's path instead of the per-test temp dir.
+        Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", null);
+
         _dbDirectory = Path.Combine
         (
             Path.GetTempPath(), "collabhost-api-tests", Guid.NewGuid().ToString("N")

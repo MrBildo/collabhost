@@ -36,7 +36,11 @@ builder.AddServiceDefaults();
 // service wires itself up. A halt here means we never touch the DB.
 var (_, resolvedDataDir) = DataRegistration.ResolveConnectionString(builder.Configuration);
 var effectiveDataDir = resolvedDataDir ?? Path.Combine(AppContext.BaseDirectory, "data");
-var effectiveUserTypesDir = TypeStoreRegistration.ResolveEffectiveUserTypesDirectory(builder.Configuration);
+
+// Resolve TypeStore settings once so preflight and DI registration use the same values
+// without reading the env var twice (LOW-3).
+var typeStoreSettings = TypeStoreRegistration.ResolveSettings(builder.Configuration);
+var effectiveUserTypesDir = TypeStoreRegistration.ResolveEffectiveUserTypesDirectory(typeStoreSettings);
 
 using (var preflightLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole()))
 {
@@ -88,7 +92,7 @@ var earlyLogger = earlyLoggerFactory.CreateLogger("Startup");
 builder.Services.AddCollabhostAuthorization(builder.Configuration, earlyLogger);
 
 // Type store
-builder.Services.AddTypeStore(builder.Configuration);
+builder.Services.AddTypeStore(typeStoreSettings);
 
 // Subsystems
 builder.Services.AddActivityLog();
@@ -272,11 +276,6 @@ await using (var seederScope = app.Services.CreateAsyncScope())
     }
 }
 
-// Startup phase 9 -- TypeStore.StartWatching (§8.3). FileSystemWatcher for hot-reload of user
-// types. Stays enabled in Production; ReloadAsync handles runtime errors non-fatally (keep
-// current snapshot + warn). LoadAsync is the boot-critical path; StartWatching is operational.
-typeStore.StartWatching();
-
 // Dev-only surface (OpenAPI + CORS) stays gated. These are developer conveniences, not
 // production behavior.
 if (app.Environment.IsDevelopment())
@@ -314,6 +313,12 @@ app.MapFallbackToFile("index.html");
 
 // Health
 app.MapDefaultEndpoints();
+
+// Startup phase 9 -- TypeStore.StartWatching (§8.3). FileSystemWatcher for hot-reload of user
+// types. Placed after middleware wiring so no FSW event can fire before the pipeline is ready.
+// Stays enabled in Production; ReloadAsync handles runtime errors non-fatally (keep current
+// snapshot + warn). LoadAsync is the boot-critical path; StartWatching is operational.
+typeStore.StartWatching();
 
 await app.RunAsync();
 

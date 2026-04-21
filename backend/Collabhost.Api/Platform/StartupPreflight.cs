@@ -136,6 +136,20 @@ public static class StartupPreflight
             error = ex.Message;
             return false;
         }
+        catch (ArgumentException ex)
+        {
+            // Malformed path (e.g. COLLABHOST_DATA_PATH / COLLABHOST_USER_TYPES_PATH set to
+            // a string with invalid path characters). Operator configuration error -- exit 10.
+            error = ex.Message;
+            return false;
+        }
+        catch (NotSupportedException ex)
+        {
+            // Path contains a colon in a non-drive position on Windows (e.g. "?invalid?").
+            // Operator configuration error -- exit 10.
+            error = ex.Message;
+            return false;
+        }
     }
 
     private static bool TryWriteSentinel(string directory, out string? error)

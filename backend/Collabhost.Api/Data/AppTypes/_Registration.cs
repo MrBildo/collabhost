@@ -33,8 +33,8 @@ public class TypeStoreValidationException
 {
     public IReadOnlyList<TypeStoreValidationError> Errors { get; } = errors;
 
-    // true when the failing validation is on the embedded built-in types (packaging bug, exit 30).
-    // false when it is on the user-types directory (operator configuration error, exit 31).
+    // True if the validation failure is in a built-in embedded resource (packaging bug).
+    // False if it is in an operator-provided user-type JSON file (operator configuration error).
     // See §8.2 of the production-startup spec.
     public bool IsBuiltIn { get; } = isBuiltIn;
 
@@ -51,10 +51,8 @@ public static class TypeStoreRegistration
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddTypeStore(IConfiguration configuration)
+        public IServiceCollection AddTypeStore(TypeStoreSettings settings)
         {
-            var settings = ResolveSettings(configuration);
-
             services.AddSingleton(settings);
             services.AddSingleton<TypeStore>();
             services.AddSingleton<IEventBus<TypeStoreReloadedEvent>, EventBus<TypeStoreReloadedEvent>>();
@@ -78,12 +76,8 @@ public static class TypeStoreRegistration
     // Resolves the effective user-types directory the TypeStore will scan. Relative paths are
     // composed against AppContext.BaseDirectory to match TypeStore.ResolveUserTypesDirectory.
     // Used by StartupPreflight so preflight and the runtime resolve to the same path.
-    public static string ResolveEffectiveUserTypesDirectory(IConfiguration configuration)
-    {
-        var settings = ResolveSettings(configuration);
-
-        return Path.IsPathRooted(settings.UserTypesDirectory)
+    public static string ResolveEffectiveUserTypesDirectory(TypeStoreSettings settings) =>
+        Path.IsPathRooted(settings.UserTypesDirectory)
             ? settings.UserTypesDirectory
             : Path.Combine(AppContext.BaseDirectory, settings.UserTypesDirectory);
-    }
 }
