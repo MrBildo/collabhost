@@ -2,6 +2,8 @@
 
 Thanks for your interest in contributing. This guide covers everything you need to get a dev environment running and submit a clean PR.
 
+> **Not trying to hack on the source?** End users install Collabhost via the one-line installer documented in the [README Install section](README.md#install). This guide is for building from source.
+
 ## Prerequisites
 
 | Tool | Version | Install |
@@ -36,7 +38,7 @@ Caddy is the reverse proxy layer. You can develop without it -- proxy features j
 }
 ```
 
-**Global install:** `winget install CaddyServer.Caddy` (Windows) or `sudo apt install caddy` (Linux). The default config resolves `caddy` from PATH.
+**Global install:** `winget install CaddyServer.Caddy` (Windows) or `sudo apt install caddy` (Linux). The default config resolves `caddy` from `PATH`.
 
 ## Build and Run
 
@@ -58,12 +60,63 @@ dotnet run --project backend/Collabhost.Api
 cd frontend && npm run dev
 ```
 
+The frontend dev server proxies API requests to the backend automatically. Open `http://localhost:5173` to use the dashboard.
+
+### Initial admin key (dev)
+
+On first run the backend seeds an administrator account and prints the API key to stdout. Copy it into the dashboard's API key prompt; it's stored in `localStorage` per browser.
+
+To pin a specific key for dev work, add it to a gitignored `appsettings.Development.json`:
+
+```json
+{
+  "Auth": {
+    "AdminKey": "<your-ulid>"
+  }
+}
+```
+
+Generate a fresh ULID with:
+
+```bash
+dotnet run --file tools/generate-ids.cs
+```
+
+## Project Structure
+
+```
+collabhost/
+├── backend/
+│   ├── Collabhost.AppHost/        # Aspire orchestrator
+│   ├── Collabhost.Api/            # Main API (registry, supervisor, proxy, MCP)
+│   ├── Collabhost.Api.Tests/      # Integration tests (WebApplicationFactory + fakes)
+│   ├── Collabhost.AppHost.Tests/  # Aspire smoke tests (real Kestrel + SQLite)
+│   └── Collabhost.ServiceDefaults/
+├── frontend/
+│   └── src/
+│       ├── actions/               # Action buttons and bars
+│       ├── api/                   # Typed fetch client and endpoints
+│       ├── chrome/                # Layout, topbar, auth gate
+│       ├── forms/                 # Schema-driven form fields
+│       ├── hooks/                 # TanStack Query hooks
+│       ├── log/                   # Log viewer with ANSI rendering
+│       ├── pages/                 # Route pages
+│       ├── probes/                # Technology probe panels
+│       ├── shared/                # Shared UI components
+│       ├── status/                # Status dots, strips, stats
+│       ├── styles/                # *War Machine* design tokens
+│       └── tables/                # Data tables and filters
+└── docs/
+    ├── install.sh                 # End-user installer (Linux / macOS)
+    └── install.ps1                # End-user installer (Windows)
+```
+
 ## Testing
 
 Run all tests before submitting a PR:
 
 ```bash
-# Backend
+# Backend -- includes both integration and Aspire smoke tests
 cd backend && dotnet test
 
 # Frontend
@@ -72,21 +125,32 @@ cd frontend && npm run test
 
 ## Linting and Formatting
 
-The CI pipeline checks these. Save yourself a round trip by running them locally:
+CI checks these. Save yourself a round trip by running them locally.
+
+**Backend:**
 
 ```bash
-# Backend
-cd backend && dotnet format --verify-no-changes
+cd backend
+dotnet build Collabhost.slnx --no-incremental   # 0 errors, 0 warnings
+dotnet format --verify-no-changes               # formatting clean
+```
 
-# Frontend
-cd frontend && npm run lint
-cd frontend && npm run format:check
+Use `--no-incremental` on the build so analyzer warnings surface -- incremental builds skip compilation and hide them.
+
+**Frontend:**
+
+```bash
+cd frontend
+npm run lint
+npm run format:check
 ```
 
 ### Code style references
 
-- **Backend:** `.editorconfig` governs all C# formatting. Don't override it -- configure your editor to respect it.
+- **Backend:** `.editorconfig` at the repo root governs all C# formatting, naming, and analyzer severities. Don't override it -- configure your editor to respect it. Don't modify it to work around conflicts either -- restructure the code or use `#pragma` instead.
 - **Frontend:** `biome.json` handles linting and formatting. No ESLint, no Prettier.
+
+The internal team also maintains a coding-conventions document with project-specific overrides (kept local to each operator's machine, not part of the published source). If you're contributing regularly and want a preview of the internal conventions -- open an issue or ask in your PR and a maintainer will summarize the relevant section.
 
 ## Git Conventions
 
@@ -121,6 +185,8 @@ A good PR:
 - **Includes a test plan** -- what you tested, how to verify
 - **Passes CI** -- tests, lint, format checks all green
 - **Stays focused** -- one concern per PR. Don't mix a feature with an unrelated refactor.
+
+Reviewers look for: correctness, test coverage on changed paths, adherence to the code-style references above, and scope discipline (no unrelated drive-by changes). If your change touches the operator-facing surface (dashboard, installer, CLI output, MCP tool descriptions), expect a visual or UX review round -- attach screenshots where relevant.
 
 If your change is large, consider opening a draft PR early to get directional feedback before investing in polish.
 

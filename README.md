@@ -34,6 +34,81 @@ It runs natively on **Windows** and **Linux** with platform-specific process man
 
 <p align="center"><sub>The dashboard. Process supervision, routing, and a live activity feed on one screen.</sub></p>
 
+## Install
+
+One line. It downloads the latest release archive, verifies its SHA-256 against the release's `checksums.txt`, extracts to `~/.collabhost/bin` (Linux/macOS) or `%USERPROFILE%\.collabhost\bin` (Windows), and adds the directory to your `PATH`.
+
+**Linux / macOS:**
+
+```bash
+curl -fsSL https://mrbildo.github.io/collabhost/install.sh | bash
+```
+
+Or download-then-execute if you'd rather inspect the script first:
+
+```bash
+curl -fsSL https://mrbildo.github.io/collabhost/install.sh -o install.sh
+bash install.sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+iwr -useb https://mrbildo.github.io/collabhost/install.ps1 | iex
+```
+
+Or download-then-execute:
+
+```powershell
+iwr https://mrbildo.github.io/collabhost/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
+
+Then launch it:
+
+```bash
+collabhost
+```
+
+On first run, Collabhost seeds an administrator account and prints the API key to stdout:
+
+```
+[Collabhost] Admin key: 01JRSB8XH7D4Z2K9N0MFQPTVCW
+```
+
+Copy that key, open the dashboard at `http://localhost:58400`, and paste it into the API key prompt. You're in.
+
+Re-running the installer is upgrade-safe: your `appsettings.json` and `data/` directory are preserved across versions. For full operator documentation — reinstall, upgrade, uninstall, configuration, troubleshooting — see the `INSTALL.md` shipped inside the release archive (or in your install directory after the first run).
+
+### Install Caddy (recommended)
+
+Collabhost manages Caddy as a supervised process — you install the binary, Collabhost handles the rest. Without Caddy, everything else works (app management, process supervision, logs, dashboard), but apps won't get automatic `{slug}.collab.internal` subdomain routes.
+
+**Windows:**
+
+```powershell
+winget install CaddyServer.Caddy
+```
+
+**Linux (Debian/Ubuntu):**
+
+```bash
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update && sudo apt install caddy
+```
+
+**macOS** (best-effort — see [Platform support](#platform-support)):
+
+```bash
+brew install caddy
+```
+
+See [caddyserver.com/docs/install](https://caddyserver.com/docs/install) for other platforms.
+
+If `caddy` is on your `PATH`, Collabhost finds it automatically. Otherwise, set the path in `appsettings.json` next to the Collabhost binary, or export `COLLABHOST_CADDY_PATH` before launching. `BaseDomain` defaults to `collab.internal` — change it to use any domain you control.
+
 ## Features
 
 **Built-in MCP server** — A Model Context Protocol endpoint at `/mcp` exposes the operator surface as tools. 18 tools across discovery, lifecycle, configuration, registration, and activity. Agents register apps, start and stop processes, tail logs, update settings, and browse the host filesystem — programmatically, over Streamable HTTP. Role-aware: administrators see everything, agents see 17 of 18 tools (everything except `delete_app`). See [For Agents](#for-agents) for setup.
@@ -129,125 +204,9 @@ Windows and Linux are the supported deployment targets. macOS is supported for l
 
 <p align="center"><sub>Routes. Every app gets an automatic <code>{slug}.collab.internal</code> subdomain with HTTPS (the base domain is configurable).</sub></p>
 
-## Quick Start
+## Register your first app
 
-### Prerequisites
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- [Node.js 22+](https://nodejs.org/) (for the dashboard)
-- [Caddy](https://caddyserver.com/) (recommended — required for reverse proxy routing; Collabhost runs without it, but apps won't get automatic subdomains)
-
-### Install Caddy
-
-Collabhost manages Caddy as a supervised process — you install the binary, Collabhost handles the rest. Without Caddy, everything else works (app management, process supervision, logs, dashboard), but apps won't get automatic `{slug}.collab.internal` subdomain routes.
-
-**Windows:**
-
-```powershell
-winget install CaddyServer.Caddy
-```
-
-**Linux (Debian/Ubuntu):**
-
-```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update && sudo apt install caddy
-```
-
-**macOS** (best-effort — see [Platform support](#platform-support)):
-
-```bash
-brew install caddy
-```
-
-See [caddyserver.com/docs/install](https://caddyserver.com/docs/install) for other platforms.
-
-If `caddy` is on your PATH, Collabhost finds it automatically. Otherwise, set the path in `appsettings.json`:
-
-```json
-{
-  "Proxy": {
-    "BinaryPath": "/path/to/caddy",
-    "BaseDomain": "collab.internal"
-  }
-}
-```
-
-`BaseDomain` defaults to `collab.internal` — change it to use any domain you control. Collabhost starts Caddy as a managed system-service, allocates its admin port dynamically, and handles all proxy configuration through Caddy's JSON API. No Caddyfile editing required.
-
-### Run with Aspire
-
-The recommended development workflow uses .NET Aspire to orchestrate the API, the Vite dev server, and an OpenTelemetry dashboard together.
-
-```bash
-# Clone the repo
-git clone https://github.com/MrBildo/collabhost.git
-cd collabhost
-
-# Install frontend dependencies
-cd frontend && npm install && cd ..
-
-# Start everything (API + dashboard + telemetry)
-dotnet run --project backend/Collabhost.AppHost
-```
-
-The Aspire dashboard URL is printed to the console at startup — open it to see resource health, logs, and traces. The Collabhost dashboard is served by Vite on `http://localhost:5173`. The API runs on `http://localhost:58400`.
-
-### Run standalone
-
-If you don't need the Aspire orchestrator, you can run the API and frontend independently.
-
-```bash
-# Backend (in one terminal)
-dotnet run --project backend/Collabhost.Api
-
-# Frontend (in a second terminal)
-cd frontend && npm install && npm run dev
-```
-
-The frontend dev server proxies API requests to `http://localhost:58400` automatically. Open `http://localhost:5173` to use the dashboard.
-
-### Initial admin key
-
-On first run, Collabhost seeds a single Admin user into SQLite. If `Auth:AdminKey` is set in config, that value becomes the key. Otherwise, a ULID is generated automatically. Either way, the key is printed to stdout:
-
-```
-[Collabhost] Admin key: 01JRSB8XH7D4Z2K9N0MFQPTVCW
-```
-
-Copy that key and paste it into the dashboard's API key prompt. It's stored in your browser's `localStorage` — you won't be asked again on that machine.
-
-**Set your own key** (recommended for any persistent deployment). Add it to a gitignored `appsettings.Development.json` alongside the main `appsettings.json`:
-
-```json
-{
-  "Auth": {
-    "AdminKey": "<your-ulid>"
-  }
-}
-```
-
-Or pass it as an environment variable:
-
-```bash
-Auth__AdminKey=<your-ulid> dotnet run --project backend/Collabhost.Api
-```
-
-To generate a fresh ULID:
-
-```bash
-dotnet run --file tools/generate-ids.cs
-```
-
-Requires .NET 10 — the script uses the `#:package` syntax introduced in .NET 10's script runner.
-
-The config key is also a permanent bypass: it authenticates even if the database user is later deleted (for example, after a factory reset). Use the dashboard's **Users** page for day-to-day key management — mint agent keys, deactivate users, and create additional administrator accounts from there.
-
-### Register your first app
-
-**From the dashboard:** Open the dashboard and click **Register App**. Pick an app type, point it at a directory, and hit create. Collabhost auto-discovers the start command and allocates a port. Click **Start** and watch the logs stream in.
+**From the dashboard:** Open `http://localhost:58400` and click **Register App**. Pick an app type, point it at a directory, and hit create. Collabhost auto-discovers the start command and allocates a port. Click **Start** and watch the logs stream in.
 
 **From an agent:** See [For Agents](#for-agents) below. An agent calls `list_app_types`, `browse_filesystem`, `detect_strategy`, `register_app`, and `start_app` — the same flow, scripted.
 
@@ -264,7 +223,7 @@ Collabhost exposes an MCP (Model Context Protocol) server so agents can operate 
 | Auth | `X-User-Key` header with a user's ULID key |
 | Server name | `collabhost` |
 
-The API port defaults to `58400` in `backend/Collabhost.Api/Properties/launchSettings.json`. Change it there if it conflicts with something else on your host.
+The API port defaults to `58400`. If something else on your host already owns that port, override it via `Proxy:SelfPort` in `appsettings.json` or the `COLLABHOST_PROXY_SELF_PORT` environment variable.
 
 ### Configure an agent client
 
@@ -326,50 +285,7 @@ Apps are identified by **slug** throughout (e.g. `my-api-server`), not by ULID. 
 | Testing | xUnit + Shouldly (backend), Vitest (frontend) |
 | Linting | Roslyn analyzers (backend), Biome (frontend) |
 
-## Project Structure
-
-```
-collabhost/
-├── backend/
-│   ├── Collabhost.AppHost/        # Aspire orchestrator
-│   ├── Collabhost.Api/            # Main API (registry, supervisor, proxy)
-│   ├── Collabhost.Api.Tests/      # Integration tests
-│   ├── Collabhost.AppHost.Tests/  # Aspire smoke tests
-│   └── Collabhost.ServiceDefaults/
-├── frontend/
-│   └── src/
-│       ├── actions/               # Action buttons and bars
-│       ├── api/                   # Typed fetch client and endpoints
-│       ├── chrome/                # Layout, topbar, auth gate
-│       ├── forms/                 # Schema-driven form fields
-│       ├── hooks/                 # TanStack Query hooks
-│       ├── log/                   # Log viewer with ANSI rendering
-│       ├── pages/                 # Route pages
-│       ├── probes/                # Technology probe panels
-│       ├── shared/                # Shared UI components
-│       ├── status/                # Status dots, strips, stats
-│       ├── styles/                # *War Machine* design tokens
-│       └── tables/                # Data tables and filters
-```
-
-## Development
-
-### Build and test
-
-```bash
-# Backend
-cd backend
-dotnet build Collabhost.slnx --no-incremental
-dotnet test
-
-# Frontend
-cd frontend
-npm run build
-npm run test
-npm run lint
-```
-
-### Architecture
+## Architecture
 
 Collabhost has four layers:
 
@@ -382,7 +298,7 @@ Apps are registered with a slug, discovered from the filesystem, and supervised 
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and the pull request process.
+Contributions are welcome. If you'd like to build from source, run the dev environment, or submit a pull request, see [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup, coding conventions, and the PR process.
 
 ## Credits
 
