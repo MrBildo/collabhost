@@ -1,44 +1,40 @@
-using System.Globalization;
-
 namespace Collabhost.Api.Authorization;
 
 public static class AuthorizationRegistration
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddCollabhostAuthorization
-        (
-            IConfiguration configuration,
-            ILogger logger
-        )
+        public IServiceCollection AddCollabhostAuthorization(IConfiguration configuration)
         {
             services.Configure<AuthorizationSettings>
             (
                 configuration.GetSection(AuthorizationSettings.SectionName)
             );
 
-            var generatedKey = Ulid.NewUlid().ToString(null, CultureInfo.InvariantCulture);
+            // COLLABHOST_ADMIN_KEY (env) wins over Auth:AdminKey (config) per §11.2 / §2.5
+            // precedence. The flat COLLABHOST_{NAME} convention (§11.5) means the default env
+            // provider does NOT auto-bind to Auth:AdminKey, so we read the env var explicitly
+            // here and override the bound settings. Mirrors the Phase 3 idiom for
+            // COLLABHOST_DATA_PATH / COLLABHOST_USER_TYPES_PATH.
+            //
+            // Whitespace-only values are treated as unset so a blank env var in a startup
+            // wrapper falls through to config.
+            var envAdminKey = Environment.GetEnvironmentVariable("COLLABHOST_ADMIN_KEY");
+            var effectiveEnvKey = string.IsNullOrWhiteSpace(envAdminKey) ? null : envAdminKey;
 
-            services.PostConfigure<AuthorizationSettings>
-            (
-                settings =>
-                {
-                    if (settings.AdminKey is not null)
-                    {
-                        return;
-                    }
+            if (effectiveEnvKey is not null)
+            {
+                services.PostConfigure<AuthorizationSettings>
+                (
+                    settings => settings.AdminKey = effectiveEnvKey
+                );
+            }
 
-                    settings.AdminKey = generatedKey;
-
-                    logger.LogWarning
-                    (
-                        "No Auth:AdminKey configured. Generated temporary key: {AdminKey}",
-                        generatedKey
-                    );
-                }
-            );
-
-            services.AddHostedService<UserSeedService>();
+            // UserSeedService is invoked inline as phase (8) of the production startup sequence
+            // (§4 / §11). Not a hosted service -- the inline-before-RunAsync call site lets
+            // seeding failures halt startup with an explicit exit code via StartupStderr,
+            // matching the ProxyAppSeeder pattern in phase (7).
+            services.AddSingleton<UserSeedService>();
 
             services.AddSingleton<UserStore>();
             services.AddSingleton<AuthKeyResolver>();

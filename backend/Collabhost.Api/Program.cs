@@ -86,10 +86,7 @@ builder.Services.AddDataAccess(builder.Configuration);
 builder.Services.AddMemoryCache();
 
 // Auth
-using var earlyLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole());
-var earlyLogger = earlyLoggerFactory.CreateLogger("Startup");
-
-builder.Services.AddCollabhostAuthorization(builder.Configuration, earlyLogger);
+builder.Services.AddCollabhostAuthorization(builder.Configuration);
 
 // Type store
 builder.Services.AddTypeStore(typeStoreSettings);
@@ -262,6 +259,40 @@ await using (var seederScope = app.Services.CreateAsyncScope())
         StartupStderr.Write
         (
             summary: "proxy app seeding failed",
+            details: [("Exception", $"{ex.GetType().Name}: {ex.Message}")],
+            recoverySteps:
+            [
+                "This usually indicates database corruption or a transaction rollback.",
+                "File an issue at https://github.com/MrBildo/collabhost/issues and include this stderr block.",
+                "If the issue persists, restore the most recent pre-migration backup from data/backups/."
+            ],
+            exitCode: 40
+        );
+
+        return 40;
+    }
+}
+
+// Startup phase 8 -- UserSeedService (§11). Implements the admin-key 3-scenario model:
+// (1) blind first run generates + prints, (2) configured first run seeds silently,
+// (3) subsequent boot with a new configured key inserts an additional Admin user
+// (break-glass additive). Unexpected throws halt with exit 40 -- same code as
+// ProxyAppSeeder; both are "a seeder threw during startup" and share a recovery shape.
+await using (var userSeedScope = app.Services.CreateAsyncScope())
+{
+    var userSeeder = userSeedScope.ServiceProvider.GetRequiredService<UserSeedService>();
+
+    try
+    {
+        await userSeeder.SeedAsync(CancellationToken.None);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogCritical(ex, "Startup halted: admin user seeder threw unexpectedly");
+
+        StartupStderr.Write
+        (
+            summary: "admin user seeding failed",
             details: [("Exception", $"{ex.GetType().Name}: {ex.Message}")],
             recoverySteps:
             [
