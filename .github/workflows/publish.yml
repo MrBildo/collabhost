@@ -336,6 +336,17 @@ jobs:
           echo "Archive listing:"
           (cd "${VERIFY_DIR}" && find . -type f | sort)
 
+          # Flat-layout assertion: the six contract items must be at the
+          # archive root, not nested under a wrapping "collabhost-*" dir.
+          # The installer scripts (docs/install.sh, docs/install.ps1) copy
+          # straight from the extract directory and assume flat layout.
+          # This check locks that contract at archival time.
+          if [[ -d "${VERIFY_DIR}/collabhost-${VER}-${RID}" ]]; then
+            echo "Archive layout unexpected: found wrapping directory collabhost-${VER}-${RID}/ at archive root." >&2
+            echo "Archives must be flat (contract items at root). Installer scripts assume flat layout." >&2
+            exit 1
+          fi
+
           MISSING=0
           for path in \
             "${COLLABHOST_BIN}" \
@@ -356,7 +367,7 @@ jobs:
             exit 1
           fi
 
-          echo "Archive contract verified: 6/6 items present."
+          echo "Archive contract verified: flat layout, 6/6 items present."
 
       # Per-archive SHA256 (locked decision 9). Portable `sha256sum -c` format.
       - name: Checksum
@@ -456,7 +467,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat checksums-in/*.sha256 > checksums.txt
+
+          # Normalize the aggregated file to text-mode format: strip any
+          # leading '*' from the filename column. sha256sum on Git-Bash
+          # (Windows runners) defaults to binary mode and emits
+          # "<hash>  *<filename>", while Linux/macOS emit
+          # "<hash>  <filename>". Normalizing here means checksums.txt is
+          # uniform across platforms -- human operators reading the file
+          # see one format, and installer parsers don't need per-line
+          # tolerance for the '*' prefix.
+          cat checksums-in/*.sha256 | sed 's/  \*/  /' > checksums.txt
           cat checksums.txt
 
       - name: Log existing checksums.txt (pre-upload)
