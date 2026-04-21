@@ -17,7 +17,7 @@ set -euo pipefail
 
 # ---- Defaults ----------------------------------------------------------------
 
-REPO="mrbildo/collabhost"
+REPO="MrBildo/collabhost"
 INSTALL_PATH="${HOME}/.collabhost/bin"
 SKIP_PATH=""
 TAG="${COLLABHOST_VERSION:-}"
@@ -169,6 +169,24 @@ if [ "${EXPECTED}" != "${ACTUAL}" ]; then
   exit 1
 fi
 
+# ---- Archive content pre-check ----------------------------------------------
+
+# Guard against zero-byte or HTML-error downloads that somehow matched a
+# checksum (defense in depth -- a valid checksum implies the bytes are what
+# was published, but an operator who reruns after a partial download with
+# a hand-edited checksums.txt would bypass that). Gzip magic is 0x1f 0x8b.
+ARCHIVE_SIZE="$(wc -c < "${TMP_DIR}/${ARCHIVE}")"
+if [ "${ARCHIVE_SIZE}" -lt 1024 ]; then
+  echo "Archive ${ARCHIVE} looks truncated (${ARCHIVE_SIZE} bytes)." >&2
+  exit 1
+fi
+
+MAGIC="$(head -c 2 "${TMP_DIR}/${ARCHIVE}" | od -An -tx1 | tr -d ' \n')"
+if [ "${MAGIC}" != "1f8b" ]; then
+  echo "Archive ${ARCHIVE} is not a valid gzip file (magic=${MAGIC})." >&2
+  exit 1
+fi
+
 # ---- Extract -----------------------------------------------------------------
 
 EXTRACT_DIR="${TMP_DIR}/extract"
@@ -182,6 +200,13 @@ if [ ! -d "${ARCHIVE_ROOT}" ]; then
 fi
 
 # ---- Install (reinstall-safe) ------------------------------------------------
+
+# Detect a pre-existing install BEFORE touching anything. Used to emit the
+# "Preserved: ..." reassurance line on reinstalls.
+IS_REINSTALL=""
+if [ -f "${INSTALL_PATH}/appsettings.json" ] || [ -d "${INSTALL_PATH}/data" ]; then
+  IS_REINSTALL=1
+fi
 
 mkdir -p "${INSTALL_PATH}"
 
@@ -199,6 +224,10 @@ cp "${ARCHIVE_ROOT}/LICENSES/"* "${INSTALL_PATH}/LICENSES/"
 # first install. On upgrade the operator's edits survive (spec §9.7, R2.1).
 if [ ! -f "${INSTALL_PATH}/appsettings.json" ]; then
   cp "${ARCHIVE_ROOT}/appsettings.json" "${INSTALL_PATH}/"
+fi
+
+if [ -n "${IS_REINSTALL}" ]; then
+  echo "Preserved: appsettings.json and data/ (if present)."
 fi
 
 # data/ is never in the archive -- leave any existing directory untouched.
@@ -241,5 +270,5 @@ fi
 
 echo ""
 echo "Collabhost ${TAG} installed to ${INSTALL_PATH}"
-echo "Admin key: run 'collabhost' once to generate; first-run stdout captures it."
+echo "Admin key: run 'collabhost' now. The admin key will print to your terminal on first boot -- copy it immediately."
 echo "See ${INSTALL_PATH}/INSTALL.md for configuration, env-var overrides, and upgrade notes."

@@ -36,6 +36,48 @@ $ErrorActionPreference = 'Stop'
 # Speeds up Invoke-WebRequest by avoiding Internet Explorer engine probe.
 $ProgressPreference = 'SilentlyContinue'
 
+# Retry wrapper for network calls. Mirrors `curl --retry 3 --retry-delay 2` in
+# install.sh. Only retries on transport/transient failures (WebException),
+# NOT on HTTP 4xx (404s on a wrong tag should fail immediately).
+function Invoke-WithRetry
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Script,
+        [int]$Retries = 3,
+        [int]$DelaySeconds = 2
+    )
+
+    $attempt = 0
+    while ($true)
+    {
+        $attempt++
+        try
+        {
+            return & $Script
+        }
+        catch [System.Net.WebException]
+        {
+            $statusCode = $null
+            if ($_.Exception.Response)
+            {
+                $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            # 4xx errors are the caller's problem; don't retry.
+            if ($statusCode -and $statusCode -ge 400 -and $statusCode -lt 500)
+            {
+                throw
+            }
+            if ($attempt -ge $Retries)
+            {
+                throw
+            }
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+}
+
 if ($Help)
 {
     Write-Host @'
@@ -57,7 +99,7 @@ Environment:
 
 # ---- Defaults ---------------------------------------------------------------
 
-$Repo       = 'mrbildo/collabhost'
+$Repo       = 'MrBildo/collabhost'
 $Tag        = if ($Version) { $Version } elseif ($env:COLLABHOST_VERSION) { $env:COLLABHOST_VERSION } else { '' }
 
 # ---- Platform detection -----------------------------------------------------
@@ -66,7 +108,7 @@ $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 switch ($arch)
 {
     'X64'   { $Rid = 'win-x64';  $Ext = 'zip' }
-    'Arm64' { throw 'win-arm64 is not supported in v1. See https://github.com/mrbildo/collabhost for status.' }
+    'Arm64' { throw 'win-arm64 is not supported in v1. See https://github.com/MrBildo/collabhost for status.' }
     default { throw "Unsupported architecture: $arch" }
 }
 
@@ -75,7 +117,9 @@ switch ($arch)
 if (-not $Tag)
 {
     Write-Host 'Resolving latest release from GitHub...'
-    $latest = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/$Repo/releases/latest"
+    $latest = Invoke-WithRetry -Script {
+        Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/$Repo/releases/latest"
+    }
     $Tag = $latest.tag_name
     if (-not $Tag)
     {
@@ -105,10 +149,14 @@ try
     $ChecksumsPath = Join-Path $TmpDir 'checksums.txt'
 
     Write-Host "Downloading $Archive..."
-    Invoke-WebRequest -UseBasicParsing -Uri $ArchiveUrl   -OutFile $ArchivePath
+    Invoke-WithRetry -Script {
+        Invoke-WebRequest -UseBasicParsing -Uri $ArchiveUrl -OutFile $ArchivePath
+    } | Out-Null
 
     Write-Host 'Downloading checksums.txt...'
-    Invoke-WebRequest -UseBasicParsing -Uri $ChecksumsUrl -OutFile $ChecksumsPath
+    Invoke-WithRetry -Script {
+        Invoke-WebRequest -UseBasicParsing -Uri $ChecksumsUrl -OutFile $ChecksumsPath
+    } | Out-Null
 
     Write-Host 'Verifying SHA-256...'
     # sha256sum output: "<hash>  <filename>" (two spaces). Match on filename in column 2.
@@ -134,6 +182,31 @@ try
         throw "Checksum mismatch for $Archive`n  Expected: $expected`n  Actual:   $actual"
     }
 
+    # ---- Archive content pre-check -----------------------------------------
+
+    # Guard against zero-byte or HTML-error downloads. zip magic is 'PK' (0x50 0x4b).
+    $archiveSize = (Get-Item -LiteralPath $ArchivePath).Length
+    if ($archiveSize -lt 1024)
+    {
+        throw "Archive $Archive looks truncated ($archiveSize bytes)."
+    }
+
+    $magic = New-Object byte[] 2
+    $fs = [System.IO.File]::OpenRead($ArchivePath)
+    try
+    {
+        $read = $fs.Read($magic, 0, 2)
+    }
+    finally
+    {
+        $fs.Dispose()
+    }
+    if ($read -lt 2 -or $magic[0] -ne 0x50 -or $magic[1] -ne 0x4B)
+    {
+        $hex = ($magic | ForEach-Object { '{0:x2}' -f $_ }) -join ''
+        throw "Archive $Archive is not a valid zip file (magic=$hex)."
+    }
+
     # ---- Extract ------------------------------------------------------------
 
     $ExtractDir = Join-Path $TmpDir 'extract'
@@ -148,6 +221,12 @@ try
 
     # ---- Install (reinstall-safe) -------------------------------------------
 
+    # Detect a pre-existing install BEFORE touching anything. Used to emit the
+    # "Preserved: ..." reassurance line on reinstalls.
+    $AppSettingsDst = Join-Path $InstallPath 'appsettings.json'
+    $DataDirDst     = Join-Path $InstallPath 'data'
+    $IsReinstall    = (Test-Path -LiteralPath $AppSettingsDst) -or (Test-Path -LiteralPath $DataDirDst)
+
     if (-not (Test-Path -LiteralPath $InstallPath))
     {
         New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
@@ -158,19 +237,27 @@ try
     Copy-Item -LiteralPath (Join-Path $ArchiveRoot 'caddy.exe')      -Destination $InstallPath -Force
     Copy-Item -LiteralPath (Join-Path $ArchiveRoot 'INSTALL.md')     -Destination $InstallPath -Force
 
+    # LICENSES: mirror bash -- keep the directory, clear its contents, copy new
+    # files into it. Avoids the "Copy-Item -Recurse into an existing dir nests
+    # LICENSES/LICENSES/" pitfall.
     $LicensesDst = Join-Path $InstallPath 'LICENSES'
-    if (Test-Path -LiteralPath $LicensesDst)
+    if (-not (Test-Path -LiteralPath $LicensesDst))
     {
-        Remove-Item -LiteralPath $LicensesDst -Recurse -Force
+        New-Item -ItemType Directory -Path $LicensesDst -Force | Out-Null
     }
-    Copy-Item -LiteralPath (Join-Path $ArchiveRoot 'LICENSES') -Destination $InstallPath -Recurse -Force
+    Get-ChildItem -LiteralPath $LicensesDst -File -Force | Remove-Item -Force
+    Copy-Item -Path (Join-Path $ArchiveRoot 'LICENSES\*') -Destination $LicensesDst -Force
 
     # Preserve appsettings.json if it already exists. Only seed from the archive
     # on first install. On upgrade the operator's edits survive (spec section 9.7, R2.1).
-    $AppSettingsDst = Join-Path $InstallPath 'appsettings.json'
     if (-not (Test-Path -LiteralPath $AppSettingsDst))
     {
         Copy-Item -LiteralPath (Join-Path $ArchiveRoot 'appsettings.json') -Destination $InstallPath -Force
+    }
+
+    if ($IsReinstall)
+    {
+        Write-Host 'Preserved: appsettings.json and data/ (if present).'
     }
 
     # data/ is never in the archive -- leave any existing directory untouched.
@@ -194,7 +281,7 @@ try
 
     Write-Host ''
     Write-Host "Collabhost $Tag installed to $InstallPath"
-    Write-Host "Admin key: run 'collabhost' once to generate; first-run stdout captures it."
+    Write-Host "Admin key: run 'collabhost' now. The admin key will print to your terminal on first boot -- copy it immediately."
     Write-Host "See $InstallPath\INSTALL.md for configuration, env-var overrides, and upgrade notes."
 }
 finally

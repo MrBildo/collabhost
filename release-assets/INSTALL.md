@@ -64,7 +64,9 @@ from scrollback."
 the admin user with that value silently — no stdout line, no generation. If
 you set a configured key on a later boot and it doesn't match any existing
 user, Collabhost inserts an additional `Admin (recovery)` user with that key as
-a break-glass path; your original admin key still works.
+a break-glass path; your original admin key still works. On every boot, a
+configured key that matches an existing user is a no-op — this is the steady
+state for operators who set `COLLABHOST_ADMIN_KEY` in a startup wrapper script.
 
 ---
 
@@ -98,6 +100,20 @@ Returns JSON including a `proxyState` field. Values:
 | `failed`   | Caddy did not come up within the startup probe deadline. See §9 Troubleshooting. |
 | `disabled` | Caddy binary could not be resolved at startup. See §5 (`COLLABHOST_CADDY_PATH`). |
 | `stopped`  | Caddy was started and has since stopped (e.g., crash post-boot). |
+
+On the dashboard the same state renders as a color-coded cell with a detail
+line beneath the state label:
+
+| State | Dashboard color | Dashboard detail text |
+|-------|-----------------|-----------------------|
+| `starting` | amber  | `Warming up` |
+| `running`  | green  | (none) |
+| `failed`   | red    | `Check logs, restart Collabhost` |
+| `disabled` | amber  | `Install Caddy or set COLLABHOST_CADDY_PATH` |
+| `stopped`  | gray   | `Proxy app stopped` |
+
+The JSON `proxyState` value is the contract; the color and detail text are
+the operator-facing rendering of the same value.
 
 Apps published through Collabhost get subdomains under the proxy's base domain
 (`collab.internal` by default). You can change the base domain in
@@ -156,6 +172,7 @@ set -euo pipefail
 export COLLABHOST_DATA_PATH=/srv/collabhost/data
 export COLLABHOST_PROXY_BASE_DOMAIN=collabhost.lan
 
+# exec replaces this shell so signals (SIGTERM/SIGINT) reach collabhost directly.
 exec ./collabhost
 ```
 
@@ -197,7 +214,8 @@ Operator-relevant framework-standard variables (not Collabhost-specific):
 
 Setting a blank / whitespace value for any `COLLABHOST_*` variable is treated
 as unset — the effective value falls through to `appsettings.json`, then to
-the built-in default.
+the built-in default. This blank-is-unset behavior is Collabhost-specific and
+only applies to the `COLLABHOST_*` variables above.
 
 ---
 
@@ -255,7 +273,7 @@ Collabhost 0.1.0
 curl http://localhost:58400/api/v1/status
 ```
 
-Returns JSON including `"status": "running"` and `"proxyState": "running"`.
+Returns JSON including `"status": "ok"` and `"proxyState": "running"`.
 See §3 for the full `proxyState` value table.
 
 ### 7.3 Dashboard loads
@@ -273,8 +291,8 @@ To upgrade Collabhost, re-run the install script. The installer is
 
 **Preserved on re-run:**
 
-- `data/` — your SQLite database, pre-migration backups, and any data the
-  binary writes.
+- `data/` — your SQLite database and any data the binary writes.
+- `data/backups/` — pre-migration backups taken before upgrades (see §8.1).
 - `appsettings.json` — your persistent configuration file.
 
 **Overwritten on re-run:**
@@ -369,8 +387,16 @@ The admin key is only printed once, to stdout, on first launch against an
 empty database. If your terminal scrollback has lost it, recovery options
 are limited in v0.1.0:
 
-- **Redirect stdout on first boot.** Before the first launch against a fresh
-  `data/`, run:
+- **Break-glass on a running install.** Set `COLLABHOST_ADMIN_KEY` to a new
+  ULID and relaunch. If the configured key doesn't match any existing user,
+  Collabhost inserts an additional `Admin (recovery)` user with that key.
+  Use it to log in and then edit / disable other users from the dashboard.
+- **Set a configured key up front (next fresh install).** On a fresh install,
+  set `COLLABHOST_ADMIN_KEY` (or `Auth:AdminKey` in `appsettings.json`)
+  **before** first boot. Collabhost will seed the admin user with that value
+  silently.
+- **Redirect stdout on the next fresh install.** Before the first launch
+  against a fresh `data/`, run:
 
   ```sh
   ./collabhost > collabhost-firstboot.log 2>&1
@@ -378,13 +404,6 @@ are limited in v0.1.0:
 
   Inspect the log for the `[Collabhost] Admin key: ...` line, then move it
   somewhere safe.
-- **Set a configured key up front.** On a fresh install, set
-  `COLLABHOST_ADMIN_KEY` (or `Auth:AdminKey` in `appsettings.json`) **before**
-  first boot. Collabhost will seed the admin user with that value silently.
-- **Break-glass on a running install.** Set `COLLABHOST_ADMIN_KEY` to a new
-  ULID and relaunch. If the configured key doesn't match any existing user,
-  Collabhost inserts an additional `Admin (recovery)` user with that key.
-  Use it to log in and then edit / disable other users from the dashboard.
 
 UX improvements here are tracked in a follow-up; see the GitHub release notes
 for your version.
@@ -444,6 +463,10 @@ Steps:
 5. Boot against the restored DB to confirm service is healthy.
 6. File an issue with the stderr block and the migration name.
 
+If the exit block says `pre-migration backup failed`, skip the restore step —
+your existing database is intact (the migration never ran). Verify disk space
+and data-directory permissions, then retry the upgrade.
+
 Collabhost does not attempt to auto-rollback because SQLite migrations are
 not always transactional across multiple statements — the pre-migration
 backup is the rollback mechanism.
@@ -458,12 +481,14 @@ the exit-code taxonomy on startup failure:
 | 0  | Normal shutdown | — |
 | 1  | Generic unhandled exception | Report an issue |
 | 10 | Data directory not writable | Operator (filesystem perms) |
-| 11 | Backup filename collision | Operator (unlikely — clock skew or retry loop) |
-| 20 | Migration failed | Operator (restore backup — see §9.8) |
+| 11 | Database locked or backup filename collision | Operator (stop any other Collabhost instance; wait and retry) |
+| 20 | Migration failed or pre-migration backup failed | Operator (restore backup — see §9.8) |
 | 30 | Built-in type validation failure | Collabhost team (packaging bug) |
 | 31 | User-type validation failure | Operator (fix / remove the bad JSON) |
 | 40 | Seeder threw unexpectedly (proxy or admin) | Operator (file an issue) |
-| 50 | TypeStore built-in resource missing | Collabhost team (packaging bug) |
+
+Any code outside this table is unexpected — please file an issue with the
+stderr block.
 
 **Stability note:** specific codes are informational in v0.1.0 and may be
 refined across minor versions until the first operator writes automation
@@ -491,6 +516,21 @@ Remove the PATH entry from your shell RC file (`~/.bashrc`, `~/.zshrc`,
 `~/.profile`) or User PATH (Windows) manually if you want to clean that up
 too.
 
+On Linux / macOS, a `sed` one-liner removes the installer's two-line PATH
+block (`# Added by collabhost installer` + the `export PATH=...` line below
+it):
+
+```sh
+sed -i '/# Added by collabhost installer/,+1d' ~/.bashrc    # or ~/.zshrc / ~/.profile
+```
+
+(GNU `sed`. On macOS use `sed -i ''` with the same expression.)
+
+On Windows, open **Settings → System → About → Advanced system settings →
+Environment Variables** (or run `SystemPropertiesAdvanced`) and remove the
+`%USERPROFILE%\.collabhost\bin` entry from your **User PATH**. The installer
+does not write to System PATH.
+
 ---
 
 ## 11. Verifying checksums (manual downloads)
@@ -511,6 +551,7 @@ shasum -a 256 -c collabhost-0.1.0-osx-arm64.tar.gz.sha256
 ```powershell
 # Windows
 $expected = (Get-Content checksums.txt | Select-String 'collabhost-0.1.0-win-x64.zip$').Line -split '\s+' | Select-Object -First 1
+if (-not $expected) { throw 'Checksum line not found for this archive.' }
 $actual   = (Get-FileHash -Algorithm SHA256 collabhost-0.1.0-win-x64.zip).Hash.ToLower()
 if ($expected -ne $actual) { throw 'Checksum mismatch.' } else { 'OK' }
 ```
