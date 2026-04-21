@@ -398,7 +398,7 @@ jobs:
           CHECKSUM="${ARCHIVE}.sha256"
 
           echo "Checking for existing assets on release ${TAG} that would be clobbered..."
-          EXISTING=$(gh release view "${TAG}" --json assets --jq \
+          EXISTING=$(gh release view "${TAG}" --repo MrBildo/collabhost --json assets --jq \
             ".assets[] | select(.name == \"${ARCHIVE}\" or .name == \"${CHECKSUM}\") | .name" \
             || true)
 
@@ -426,6 +426,7 @@ jobs:
           gh release upload "${TAG}" \
             "collabhost-${VER}-${RID}.${EXT}" \
             "collabhost-${VER}-${RID}.${EXT}.sha256" \
+            --repo MrBildo/collabhost \
             --clobber
 
       # Per-leg checksum artifact for the aggregation job. Bumped to 7 days
@@ -466,7 +467,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          EXISTING=$(gh release view "${TAG}" --json assets --jq \
+          EXISTING=$(gh release view "${TAG}" --repo MrBildo/collabhost --json assets --jq \
             '.assets[] | select(.name == "checksums.txt") | .name' \
             || true)
 
@@ -484,4 +485,4 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          gh release upload "${TAG}" checksums.txt --clobber
+          gh release upload "${TAG}" checksums.txt --repo MrBildo/collabhost --clobber
