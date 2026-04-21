@@ -71,6 +71,9 @@ builder.Services.ConfigureHttpJsonOptions
     )
 );
 
+// Platform (BootVersionWriter seam -- #156.1 PR #95 MED-2)
+builder.Services.AddPlatform();
+
 // Database
 builder.Services.AddDataAccess(builder.Configuration);
 
@@ -194,10 +197,14 @@ if (app.Environment.IsDevelopment())
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 }
 
-// Write the last-boot-version sentinel once the host is fully started (§6.2.1).
+// Write the last-boot-version sentinel once the host is fully started (§6.2.1). Routed through
+// IBootVersionWriter so integration-test fixtures can substitute a no-op writer and keep temp
+// data directories free of the sentinel side-effect (PR #95 MED-2).
+var bootVersionWriter = app.Services.GetRequiredService<IBootVersionWriter>();
+
 app.Lifetime.ApplicationStarted.Register
 (
-    () => BootVersionTracker.Write(effectiveDataDir, toSemver, app.Logger)
+    () => bootVersionWriter.Write(effectiveDataDir, toSemver)
 );
 
 // Middleware

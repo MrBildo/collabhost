@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 
+using Collabhost.Api.Platform;
 using Collabhost.Api.Proxy;
 
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -58,6 +59,12 @@ public class ApiFixture : IAsyncLifetime
                         {
                             // Replace the Caddy client with a no-op fake
                             services.AddSingleton<ICaddyClient, FakeCaddyClient>();
+
+                            // Suppress the .last-boot-version sentinel write under
+                            // WebApplicationFactory<Program>. ApplicationStarted fires per test,
+                            // so without this the temp data directory gets a stray sentinel
+                            // (PR #95 MED-2).
+                            services.AddSingleton<IBootVersionWriter, NoopBootVersionWriter>();
                         }
                     );
                 }
@@ -99,6 +106,15 @@ file sealed class FakeCaddyClient : ICaddyClient
 
     public Task<JsonObject?> GetConfigAsync(CancellationToken ct = default) =>
         Task.FromResult<JsonObject?>(null);
+}
+
+// Sealed: file-scoped test fake, no inheritance needed
+file sealed class NoopBootVersionWriter : IBootVersionWriter
+{
+    public void Write(string dataDirectory, string version)
+    {
+        // No-op: integration tests should not leave a .last-boot-version sentinel behind.
+    }
 }
 
 [CollectionDefinition("Api")]

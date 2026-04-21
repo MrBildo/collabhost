@@ -2,6 +2,7 @@ using System.Globalization;
 
 using Collabhost.Api.Data;
 
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -254,6 +255,174 @@ public class MigrationRunnerTests : IAsyncDisposable
             )
         );
 
+    [Fact]
+    public async Task MigrateWithBackupAsync_BackupFilenameCollision_Exits11()
+    {
+        // Arrange: run first to create the DB (so a real file exists for File.Copy to target).
+        await _runner.MigrateWithBackupAsync
+        (
+            _dataDirectory,
+            _backupsDirectory,
+            "unknown",
+            "0.1.0",
+            CancellationToken.None
+        );
+
+        // Force pending migrations by wiping the applied-migrations history so a second
+        // MigrateWithBackupAsync invocation takes the backup + migrate branch.
+        ClearMigrationsHistory();
+
+        // BuildBackupPath uses DateTime.UtcNow to the second. Plant files matching each second
+        // in a small window so the test is robust against boundary crossings (call takes ms).
+        var fromSemver = "0.1.0";
+        var toSemver = "0.2.0";
+        var plantedPaths = PlantBackupsForTimeWindow(fromSemver, toSemver, seconds: 10);
+
+        // Act
+        var ex = await Should.ThrowAsync<MigrationFailedException>
+        (
+            () => _runner.MigrateWithBackupAsync
+            (
+                _dataDirectory,
+                _backupsDirectory,
+                fromSemver,
+                toSemver,
+                CancellationToken.None
+            )
+        );
+
+        // Assert
+        ex.ExitCode.ShouldBe(11);
+        ex.Summary.ShouldContain("collision");
+        ex.BackupPath.ShouldNotBeNull();
+
+        // The runner should have targeted one of the planted paths.
+        plantedPaths.ShouldContain(ex.BackupPath!);
+    }
+
+    [Fact]
+    public async Task MigrateWithBackupAsync_DatabaseLocked_Exits11()
+    {
+        // Seed a real DB so File.Copy has a source to back up. Then clear __EFMigrationsHistory
+        // so the runner sees pending migrations on the next call and enters the migrate branch.
+        await _runner.MigrateWithBackupAsync
+        (
+            _dataDirectory,
+            _backupsDirectory,
+            "unknown",
+            "0.1.0",
+            CancellationToken.None
+        );
+
+        ClearMigrationsHistory();
+
+        var factory = new ThrowingDbContextFactory
+        (
+            _dbFactory.Options,
+            2,
+            new SqliteException("database is locked", 5)
+        );
+
+        var runner = new MigrationRunner(factory, NullLogger<MigrationRunner>.Instance);
+
+        var ex = await Should.ThrowAsync<MigrationFailedException>
+        (
+            () => runner.MigrateWithBackupAsync
+            (
+                _dataDirectory,
+                _backupsDirectory,
+                "0.1.0",
+                "0.2.0",
+                CancellationToken.None
+            )
+        );
+
+        ex.ExitCode.ShouldBe(11);
+        ex.Summary.ShouldContain("locked");
+        ex.BackupPath.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task MigrateWithBackupAsync_GenericMigrateThrow_Exits20()
+    {
+        await _runner.MigrateWithBackupAsync
+        (
+            _dataDirectory,
+            _backupsDirectory,
+            "unknown",
+            "0.1.0",
+            CancellationToken.None
+        );
+
+        ClearMigrationsHistory();
+
+        var factory = new ThrowingDbContextFactory
+        (
+            _dbFactory.Options,
+            2,
+            new InvalidOperationException("planted migration failure")
+        );
+
+        var runner = new MigrationRunner(factory, NullLogger<MigrationRunner>.Instance);
+
+        var ex = await Should.ThrowAsync<MigrationFailedException>
+        (
+            () => runner.MigrateWithBackupAsync
+            (
+                _dataDirectory,
+                _backupsDirectory,
+                "0.1.0",
+                "0.2.0",
+                CancellationToken.None
+            )
+        );
+
+        ex.ExitCode.ShouldBe(20);
+        ex.Summary.ShouldContain("migration failed");
+        ex.InnerException.ShouldBeOfType<InvalidOperationException>();
+        ex.BackupPath.ShouldNotBeNull();
+    }
+
+    private void ClearMigrationsHistory()
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM __EFMigrationsHistory";
+        command.ExecuteNonQuery();
+    }
+
+    private List<string> PlantBackupsForTimeWindow(string fromSemver, string toSemver, int seconds)
+    {
+        var planted = new List<string>();
+        var now = DateTime.UtcNow;
+
+        for (var offset = -1; offset < seconds; offset++)
+        {
+            var stamp = now.AddSeconds(offset)
+                .ToString("yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture);
+
+            var filename = string.Concat
+            (
+                MigrationRunner.BackupFilePrefix,
+                stamp,
+                "-pre-",
+                fromSemver,
+                "-to-",
+                toSemver
+            );
+
+            var path = Path.Combine(_backupsDirectory, filename);
+
+            File.WriteAllText(path, "planted");
+            planted.Add(path);
+        }
+
+        return planted;
+    }
+
     private void PlantBackups(int count)
     {
         for (var index = 0; index < count; index++)
@@ -282,10 +451,43 @@ public class MigrationRunnerTests : IAsyncDisposable
 // Sealed: test helper only, no subtype need
 internal sealed class TestDbContextFactory(DbContextOptions<AppDbContext> options) : IDbContextFactory<AppDbContext>
 {
-    public AppDbContext CreateDbContext() => new(options);
+    public DbContextOptions<AppDbContext> Options { get; } = options;
+
+    public AppDbContext CreateDbContext() => new(Options);
 
 #pragma warning disable VSTHRD200 // Interface implementation
     public Task<AppDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(new AppDbContext(options));
+        Task.FromResult(new AppDbContext(Options));
+#pragma warning restore VSTHRD200
+}
+
+// Sealed: test helper only, no subtype need.
+// Call 1 returns a real context so GetPendingMigrationsAsync succeeds and reports pending items.
+// Call N (configured via throwOnCall) throws the configured exception to drive the runner's
+// catch branches for DB-locked (exit 11) and generic migration failure (exit 20).
+internal sealed class ThrowingDbContextFactory
+(
+    DbContextOptions<AppDbContext> realOptions,
+    int throwOnCall,
+    Exception exceptionToThrow
+) : IDbContextFactory<AppDbContext>
+{
+    private readonly DbContextOptions<AppDbContext> _realOptions = realOptions
+        ?? throw new ArgumentNullException(nameof(realOptions));
+    private readonly Exception _exceptionToThrow = exceptionToThrow
+        ?? throw new ArgumentNullException(nameof(exceptionToThrow));
+    private int _callCount;
+
+    public AppDbContext CreateDbContext() => new(_realOptions);
+
+#pragma warning disable VSTHRD200 // Interface implementation
+    public Task<AppDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+    {
+        var current = Interlocked.Increment(ref _callCount);
+
+        return current >= throwOnCall
+            ? Task.FromException<AppDbContext>(_exceptionToThrow)
+            : Task.FromResult(new AppDbContext(_realOptions));
+    }
 #pragma warning restore VSTHRD200
 }
