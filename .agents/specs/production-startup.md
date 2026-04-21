@@ -3,9 +3,9 @@
 **Card:** #156 -- Production startup: seeding, migrations, and data-safety posture
 **Author:** Marcus (design lead)
 **Implementer:** Remy
-**Status:** R1 -- initial design proposal. Awaiting Dana + Remy review and Bill sign-off on open questions.
+**Status:** R2 -- open-question decisions locked. Ship-ready.
 **Gates:** #153 **Phase 4b** (installer + INSTALL.md). Phase 4a of #153 does not depend on this spec.
-**Related cards:** #152 (admin key stdout / first-run, superseded by §11 here), #158 (admin-key UX surface -- complementary, not blocking), #159 (settings resolution -- `#156` owns the `Platform:ToolsDirectory` removal called out there), #161 (smart-merge of shipped `appsettings.json` defaults -- parking), #162 (log directory / pre-crash diagnostics), #153 (release pipeline -- consumer)
+**Related cards:** #152 (admin key stdout / first-run, superseded by §11 here), #158 (admin-key UX surface -- complementary, not blocking), #159 (settings resolution -- `#156` owns the `Platform:ToolsDirectory` removal called out there), #161 (smart-merge of shipped `appsettings.json` defaults -- parking), #162 (log directory / pre-crash diagnostics), #166 (SIGHUP reload for user types -- parked), #153 (release pipeline -- consumer)
 **Date:** 2026-04-20
 
 ---
@@ -115,7 +115,7 @@ This ordering is load-bearing. In particular:
 - **(4) must precede (5)** -- backups are only useful if taken before the mutation.
 - **(6) must precede (7)** -- `ProxyAppSeeder` reads `TypeStore.GetBySlug("system-service")`.
 - **(6) must precede (10)** -- `ProcessSupervisor` and `ProxyManager` are hosted services that call `TypeStore` in their `StartAsync` paths.
-- **(9) must follow (6) + (7)** -- the file watcher should only fire against a loaded snapshot, and only in Production if we decide it stays (§8.3 open question OQ-4).
+- **(9) must follow (6) + (7)** -- the file watcher only fires against a loaded snapshot. The watcher stays on in Production per §8.3.
 
 ---
 
@@ -132,6 +132,7 @@ Yes. Small, cheap, high-signal. The failure mode for "skip preflight" is cryptic
 1. **Data directory is writable.** Resolve the effective data directory (per §7.2), create it if missing (0700 on POSIX), try to write + delete a sentinel file. Fail with clear message + exit code 10 (§12.1) if not writable.
 2. **`AppContext.BaseDirectory` is readable.** We need the embedded-resource assembly and the bundled Caddy sidecar both accessible. Any read failure is a packaging bug, not a runtime condition.
 3. **Caddy binary resolves or soft-fails cleanly.** `CaddyResolver` runs as Phase 2 of #153. Its result is captured and fed forward to §9. If it fails, the proxy subsystem enters `disabled` at boot (§9) -- not a startup halt.
+4. **Last-booted version read.** Reads `{dataDirectory}/.last-boot-version` per §6.2.1. Missing or malformed → `unknown`. Never halts.
 
 **What we deliberately do NOT check at preflight:**
 
@@ -156,16 +157,37 @@ The hook point is **"has the EF Core schema changed?"**, detected via `context.D
 ### 6.2 Backup filename format
 
 ```
-collabhost.db.bak-{yyyyMMddTHHmmssZ}-pre-{fromVersion}-to-{toVersion}
+collabhost.db.bak-{yyyyMMddTHHmmssZ}-pre-{fromSemver}-to-{toSemver}
 ```
 
 Example: `collabhost.db.bak-20260420T143022Z-pre-v0.1.0-to-v0.2.0`
 
 - `{yyyyMMddTHHmmssZ}` -- UTC timestamp (sortable, filesystem-safe).
-- `{fromVersion}` -- the last applied migration name, truncated to the version prefix if available, else the literal `unknown`.
-- `{toVersion}` -- the last pending migration name (the target), or the semver tag from `VersionInfo.Current` if we decide to prefer that (OQ-1).
+- `{fromSemver}` -- the last booted binary's version (see §6.2.1), or the literal `unknown` if no record exists (fresh install that somehow has pending migrations -- shouldn't happen but won't crash).
+- `{toSemver}` -- the current binary's `VersionInfo.Current`.
 
-The filename is long by design. When an operator lands in `data/` looking for "which backup matches which upgrade," the timestamp + version band is worth the extra characters.
+The filename is long by design. When an operator lands in `data/` looking for "which backup matches which upgrade," the timestamp + semver band is worth the extra characters.
+
+The **migration name** (applied target, e.g., `AddActivityEvents`) does **not** appear in the filename but **is** included in the `LogCritical` structured fields and the §12.2 stderr block. Developer diagnostics keep the migration name; operator-facing artifacts use semver.
+
+### 6.2.1 Tracking the last-booted version
+
+To fill `{fromSemver}` we need to know the version of the binary that last successfully booted against this data directory. That record cannot live in `collabhost.db` -- we need to read it *before* we touch the DB (pre-migration), and the backup mechanism copies `collabhost.db`, so any version record inside would be stale relative to the live boot.
+
+**Decision -- plain-text sentinel file: `{dataDirectory}/.last-boot-version`.**
+
+- Single line containing the semver of the last binary that completed startup (e.g., `v0.1.0\n`).
+- Read during §5 preflight, cached in the startup context for the migration runner to consume.
+- Written at the end of successful startup (post-Kestrel-listen), atomically via write-to-temp + rename.
+- 0600 on POSIX. Owned by the Collabhost process user.
+- Missing file → `fromSemver = "unknown"`. Malformed contents (not a valid semver pattern) → same. No halt; the worst case is a cosmetic backup filename.
+- Not backed up separately. It's a derived-from-runtime artifact, not operator state.
+
+**Rejected alternative -- dedicated `SystemState` EF Core table.** Adds schema surface for a one-row key-value and would itself require an initial migration to bootstrap. The chicken-and-egg (needing the value *before* migration) rules it out.
+
+**Rejected alternative -- append to `appsettings.json`.** Operator's persistent config file per #153 §9.7. Writing to it from the binary violates the "operator owns `appsettings.json`" invariant.
+
+The sentinel file pattern is deliberately minimal: if it gets corrupted or an operator deletes it, the next boot treats the "from" version as `unknown` and otherwise proceeds normally. No recovery procedure needed.
 
 ### 6.3 Backup location
 
@@ -205,7 +227,7 @@ This section is content #156 owns but the actual INSTALL.md file is written as p
 
 ### 6.7 Code seam
 
-New class `Data/MigrationRunner.cs` with two methods:
+New class `Data/MigrationRunner.cs` with two methods, plus a small `Platform/BootVersionTracker.cs` helper for the §6.2.1 sentinel file (read in preflight, write on successful boot):
 
 ```csharp
 public sealed class MigrationRunner
@@ -239,7 +261,7 @@ The `MigrationRunner` encapsulates the §6 + §7 concerns together. `Program.cs`
 - **Prompt on upgrade:** no TTY in production. Rejected.
 - **Require opt-in env var (`COLLABHOST_AUTO_MIGRATE=1`):** yet another thing operators have to discover. If we ever make opt-in the default, it's because we've lost confidence in our own migration discipline and that's a bigger problem.
 
-**Open question:** OQ-2 below considers whether `--migrate` / `--no-migrate` CLI flags belong in v1.
+**Locked:** `--migrate` / `--no-migrate` CLI flags are **not** in v1. Auto-migrate is the only path; backup + migrate is atomic from the operator's point of view. Revisit when the first operator asks -- tracked as a follow-up recommendation in Appendix B.
 
 ### 7.2 Which DB do we migrate?
 
@@ -299,7 +321,7 @@ No ambiguity: consumers (`ProcessSupervisor`, `ProxyManager`, capability resolve
 - Built-in validation failure: log `LogCritical`, print stderr "built-in type validation failed -- this is a packaging bug, please file an issue with the exact stderr output", exit code 30.
 - User-type validation failure: log `LogCritical` with the specific file + field errors, print stderr "invalid user type JSON at `{path}` -- fix or remove the file and restart", exit code 31.
 
-The reason for separate exit codes is so that bundled smoke tests (#153 §15.4) can distinguish a "our package broke" failure from an "operator configured wrong" failure.
+The reason for separate exit codes is so that bundled smoke tests (#153 §15.4) can distinguish a "our package broke" failure from an "operator configured wrong" failure. The two exit codes deliberately separate the Collabhost team's responsibility (30) from the operator's (31) -- both halt because silent failure hides a real problem in either case, but the distinction tells you *whose* problem it is at a glance.
 
 **Rejected alternative -- soft-fail on user types (drop bad files, keep booting):** this makes the failure invisible. An operator would launch, see the dashboard, not realize their custom `nodejs-worker.json` type never loaded, and waste an afternoon. Halting with a clear message is friendlier than appearing to work.
 
@@ -311,7 +333,7 @@ Today's `StartWatching` runs on startup, sets up a `FileSystemWatcher` on the us
 
 **But:** the scan directory should be created by `StartupPreflight` (§5) if it doesn't exist, with the informational log "user types directory initialized, drop `*.json` files here." Today `StartWatching` silently skips if the directory doesn't exist; for production that silence is wrong -- it means "this feature is disabled" without the operator ever knowing the feature existed.
 
-**Open question OQ-4 below:** should we also support reload-on-SIGHUP for environments where FSW is unreliable (some network filesystems, some container overlay mounts)?
+**Follow-up (#166):** `FileSystemWatcher` has known reliability gaps on some network filesystems and container overlay mounts. SIGHUP-triggered `ReloadAsync` would cover those environments but no real operator has hit the issue in Collabhost yet. Parked as #166 (Backlog, S); file when FSW reliability hurts a real operator.
 
 ### 8.4 `COLLABHOST_USER_TYPES_PATH` resolution
 
@@ -399,18 +421,18 @@ This supersedes card **#152**. The UX surface (exact console output format, reco
 
 ### 11.1 The three scenarios
 
-**Scenario 1 -- Blind first run.** No admin key configured (neither `Auth:AdminKey` in `appsettings.json` nor `COLLABHOST_ADMIN_KEY` env var nor `--admin-key` CLI arg). DB is empty.
+**Scenario 1 -- Blind first run.** No admin key configured (neither `Auth:AdminKey` in `appsettings.json` nor `COLLABHOST_ADMIN_KEY` env var). DB is empty.
 
 - `UserSeedService` generates a ULID, inserts an `Admin` user with `Role = Administrator` and that key, writes the key to stdout in a distinctive format (#158's call exactly how).
 - INSTALL.md's "Your admin key" section documents "on first launch, watch stdout for the line starting with `[Collabhost] Admin key:`" and the recovery path if the operator missed it (§11.4).
 
 **Scenario 2 -- Configured first run.** Admin key provided via one of the configured sources. DB is empty.
 
-- `UserSeedService` resolves the effective key via the §2.5 precedence chain (`CLI > env > appsettings.json`) and inserts the `Admin` user with that key.
+- `UserSeedService` resolves the effective key via the §11.2 precedence chain (env var > config) and inserts the `Admin` user with that key.
 - No stdout emission of the key (the operator already has it).
 - A short info-level log line confirms: `"Admin user seeded with configured admin key"` (no key value in logs).
 
-**Scenario 3 -- Override on subsequent boot.** DB has users. An admin key is provided via config/env/CLI and **does not match** any existing user's `AuthKey`.
+**Scenario 3 -- Override on subsequent boot.** DB has users. An admin key is provided via env var or config and **does not match** any existing user's `AuthKey`.
 
 - `UserSeedService` inserts a **new** admin user with that key (not a replacement; the existing admin remains). Rationale: operators lock themselves out of the dashboard. The configured-override path is their break-glass recovery. We don't revoke existing admins in the process because we don't know which of the existing admins is the "real" one.
 - Info log: `"Configured admin key is new -- created additional Admin user for recovery"`.
@@ -418,11 +440,13 @@ This supersedes card **#152**. The UX surface (exact console output format, reco
 
 ### 11.2 Precedence of the configured key source
 
-Per #153 §2.5: `CLI --admin-key > COLLABHOST_ADMIN_KEY env var > Auth:AdminKey in appsettings.json`.
+**Locked for v1: env var + config only.** Precedence: `COLLABHOST_ADMIN_KEY env var > Auth:AdminKey in appsettings.json`.
 
-**`--admin-key` CLI flag -- introduced here.** Today only `Auth:AdminKey` exists. Env var and CLI flag are both new. The CLI flag is useful for automation; the env var is useful for the per-invocation startup-wrapper pattern #153 §12 established.
+- `Auth:AdminKey` (config) -- exists today.
+- `COLLABHOST_ADMIN_KEY` (env var) -- new, introduced by #156.
+- `--admin-key` (CLI flag) -- **deferred.** Ships when #153's CLI surface grows beyond `--version` (alongside e.g. `--show-admin-key`, and `--migrate` if that ever lands). Tracked as a follow-up recommendation in Appendix B.
 
-**Open question OQ-3:** do we ship all three sources in v1, or just the env var + config? Scoping question for Bill.
+The env var handles the per-invocation startup-wrapper pattern #153 §12 established; the config handles persistent operator-owned setups. CLI flags are valuable for automation but #153 Phase 4b doesn't depend on them; shipping them as a batch later keeps the v1 surface small.
 
 ### 11.3 Idempotency and restart semantics
 
@@ -432,13 +456,15 @@ Per #153 §2.5: `CLI --admin-key > COLLABHOST_ADMIN_KEY env var > Auth:AdminKey 
 
 ### 11.4 Key recovery if the operator missed it (Scenario 1)
 
-Decided surface is #158's; the behavioral options are:
+**Mechanism deferred to #158.** #156's design is structurally independent of the choice: the pre-migration backup (§6) only covers `collabhost.db`, not the full `data/` tree. Whether #158 lands with a file-on-disk (e.g., `data/admin-key.txt`, 0600), a `--show-admin-key` CLI flag reading from the DB, or a DB-reset procedure, the #156 boot contract is unaffected.
 
-- **(a)** Log to a file (`data/admin-key.txt`, 0600) in addition to stdout, with "delete this file after you've captured the key" instructions. Simple, reliable, but leaves a credential on disk.
-- **(b)** Re-emit the key via a `collabhost --show-admin-key` CLI flag that reads the first admin user's key from the DB. Requires DB lookup, is explicit, leaves no on-disk credential.
-- **(c)** Require a DB reset ("delete `collabhost.db` and reboot"). Safe but unhelpful.
+For context, the options #158 will weigh:
 
-**My recommendation: (b).** But this is #158's call.
+- **(a)** Log to a file alongside stdout. Simple, reliable, leaves a credential on disk.
+- **(b)** Re-emit via a `--show-admin-key` CLI flag. Requires DB lookup; no on-disk credential.
+- **(c)** Require a DB reset. Safe but unhelpful.
+
+This section exists to make explicit that the choice lives on #158, not #156.
 
 ### 11.5 Code seam
 
@@ -447,7 +473,7 @@ Decided surface is #158's; the behavioral options are:
   - Remove stdout emission when key was configured (scenario 2).
   - No change to the existing scenario-1 stdout behavior.
 - `Authorization/_Registration.cs` -- today generates a temp key if `AdminKey` is null (lines 20-38). Move that generation *into* `UserSeedService` so the generation + insertion + logging live together. The current split (generate in registration, consume in seeder) is a holdover from before the seeder existed.
-- `Program.cs` -- if `--admin-key` CLI flag lands, parse in the short-circuit block near `--version`.
+- Env var `COLLABHOST_ADMIN_KEY` wires in via explicit mapping. The `COLLABHOST_` family of env vars uses the flat `COLLABHOST_{NAME}` convention (not the `__` section separator) per #153 §12.3. `Authorization/_Registration.cs` reads `Environment.GetEnvironmentVariable("COLLABHOST_ADMIN_KEY")` during registration and, if set, overrides `AuthSettings.AdminKey` -- mirroring how Phase 3 of #153 handles `COLLABHOST_DATA_PATH` and `COLLABHOST_USER_TYPES_PATH`. Env-var-over-config precedence is preserved.
 
 ---
 
@@ -467,6 +493,8 @@ Decided surface is #158's; the behavioral options are:
 | 50 | TypeStore built-in resource missing | Collabhost team (packaging bug) |
 
 Exit codes above 1 are Collabhost-specific; 0 and 1 are standard (`1` is ASP.NET Core's generic "unhandled exception during host build").
+
+**Stability: informational only in v1.** INSTALL.md documents these codes so operators have a decoding key, but the table is not a stability contract -- specific numbers may change across minor versions. When operators begin writing automation that depends on a specific code, we freeze the contract; until then we reserve the latitude to revise the taxonomy if the need arises. Follow-up recommendation in Appendix B.
 
 ### 12.2 Stderr message shape
 
@@ -613,7 +641,8 @@ A consolidated view of what changes where. Implementation-only -- this spec does
 | `backend/Collabhost.Api/Program.cs` | Remove `IsDevelopment()` gate around migrations + TypeStore + ProxyAppSeeder. Call `StartupPreflight.ValidateAsync` first. Call `MigrationRunner.MigrateWithBackupAsync`. Call `TypeStore.LoadAsync` unconditionally. Call `ProxyAppSeeder.SeedAsync` unconditionally. Call `TypeStore.StartWatching` after both. Keep `MapOpenApi` and `UseCors` gated. Route exits through a central failure-reporter. |
 | `backend/Collabhost.Api/Platform/StartupPreflight.cs` (new) | Preflight checks per §5. |
 | `backend/Collabhost.Api/Platform/StartupFailure.cs` (new) | Central failure reporter (§12.2). Writes to both `ILogger` and `Console.Error`, sets exit code, terminates. |
-| `backend/Collabhost.Api/Data/MigrationRunner.cs` (new) | §6 + §7 encapsulated. Takes backup, applies migrations, returns outcome. |
+| `backend/Collabhost.Api/Platform/BootVersionTracker.cs` (new) | Read/write the `.last-boot-version` sentinel file (§6.2.1). Read in preflight; write after Kestrel listens in `Program.cs`. |
+| `backend/Collabhost.Api/Data/MigrationRunner.cs` (new) | §6 + §7 encapsulated. Takes backup (including `{fromSemver}` from tracker), applies migrations, returns outcome. |
 | `backend/Collabhost.Api/Data/AppTypes/TypeStore.cs` | No contract change. |
 | `backend/Collabhost.Api/Proxy/ProxyAppSeeder.cs` | Remove static `ResolveBinaryPath` after #153 Phase 2 lands. Otherwise unchanged. |
 | `backend/Collabhost.Api/Authorization/UserSeedService.cs` | Extend to support scenario 3 (configured-key override on non-empty DB). |
@@ -628,9 +657,10 @@ Focused -- not a test-plan inventory. Remy sequences within the PRs.
 
 ### 16.1 Unit tests (new)
 
-- `MigrationRunnerTests` -- first boot creates DB, normal boot no-ops, pending migrations trigger backup, backup retention rolls at 5, filename-collision exit path.
-- `StartupPreflightTests` -- writable dir → ok, unwritable dir → exit code 10, missing user-types dir → created.
-- `UserSeedServiceTests` -- add scenario 3 cases (configured key matches existing user → no-op; doesn't match → new admin created).
+- `MigrationRunnerTests` -- first boot creates DB, normal boot no-ops, pending migrations trigger backup, backup retention rolls at 5, filename-collision exit path, backup filename reflects `{fromSemver}`/`{toSemver}` including the `unknown` fallback.
+- `StartupPreflightTests` -- writable dir → ok, unwritable dir → exit code 10, missing user-types dir → created, missing/malformed `.last-boot-version` → `unknown` without halt.
+- `BootVersionTrackerTests` -- read missing → `unknown`, read valid semver → returned, write is atomic (temp + rename), round-trip after write.
+- `UserSeedServiceTests` -- add scenario 3 cases (configured key matches existing user → no-op; doesn't match → new admin created), env var `COLLABHOST_ADMIN_KEY` overrides `Auth:AdminKey` when both set.
 
 ### 16.2 Integration tests (existing, updated)
 
@@ -660,7 +690,7 @@ Per topic, ballpark T-shirt sizes. Remy refines when he sequences.
 | §8 TypeStore load + watcher in production | S | Remove `IsDevelopment()`; ensure scan dir exists. |
 | §9 ProxyAppSeeder in production | XS | Remove `IsDevelopment()`; the seeder is already idempotent. |
 | §10 First-run detection | XS | No new code -- callees are idempotent. |
-| §11 Admin-key 3-scenario | M | Scenario-3 logic + moving generation into `UserSeedService`. New CLI flag parsing if OQ-3 says yes. |
+| §11 Admin-key 3-scenario | M | Scenario-3 logic + moving generation into `UserSeedService` + `COLLABHOST_ADMIN_KEY` env var wiring. |
 | §12 Startup failure modes | S | Central reporter + exit-code table. |
 | §13 Upgrade story | XS | Already covered by §6 + §7; spec-only. |
 | §14 Dead config cleanup | XS | Delete lines. |
@@ -669,49 +699,6 @@ Per topic, ballpark T-shirt sizes. Remy refines when he sequences.
 Total rough: **M for design-to-shipped.** Biggest item is the admin-key scenario work + its tests. Migration runner is next. Everything else is plumbing.
 
 Parallelism with #153: Phase 3 (env-var readers) is independent of #156. Phase 2 (CaddyResolver + proxyState) is independent of #156 except for the hook point in §9.2. Phase 4a ships without #156. Phase 4b ships after #156.
-
----
-
-## 18. Open Questions (Bill rules)
-
-These are the ambiguities I'm deliberately leaving for Bill rather than silently picking. R2 will land whatever he decides.
-
-**OQ-1 -- Backup filename version band.** Do we prefer the applied-migration-name band (`pre-AddActivityEvents-to-AddFoo`) or the semver band (`pre-v0.1.0-to-v0.2.0`)?
-- Semver is operator-friendly (they know what "v0.1.0" means).
-- Migration name is developer-friendly (matches what EF Core logs on failure).
-- Migration name needs `VersionInfo.Current` as a best-effort correlate to be useful. Semver lets the backup speak for itself.
-- My lean: **semver** for the operator-facing format, migration name in the `LogCritical` structured fields. Your call.
-
-**OQ-2 -- `--migrate` / `--no-migrate` CLI flags in v1.**
-- Argument for: matches `dotnet ef database update`, lets operators script an explicit migrate step.
-- Argument against: adds surface, invites "run `collabhost migrate`" scripts that will skip the backup if someone forgets to wrap them.
-- My lean: **no -- auto-migrate is the only path in v1.** Revisit when the first operator asks.
-
-**OQ-3 -- Admin-key CLI flag scope in v1.**
-- Three potential sources: `Auth:AdminKey` (config, exists), `COLLABHOST_ADMIN_KEY` (env, new), `--admin-key` (CLI, new).
-- Ship all three? Ship config + env only and defer CLI to when the first consumer asks?
-- My lean: **config + env in v1, CLI deferred.** The CLI flag is valuable for automation but #153 Phase 4b doesn't depend on it; ship it when we ship other CLI flags together (e.g., `--migrate`, `--show-admin-key`).
-
-**OQ-4 -- SIGHUP reload for user types.**
-- `FileSystemWatcher` is mostly reliable but has known gaps on network filesystems and some container overlay mounts.
-- Adding a SIGHUP handler that triggers `ReloadAsync` costs a few lines.
-- My lean: **defer.** No real user has reported FSW failing in Collabhost. Keep the option in the back pocket. Not in v1.
-
-**OQ-5 -- Exit-code table stability.**
-- I've picked numbers (10, 11, 20, 30, 31, 40, 50). Once we ship them, operator scripts may depend on them.
-- Do we declare the exit codes a stable public contract in INSTALL.md, or say "may change across minor versions"?
-- My lean: **document them as informational in v1, don't promise stability yet.** When an operator writes a script that depends on exit code 20, we'll know it's time to freeze.
-
-**OQ-6 -- First-run admin-key recovery mechanism.**
-- §11.4 options (a) file on disk, (b) CLI flag, (c) require reset.
-- This is #158's territory but #156's migration runner needs to know whether option (a) involves writing a file under `data/` that the migration backup must respect.
-- My lean: **defer to #158.** If (a) wins, the migration runner doesn't care -- it only backs up `collabhost.db`, not the whole data directory.
-
-**OQ-7 -- Exit behavior when built-in type validation fails.**
-- Exit code 30 halts the process. But an operator on a running install who pulls a broken release is stuck -- the only recovery is to roll back the binary.
-- Alternative: soft-fail, log critical, boot in "built-in types broken" mode with a health signal, let the operator roll back via the dashboard.
-- Against: a broken built-in type means capability resolution is broken, which probably means `ProcessSupervisor` crashes on first app start anyway.
-- My lean: **halt (exit 30).** Broken built-ins ship only on bad releases; the CI smoke tests should catch them before tagging. If one slips through, halting is the right signal.
 
 ---
 
@@ -732,10 +719,10 @@ This spec gates #153 Phase 4b. Where they intersect:
 
 These are things this spec explicitly parks rather than scoping in. Each is a distinct discussion.
 
-- **#xxx -- CLI flags: `--migrate`, `--no-migrate`, `--show-admin-key`, `--admin-key`.** Per OQ-2 + OQ-3. Ships when #153's CLI surface grows beyond `--version`.
-- **#xxx -- Exit-code stability contract.** Per OQ-5. Filed when an operator first writes automation that depends on a specific code.
-- **#xxx -- SIGHUP reload for user types.** Per OQ-4. Filed when FSW reliability hurts a real operator.
-- **#xxx -- Admin-key file-on-disk vs CLI recovery.** Per §11.4 / OQ-6. #158's territory; this entry is a reminder in case #158 doesn't land before v0.1.0.
-- **#xxx -- Backup retention policy revisit.** 5-count is a guess; revisit when we know operator backup sizes (`data/backups/` growing too fast or never used).
-- **#xxx -- Downgrade detection.** Per §13.3. File if operators start landing with "I downgraded and now queries fail."
-- **#xxx -- Per-route backup / logical snapshot API.** `/api/v1/admin/backup` endpoint for on-demand backups. Uses the SQLite Backup API instead of file copy.
+- **#166 -- SIGHUP reload for user types.** Filed 2026-04-20 (Backlog, S). File when FSW reliability hurts a real operator on a network filesystem or container overlay mount.
+- **CLI flags: `--migrate`, `--no-migrate`, `--show-admin-key`, `--admin-key`.** Ships when #153's CLI surface grows beyond `--version`. Not pre-emptively carded; files when a concrete consumer needs the surface.
+- **Exit-code stability contract.** File when an operator first writes automation that depends on a specific code; freeze the §12.1 table at that point.
+- **Backup retention policy revisit.** 5-count is a guess; revisit when we know operator backup sizes (`data/backups/` growing too fast or never used).
+- **Downgrade detection.** Per §13.3. File if operators start landing with "I downgraded and now queries fail."
+- **Per-route backup / logical snapshot API.** `/api/v1/admin/backup` endpoint for on-demand backups. Uses the SQLite Backup API instead of file copy.
+- **Admin-key recovery mechanism.** Lives on **#158**, not a new card. Noted here for traceability since §11.4 defers the choice.
