@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 
 using Collabhost.Api.ActivityLog;
@@ -49,32 +48,25 @@ public class ProxyAppSeeder
             return;
         }
 
-        // COLLABHOST_CADDY_PATH env var takes precedence over Proxy:BinaryPath (§12.3).
-        // Phase 3 is additive glue: read the env var and pass it through. If the env var is
-        // set but the path does not exist, ResolveBinaryPath returns null and the proxy is
-        // disabled -- it does NOT fall through to the config/bundled path.
-#pragma warning disable MA0026 // tracked: Phase 2 owns the full §6.4.1 fall-through chain
-        // TODO (#153 Phase 2): §6.4.1 fall-through to config/bundled if env-set path is missing.
-#pragma warning restore MA0026
-        // The full CaddyResolver refactor in Phase 2 owns the complete precedence chain.
-        var caddyPathEnv = Environment.GetEnvironmentVariable("COLLABHOST_CADDY_PATH");
-
-        var binaryPath = !string.IsNullOrWhiteSpace(caddyPathEnv)
-            ? caddyPathEnv
-            : _settings.BinaryPath;
-
-        var resolvedPath = ResolveBinaryPath(binaryPath);
+        // CaddyResolver is the single source of truth for binary resolution (§6.4.1).
+        // Precedence: COLLABHOST_CADDY_PATH env > Proxy:BinaryPath config > bundled sidecar.
+        // Returns null when no Caddy can be found -- proxy subsystem soft-fails.
+        var resolvedPath = CaddyResolver.Resolve(_settings, _logger);
 
         if (resolvedPath is null)
         {
             _logger.LogWarning
             (
-                "Proxy binary not found at '{BinaryPath}'. Proxy features will be disabled.\n" +
-                "To install:\n" +
-                "  Windows: winget install CaddyServer.Caddy\n" +
-                "  Or download to tools/caddy/ and set Proxy:BinaryPath in appsettings.Development.json\n" +
-                "  General: https://caddyserver.com/docs/install",
-                binaryPath
+                "No Caddy binary found -- proxy subsystem disabled. " +
+                "Resolution order: COLLABHOST_CADDY_PATH env var, Proxy:BinaryPath setting, " +
+                "then bundled sidecar at '{BundledPath}'. " +
+                "Install Caddy (https://caddyserver.com/docs/install) or set COLLABHOST_CADDY_PATH. " +
+                "proxyState will report 'disabled' on /api/v1/status until resolved.",
+                Path.Combine
+                (
+                    AppContext.BaseDirectory,
+                    OperatingSystem.IsWindows() ? "caddy.exe" : "caddy"
+                )
             );
 
             return;
@@ -166,60 +158,5 @@ public class ProxyAppSeeder
         );
 
         await _appStore.SaveOverrideAsync(appId, "artifact", artifactOverride, cancellationToken);
-    }
-
-    public static string? ResolveBinaryPath(string binaryPath)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(binaryPath);
-
-        // If the path contains a directory separator, treat as absolute/relative path
-        if (binaryPath.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            || binaryPath.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
-        {
-            return File.Exists(binaryPath) ? Path.GetFullPath(binaryPath) : null;
-        }
-
-        // Bare name -- resolve via PATH
-        return ResolveFromPath(binaryPath);
-    }
-
-    private static string? ResolveFromPath(string binaryName)
-    {
-        var command = OperatingSystem.IsWindows() ? "where" : "which";
-
-        try
-        {
-            using var process = new Process();
-
-            process.StartInfo = new ProcessStartInfo
-            {
-                FileName = command,
-                Arguments = binaryName,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            process.Start();
-
-            var output = process.StandardOutput.ReadToEnd().Trim();
-
-            process.WaitForExit();
-
-            if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
-            {
-                // 'where' on Windows may return multiple lines -- take the first
-                var firstLine = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)[0];
-
-                return firstLine;
-            }
-        }
-        catch (Exception)
-        {
-            // Binary resolution failed -- will be reported as not found
-        }
-
-        return null;
     }
 }

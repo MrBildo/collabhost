@@ -6,7 +6,9 @@ public class ProxySettings
 
     public required string BaseDomain { get; init; }
 
-    public required string BinaryPath { get; init; }
+    // Optional in production: the bundled sidecar at AppContext.BaseDirectory is the default.
+    // Dev-time developers set this to "caddy" in appsettings.Local.json to resolve via PATH.
+    public string? BinaryPath { get; init; }
 
     public required string ListenAddress { get; init; }
 

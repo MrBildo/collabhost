@@ -1,5 +1,7 @@
 using System.Globalization;
 
+using Collabhost.Api.Proxy;
+
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Collabhost.Api.Platform;
@@ -16,9 +18,14 @@ public static class SystemEndpoints
         group.MapGet("/version", GetVersion);
     }
 
-    private static Ok<SystemStatus> GetStatus()
+    private static Ok<SystemStatus> GetStatus(ProxyManager proxyManager)
     {
         var uptimeSeconds = (DateTime.UtcNow - _startedAt).TotalSeconds;
+
+        // Enum name is lowercased at the boundary; internal code stays type-safe (§6.4.2).
+        var proxyState = proxyManager.CurrentState
+            .ToString()
+            .ToLowerInvariant();
 
         var status = new SystemStatus
         (
@@ -26,7 +33,8 @@ public static class SystemEndpoints
             VersionInfo.Current,
             Environment.MachineName,
             Math.Round(uptimeSeconds, 1),
-            DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
+            DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+            proxyState
         );
 
         return TypedResults.Ok(status);

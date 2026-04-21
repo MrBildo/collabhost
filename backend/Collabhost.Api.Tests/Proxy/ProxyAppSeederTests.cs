@@ -6,42 +6,21 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Proxy;
 
+// CaddyResolver owns the full precedence chain as of #153 Phase 2.
+// Binary-path resolution tests live in CaddyResolverTests; this file retains only
+// high-level guards for ProxyAppSeeder itself. See CaddyResolverTests for the full suite.
 public class ProxyAppSeederTests
 {
     [Fact]
-    public void ResolveBinaryPath_WhitespaceOnly_Throws() =>
-        Should.Throw<ArgumentException>(() => ProxyAppSeeder.ResolveBinaryPath("  "));
-
-    [Fact]
-    public void ResolveBinaryPath_NullInput_Throws() =>
-        Should.Throw<ArgumentException>(() => ProxyAppSeeder.ResolveBinaryPath(null!));
-
-    [Fact]
-    public void ResolveBinaryPath_AbsolutePathThatDoesNotExist_ReturnsNull()
+    public void ResolveBinaryPathSetting_BareName_ResolvesFromPath()
     {
-        var result = ProxyAppSeeder.ResolveBinaryPath(@"C:\nonexistent\path\caddy.exe");
+        // 'where' / 'which' exists on every supported platform's PATH.
+        var result = CaddyResolver.ResolveBinaryPathSetting(OperatingSystem.IsWindows() ? "where" : "sh");
 
-        result.ShouldBeNull();
+        result.ShouldNotBeNull();
     }
 
     [Fact]
-    public void ResolveBinaryPath_BareName_ResolvesFromPath()
-    {
-        // 'where' exists on all Windows PATH
-        var result = ProxyAppSeeder.ResolveBinaryPath("where");
-
-        if (OperatingSystem.IsWindows())
-        {
-            result.ShouldNotBeNull();
-            result.ShouldEndWith("where.exe", Case.Insensitive);
-        }
-    }
-
-    [Fact]
-    public void ResolveBinaryPath_BareNameNotOnPath_ReturnsNull()
-    {
-        var result = ProxyAppSeeder.ResolveBinaryPath("nonexistent-binary-12345");
-
-        result.ShouldBeNull();
-    }
+    public void ResolveBinaryPathSetting_BareNameNotOnPath_ReturnsNull() =>
+        CaddyResolver.ResolveBinaryPathSetting("nonexistent-binary-12345").ShouldBeNull();
 }
