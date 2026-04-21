@@ -23,9 +23,25 @@ public static class ProxyRegistration
                 proxySettings.AdminPort
             );
 
-            services.AddHttpClient<ICaddyClient, CaddyClient>
+            // CaddyClient talks to a localhost admin API and ProxyManager.VerifyCaddyReadyAsync
+            // already runs its own retry loop (5s budget, 1s per-attempt, 200ms delay). The
+            // standard resilience pipeline applied by ConfigureHttpClientDefaults (Collabhost.
+            // ServiceDefaults) wraps every IHttpClientFactory-produced client with Polly retry +
+            // circuit breaker + its own timeouts, which turns the probe's per-attempt
+            // cancellation into a connection-acquisition wait inside the resilience handler
+            // and produces the "probe disappears after one attempt" cold-boot bug (#153
+            // Phase 2 regression observed on PR #94).
+            //
+            // Registering the client manually -- bypassing AddHttpClient -- means
+            // ConfigureHttpClientDefaults does not touch it. Caddy admin is localhost and
+            // long-lived; a plain HttpClient is the right shape here.
+            services.AddSingleton<ICaddyClient>
             (
-                client => client.BaseAddress = new Uri(adminBaseAddress)
+                provider => new CaddyClient
+                (
+                    new HttpClient { BaseAddress = new Uri(adminBaseAddress) },
+                    provider.GetRequiredService<ILogger<CaddyClient>>()
+                )
             );
 
             services.AddSingleton<ProxyAppSeeder>();
