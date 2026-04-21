@@ -45,8 +45,7 @@ public static class TypeStoreRegistration
     {
         public IServiceCollection AddTypeStore(IConfiguration configuration)
         {
-            var settings = configuration.GetSection(TypeStoreSettings.SectionName).Get<TypeStoreSettings>()
-                ?? new TypeStoreSettings { UserTypesDirectory = "UserTypes" };
+            var settings = ResolveSettings(configuration);
 
             services.AddSingleton(settings);
             services.AddSingleton<TypeStore>();
@@ -54,5 +53,17 @@ public static class TypeStoreRegistration
 
             return services;
         }
+    }
+
+    // Internal visibility for unit tests
+    internal static TypeStoreSettings ResolveSettings(IConfiguration configuration)
+    {
+        // COLLABHOST_USER_TYPES_PATH: env var wins over appsettings, then hardcoded default (§12.3 precedence)
+        var userTypesPath = Environment.GetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH");
+
+        return !string.IsNullOrWhiteSpace(userTypesPath)
+            ? new TypeStoreSettings { UserTypesDirectory = userTypesPath }
+            : configuration.GetSection(TypeStoreSettings.SectionName).Get<TypeStoreSettings>()
+                ?? new TypeStoreSettings { UserTypesDirectory = "UserTypes" };
     }
 }
