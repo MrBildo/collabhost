@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
@@ -39,6 +41,36 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 // Re-adding here pushes env vars back to the top of the provider chain per §2.5 precedence
 // (env > appsettings.json > default). Dev-only effect -- .Local.json does not ship to production.
 builder.Configuration.AddEnvironmentVariables();
+
+// Bind Kestrel to Proxy:SelfPort for the installed-binary path. In dev, launchSettings.json
+// (applicationUrl) and under Aspire, ASPNETCORE_URLS set the "urls" configuration key before
+// this point -- those win. In production there is no launchSettings.json and no
+// ASPNETCORE_URLS, so Kestrel would otherwise fall through to its default :5000 while Caddy
+// dials localhost:{Proxy:SelfPort} and every reverse_proxy hop returns 502. Use SelfPort as
+// the fallback dial/listen target so Caddy and Kestrel cannot disagree on port.
+//
+// No added log line here: Microsoft.Hosting.Lifetime already writes "Now listening on: <url>"
+// at Info, which the operator sees on stdout in production and which the KestrelListenPort
+// integration tests already parse. An additional Console.WriteLine earlier landed on xunit's
+// per-test StringWriter capture and blew up subsequent tests once the writer disposed (#176
+// CI fallout). The framework log covers the observability need without touching Console
+// directly.
+var configuredUrls = builder.Configuration["urls"]
+    ?? builder.Configuration["ASPNETCORE_URLS"];
+
+if (string.IsNullOrWhiteSpace(configuredUrls))
+{
+    var resolvedProxy = ProxyRegistration.ResolveSettings(builder.Configuration);
+
+    var selfUrl = string.Format
+    (
+        CultureInfo.InvariantCulture,
+        "http://localhost:{0}",
+        resolvedProxy.SelfPort
+    );
+
+    builder.WebHost.UseUrls(selfUrl);
+}
 
 // Aspire service defaults
 builder.AddServiceDefaults();
