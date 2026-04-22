@@ -3,6 +3,7 @@ using Collabhost.Api.Authorization;
 using Collabhost.Api.Data;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -62,18 +63,17 @@ public class UserSeedServiceTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private UserSeedService CreateService(string? configuredAdminKey)
-    {
-        var settings = new AuthorizationSettings { AdminKey = configuredAdminKey };
+    private UserSeedService CreateService(string? configuredAdminKey) =>
+        CreateService(configuredAdminKey, NullLogger<UserSeedService>.Instance);
 
-        return new UserSeedService
+    private UserSeedService CreateService(string? configuredAdminKey, ILogger<UserSeedService> logger) =>
+        new
         (
             _dbFactory,
-            Options.Create(settings),
+            Options.Create(new AuthorizationSettings { AdminKey = configuredAdminKey }),
             _activityEventStore,
-            NullLogger<UserSeedService>.Instance
+            logger
         );
-    }
 
     private async Task<IReadOnlyList<User>> GetUsersAsync()
     {
@@ -101,10 +101,8 @@ public class UserSeedServiceTests : IAsyncLifetime
     [Fact]
     public async Task SeedAsync_Scenario1_EmptyDbNoConfiguredKey_GeneratesAndInsertsAdmin()
     {
-        var service = CreateService(configuredAdminKey: null);
-
-        await using var stdout = new StringWriter();
-        Console.SetOut(stdout);
+        var capture = new CapturingLogger<UserSeedService>();
+        var service = CreateService(configuredAdminKey: null, capture);
 
         await service.SeedAsync(CancellationToken.None);
 
@@ -117,17 +115,17 @@ public class UserSeedServiceTests : IAsyncLifetime
         admin.Role.ShouldBe(UserRole.Administrator);
         admin.AuthKey.Length.ShouldBe(26); // ULID length
 
-        // stdout format is the current #152 shape -- #158 owns the UX; this keeps behavior stable
-        stdout.ToString().ShouldContain($"[Collabhost] Admin key: {admin.AuthKey}");
+        // The admin key is surfaced via ILogger.LogCritical so the Console provider emits it
+        // on stdout in production without tripping xunit's per-test Console capture. Operators
+        // grep for "Collabhost admin key:" (#152 contract, #158 owns UX polish).
+        capture.ShouldHaveLogged(LogLevel.Critical, $"Collabhost admin key: {admin.AuthKey}");
     }
 
     [Fact]
     public async Task SeedAsync_Scenario1_WhitespaceConfiguredKey_TreatedAsUnsetAndGenerates()
     {
-        var service = CreateService(configuredAdminKey: "   ");
-
-        await using var stdout = new StringWriter();
-        Console.SetOut(stdout);
+        var capture = new CapturingLogger<UserSeedService>();
+        var service = CreateService(configuredAdminKey: "   ", capture);
 
         await service.SeedAsync(CancellationToken.None);
 
@@ -136,7 +134,7 @@ public class UserSeedServiceTests : IAsyncLifetime
         users.Count.ShouldBe(1);
         users[0].AuthKey.Length.ShouldBe(26);
 
-        stdout.ToString().ShouldContain("[Collabhost] Admin key:");
+        capture.ShouldHaveLogged(LogLevel.Critical, "Collabhost admin key:");
     }
 
     // -- Scenario 2 ------------------------------------------------------
@@ -146,10 +144,8 @@ public class UserSeedServiceTests : IAsyncLifetime
     {
         const string ConfiguredKey = "01SCENARIO2KEY0000000000AA";
 
-        var service = CreateService(configuredAdminKey: ConfiguredKey);
-
-        await using var stdout = new StringWriter();
-        Console.SetOut(stdout);
+        var capture = new CapturingLogger<UserSeedService>();
+        var service = CreateService(configuredAdminKey: ConfiguredKey, capture);
 
         await service.SeedAsync(CancellationToken.None);
 
@@ -159,8 +155,9 @@ public class UserSeedServiceTests : IAsyncLifetime
         users[0].AuthKey.ShouldBe(ConfiguredKey);
         users[0].Role.ShouldBe(UserRole.Administrator);
 
-        // No stdout emission: the operator already has the key (§11.1)
-        stdout.ToString().ShouldNotContain("[Collabhost] Admin key:");
+        // No Critical emission: the operator already has the key (§11.1). Critical is the
+        // admin-key-visibility channel; Scenario 2 must not emit.
+        capture.ShouldNotHaveLogged(LogLevel.Critical, "Collabhost admin key:");
     }
 
     // -- Scenario 3 ------------------------------------------------------
@@ -253,17 +250,15 @@ public class UserSeedServiceTests : IAsyncLifetime
 
         await InsertUserAsync("Admin", ExistingKey, UserRole.Administrator);
 
-        var service = CreateService(configuredAdminKey: null);
-
-        await using var stdout = new StringWriter();
-        Console.SetOut(stdout);
+        var capture = new CapturingLogger<UserSeedService>();
+        var service = CreateService(configuredAdminKey: null, capture);
 
         await service.SeedAsync(CancellationToken.None);
 
         var users = await GetUsersAsync();
 
         users.Count.ShouldBe(1);
-        stdout.ToString().ShouldNotContain("[Collabhost] Admin key:");
+        capture.ShouldNotHaveLogged(LogLevel.Critical, "Collabhost admin key:");
     }
 
     [Fact]
@@ -287,4 +282,43 @@ public class UserSeedServiceTests : IAsyncLifetime
         users.Count.ShouldBe(1);
         users[0].AuthKey.ShouldBe(ConfiguredKey);
     }
+}
+
+// Captures ILogger calls so assertions can inspect level + rendered message. File-scoped:
+// only UserSeedService tests need to verify the admin-key emission channel.
+file sealed class CapturingLogger<T> : ILogger<T>
+{
+    private readonly List<(LogLevel Level, string Message)> _entries = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>
+    (
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter
+    )
+    {
+        ArgumentNullException.ThrowIfNull(formatter);
+
+        _entries.Add((logLevel, formatter(state, exception)));
+    }
+
+    public void ShouldHaveLogged(LogLevel level, string messageSubstring) =>
+        _entries.ShouldContain
+        (
+            e => e.Level == level && e.Message.Contains(messageSubstring, StringComparison.Ordinal),
+            $"Expected a log entry at {level} containing '{messageSubstring}' but captured: {string.Join(" | ", _entries)}"
+        );
+
+    public void ShouldNotHaveLogged(LogLevel level, string messageSubstring) =>
+        _entries.ShouldNotContain
+        (
+            e => e.Level == level && e.Message.Contains(messageSubstring, StringComparison.Ordinal),
+            $"Expected NO log entry at {level} containing '{messageSubstring}' but captured: {string.Join(" | ", _entries)}"
+        );
 }

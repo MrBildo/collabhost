@@ -106,10 +106,14 @@ public class UserSeedService
 
             _logger.LogInformation("Admin user seeded. Key: {AdminKeyHint}", keyHint);
 
-            // Full key written to stdout for operator visibility -- not captured in structured
-            // log exports. #158 owns the UX (format, recovery-if-missed); this preserves the
-            // current #152 shape.
-            Console.WriteLine($"[Collabhost] Admin key: {adminKey}");
+            // Full key surfaced at Critical so operators see it on stdout via the Console
+            // provider -- the Scenario 1 "blind first run" UX contract from #152 / #156.3.
+            // ILogger.LogCritical (not Console.WriteLine) because xunit captures Console.Out
+            // per-test via a StringWriter that gets disposed between tests; a Console.Write
+            // during subsequent WebApplicationFactory startup hits a disposed writer. #158
+            // owns the UX polish (format, recovery-if-missed). Operator-grepable marker:
+            // "Collabhost admin key:".
+            _logger.LogCritical("Collabhost admin key: {AdminKey}", adminKey);
         }
         else
         {

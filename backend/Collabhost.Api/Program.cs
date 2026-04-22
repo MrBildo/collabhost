@@ -48,6 +48,13 @@ builder.Configuration.AddEnvironmentVariables();
 // ASPNETCORE_URLS, so Kestrel would otherwise fall through to its default :5000 while Caddy
 // dials localhost:{Proxy:SelfPort} and every reverse_proxy hop returns 502. Use SelfPort as
 // the fallback dial/listen target so Caddy and Kestrel cannot disagree on port.
+//
+// No added log line here: Microsoft.Hosting.Lifetime already writes "Now listening on: <url>"
+// at Info, which the operator sees on stdout in production and which the KestrelListenPort
+// integration tests already parse. An additional Console.WriteLine earlier landed on xunit's
+// per-test StringWriter capture and blew up subsequent tests once the writer disposed (#176
+// CI fallout). The framework log covers the observability need without touching Console
+// directly.
 var configuredUrls = builder.Configuration["urls"]
     ?? builder.Configuration["ASPNETCORE_URLS"];
 
@@ -63,11 +70,6 @@ if (string.IsNullOrWhiteSpace(configuredUrls))
     );
 
     builder.WebHost.UseUrls(selfUrl);
-
-    Console.WriteLine
-    (
-        $"Collabhost: Kestrel bound to {selfUrl} (Proxy:SelfPort={resolvedProxy.SelfPort.ToString(CultureInfo.InvariantCulture)})"
-    );
 }
 
 // Aspire service defaults
