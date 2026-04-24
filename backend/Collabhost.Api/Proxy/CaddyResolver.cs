@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace Collabhost.Api.Proxy;
 
-// Pure resolver implementing the §6.4.1 precedence chain: env > config > bundled.
+// Pure resolver implementing the Caddy binary precedence chain: env > config > bundled.
 // Returns null when no Caddy binary can be located -- callers soft-fail with visibility.
 public static class CaddyResolver
 {

@@ -13,7 +13,7 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Authorization;
 
-// Unit tests for the production-startup §11 admin-key 3-scenario model.
+// Unit tests for the admin-key 3-scenario model (#164 startup contract).
 public class UserSeedServiceTests : IAsyncLifetime
 {
     private string _dataDirectory = null!;
@@ -155,8 +155,8 @@ public class UserSeedServiceTests : IAsyncLifetime
         users[0].AuthKey.ShouldBe(ConfiguredKey);
         users[0].Role.ShouldBe(UserRole.Administrator);
 
-        // No Critical emission: the operator already has the key (§11.1). Critical is the
-        // admin-key-visibility channel; Scenario 2 must not emit.
+        // No Critical emission: the operator already has the key (Scenario 2 -- configured
+        // first run). Critical is the admin-key-visibility channel; Scenario 2 must not emit.
         capture.ShouldNotHaveLogged(LogLevel.Critical, "Collabhost admin key:");
     }
 
@@ -226,9 +226,9 @@ public class UserSeedServiceTests : IAsyncLifetime
     [Fact]
     public async Task SeedAsync_Idempotent_ConfiguredKeyMatchesNonAdminUser_NoOp()
     {
-        // §11.3 idempotency check is against any user's AuthKey, not just admins. If the
-        // configured key happens to collide with an Agent's key, we treat it as a match
-        // and do not insert a new admin (the operator would notice the config collision).
+        // Idempotency check is against any user's AuthKey, not just admins. If the configured
+        // key happens to collide with an Agent's key, we treat it as a match and do not
+        // insert a new admin (the operator would notice the config collision).
         const string MatchingKey = "01AGENT0KEY000000000000000";
 
         await InsertUserAsync("Existing Admin", "01EXISTING0ADMIN0KEY000000", UserRole.Administrator);

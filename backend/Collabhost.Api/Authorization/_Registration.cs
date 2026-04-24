@@ -11,11 +11,11 @@ public static class AuthorizationRegistration
                 configuration.GetSection(AuthorizationSettings.SectionName)
             );
 
-            // COLLABHOST_ADMIN_KEY (env) wins over Auth:AdminKey (config) per §11.2 / §2.5
-            // precedence. The flat COLLABHOST_{NAME} convention (§11.5) means the default env
-            // provider does NOT auto-bind to Auth:AdminKey, so we read the env var explicitly
-            // here and override the bound settings. Mirrors the Phase 3 idiom for
-            // COLLABHOST_DATA_PATH / COLLABHOST_USER_TYPES_PATH.
+            // COLLABHOST_ADMIN_KEY (env) wins over Auth:AdminKey (config). The flat
+            // COLLABHOST_{NAME} convention means the default env provider does NOT auto-bind
+            // to Auth:AdminKey, so we read the env var explicitly here and override the bound
+            // settings. Same env-over-config pattern used for COLLABHOST_DATA_PATH /
+            // COLLABHOST_USER_TYPES_PATH.
             //
             // Whitespace-only values are treated as unset so a blank env var in a startup
             // wrapper falls through to config.
@@ -30,10 +30,10 @@ public static class AuthorizationRegistration
                 );
             }
 
-            // UserSeedService is invoked inline as phase (8) of the production startup sequence
-            // (§4 / §11). Not a hosted service -- the inline-before-RunAsync call site lets
-            // seeding failures halt startup with an explicit exit code via StartupStderr,
-            // matching the ProxyAppSeeder pattern in phase (7).
+            // UserSeedService is invoked inline as phase (8) of the production startup sequence.
+            // Not a hosted service -- the inline-before-RunAsync call site lets seeding failures
+            // halt startup with an explicit exit code via StartupStderr, matching the
+            // ProxyAppSeeder pattern in phase (7).
             services.AddSingleton<UserSeedService>();
 
             services.AddSingleton<UserStore>();

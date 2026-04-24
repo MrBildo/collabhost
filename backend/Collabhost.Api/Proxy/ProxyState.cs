@@ -1,6 +1,6 @@
 namespace Collabhost.Api.Proxy;
 
-// Proxy subsystem state surfaced externally via GET /api/v1/status (§6.4.2).
+// Proxy subsystem state surfaced externally via GET /api/v1/status.
 // Lowercase wire form is produced at the endpoint boundary; internal code uses the enum.
 public enum ProxyState
 {

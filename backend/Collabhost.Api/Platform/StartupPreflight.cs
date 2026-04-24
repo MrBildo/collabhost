@@ -74,7 +74,8 @@ public static class StartupPreflight
         }
 
         // (4) User-types directory. Created if missing so operators can drop *.json files
-        // into it without a restart-then-discover loop. See §8.3 / §8.5 of the spec.
+        // into it without a restart-then-discover loop. TypeStore.StartWatching picks up
+        // new files via FileSystemWatcher once the host is running.
         var userTypesCreated = false;
 
         if (!string.IsNullOrWhiteSpace(userTypesDirectory))
