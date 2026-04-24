@@ -149,8 +149,11 @@ try
     $ChecksumsPath = Join-Path $TmpDir 'checksums.txt'
 
     # Heartbeat: emit archive size from a HEAD request so the operator knows what
-    # to expect during the silent download window. Non-fatal -- if the HEAD fails
-    # or returns no Content-Length, print the line without the parenthetical.
+    # to expect during the silent download window. The same HEAD response also
+    # serves as a pre-flight existence check -- a 404 here means the version tag
+    # does not exist on the release server (typo, deleted release, pre-release tag
+    # that passed the regex). Fatal on 404; non-fatal on all other failures so that
+    # a transient network error does not block the install.
     $SizeHint = ''
     try
     {
@@ -166,7 +169,19 @@ try
     }
     catch
     {
-        # Non-fatal -- size hint is best-effort. Proceed without it.
+        # Check for a 404 before treating this as a non-fatal size-hint failure.
+        # A 404 means the tag does not exist -- tell the operator clearly so they
+        # can correct the version string. Any other failure leaves SizeHint empty
+        # and proceeds without the parenthetical.
+        $statusCode = $null
+        if ($_.Exception.Response)
+        {
+            $statusCode = [int]$_.Exception.Response.StatusCode
+        }
+        if ($statusCode -eq 404)
+        {
+            throw "Release tag '$Tag' not found. See https://github.com/$Repo/releases for available versions."
+        }
         Write-Verbose "Content-Length HEAD failed: $_"
     }
 
