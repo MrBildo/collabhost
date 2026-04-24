@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Proxy;
 
-// Precedence chain tests per §6.4.1: env > config > bundled.
+// Precedence chain tests: env > config > bundled.
 // Tests manipulate COLLABHOST_CADDY_PATH via Environment.SetEnvironmentVariable
 // and restore in try/finally to avoid polluting sibling tests.
 public class CaddyResolverTests

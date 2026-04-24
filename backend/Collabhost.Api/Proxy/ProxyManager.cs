@@ -62,7 +62,7 @@ public class ProxyManager
     // Reads from /status request threads via CurrentState.
     // Ordering is enforced by Interlocked for CAS and Volatile.Read for the property accessor.
     // Aligned 32-bit reads are atomic in .NET, and Volatile.Read pairs with the Interlocked
-    // writes to guarantee visibility (§6.4.2 "Concurrency note").
+    // writes to guarantee visibility across threads.
     private int _currentState = (int)ProxyState.Starting;
 
     // Once the post-launch probe fails, disable further sync attempts for this process lifetime.
@@ -112,8 +112,8 @@ public class ProxyManager
 
         if (proxyApp is null)
         {
-            // CaddyResolver (§6.4.1) returned null, so ProxyAppSeeder did not register a proxy app.
-            // Surface this externally via proxyState='disabled' on /api/v1/status (§6.4.2).
+            // CaddyResolver returned null, so ProxyAppSeeder did not register a proxy app.
+            // Surface this externally via proxyState='disabled' on /api/v1/status.
             Interlocked.Exchange(ref _currentState, (int)ProxyState.Disabled);
 
             _logger.LogWarning
@@ -221,7 +221,7 @@ public class ProxyManager
         }
     }
 
-    // Post-launch admin-API probe (§6.4.2). Soft-fail with visibility:
+    // Post-launch admin-API probe. Soft-fail with visibility:
     // on success -> ProxyState.Running and route sync is activated.
     // on timeout -> ProxyState.Failed, proxy subsystem disabled for this process lifetime,
     //              and loud error log pointing at COLLABHOST_CADDY_PATH / bundled fallback.
@@ -393,7 +393,7 @@ public class ProxyManager
                 return;
             }
 
-            // Soft-fail with visibility (§6.4.2). CAS from Starting so that a Crashed/Fatal
+            // Soft-fail with visibility. CAS from Starting so that a Crashed/Fatal
             // event landing during the probe window keeps the event-handler's terminal write.
             var failedFromStarting = Interlocked.CompareExchange
             (

@@ -38,7 +38,7 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 
 // WebApplication.CreateBuilder adds an env-var provider at builder-construction time, but it
 // sits below any sources added later. The .Local.json load above now shadows env vars in dev.
-// Re-adding here pushes env vars back to the top of the provider chain per §2.5 precedence
+// Re-adding here pushes env vars back to the top of the provider chain
 // (env > appsettings.json > default). Dev-only effect -- .Local.json does not ship to production.
 builder.Configuration.AddEnvironmentVariables();
 
@@ -75,7 +75,7 @@ if (string.IsNullOrWhiteSpace(configuredUrls))
 // Aspire service defaults
 builder.AddServiceDefaults();
 
-// Startup phase 2 -- Environment preflight (§5). Runs before DI is built and before any hosted
+// Startup phase 2 -- Environment preflight. Runs before DI is built and before any hosted
 // service wires itself up. A halt here means we never touch the DB.
 var (_, resolvedDataDir) = DataRegistration.ResolveConnectionString(builder.Configuration);
 var effectiveDataDir = resolvedDataDir ?? Path.Combine(AppContext.BaseDirectory, "data");
@@ -157,7 +157,7 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// Startup phase 4+5 -- Pre-migration backup + schema migration (§6, §7). Runs unconditionally
+// Startup phase 4+5 -- Pre-migration backup + schema migration. Runs unconditionally
 // in every environment, including Production. On failure, halt before any hosted service starts.
 var toSemver = VersionInfo.Current;
 var fromSemver = BootVersionTracker.Read(effectiveDataDir, app.Logger);
@@ -226,7 +226,7 @@ catch (MigrationFailedException ex)
     return ex.ExitCode;
 }
 
-// Startup phase 6 -- TypeStore.LoadAsync (§8). Runs unconditionally in every environment.
+// Startup phase 6 -- TypeStore.LoadAsync. Runs unconditionally in every environment.
 // Built-in validation failure is a packaging bug (exit 30); user-type validation failure is an
 // operator configuration error (exit 31). Separate exit codes let bundled smoke tests distinguish
 // "our package broke" from "operator configured wrong."
@@ -285,7 +285,7 @@ catch (TypeStoreValidationException ex)
     return 31;
 }
 
-// Startup phase 7 -- ProxyAppSeeder (§9). Idempotent: a first boot seeds, subsequent boots no-op.
+// Startup phase 7 -- ProxyAppSeeder. Idempotent: a first boot seeds, subsequent boots no-op.
 // Unexpected throws (DB write failure, transaction rollback, etc.) halt with exit 40.
 await using (var seederScope = app.Services.CreateAsyncScope())
 {
@@ -316,7 +316,7 @@ await using (var seederScope = app.Services.CreateAsyncScope())
     }
 }
 
-// Startup phase 8 -- UserSeedService (§11). Implements the admin-key 3-scenario model:
+// Startup phase 8 -- UserSeedService. Implements the admin-key 3-scenario model:
 // (1) blind first run generates + prints, (2) configured first run seeds silently,
 // (3) subsequent boot with a new configured key inserts an additional Admin user
 // (break-glass additive). Unexpected throws halt with exit 40 -- same code as
@@ -358,7 +358,7 @@ if (app.Environment.IsDevelopment())
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 }
 
-// Write the last-boot-version sentinel once the host is fully started (§6.2.1). Routed through
+// Write the last-boot-version sentinel once the host is fully started. Routed through
 // IBootVersionWriter so integration-test fixtures can substitute a no-op writer and keep temp
 // data directories free of the sentinel side-effect (PR #95 MED-2).
 var bootVersionWriter = app.Services.GetRequiredService<IBootVersionWriter>();
@@ -384,8 +384,8 @@ app.MapMcpEndpoints();
 // Health
 app.MapDefaultEndpoints();
 
-// Startup phase 9 -- TypeStore.StartWatching (§8.3). FileSystemWatcher for hot-reload of user
-// types. Placed after middleware wiring so no FSW event can fire before the pipeline is ready.
+// Startup phase 9 -- TypeStore.StartWatching. FileSystemWatcher for hot-reload of user types.
+// Placed after middleware wiring so no FSW event can fire before the pipeline is ready.
 // Stays enabled in Production; ReloadAsync handles runtime errors non-fatally (keep current
 // snapshot + warn). LoadAsync is the boot-critical path; StartWatching is operational.
 typeStore.StartWatching();

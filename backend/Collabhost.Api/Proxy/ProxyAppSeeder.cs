@@ -48,7 +48,7 @@ public class ProxyAppSeeder
             return;
         }
 
-        // CaddyResolver is the single source of truth for binary resolution (§6.4.1).
+        // CaddyResolver is the single source of truth for binary resolution.
         // Precedence: COLLABHOST_CADDY_PATH env > Proxy:BinaryPath config > bundled sidecar.
         // Returns null when no Caddy can be found -- proxy subsystem soft-fails.
         var resolvedPath = CaddyResolver.Resolve(_settings, _logger);

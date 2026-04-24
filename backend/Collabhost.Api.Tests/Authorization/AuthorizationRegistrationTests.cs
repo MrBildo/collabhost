@@ -10,8 +10,8 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Authorization;
 
-// Unit tests for COLLABHOST_ADMIN_KEY env-var precedence (§11.2 / §11.5). The env var
-// wins over Auth:AdminKey config; whitespace-only values are treated as unset.
+// Unit tests for COLLABHOST_ADMIN_KEY env-var precedence. The env var wins over
+// Auth:AdminKey config; whitespace-only values are treated as unset.
 //
 // [Collection] isolates this suite from parallel test runs that might otherwise race on
 // the process-wide COLLABHOST_ADMIN_KEY environment variable.
@@ -82,7 +82,7 @@ public class AuthorizationRegistrationTests
     {
         // Unset is represented as null -- UserSeedService handles generation in Scenario 1.
         // Registration-layer policy: do not generate here; leave AdminKey null and let the
-        // seed path own admin-key policy (§11.5).
+        // seed path own admin-key policy.
         Environment.SetEnvironmentVariable(_envVarName, null);
 
         var settings = BuildSettings(EmptyConfig());

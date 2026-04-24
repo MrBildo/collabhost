@@ -35,7 +35,7 @@ public class TypeStoreValidationException
 
     // True if the validation failure is in a built-in embedded resource (packaging bug).
     // False if it is in an operator-provided user-type JSON file (operator configuration error).
-    // See §8.2 of the production-startup spec.
+    // Program.cs uses this to choose exit code 30 (packaging bug) vs. 31 (operator error).
     public bool IsBuiltIn { get; } = isBuiltIn;
 
     private static string FormatMessage(IReadOnlyList<TypeStoreValidationError> errors)
@@ -64,7 +64,7 @@ public static class TypeStoreRegistration
     // Internal visibility for unit tests
     internal static TypeStoreSettings ResolveSettings(IConfiguration configuration)
     {
-        // COLLABHOST_USER_TYPES_PATH: env var wins over appsettings, then hardcoded default (§12.3 precedence)
+        // COLLABHOST_USER_TYPES_PATH: env var wins over appsettings, then hardcoded default
         var userTypesPath = Environment.GetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH");
 
         return !string.IsNullOrWhiteSpace(userTypesPath)
