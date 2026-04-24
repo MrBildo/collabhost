@@ -381,10 +381,6 @@ app.MapFilesystemEndpoints();
 app.MapSystemEndpoints();
 app.MapMcpEndpoints();
 
-// SPA fallback
-app.UseStaticFiles();
-app.MapFallbackToFile("index.html");
-
 // Health
 app.MapDefaultEndpoints();
 

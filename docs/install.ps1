@@ -148,7 +148,29 @@ try
     $ArchivePath   = Join-Path $TmpDir $Archive
     $ChecksumsPath = Join-Path $TmpDir 'checksums.txt'
 
-    Write-Host "Downloading $Archive..."
+    # Heartbeat: emit archive size from a HEAD request so the operator knows what
+    # to expect during the silent download window. Non-fatal -- if the HEAD fails
+    # or returns no Content-Length, print the line without the parenthetical.
+    $SizeHint = ''
+    try
+    {
+        $headResponse = Invoke-WithRetry -Script {
+            Invoke-WebRequest -UseBasicParsing -Method Head -Uri $ArchiveUrl
+        }
+        $contentLength = $headResponse.Headers['Content-Length']
+        if ($contentLength -and [long]$contentLength -gt 0)
+        {
+            $sizeMb = [Math]::Round([long]$contentLength / 1MB)
+            $SizeHint = " (~$sizeMb MB)"
+        }
+    }
+    catch
+    {
+        # Non-fatal -- size hint is best-effort. Proceed without it.
+        Write-Verbose "Content-Length HEAD failed: $_"
+    }
+
+    Write-Host "Downloading $Archive$SizeHint..."
     Invoke-WithRetry -Script {
         Invoke-WebRequest -UseBasicParsing -Uri $ArchiveUrl -OutFile $ArchivePath
     } | Out-Null
@@ -222,6 +244,7 @@ try
     # there.
     $ExtractDir = Join-Path $TmpDir 'extract'
     New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
+    Write-Host 'Extracting archive...'
     Expand-Archive -LiteralPath $ArchivePath -DestinationPath $ExtractDir -Force
 
     $CollabhostSrc = Join-Path $ExtractDir 'collabhost.exe'
@@ -268,7 +291,8 @@ try
 
     if ($IsReinstall)
     {
-        Write-Host 'Preserved: appsettings.json and data/ (if present).'
+        $DataHint = if (Test-Path -LiteralPath $DataDirDst) { ' and data/' } else { '' }
+        Write-Host "Preserved your existing appsettings.json$DataHint."
     }
 
     # data/ is never in the archive -- leave any existing directory untouched.
@@ -290,9 +314,42 @@ try
 
     # ---- Summary ------------------------------------------------------------
 
+    # Resolve bundled Caddy version for the Bundled: disclosure line. Non-fatal --
+    # if the binary won't execute (exec-bit, antivirus, exotic platform), fall back
+    # to omitting the version number.
+    $CaddyExe     = Join-Path $InstallPath 'caddy.exe'
+    $CaddyVersion = ''
+    try
+    {
+        $CaddyVersionRaw = & $CaddyExe version 2>$null
+        if ($CaddyVersionRaw)
+        {
+            $CaddyVersion = ($CaddyVersionRaw -split '\s+')[0]
+        }
+    }
+    catch
+    {
+        # Non-fatal -- Caddy version is best-effort. Proceed without it.
+        Write-Verbose "caddy version failed: $_"
+    }
+
+    $BundledLine = if ($CaddyVersion) {
+        "Bundled: collabhost $Tag + Caddy $CaddyVersion"
+    } else {
+        "Bundled: collabhost $Tag + Caddy (bundled)"
+    }
+
     Write-Host ''
     Write-Host "Collabhost $Tag installed to $InstallPath"
-    Write-Host "Admin key: run 'collabhost' now. The admin key will print to your terminal on first boot -- copy it immediately."
+    Write-Host $BundledLine
+    if ($IsReinstall)
+    {
+        Write-Host 'Restart Collabhost to pick up the new binary. Your admin key and configuration are preserved.'
+    }
+    else
+    {
+        Write-Host "Next: open a new terminal and run 'collabhost'. On first boot it prints your admin key -- copy it immediately."
+    }
     Write-Host "See $InstallPath\INSTALL.md for configuration, env-var overrides, and upgrade notes."
 }
 finally
