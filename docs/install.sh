@@ -147,10 +147,19 @@ cleanup() { rm -rf "${TMP_DIR}"; }
 trap cleanup EXIT
 
 # Heartbeat: emit archive size from a HEAD request so the operator knows what
-# to expect during the silent download window. Non-fatal -- if the HEAD fails
-# or returns no Content-Length, print the line without the parenthetical.
+# to expect during the silent download window. The same HEAD response also
+# serves as a pre-flight existence check -- a 404 here means the version tag
+# does not exist on the release server (typo, deleted release, pre-release tag
+# that passed the regex). Fatal on 404; non-fatal on all other failures so that
+# a transient network error does not block the install.
 SIZE_HINT=""
-RAW_CL="$(curl -sIL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" \
+HEAD_HEADERS="$(curl -sIL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" 2>/dev/null)" || true
+HEAD_STATUS="$(printf '%s\n' "${HEAD_HEADERS}" | awk '/^HTTP\// {code=$2} END {print code+0}')" || true
+if [ "${HEAD_STATUS}" = "404" ]; then
+  echo "Release tag '${TAG}' not found. See https://github.com/${REPO}/releases for available versions." >&2
+  exit 1
+fi
+RAW_CL="$(printf '%s\n' "${HEAD_HEADERS}" \
   | awk '/^[Cc]ontent-[Ll]ength:/ {print $2}' \
   | tr -d '\r' \
   | tail -1)" || true
