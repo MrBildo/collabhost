@@ -68,20 +68,24 @@ public class CaddyResolverTests
     [Fact]
     public void Resolve_EnvVarWhitespace_FallsThroughToConfig()
     {
+        // A whitespace env var must be treated as unset. Verify by proving the config branch
+        // runs: supply an absolute-path config entry pointing at a known temp file, assert
+        // resolution succeeds. This avoids any ambient PATH dependency.
+        var tempFile = Path.Combine(Path.GetTempPath(), $"caddy-test-{Guid.NewGuid():N}");
+        File.WriteAllText(tempFile, "fake");
+
         Environment.SetEnvironmentVariable(CaddyResolver.EnvVarName, "   ");
 
         try
         {
-            // Config supplies a bare name that resolves (where/sh).
-            var bareName = OperatingSystem.IsWindows() ? "where" : "sh";
+            var result = CaddyResolver.Resolve(DefaultSettings(tempFile), NullLogger.Instance);
 
-            var result = CaddyResolver.Resolve(DefaultSettings(bareName), NullLogger.Instance);
-
-            result.ShouldNotBeNull();
+            result.ShouldBe(Path.GetFullPath(tempFile));
         }
         finally
         {
             Environment.SetEnvironmentVariable(CaddyResolver.EnvVarName, null);
+            File.Delete(tempFile);
         }
     }
 
@@ -110,15 +114,38 @@ public class CaddyResolverTests
     [Fact]
     public void Resolve_ConfigBinaryPathBareNameResolvesViaPath_ReturnsResolvedPath()
     {
-        Environment.SetEnvironmentVariable(CaddyResolver.EnvVarName, null);
+        // Place a fake binary in an isolated temp directory and supply only that directory
+        // as PATH to the child process. Verifies bare-name resolution without depending on
+        // ambient runner PATH state -- which is what caused the intermittent CI failure.
+        var tempDir = Path.Combine(Path.GetTempPath(), $"caddy-path-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
 
-        var bareName = OperatingSystem.IsWindows() ? "where" : "sh";
+        var fakeName = OperatingSystem.IsWindows() ? "fakecaddy.exe" : "fakecaddy";
+        var fakePath = Path.Combine(tempDir, fakeName);
+        File.WriteAllText(fakePath, "fake");
 
-        var result = CaddyResolver.Resolve(DefaultSettings(bareName), NullLogger.Instance);
+        if (!OperatingSystem.IsWindows())
+        {
+            // where/which on Unix requires the file to be marked executable.
+            File.SetUnixFileMode(fakePath, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        }
 
-        result.ShouldNotBeNull();
-        // On Windows, where.exe lives in System32; on Unix, sh lives in /bin or /usr/bin.
-        result.ShouldContain(OperatingSystem.IsWindows() ? "where" : "sh", Case.Insensitive);
+        var environment = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["PATH"] = tempDir
+        };
+
+        try
+        {
+            var result = CaddyResolver.ResolveBinaryPathSetting("fakecaddy", environment);
+
+            result.ShouldNotBeNull();
+            result.ShouldContain("fakecaddy", Case.Insensitive);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     [Fact]
