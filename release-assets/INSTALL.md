@@ -3,8 +3,8 @@
 A self-hosted application platform for services running on your own machine.
 This guide walks you from extracted archive to logged-in dashboard.
 
-**Supported platforms:** Linux (x64, arm64), macOS (x64, arm64), Windows (x64).
-win-arm64 is not supported in v1.
+**Supported platforms:** Linux (x64, arm64), macOS arm64 (Apple Silicon), Windows (x64).
+win-arm64 and macOS x64 (Intel) are not supported.
 
 ---
 

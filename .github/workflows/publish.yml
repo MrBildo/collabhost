@@ -79,14 +79,6 @@ jobs:
             caddy_bin: caddy
             collabhost_bin: collabhost
             ext: tar.gz
-          - rid: osx-x64
-            os: macos-latest
-            caddy_os: mac
-            caddy_arch: amd64
-            caddy_ext: tar.gz
-            caddy_bin: caddy
-            collabhost_bin: collabhost
-            ext: tar.gz
           - rid: linux-x64
             os: ubuntu-latest
             caddy_os: linux
