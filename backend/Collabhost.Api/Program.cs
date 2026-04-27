@@ -15,6 +15,8 @@ using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
+using Microsoft.AspNetCore.Hosting.Server;
+
 if (args.Any(a => a is "--version" or "-v"))
 {
     Console.WriteLine($"Collabhost {VersionInfo.Current}");
@@ -366,6 +368,39 @@ var bootVersionWriter = app.Services.GetRequiredService<IBootVersionWriter>();
 app.Lifetime.ApplicationStarted.Register
 (
     () => bootVersionWriter.Write(effectiveDataDir, toSemver)
+);
+
+// Cross-validate Proxy:SelfPort against Kestrel's actual listen port once the host has
+// bound (#165). IServerAddressesFeature is only populated after Kestrel binds, so this
+// runs from ApplicationStarted rather than earlier in startup. Soft warning only -- a
+// mismatch is an operator misconfiguration, not a halt condition. TestServer (used by
+// WebApplicationFactory<Program>) does not expose listen addresses, so the validator
+// short-circuits to "skipped" in integration tests.
+app.Lifetime.ApplicationStarted.Register
+(
+    () =>
+    {
+        var server = app.Services.GetRequiredService<IServer>();
+        var proxySettings = app.Services.GetRequiredService<ProxySettings>();
+
+        var listeningAddresses = SelfPortValidator.GetListeningAddresses(server);
+        var outcome = SelfPortValidator.Validate(proxySettings.SelfPort, listeningAddresses);
+
+        if (outcome.Status == SelfPortValidationStatus.Mismatch)
+        {
+            // Pre-rendered message keeps the operator-facing copy in one place
+            // (SelfPortValidator) and lets the structured logger emit it as a single
+            // message field. The configured/observed values are also surfaced as
+            // structured fields for downstream log queries.
+            app.Logger.LogWarning
+            (
+                "Proxy:SelfPort mismatch detected. {Message} (configured={ConfiguredSelfPort} observed={ObservedPorts})",
+                outcome.RenderedMessage,
+                outcome.ConfiguredSelfPort,
+                string.Join(',', outcome.ObservedPorts)
+            );
+        }
+    }
 );
 
 // Middleware
