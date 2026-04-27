@@ -454,7 +454,7 @@ jobs:
             bash -euxo pipefail -c '
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends \
-                ca-certificates curl tar gzip mawk grep coreutils >/dev/null
+                ca-certificates curl tar gzip mawk grep coreutils libicu72 >/dev/null
 
               export HOME=/root
               cd /tmp
