@@ -761,11 +761,17 @@
   gap: 1px;
   background: var(--wm-border);
   border-radius: var(--wm-radius-md);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.wm-status-strip::-webkit-scrollbar {
+  display: none;
 }
 
 .wm-status-cell {
-  flex: 1;
+  flex: 1 0 80px;
   background: var(--wm-bg-panel);
   padding: 10px 14px;
 }

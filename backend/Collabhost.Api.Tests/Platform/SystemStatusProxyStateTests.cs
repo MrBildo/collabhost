@@ -13,7 +13,7 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Platform;
 
-// Integration-ish tests for the proxyState field on GET /api/v1/status (§6.4.2).
+// Integration-ish tests for the proxyState field on GET /api/v1/status.
 // All 5 enum values must be representable in the wire shape (lowercase).
 // Transitions are forced via reflection on the private _currentState field --
 // contract-boundary test, not a behavior test.

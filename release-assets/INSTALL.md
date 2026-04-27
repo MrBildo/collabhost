@@ -3,8 +3,8 @@
 A self-hosted application platform for services running on your own machine.
 This guide walks you from extracted archive to logged-in dashboard.
 
-**Supported platforms:** Linux (x64, arm64), macOS (x64, arm64), Windows (x64).
-win-arm64 is not supported in v1.
+**Supported platforms:** Linux (x64, arm64), macOS arm64 (Apple Silicon), Windows (x64).
+win-arm64 and macOS x64 (Intel) are not supported.
 
 ---
 
@@ -41,20 +41,45 @@ and §3 for what a healthy first load looks like.
 
 ## 2. Your admin key
 
-On the **very first launch** against an empty database, Collabhost generates an
-admin authentication key (a ULID) and writes it to stdout exactly once:
+On the **very first launch** against an empty database, Collabhost seeds an
+admin user and emits the full authentication key (a ULID) as a critical-level
+log line exactly once. Two lines emit back-to-back:
 
 ```
-[Collabhost] Admin key: 01JABCDEFGHJKMNPQRSTVWXYZ
+info: Collabhost.Api.Authorization.UserSeedService[0]
+      Admin user seeded. Key: 01JABCDE...
+crit: Collabhost.Api.Authorization.UserSeedService[0]
+      Collabhost admin key: 01JABCDEFGHJKMNPQRSTVWXYZ
 ```
 
-This is the only time the full key is printed. The structured log emits a
-truncated hint (`01JABCDE...`) so an operator scanning logs can confirm the
-seed happened, but cannot recover the key from log exports.
+The `info` line carries a truncated 8-character hint — it confirms that seeding
+ran but is not the full key. The `crit` line carries the full ULID; that is
+the value you need. The `crit:` prefix renders with distinct color/intensity in
+most terminals, so it stands out in scrollback.
 
-**Capture it immediately.** Copy the value, save it in a password manager or a
-secrets store. Paste it into the dashboard's login prompt; it is also the
-`X-User-Key` header for API calls.
+**Operator-grepable substring:** `Collabhost admin key:` (on the `crit` line,
+case-sensitive). Example:
+
+```sh
+# Linux / macOS
+collabhost 2>&1 | tee first-boot.log
+grep 'Collabhost admin key:' first-boot.log
+
+# Windows (PowerShell)
+.\collabhost.exe *>&1 | Tee-Object first-boot.log
+Select-String 'Collabhost admin key:' first-boot.log
+```
+
+**Where the key shows up.** Wherever `collabhost`'s stdout goes. If you
+launched the binary in a terminal, it prints there. If you piped stdout to a
+log file or a log aggregator (`journald`, `rsyslog`, a cloud sink), the full
+key lands in that sink too — you can recover it from the log export. **Rotate
+the key in the dashboard once you have copied it** if you would rather the full
+value not remain in your log backend indefinitely.
+
+**Capture it immediately.** Copy the value from the `crit` line, save it in a
+password manager or a secrets store. Paste it into the dashboard's login
+prompt; it is also the `X-User-Key` header for API calls.
 
 If you missed it on first boot, see §9 Troubleshooting → "Admin key missing
 from scrollback."
@@ -383,27 +408,43 @@ re-create the directory with the correct owner.
 
 ### 9.6 Admin key missing from scrollback
 
-The admin key is only printed once, to stdout, on first launch against an
-empty database. If your terminal scrollback has lost it, recovery options
-are limited in v0.1.0:
+The admin key emits once, to stdout, on first launch against an empty database.
+If your terminal scrollback has lost it:
 
-- **Break-glass on a running install.** Set `COLLABHOST_ADMIN_KEY` to a new
-  ULID and relaunch. If the configured key doesn't match any existing user,
-  Collabhost inserts an additional `Admin (recovery)` user with that key.
-  Use it to log in and then edit / disable other users from the dashboard.
-- **Set a configured key up front (next fresh install).** On a fresh install,
-  set `COLLABHOST_ADMIN_KEY` (or `Auth:AdminKey` in `appsettings.json`)
-  **before** first boot. Collabhost will seed the admin user with that value
-  silently.
+- **Check your log destination first.** The full key emits as a `crit`-level
+  ILogger line, so it lands wherever `collabhost`'s stdout goes — including
+  `journald`, `rsyslog`, a file redirect, or a cloud log sink. Search for the
+  substring `Collabhost admin key:` in your log backend before attempting
+  recovery:
+
+  ```sh
+  journalctl -u collabhost | grep 'Collabhost admin key:'
+  grep 'Collabhost admin key:' /path/to/collabhost.log
+  ```
+
+- **Break-glass on a running install (Scenario 3).** Set `COLLABHOST_ADMIN_KEY`
+  to a new ULID and relaunch. If the configured key doesn't match any existing
+  user, Collabhost inserts an additional `Admin (recovery)` user with that key.
+  Use it to log in and then edit or disable other users from the dashboard.
+
+- **Delete the user from the DB and restart (Scenario 1).** Stop Collabhost,
+  delete the admin user row from `collabhost.db`, and relaunch. Collabhost
+  will treat the empty database as a first-run and regenerate a fresh admin key.
+  Use this only if you have no other data to preserve.
+
+- **Set a configured key up front (Scenario 2).** On a fresh install, set
+  `COLLABHOST_ADMIN_KEY` (or `Auth:AdminKey` in `appsettings.json`) **before**
+  first boot. Collabhost seeds the admin user with that value silently.
+
 - **Redirect stdout on the next fresh install.** Before the first launch
   against a fresh `data/`, run:
 
   ```sh
-  ./collabhost > collabhost-firstboot.log 2>&1
+  ./collabhost 2>&1 | tee collabhost-firstboot.log
+  grep 'Collabhost admin key:' collabhost-firstboot.log
   ```
 
-  Inspect the log for the `[Collabhost] Admin key: ...` line, then move it
-  somewhere safe.
+  The `crit` line containing the full ULID is what you want.
 
 UX improvements here are tracked in a follow-up; see the GitHub release notes
 for your version.

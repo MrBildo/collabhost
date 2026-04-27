@@ -10,7 +10,7 @@ public static class DataRegistration
         {
             var (connectionString, dataDir) = ResolveConnectionString(configuration);
 
-            // Ensure the data directory exists on first boot (§12.2)
+            // Ensure the data directory exists on first boot
             if (!string.IsNullOrEmpty(dataDir))
             {
                 Directory.CreateDirectory(dataDir);
@@ -27,7 +27,7 @@ public static class DataRegistration
     // Internal visibility for unit tests
     internal static (string ConnectionString, string? DataDir) ResolveConnectionString(IConfiguration configuration)
     {
-        // COLLABHOST_DATA_PATH: env var wins over appsettings, then hardcoded default (§12.3 precedence)
+        // COLLABHOST_DATA_PATH: env var wins over appsettings, then hardcoded default
         var dataPath = Environment.GetEnvironmentVariable("COLLABHOST_DATA_PATH");
 
         if (!string.IsNullOrWhiteSpace(dataPath))

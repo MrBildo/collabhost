@@ -26,7 +26,7 @@ public class CaddyClient
         // Narrow catches for readiness probe: only transport-level / timeout failures
         // are expected during Caddy warm-up. Any other exception (programmer error,
         // auth config error) must propagate so we don't silently hide real bugs
-        // behind a "not ready" result. (Marcus O5, load-bearing for §6.4.2 probe.)
+        // behind a "not ready" result. (Marcus O5, load-bearing for the post-launch readiness probe.)
         try
         {
             var response = await _httpClient.GetAsync(new Uri("config/", UriKind.Relative), ct);

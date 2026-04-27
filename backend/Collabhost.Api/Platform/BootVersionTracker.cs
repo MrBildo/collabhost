@@ -6,7 +6,7 @@ public static partial class BootVersionTracker
     public const string UnknownVersion = "unknown";
 
     // Permissive semver-ish pattern. We accept an optional leading 'v' plus dotted numerics
-    // with optional pre-release / build tags. Malformed contents fall back to "unknown" per §6.2.1.
+    // with optional pre-release / build tags. Malformed contents fall back to "unknown".
     // Length-bounded to protect against pathological inputs.
     [GeneratedRegex(@"^v?\d{1,4}\.\d{1,4}\.\d{1,4}(?:[-+][0-9A-Za-z.\-]{1,40})?$", RegexOptions.CultureInvariant)]
     private static partial Regex SemverPattern { get; }

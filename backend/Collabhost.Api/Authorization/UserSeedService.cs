@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Collabhost.Api.Authorization;
 
-// Admin-user seeding. Implements the 3-scenario model from production-startup.md §11.
+// Admin-user seeding. Implements the 3-scenario model (#164 startup contract):
 //
 //   Scenario 1 -- Blind first run: empty DB, no configured key. Generate a ULID, insert an
 //                 Admin user with that key, write the key to stdout so the operator can
@@ -19,7 +19,7 @@ namespace Collabhost.Api.Authorization;
 //                 the configured key (break-glass additive behavior). Existing admins
 //                 remain. If the configured key matches an existing user: no-op.
 //
-// Invoked from Program.cs as phase (8) of the startup sequence (§4). Failure halts startup
+// Invoked from Program.cs as phase (8) of the startup sequence. Failure halts startup
 // with exit code 40 via StartupStderr.
 public class UserSeedService
 (
@@ -44,9 +44,8 @@ public class UserSeedService
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // Normalize: whitespace-only configured values are treated as unset. Mirrors the
-        // Phase 3 env-var readers (§11.5 idiom) so a blank COLLABHOST_ADMIN_KEY in a
-        // startup wrapper is equivalent to no override at all.
+        // Normalize: whitespace-only configured values are treated as unset. A blank
+        // COLLABHOST_ADMIN_KEY in a startup wrapper is equivalent to no override at all.
         var configuredKey = string.IsNullOrWhiteSpace(_authorizationSettings.AdminKey)
             ? null
             : _authorizationSettings.AdminKey;

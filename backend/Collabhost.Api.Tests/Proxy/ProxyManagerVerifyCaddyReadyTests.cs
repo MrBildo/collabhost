@@ -19,7 +19,7 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Proxy;
 
-// Tests the post-launch admin-API probe per §6.4.2:
+// Tests the post-launch admin-API probe:
 // - 5s overall deadline
 // - 1s per-attempt timeout
 // - 200ms delay between retries

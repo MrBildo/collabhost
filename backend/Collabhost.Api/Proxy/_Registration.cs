@@ -67,7 +67,7 @@ public static class ProxyRegistration
     {
         var section = configuration.GetSection(ProxySettings.SectionName);
 
-        // Each setting follows §12.3 precedence: env var > appsettings.json > hardcoded default.
+        // Each setting follows env var > appsettings.json > hardcoded default precedence.
         // IsNullOrWhiteSpace is used for env-var checks so that accidentally whitespace-only
         // values (e.g. trailing space in a shell script) fall through to config rather than winning.
         var envBaseDomain = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_BASE_DOMAIN");
@@ -76,9 +76,9 @@ public static class ProxyRegistration
             ? envBaseDomain
             : section["BaseDomain"] ?? "collab.internal";
 
-        // BinaryPath is optional -- CaddyResolver (§6.4.1) falls through to the bundled
-        // sidecar when this is null/empty. The COLLABHOST_CADDY_PATH env var is read
-        // directly by CaddyResolver and does not need threading through settings.
+        // BinaryPath is optional -- CaddyResolver falls through to the bundled sidecar when
+        // this is null/empty. The COLLABHOST_CADDY_PATH env var is read directly by
+        // CaddyResolver and does not need threading through settings.
         var binaryPath = section["BinaryPath"];
 
         var envListenAddress = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_LISTEN_ADDRESS");

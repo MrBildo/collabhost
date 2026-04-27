@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace Collabhost.Api.Proxy;
 
-// Pure resolver implementing the §6.4.1 precedence chain: env > config > bundled.
+// Pure resolver implementing the Caddy binary precedence chain: env > config > bundled.
 // Returns null when no Caddy binary can be located -- callers soft-fail with visibility.
 public static class CaddyResolver
 {
@@ -66,7 +66,16 @@ public static class CaddyResolver
     }
 
     // Exposed for tests. Returns the resolved absolute path, or null if unresolvable.
-    internal static string? ResolveBinaryPathSetting(string binaryPath)
+    internal static string? ResolveBinaryPathSetting(string binaryPath) =>
+        ResolveBinaryPathSetting(binaryPath, environment: null);
+
+    // Overload for test isolation: accepts an explicit environment dictionary that replaces
+    // the ambient process environment in the child PATH-lookup process. Pass null to inherit.
+    internal static string? ResolveBinaryPathSetting
+    (
+        string binaryPath,
+        IReadOnlyDictionary<string, string>? environment
+    )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(binaryPath);
 
@@ -78,7 +87,7 @@ public static class CaddyResolver
         }
 
         // Bare name -- resolve via PATH using where/which.
-        return ResolveFromPath(binaryPath);
+        return ResolveFromPath(binaryPath, environment);
     }
 
     // 2 second upper bound on PATH lookup. Normal completion is milliseconds; the timeout
@@ -86,7 +95,11 @@ public static class CaddyResolver
     // %PATH%) hanging the API startup path, which calls Resolve during ProxyAppSeeder.SeedAsync.
     private static readonly TimeSpan _pathLookupTimeout = TimeSpan.FromSeconds(2);
 
-    private static string? ResolveFromPath(string binaryName)
+    private static string? ResolveFromPath
+    (
+        string binaryName,
+        IReadOnlyDictionary<string, string>? environment
+    )
     {
         var command = OperatingSystem.IsWindows() ? "where" : "which";
 
@@ -94,7 +107,7 @@ public static class CaddyResolver
         {
             using var process = new Process();
 
-            process.StartInfo = new ProcessStartInfo
+            var startInfo = new ProcessStartInfo
             {
                 FileName = command,
                 Arguments = binaryName,
@@ -103,6 +116,18 @@ public static class CaddyResolver
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+
+            if (environment is not null)
+            {
+                startInfo.Environment.Clear();
+
+                foreach (var (key, value) in environment)
+                {
+                    startInfo.Environment[key] = value;
+                }
+            }
+
+            process.StartInfo = startInfo;
 
             process.Start();
 

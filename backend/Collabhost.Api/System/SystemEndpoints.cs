@@ -20,9 +20,9 @@ public static class SystemEndpoints
 
     private static Ok<SystemStatus> GetStatus(ProxyManager proxyManager)
     {
-        var uptimeSeconds = (DateTime.UtcNow - _startedAt).TotalSeconds;
+        var uptimeSeconds = Math.Max(0, (DateTime.UtcNow - _startedAt).TotalSeconds);
 
-        // Enum name is lowercased at the boundary; internal code stays type-safe (§6.4.2).
+        // Enum name is lowercased at the boundary; internal code stays type-safe.
         var proxyState = proxyManager.CurrentState
             .ToString()
             .ToLowerInvariant();

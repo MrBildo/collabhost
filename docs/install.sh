@@ -76,11 +76,15 @@ case "${UNAME_S}-${UNAME_M}" in
   Linux-x86_64)   RID="linux-x64"   ; EXT="tar.gz" ;;
   Linux-aarch64)  RID="linux-arm64" ; EXT="tar.gz" ;;
   Linux-arm64)    RID="linux-arm64" ; EXT="tar.gz" ;;
-  Darwin-x86_64)  RID="osx-x64"     ; EXT="tar.gz" ;;
   Darwin-arm64)   RID="osx-arm64"   ; EXT="tar.gz" ;;
+  Darwin-x86_64)
+    echo "Intel Mac (osx-x64) is not supported. Collabhost ships macOS builds for Apple Silicon (arm64) only." >&2
+    echo "See https://github.com/${REPO}/releases for the osx-arm64 archive." >&2
+    exit 1
+    ;;
   *)
     echo "Unsupported platform: ${UNAME_S}-${UNAME_M}" >&2
-    echo "Supported: Linux x86_64/aarch64, macOS x86_64/arm64." >&2
+    echo "Supported: Linux x86_64/aarch64, macOS arm64 (Apple Silicon)." >&2
     echo "Windows: use install.ps1." >&2
     exit 1
     ;;
@@ -146,7 +150,29 @@ TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "${TMP_DIR}"; }
 trap cleanup EXIT
 
-echo "Downloading ${ARCHIVE}..."
+# Heartbeat: emit archive size from a HEAD request so the operator knows what
+# to expect during the silent download window. The same HEAD response also
+# serves as a pre-flight existence check -- a 404 here means the version tag
+# does not exist on the release server (typo, deleted release, pre-release tag
+# that passed the regex). Fatal on 404; non-fatal on all other failures so that
+# a transient network error does not block the install.
+SIZE_HINT=""
+HEAD_HEADERS="$(curl -sIL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" 2>/dev/null)" || true
+HEAD_STATUS="$(printf '%s\n' "${HEAD_HEADERS}" | awk '/^HTTP\// {code=$2} END {print code+0}')" || true
+if [ "${HEAD_STATUS}" = "404" ]; then
+  echo "Release tag '${TAG}' not found. See https://github.com/${REPO}/releases for available versions." >&2
+  exit 1
+fi
+RAW_CL="$(printf '%s\n' "${HEAD_HEADERS}" \
+  | awk '/^[Cc]ontent-[Ll]ength:/ {print $2}' \
+  | tr -d '\r' \
+  | tail -1)" || true
+if [ -n "${RAW_CL}" ] && [ "${RAW_CL}" -gt 0 ] 2>/dev/null; then
+  SIZE_MB=$(( (RAW_CL + 524288) / 1048576 ))
+  SIZE_HINT=" (~${SIZE_MB} MB)"
+fi
+
+echo "Downloading ${ARCHIVE}${SIZE_HINT}..."
 curl -fsSL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" -o "${TMP_DIR}/${ARCHIVE}"
 
 echo "Downloading checksums.txt..."
@@ -193,6 +219,7 @@ fi
 # wrapping directory. Extract straight into EXTRACT_DIR and copy from there.
 EXTRACT_DIR="${TMP_DIR}/extract"
 mkdir -p "${EXTRACT_DIR}"
+echo "Extracting archive..."
 tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "${EXTRACT_DIR}"
 
 if [ ! -f "${EXTRACT_DIR}/collabhost" ]; then
@@ -228,7 +255,11 @@ if [ ! -f "${INSTALL_PATH}/appsettings.json" ]; then
 fi
 
 if [ -n "${IS_REINSTALL}" ]; then
-  echo "Preserved: appsettings.json and data/ (if present)."
+  DATA_HINT=""
+  if [ -d "${INSTALL_PATH}/data" ]; then
+    DATA_HINT=" and data/"
+  fi
+  echo "Preserved your existing appsettings.json${DATA_HINT}."
 fi
 
 # data/ is never in the archive -- leave any existing directory untouched.
@@ -269,7 +300,28 @@ fi
 
 # ---- Summary -----------------------------------------------------------------
 
+# Resolve bundled Caddy version for the Bundled: disclosure line. Non-fatal --
+# if the binary won't execute (exec-bit, antivirus, exotic platform), fall back
+# to omitting the version number.
+CADDY_VERSION=""
+CADDY_VERSION_RAW="$("${INSTALL_PATH}/caddy" version 2>/dev/null | awk '{print $1; exit}')" || true
+if [ -n "${CADDY_VERSION_RAW}" ]; then
+  CADDY_VERSION="${CADDY_VERSION_RAW}"
+fi
+
+BUNDLED_LINE="Bundled: collabhost ${TAG} + "
+if [ -n "${CADDY_VERSION}" ]; then
+  BUNDLED_LINE="${BUNDLED_LINE}Caddy ${CADDY_VERSION}"
+else
+  BUNDLED_LINE="${BUNDLED_LINE}Caddy (bundled)"
+fi
+
 echo ""
 echo "Collabhost ${TAG} installed to ${INSTALL_PATH}"
-echo "Admin key: run 'collabhost' now. The admin key will print to your terminal on first boot -- copy it immediately."
+echo "${BUNDLED_LINE}"
+if [ -n "${IS_REINSTALL}" ]; then
+  echo "Restart Collabhost to pick up the new binary. Your admin key and configuration are preserved."
+else
+  echo "Next: open a new terminal and run 'collabhost'. On first boot it prints your admin key -- copy it immediately."
+fi
 echo "See ${INSTALL_PATH}/INSTALL.md for configuration, env-var overrides, and upgrade notes."

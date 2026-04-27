@@ -40,7 +40,7 @@ public class AppHostFixture : IAsyncLifetime
         // Set a known admin key for auth
         Environment.SetEnvironmentVariable("Auth__AdminKey", AdminKey);
 
-        // Point the production-startup preflight + TypeStore at the isolated directory
+        // Point the startup preflight + TypeStore at the isolated directory
         Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", _userTypesDirectory);
 
         var appHost = await DistributedApplicationTestingBuilder
