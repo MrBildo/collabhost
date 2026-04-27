@@ -1,0 +1,534 @@
+name: Install integration
+
+# End-to-end validation that the published install scripts (docs/install.sh,
+# docs/install.ps1) successfully install a real GitHub Release and that the
+# resulting binary works as expected. Complements publish-dryrun.yml: dry-run
+# validates archive build (BUILD side); this workflow validates archive
+# consumption (CONSUME side -- installer + backend contract against shipped
+# archives).
+#
+# Card #175. Motivated by 3 HIGH bugs that shipped past v0.1.0 pre-release
+# gates because no test consumed both the installer's actual output and the
+# archive's actual contract end-to-end:
+#   F1 -- archive layout vs script extraction expectation
+#   F2 -- Windows sha256sum -b binary-mode prefix
+#   F3 -- backend ContentRootPath CWD-relative when run from $HOME
+#
+# Triggers:
+#   - pull_request: PRs touching the install scripts, the publish workflows,
+#     or release-assets bundle. Self-validates this workflow on the PR that
+#     adds it.
+#   - workflow_dispatch: manual runs, optional version override.
+#   - release.published: post-release validation against the just-shipped
+#     archives.
+#
+# Verification target version:
+#   - workflow_dispatch -> inputs.version (must be a tag that exists)
+#   - release.published -> the released tag
+#   - pull_request -> the LATEST released tag at workflow start
+#
+# Runners:
+#   linux-x64    -> ubuntu-latest        (native)
+#   linux-arm64  -> ubuntu-latest+QEMU   (Docker, linux/arm64 platform)
+#   osx-x64      -> macos-13             (native)
+#   osx-arm64    -> macos-latest         (native, Apple Silicon)
+#   win-x64      -> windows-latest       (native)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/install.sh'
+      - 'docs/install.ps1'
+      - '.github/workflows/publish.yml'
+      - '.github/workflows/publish-dryrun.yml'
+      - '.github/workflows/install-integration.yml'
+      - 'release-assets/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to install (e.g. v0.1.0). Default: latest published release.'
+        required: false
+        default: ''
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-version:
+    name: Resolve target version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.resolve.outputs.VERSION }}
+    steps:
+      - name: Resolve target tag
+        id: resolve
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${RELEASE_TAG:-}" ]]; then
+            VERSION="${RELEASE_TAG}"
+            SOURCE="release.published"
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
+            VERSION="${INPUT_VERSION}"
+            SOURCE="workflow_dispatch input"
+          else
+            # PR trigger or workflow_dispatch with no input. Use the latest
+            # published release as the integration target -- this gives us
+            # something real to install against without depending on an
+            # unreleased tag.
+            VERSION="$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)"
+            SOURCE="latest published release"
+          fi
+
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Resolved version '${VERSION}' is not a vX.Y.Z tag." >&2
+            exit 1
+          fi
+
+          echo "Resolved target: ${VERSION} (source: ${SOURCE})"
+          echo "VERSION=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+  install-unix:
+    name: Install ${{ matrix.rid }}
+    needs: resolve-version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+            collabhost_bin: collabhost
+            caddy_bin: caddy
+          - rid: osx-x64
+            os: macos-13
+            collabhost_bin: collabhost
+            caddy_bin: caddy
+          - rid: osx-arm64
+            os: macos-latest
+            collabhost_bin: collabhost
+            caddy_bin: caddy
+    env:
+      TAG: ${{ needs.resolve-version.outputs.version }}
+      RID: ${{ matrix.rid }}
+      COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
+      CADDY_BIN: ${{ matrix.caddy_bin }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Run the live install script (the one this branch ships). Uses the
+      # checked-out script, NOT the published one, so a PR change to the
+      # script gets exercised. The --version flag pins the install target
+      # to the resolved tag (latest published when triggered by PR).
+      - name: First install
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash docs/install.sh --version "${TAG}" --skip-path
+
+      - name: Verify install layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          INSTALL_DIR="${HOME}/.collabhost/bin"
+          test -x "${INSTALL_DIR}/${COLLABHOST_BIN}" || { echo "Missing: ${COLLABHOST_BIN}" >&2; exit 1; }
+          test -x "${INSTALL_DIR}/${CADDY_BIN}"      || { echo "Missing: ${CADDY_BIN}" >&2; exit 1; }
+          test -f "${INSTALL_DIR}/appsettings.json"  || { echo "Missing: appsettings.json" >&2; exit 1; }
+          test -f "${INSTALL_DIR}/INSTALL.md"        || { echo "Missing: INSTALL.md" >&2; exit 1; }
+          test -d "${INSTALL_DIR}/LICENSES"          || { echo "Missing: LICENSES/" >&2; exit 1; }
+          echo "Install layout verified."
+
+      # collabhost --version must work and must work FROM $HOME (not the install
+      # directory). Catches the F3 class -- ContentRootPath CWD-relative would
+      # not affect --version directly, but running from $HOME confirms the
+      # binary does not require its install dir as CWD for trivial commands.
+      - name: collabhost --version (from $HOME)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${HOME}"
+          OUT="$("${HOME}/.collabhost/bin/${COLLABHOST_BIN}" --version)"
+          echo "${OUT}"
+          # Output format is "Collabhost <tag-or-version>" -- match the prefix.
+          # Don't tie to exact tag text in case Version stamping ever changes.
+          echo "${OUT}" | grep -qi '^collabhost ' || {
+            echo "Unexpected --version output: ${OUT}" >&2
+            exit 1
+          }
+
+      # Reinstall preservation. Modify appsettings.json with a marker, run
+      # the installer again, and confirm the marker survived. This catches
+      # R2.1 §9.7 regressions where a careless installer change might
+      # overwrite an operator-edited config on upgrade.
+      - name: Reinstall preserves appsettings.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          INSTALL_DIR="${HOME}/.collabhost/bin"
+          MARKER="// collabhost-install-test-marker $(date +%s)"
+          # Append a comment line to appsettings.json. JSON does not support
+          # comments, but the installer never parses it -- it copies bytes.
+          # The marker is what we look for after reinstall.
+          echo "${MARKER}" >> "${INSTALL_DIR}/appsettings.json"
+          # Also seed data/ so the "and data/" hint is exercised.
+          mkdir -p "${INSTALL_DIR}/data"
+          touch "${INSTALL_DIR}/data/sentinel.txt"
+
+          bash docs/install.sh --version "${TAG}" --skip-path
+
+          if ! grep -qF "${MARKER}" "${INSTALL_DIR}/appsettings.json"; then
+            echo "Reinstall clobbered appsettings.json (marker missing)." >&2
+            exit 1
+          fi
+          if [[ ! -f "${INSTALL_DIR}/data/sentinel.txt" ]]; then
+            echo "Reinstall removed data/ directory." >&2
+            exit 1
+          fi
+          echo "Reinstall preservation verified."
+
+      # Bundled Caddy version. On PR runs the comparator is the current
+      # caddy.version on this branch -- which may not match the version baked
+      # into the release we're installing (releases ship with the caddy.version
+      # at release-build time). We therefore EMIT the version for inspection
+      # but only ENFORCE the match on release.published runs, where the
+      # caddy.version on the released commit IS the comparator.
+      - name: Caddy bundled version
+        shell: bash
+        run: |
+          set -euo pipefail
+          INSTALL_DIR="${HOME}/.collabhost/bin"
+          ACTUAL="$("${INSTALL_DIR}/${CADDY_BIN}" version 2>/dev/null | awk '{print $1; exit}')"
+          PINNED="v$(tr -d '[:space:]' < caddy.version)"
+          echo "Bundled Caddy: ${ACTUAL}"
+          echo "Pinned (this commit): ${PINNED}"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            if [[ "${ACTUAL}" != "${PINNED}" ]]; then
+              echo "Bundled Caddy version (${ACTUAL}) does not match pin (${PINNED})." >&2
+              exit 1
+            fi
+            echo "Caddy version matches pin."
+          else
+            echo "Informational-only on non-release runs (release archive may predate current pin)."
+          fi
+
+      # Admin-key bootstrap line. Start the binary, wait for the line, then
+      # stop. The first-boot path against an empty database emits exactly one
+      # 'Collabhost admin key:' line on stdout (per INSTALL.md §2). Run from
+      # $HOME -- catches the F3 class (binary must read its own appsettings.json
+      # via ContentRootPath = AppContext.BaseDirectory, not via shell CWD).
+      - name: Admin-key bootstrap line
+        shell: bash
+        run: |
+          set -euo pipefail
+          INSTALL_DIR="${HOME}/.collabhost/bin"
+          # Force a clean database so the first-boot bootstrap path runs.
+          rm -rf "${INSTALL_DIR}/data"
+          # Strip the marker we added in the previous step so JSON is valid.
+          # (The bootstrap log line is what we want to see; bad config would
+          # block the host from getting that far.)
+          if grep -q '^//' "${INSTALL_DIR}/appsettings.json"; then
+            grep -v '^//' "${INSTALL_DIR}/appsettings.json" > "${INSTALL_DIR}/appsettings.json.clean"
+            mv "${INSTALL_DIR}/appsettings.json.clean" "${INSTALL_DIR}/appsettings.json"
+          fi
+
+          cd "${HOME}"
+          LOG="${HOME}/firstboot.log"
+          "${INSTALL_DIR}/${COLLABHOST_BIN}" > "${LOG}" 2>&1 &
+          PID=$!
+          # Poll for the bootstrap line up to 60s.
+          FOUND=""
+          for _ in $(seq 1 60); do
+            if grep -q 'Collabhost admin key:' "${LOG}" 2>/dev/null; then
+              FOUND=1
+              break
+            fi
+            if ! kill -0 "${PID}" 2>/dev/null; then
+              echo "Process exited before emitting admin-key line." >&2
+              echo "--- log ---" >&2
+              cat "${LOG}" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          # Graceful stop. SIGINT first, then SIGTERM after 5s.
+          kill -INT "${PID}" 2>/dev/null || true
+          for _ in $(seq 1 10); do
+            kill -0 "${PID}" 2>/dev/null || break
+            sleep 0.5
+          done
+          kill -TERM "${PID}" 2>/dev/null || true
+          wait "${PID}" 2>/dev/null || true
+
+          if [[ -z "${FOUND}" ]]; then
+            echo "Admin-key bootstrap line not seen within 60s." >&2
+            echo "--- log tail ---" >&2
+            tail -100 "${LOG}" >&2
+            exit 1
+          fi
+          echo "Admin-key bootstrap line emitted."
+
+  install-windows:
+    name: Install win-x64
+    needs: resolve-version
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      TAG: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: First install
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & docs/install.ps1 -Version $env:TAG -SkipPath
+
+      - name: Verify install layout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $InstallDir = Join-Path $HOME '.collabhost\bin'
+          foreach ($name in @('collabhost.exe','caddy.exe','appsettings.json','INSTALL.md')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $InstallDir $name))) {
+              throw "Missing: $name"
+            }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'LICENSES') -PathType Container)) {
+            throw "Missing: LICENSES/"
+          }
+          Write-Host 'Install layout verified.'
+
+      # collabhost --version run from $HOME -- catches F3 ContentRootPath class.
+      - name: collabhost --version (from $HOME)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location $HOME
+          $exe = Join-Path $HOME '.collabhost\bin\collabhost.exe'
+          $out = & $exe --version
+          Write-Host $out
+          if ($out -notmatch '^(?i)collabhost ') {
+            throw "Unexpected --version output: $out"
+          }
+
+      - name: Reinstall preserves appsettings.json
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $InstallDir = Join-Path $HOME '.collabhost\bin'
+          $Settings = Join-Path $InstallDir 'appsettings.json'
+          $Marker = "// collabhost-install-test-marker $([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+          Add-Content -LiteralPath $Settings -Value $Marker
+          New-Item -ItemType Directory -Path (Join-Path $InstallDir 'data') -Force | Out-Null
+          New-Item -ItemType File -Path (Join-Path $InstallDir 'data\sentinel.txt') -Force | Out-Null
+
+          & docs/install.ps1 -Version $env:TAG -SkipPath
+
+          $content = Get-Content -LiteralPath $Settings -Raw
+          if ($content -notmatch [regex]::Escape($Marker)) {
+            throw 'Reinstall clobbered appsettings.json (marker missing).'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'data\sentinel.txt'))) {
+            throw 'Reinstall removed data/ directory.'
+          }
+          Write-Host 'Reinstall preservation verified.'
+
+      - name: Caddy bundled version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $InstallDir = Join-Path $HOME '.collabhost\bin'
+          $caddy = Join-Path $InstallDir 'caddy.exe'
+          $raw = & $caddy version 2>$null
+          $actual = ($raw -split '\s+')[0]
+          $pinned = 'v' + (Get-Content -LiteralPath 'caddy.version' -Raw).Trim()
+          Write-Host "Bundled Caddy: $actual"
+          Write-Host "Pinned (this commit): $pinned"
+          if ($env:GITHUB_EVENT_NAME -eq 'release') {
+            if ($actual -ne $pinned) {
+              throw "Bundled Caddy version ($actual) does not match pin ($pinned)."
+            }
+            Write-Host 'Caddy version matches pin.'
+          } else {
+            Write-Host 'Informational-only on non-release runs (release archive may predate current pin).'
+          }
+
+      - name: Admin-key bootstrap line
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $InstallDir = Join-Path $HOME '.collabhost\bin'
+          $exe = Join-Path $InstallDir 'collabhost.exe'
+          $Settings = Join-Path $InstallDir 'appsettings.json'
+
+          # Clean database for first-boot bootstrap path.
+          if (Test-Path -LiteralPath (Join-Path $InstallDir 'data')) {
+            Remove-Item -LiteralPath (Join-Path $InstallDir 'data') -Recurse -Force
+          }
+          # Strip JSON-invalid marker line from previous step.
+          $lines = Get-Content -LiteralPath $Settings | Where-Object { $_ -notmatch '^\s*//' }
+          Set-Content -LiteralPath $Settings -Value $lines
+
+          Set-Location $HOME
+          $log = Join-Path $HOME 'firstboot.log'
+          if (Test-Path -LiteralPath $log) { Remove-Item -LiteralPath $log -Force }
+
+          $proc = Start-Process -FilePath $exe `
+                                -RedirectStandardOutput $log `
+                                -RedirectStandardError (Join-Path $HOME 'firstboot.err.log') `
+                                -PassThru -WindowStyle Hidden
+          $found = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            if ((Test-Path -LiteralPath $log) -and (Select-String -LiteralPath $log -Pattern 'Collabhost admin key:' -Quiet)) {
+              $found = $true
+              break
+            }
+            if ($proc.HasExited) {
+              Write-Host '--- stdout ---'
+              if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }
+              Write-Host '--- stderr ---'
+              if (Test-Path -LiteralPath (Join-Path $HOME 'firstboot.err.log')) { Get-Content -LiteralPath (Join-Path $HOME 'firstboot.err.log') }
+              throw 'Process exited before emitting admin-key line.'
+            }
+            Start-Sleep -Seconds 1
+          }
+          # Stop the process (Windows has no clean SIGINT for our P/Invoke
+          # process group from PS without GenerateConsoleCtrlEvent gymnastics;
+          # Stop-Process is sufficient -- the integration test's success
+          # criterion is the bootstrap line, not graceful shutdown).
+          if (-not $proc.HasExited) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            $proc.WaitForExit(5000) | Out-Null
+          }
+
+          if (-not $found) {
+            Write-Host '--- stdout tail ---'
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 100 }
+            throw 'Admin-key bootstrap line not seen within 60s.'
+          }
+          Write-Host 'Admin-key bootstrap line emitted.'
+
+  install-linux-arm64:
+    name: Install linux-arm64 (QEMU)
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TAG: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # Run the entire installer + verification suite inside a linux/arm64
+      # Debian container. QEMU emulation is slow (5-15x slower than native),
+      # so this leg has a much larger timeout. fail-fast is disabled at the
+      # matrix level; this dedicated job is allowed to lag the native legs
+      # without blocking them.
+      #
+      # No first-class GitHub-hosted linux-arm64 runner exists, and a
+      # self-hosted runner is impractical for a small project. QEMU on
+      # ubuntu-latest is the pragmatic compromise. Documented in
+      # CONTRIBUTING.md release-process section.
+      - name: Install + verify under linux/arm64
+        shell: bash
+        env:
+          TAG: ${{ needs.resolve-version.outputs.version }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          docker run --rm --platform linux/arm64 \
+            -v "${PWD}:/work" \
+            -w /work \
+            -e TAG \
+            -e GITHUB_EVENT_NAME \
+            debian:bookworm-slim \
+            bash -euxo pipefail -c '
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends \
+                ca-certificates curl tar gzip awk grep coreutils >/dev/null
+
+              export HOME=/root
+              cd /tmp
+
+              # First install.
+              bash /work/docs/install.sh --version "${TAG}" --skip-path
+
+              INSTALL_DIR="${HOME}/.collabhost/bin"
+              test -x "${INSTALL_DIR}/collabhost"
+              test -x "${INSTALL_DIR}/caddy"
+              test -f "${INSTALL_DIR}/appsettings.json"
+              test -f "${INSTALL_DIR}/INSTALL.md"
+              test -d "${INSTALL_DIR}/LICENSES"
+              echo "Install layout verified (linux-arm64)."
+
+              # --version from $HOME.
+              cd "${HOME}"
+              OUT="$("${INSTALL_DIR}/collabhost" --version)"
+              echo "${OUT}"
+              echo "${OUT}" | grep -qi "^collabhost "
+
+              # Reinstall preservation.
+              MARKER="// collabhost-install-test-marker-arm64 $(date +%s)"
+              echo "${MARKER}" >> "${INSTALL_DIR}/appsettings.json"
+              mkdir -p "${INSTALL_DIR}/data"
+              touch "${INSTALL_DIR}/data/sentinel.txt"
+              bash /work/docs/install.sh --version "${TAG}" --skip-path
+              grep -qF "${MARKER}" "${INSTALL_DIR}/appsettings.json"
+              test -f "${INSTALL_DIR}/data/sentinel.txt"
+              echo "Reinstall preservation verified (linux-arm64)."
+
+              # Caddy version (informational unless release.published).
+              ACTUAL="$("${INSTALL_DIR}/caddy" version 2>/dev/null | awk "{print \$1; exit}")"
+              PINNED="v$(tr -d "[:space:]" < /work/caddy.version)"
+              echo "Bundled Caddy: ${ACTUAL}"
+              echo "Pinned: ${PINNED}"
+              if [ "${GITHUB_EVENT_NAME:-}" = "release" ]; then
+                [ "${ACTUAL}" = "${PINNED}" ] || { echo "Caddy version mismatch" >&2; exit 1; }
+              fi
+
+              # Admin-key bootstrap.
+              rm -rf "${INSTALL_DIR}/data"
+              # Strip marker line so JSON is valid.
+              if grep -q "^//" "${INSTALL_DIR}/appsettings.json"; then
+                grep -v "^//" "${INSTALL_DIR}/appsettings.json" > "${INSTALL_DIR}/appsettings.json.clean"
+                mv "${INSTALL_DIR}/appsettings.json.clean" "${INSTALL_DIR}/appsettings.json"
+              fi
+              cd "${HOME}"
+              LOG="${HOME}/firstboot.log"
+              "${INSTALL_DIR}/collabhost" > "${LOG}" 2>&1 &
+              PID=$!
+              FOUND=""
+              # QEMU emulation -- give startup more headroom than native legs.
+              for _ in $(seq 1 180); do
+                if grep -q "Collabhost admin key:" "${LOG}" 2>/dev/null; then
+                  FOUND=1
+                  break
+                fi
+                if ! kill -0 "${PID}" 2>/dev/null; then
+                  echo "Process exited before emitting admin-key line." >&2
+                  cat "${LOG}" >&2
+                  exit 1
+                fi
+                sleep 1
+              done
+              kill -INT "${PID}" 2>/dev/null || true
+              wait "${PID}" 2>/dev/null || true
+              if [ -z "${FOUND}" ]; then
+                echo "Admin-key bootstrap line not seen within 180s (QEMU)." >&2
+                tail -100 "${LOG}" >&2
+                exit 1
+              fi
+              echo "Admin-key bootstrap line emitted (linux-arm64)."
+            '

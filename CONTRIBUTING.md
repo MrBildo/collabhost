@@ -214,6 +214,38 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 
 **What it does not do:** create a tag, create or update a GitHub Release, upload to the Releases surface. If you see a `gh release` invocation in the dry-run, that's a bug -- file an issue.
 
+## Install integration test
+
+`.github/workflows/install-integration.yml` is the consume-side complement to the dry-run. The dry-run validates that archive **builds** are correct; this workflow validates that the published install scripts (`docs/install.sh`, `docs/install.ps1`) actually consume a real GitHub Release end-to-end and that the resulting binary works as expected.
+
+**When it runs:**
+
+- **On any PR** that touches `docs/install.sh`, `docs/install.ps1`, `publish.yml`, `publish-dryrun.yml`, `install-integration.yml`, or `release-assets/`. Failures block merge for those PRs.
+- **On `release.published`** -- post-release validation that the archives we just shipped install correctly across all RIDs.
+- **On demand** via `workflow_dispatch` with an optional `version` input (a release tag like `v0.1.0`).
+
+**What each matrix leg verifies (per RID):**
+
+1. The install script succeeds against the live GitHub Release.
+2. `collabhost --version` runs from `$HOME` (catches CWD-relative `ContentRootPath` regressions).
+3. A reinstall preserves an operator-edited `appsettings.json` and a populated `data/` directory.
+4. The bundled Caddy version is reported (and on `release.published` runs, must match the `caddy.version` pin on the released commit).
+5. The first-boot admin-key bootstrap line (`Collabhost admin key:`) emits on stdout.
+
+**RID matrix:**
+
+| RID | Runner |
+|---|---|
+| `linux-x64` | `ubuntu-latest` |
+| `linux-arm64` | `ubuntu-latest` + Docker QEMU (`linux/arm64`) |
+| `osx-x64` | `macos-13` |
+| `osx-arm64` | `macos-latest` |
+| `win-x64` | `windows-latest` |
+
+**linux-arm64 caveat:** GitHub does not provide a hosted ARM64 Linux runner, so the leg runs inside a `linux/arm64` Debian container under QEMU emulation on `ubuntu-latest`. Emulation is 5-15x slower than native, so the leg has a 45-minute timeout; it is allowed to lag the native legs without blocking them (`fail-fast: false`).
+
+**On a PR run, the target version is the latest published release** -- there may not be an unreleased tag to test against. On a `release.published` run, the target is the just-shipped tag.
+
 ## Questions?
 
 Open an issue. We're a small project and happy to help contributors get oriented.
