@@ -1,0 +1,437 @@
+name: Publish (dry-run)
+
+# Dry-run sibling of publish.yml. Runs the full build matrix + frontend +
+# Caddy download + archive + checksum pipeline, but uploads the produced
+# archives to a workflow-run artifact rather than a GitHub Release. Never
+# creates or modifies a tag, never touches the Releases surface. Use this
+# to verify pipeline changes (new RID, Caddy bump, install script changes,
+# matrix reshape) before cutting a real release.
+#
+# Card #157, follow-up to #153.
+#
+# Triggers:
+#   - workflow_dispatch: ad-hoc, with optional version override
+#   - pull_request: any PR that touches release-pipeline-related files
+#                   (publish.yml, this file, install scripts, caddy.version,
+#                    release-assets bundle)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version stamp for the produced archives (no tag is created). Format: X.Y.Z'
+        required: false
+        default: '0.0.0-dryrun'
+  pull_request:
+    paths:
+      - '.github/workflows/publish.yml'
+      - '.github/workflows/publish-dryrun.yml'
+      - 'docs/install.sh'
+      - 'docs/install.ps1'
+      - 'caddy.version'
+      - 'release-assets/**'
+
+# Read-only token. The dry-run never writes to the Releases surface, never
+# creates tags. Workflow-run artifacts upload via actions/upload-artifact
+# only need the default GITHUB_TOKEN which has implicit write to its own run.
+permissions:
+  contents: read
+
+jobs:
+  resolve-version:
+    name: Resolve dry-run version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - name: Resolve
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          # workflow_dispatch supplies inputs.version; pull_request does not.
+          # For PR runs we synthesize a deterministic stamp from the PR number
+          # so multiple dry-runs across PRs produce distinguishable archives.
+          if [[ -n "${INPUT_VERSION:-}" ]]; then
+            VERSION="${INPUT_VERSION}"
+          elif [[ -n "${PR_NUMBER:-}" ]]; then
+            VERSION="0.0.0-pr${PR_NUMBER}"
+          else
+            VERSION="0.0.0-dryrun"
+          fi
+
+          # Light validation: must be non-empty, no whitespace, no path separators.
+          if [[ ! "${VERSION}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Resolved version '${VERSION}' contains disallowed characters" >&2
+            exit 1
+          fi
+
+          echo "Resolved dry-run version: ${VERSION}"
+          echo "VERSION=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+  build-frontend:
+    name: Build frontend (once)
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Build
+        run: npx vite build
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 1
+
+  build-matrix:
+    name: Build ${{ matrix.rid }}
+    needs: [resolve-version, build-frontend]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+            caddy_os: windows
+            caddy_arch: amd64
+            caddy_ext: zip
+            caddy_bin: caddy.exe
+            collabhost_bin: collabhost.exe
+            ext: zip
+          - rid: osx-arm64
+            os: macos-latest
+            caddy_os: mac
+            caddy_arch: arm64
+            caddy_ext: tar.gz
+            caddy_bin: caddy
+            collabhost_bin: collabhost
+            ext: tar.gz
+          - rid: osx-x64
+            os: macos-latest
+            caddy_os: mac
+            caddy_arch: amd64
+            caddy_ext: tar.gz
+            caddy_bin: caddy
+            collabhost_bin: collabhost
+            ext: tar.gz
+          - rid: linux-x64
+            os: ubuntu-latest
+            caddy_os: linux
+            caddy_arch: amd64
+            caddy_ext: tar.gz
+            caddy_bin: caddy
+            collabhost_bin: collabhost
+            ext: tar.gz
+          - rid: linux-arm64
+            os: ubuntu-latest
+            caddy_os: linux
+            caddy_arch: arm64
+            caddy_ext: tar.gz
+            caddy_bin: caddy
+            collabhost_bin: collabhost
+            ext: tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: backend/Collabhost.Api/wwwroot
+
+      # Mirrors publish.yml: download + SHA-512 verify + extract caddy binary.
+      # See publish.yml for the inline rationale on SHA-512 vs SHA-256 and the
+      # awk-based filename match.
+      - name: Download and verify Caddy
+        shell: bash
+        env:
+          RID: ${{ matrix.rid }}
+          CADDY_OS: ${{ matrix.caddy_os }}
+          CADDY_ARCH: ${{ matrix.caddy_arch }}
+          CADDY_EXT: ${{ matrix.caddy_ext }}
+          CADDY_BIN: ${{ matrix.caddy_bin }}
+        run: |
+          set -euo pipefail
+
+          VER=$(tr -d '[:space:]' < caddy.version)
+          ASSET="caddy_${VER}_${CADDY_OS}_${CADDY_ARCH}.${CADDY_EXT}"
+          CHECKSUMS="caddy_${VER}_checksums.txt"
+          BASE="https://github.com/caddyserver/caddy/releases/download/v${VER}"
+
+          mkdir -p caddy-download
+          cd caddy-download
+
+          echo "Downloading Caddy asset: ${ASSET}"
+          curl -fsSL --retry 3 --retry-delay 5 -o "${ASSET}" "${BASE}/${ASSET}"
+
+          echo "Downloading Caddy checksums: ${CHECKSUMS}"
+          curl -fsSL --retry 3 --retry-delay 5 -o "${CHECKSUMS}" "${BASE}/${CHECKSUMS}"
+
+          if command -v sha512sum >/dev/null 2>&1; then
+            SHA_CMD="sha512sum"
+          else
+            SHA_CMD="shasum -a 512"
+          fi
+
+          EXPECTED=$(awk -v name="${ASSET}" '$2 == name {print $1}' "${CHECKSUMS}")
+          if [[ -z "${EXPECTED}" ]]; then
+            echo "Could not find ${ASSET} in upstream checksums file" >&2
+            cat "${CHECKSUMS}" >&2
+            exit 1
+          fi
+
+          ACTUAL=$(${SHA_CMD} "${ASSET}" | awk '{print $1}')
+
+          echo "Expected: ${EXPECTED}"
+          echo "Actual:   ${ACTUAL}"
+
+          if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
+            echo "SHA-512 mismatch for ${ASSET} -- refusing to bundle" >&2
+            exit 1
+          fi
+
+          echo "Caddy SHA-512 verified."
+
+          case "${ASSET}" in
+            *.zip)
+              unzip -o "${ASSET}" "${CADDY_BIN}"
+              ;;
+            *.tar.gz)
+              tar -xzf "${ASSET}" "${CADDY_BIN}"
+              ;;
+          esac
+
+          if [[ "${RID}" != win-x64 ]]; then
+            chmod +x "${CADDY_BIN}"
+          fi
+
+      # Mirrors publish.yml: self-contained single-file publish. AssemblyName
+      # rename happens via PublishSingleFile-scoped property in the csproj
+      # (see publish.yml comment block for the global-property landmine).
+      - name: Publish
+        shell: bash
+        working-directory: backend
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          RID: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+
+          dotnet publish Collabhost.Api/Collabhost.Api.csproj \
+            -c Release \
+            -r "${RID}" \
+            --self-contained \
+            -p:PublishSingleFile=true \
+            -p:Version="${VER}" \
+            -o "../publish/collabhost-${VER}-${RID}"
+
+      - name: Stage archive
+        shell: bash
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          RID: ${{ matrix.rid }}
+          CADDY_BIN: ${{ matrix.caddy_bin }}
+          COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
+        run: |
+          set -euo pipefail
+
+          PUB="publish/collabhost-${VER}-${RID}"
+          STAGE="archive-stage/collabhost-${VER}-${RID}"
+
+          rm -rf "${STAGE}"
+          mkdir -p "${STAGE}/LICENSES"
+
+          cp "${PUB}/${COLLABHOST_BIN}"         "${STAGE}/"
+          cp "${PUB}/appsettings.json"          "${STAGE}/"
+          cp "caddy-download/${CADDY_BIN}"      "${STAGE}/"
+          cp "release-assets/INSTALL.md"        "${STAGE}/"
+          cp "release-assets/caddy-LICENSE"     "${STAGE}/LICENSES/"
+          cp "release-assets/caddy-NOTICE"      "${STAGE}/LICENSES/"
+
+          if [[ "${RID}" != win-x64 ]]; then
+            chmod +x "${STAGE}/${COLLABHOST_BIN}"
+            chmod +x "${STAGE}/${CADDY_BIN}"
+          fi
+
+          echo "Staged contents:"
+          ls -la "${STAGE}"
+          ls -la "${STAGE}/LICENSES"
+
+      - name: Archive (zip)
+        if: matrix.ext == 'zip'
+        shell: pwsh
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          RID: ${{ matrix.rid }}
+        run: |
+          $stage = "archive-stage/collabhost-$env:VER-$env:RID"
+          Compress-Archive -Path "$stage/*" `
+                           -DestinationPath "collabhost-$env:VER-$env:RID.zip"
+
+      - name: Archive (tar.gz)
+        if: matrix.ext == 'tar.gz'
+        shell: bash
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          RID: ${{ matrix.rid }}
+          CADDY_BIN: ${{ matrix.caddy_bin }}
+          COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
+        run: |
+          set -euo pipefail
+
+          STAGE="archive-stage/collabhost-${VER}-${RID}"
+          ARCHIVE="collabhost-${VER}-${RID}.tar.gz"
+
+          tar -czf "${ARCHIVE}" \
+            -C "${STAGE}" \
+            "${COLLABHOST_BIN}" \
+            appsettings.json \
+            "${CADDY_BIN}" \
+            INSTALL.md \
+            LICENSES/caddy-LICENSE \
+            LICENSES/caddy-NOTICE
+
+      - name: Verify archive contents
+        shell: bash
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          RID: ${{ matrix.rid }}
+          EXT: ${{ matrix.ext }}
+          CADDY_BIN: ${{ matrix.caddy_bin }}
+          COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
+        run: |
+          set -euo pipefail
+
+          ARCHIVE="collabhost-${VER}-${RID}.${EXT}"
+          VERIFY_DIR="verify-${RID}"
+
+          rm -rf "${VERIFY_DIR}"
+          mkdir -p "${VERIFY_DIR}"
+
+          case "${ARCHIVE}" in
+            *.zip)    unzip -q "${ARCHIVE}" -d "${VERIFY_DIR}" ;;
+            *.tar.gz) tar -xzf "${ARCHIVE}" -C "${VERIFY_DIR}" ;;
+          esac
+
+          echo "Archive listing:"
+          (cd "${VERIFY_DIR}" && find . -type f | sort)
+
+          if [[ -d "${VERIFY_DIR}/collabhost-${VER}-${RID}" ]]; then
+            echo "Archive layout unexpected: found wrapping directory collabhost-${VER}-${RID}/ at archive root." >&2
+            echo "Archives must be flat (contract items at root). Installer scripts assume flat layout." >&2
+            exit 1
+          fi
+
+          MISSING=0
+          for path in \
+            "${COLLABHOST_BIN}" \
+            "appsettings.json" \
+            "${CADDY_BIN}" \
+            "INSTALL.md" \
+            "LICENSES/caddy-LICENSE" \
+            "LICENSES/caddy-NOTICE"
+          do
+            if [[ ! -f "${VERIFY_DIR}/${path}" ]]; then
+              echo "MISSING: ${path}" >&2
+              MISSING=1
+            fi
+          done
+
+          if [[ "${MISSING}" -ne 0 ]]; then
+            echo "Archive contract verification failed." >&2
+            exit 1
+          fi
+
+          echo "Archive contract verified: flat layout, 6/6 items present."
+
+      - name: Checksum
+        shell: bash
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          RID: ${{ matrix.rid }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+
+          ARCHIVE="collabhost-${VER}-${RID}.${EXT}"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          else
+            shasum -a 256 "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          fi
+
+          cat "${ARCHIVE}.sha256"
+
+      # Dry-run divergence point: instead of `gh release upload`, attach the
+      # archive + per-leg checksum to the workflow run as a downloadable
+      # artifact. Operators inspect the run page; nothing leaks to Releases.
+      - name: Upload archive artifact (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.rid }}
+          path: |
+            collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}
+            collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}.sha256
+          retention-days: 7
+
+      # Per-leg checksum artifact for the aggregation job. Same shape as
+      # publish.yml so the aggregator can be a near-copy.
+      - name: Upload per-leg checksum artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksum-${{ matrix.rid }}
+          path: collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}.sha256
+          retention-days: 7
+
+  aggregate-checksums:
+    name: Aggregate checksums.txt
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download per-leg checksums
+        uses: actions/download-artifact@v4
+        with:
+          pattern: checksum-*
+          merge-multiple: true
+          path: checksums-in
+
+      - name: Aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Mirrors publish.yml normalization: strip the leading '*' that
+          # Git-Bash sha256sum emits in binary mode so the aggregated file
+          # matches the format installer parsers expect.
+          cat checksums-in/*.sha256 | sed 's/  \*/  /' > checksums.txt
+          cat checksums.txt
+
+      - name: Upload aggregated checksums (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums-aggregated
+          path: checksums.txt
+          retention-days: 7
