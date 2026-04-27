@@ -52,5 +52,6 @@ public static class Entitlements
         "register_app",
         "browse_filesystem",
         "detect_strategy",
+        "list_events",
     ];
 }
