@@ -130,10 +130,30 @@ public class CaddyResolverTests
             File.SetUnixFileMode(fakePath, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         }
 
+        // On Windows, where.exe resolves bare names against PATHEXT to determine which file
+        // extensions count as executables. Clearing the child environment removes the
+        // inherited PATHEXT, which causes 'where fakecaddy' to fail to match 'fakecaddy.exe'
+        // (exits 1, "Could not find files for the given pattern(s)"). This was the root
+        // cause of the Windows-CI failure on the first attempt at this test. We include a
+        // standard PATHEXT here so the child process can resolve the executable. SystemRoot
+        // is added as a belt-and-suspenders defense for Windows loader behaviour on stripped
+        // environments (some Windows binaries fail to start without %SystemRoot%).
         var environment = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["PATH"] = tempDir
         };
+
+        if (OperatingSystem.IsWindows())
+        {
+            environment["PATHEXT"] = ".COM;.EXE;.BAT;.CMD";
+
+            var systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
+
+            if (!string.IsNullOrEmpty(systemRoot))
+            {
+                environment["SystemRoot"] = systemRoot;
+            }
+        }
 
         try
         {
