@@ -35,6 +35,10 @@ public class EntitlementsTests
         Entitlements.CanAccessTool(UserRole.Agent, "list_apps").ShouldBeTrue();
 
     [Fact]
+    public void CanAccessTool_Agent_ListEvents_ReturnsTrue() =>
+        Entitlements.CanAccessTool(UserRole.Agent, "list_events").ShouldBeTrue();
+
+    [Fact]
     public void CanAccessTool_Agent_AllReadOnlyTools_ReturnsTrue()
     {
         Entitlements.CanAccessTool(UserRole.Agent, "get_system_status").ShouldBeTrue();
