@@ -30,7 +30,8 @@ name: Install integration
 # Runners:
 #   linux-x64    -> ubuntu-latest        (native)
 #   linux-arm64  -> ubuntu-latest+QEMU   (Docker, linux/arm64 platform)
-#   osx-x64      -> macos-13             (native)
+#   osx-x64      -> not covered (GitHub macos-13 Intel runners deprecated/starved;
+#                                documented gap in CONTRIBUTING.md)
 #   osx-arm64    -> macos-latest         (native, Apple Silicon)
 #   win-x64      -> windows-latest       (native)
 
@@ -106,10 +107,6 @@ jobs:
         include:
           - rid: linux-x64
             os: ubuntu-latest
-            collabhost_bin: collabhost
-            caddy_bin: caddy
-          - rid: osx-x64
-            os: macos-13
             collabhost_bin: collabhost
             caddy_bin: caddy
           - rid: osx-arm64
@@ -457,7 +454,7 @@ jobs:
             bash -euxo pipefail -c '
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends \
-                ca-certificates curl tar gzip awk grep coreutils >/dev/null
+                ca-certificates curl tar gzip mawk grep coreutils >/dev/null
 
               export HOME=/root
               cd /tmp
