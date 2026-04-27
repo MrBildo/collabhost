@@ -30,8 +30,7 @@ name: Install integration
 # Runners:
 #   linux-x64    -> ubuntu-latest        (native)
 #   linux-arm64  -> ubuntu-latest+QEMU   (Docker, linux/arm64 platform)
-#   osx-x64      -> not covered (GitHub macos-13 Intel runners deprecated/starved;
-#                                documented gap in CONTRIBUTING.md)
+#   osx-x64      -> not supported; archive dropped in v0.1.1 (see CONTRIBUTING.md)
 #   osx-arm64    -> macos-latest         (native, Apple Silicon)
 #   win-x64      -> windows-latest       (native)
 

@@ -76,11 +76,15 @@ case "${UNAME_S}-${UNAME_M}" in
   Linux-x86_64)   RID="linux-x64"   ; EXT="tar.gz" ;;
   Linux-aarch64)  RID="linux-arm64" ; EXT="tar.gz" ;;
   Linux-arm64)    RID="linux-arm64" ; EXT="tar.gz" ;;
-  Darwin-x86_64)  RID="osx-x64"     ; EXT="tar.gz" ;;
   Darwin-arm64)   RID="osx-arm64"   ; EXT="tar.gz" ;;
+  Darwin-x86_64)
+    echo "Intel Mac (osx-x64) is not supported. Collabhost ships macOS builds for Apple Silicon (arm64) only." >&2
+    echo "See https://github.com/${REPO}/releases for the osx-arm64 archive." >&2
+    exit 1
+    ;;
   *)
     echo "Unsupported platform: ${UNAME_S}-${UNAME_M}" >&2
-    echo "Supported: Linux x86_64/aarch64, macOS x86_64/arm64." >&2
+    echo "Supported: Linux x86_64/aarch64, macOS arm64 (Apple Silicon)." >&2
     echo "Windows: use install.ps1." >&2
     exit 1
     ;;

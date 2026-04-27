@@ -242,13 +242,12 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 |---|---|
 | `linux-x64` | `ubuntu-latest` |
 | `linux-arm64` | `ubuntu-latest` + Docker QEMU (`linux/arm64`) |
-| `osx-x64` | not covered (see caveat below) |
 | `osx-arm64` | `macos-latest` |
 | `win-x64` | `windows-latest` |
 
 **linux-arm64 caveat:** GitHub does not provide a hosted ARM64 Linux runner, so the leg runs inside a `linux/arm64` Debian container under QEMU emulation on `ubuntu-latest`. Emulation is 5-15x slower than native, so the leg has a 45-minute timeout; it is allowed to lag the native legs without blocking them (`fail-fast: false`).
 
-**osx-x64 caveat:** GitHub's `macos-13` Intel runners are in an advanced deprecation state -- queue times of 60+ minutes are common and will only worsen as GitHub winds down the Intel image line. macOS on x86 is itself end-of-life hardware; `macos-latest` (Apple Silicon, `osx-arm64`) covers the active macOS platform. The `osx-x64` leg is a documented gap in CI coverage, parallel in shape to the `linux-arm64` QEMU compromise.
+**Intel Mac (osx-x64) not supported:** The `osx-x64` archive was dropped in v0.1.1. GitHub wound down `macos-13` Intel runners; queue starvation made CI coverage impossible. macOS on Apple Silicon (`osx-arm64`) is the supported macOS platform.
 
 **On a PR run, the target version is the latest published release** -- there may not be an unreleased tag to test against. On a `release.published` run, the target is the just-shipped tag.
 
