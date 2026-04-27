@@ -224,6 +224,10 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 - **On `release.published`** -- post-release validation that the archives we just shipped install correctly across all RIDs.
 - **On demand** via `workflow_dispatch` with an optional `version` input (a release tag like `v0.1.0`).
 
+**Release-process checklist (before tagging):**
+
+- [ ] Trigger `install-integration.yml` via `workflow_dispatch` and confirm the `linux-arm64` leg passes (the QEMU leg only runs on manual + `release.published`, not PRs).
+
 **What each matrix leg verifies (per RID):**
 
 1. The install script succeeds against the live GitHub Release.

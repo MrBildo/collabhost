@@ -415,6 +415,10 @@ jobs:
 
   install-linux-arm64:
     name: Install linux-arm64 (QEMU)
+    # QEMU emulation costs ~10 min per run. Skip on pull_request to keep PR
+    # feedback fast. Runs on workflow_dispatch (pre-tag manual check) and
+    # release.published (post-tag automated validation).
+    if: github.event_name != 'pull_request'
     needs: resolve-version
     runs-on: ubuntu-latest
     timeout-minutes: 45
