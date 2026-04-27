@@ -1,36 +1,81 @@
-name: Publish
+name: Publish (dry-run)
+
+# Dry-run sibling of publish.yml. Runs the full build matrix + frontend +
+# Caddy download + archive + checksum pipeline, but uploads the produced
+# archives to a workflow-run artifact rather than a GitHub Release. Never
+# creates or modifies a tag, never touches the Releases surface. Use this
+# to verify pipeline changes (new RID, Caddy bump, install script changes,
+# matrix reshape) before cutting a real release.
+#
+# Card #157, follow-up to #153.
+#
+# Triggers:
+#   - workflow_dispatch: ad-hoc, with optional version override
+#   - pull_request: any PR that touches release-pipeline-related files
+#                   (publish.yml, this file, install scripts, caddy.version,
+#                    release-assets bundle)
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version stamp for the produced archives (no tag is created). Format: X.Y.Z'
+        required: false
+        default: '0.0.0-dryrun'
+  pull_request:
+    paths:
+      - '.github/workflows/publish.yml'
+      - '.github/workflows/publish-dryrun.yml'
+      - 'docs/install.sh'
+      - 'docs/install.ps1'
+      - 'caddy.version'
+      - 'release-assets/**'
 
+# Read-only token. The dry-run never writes to the Releases surface, never
+# creates tags. Workflow-run artifacts upload via actions/upload-artifact
+# only need the default GITHUB_TOKEN which has implicit write to its own run.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  extract-version:
-    name: Extract version
+  resolve-version:
+    name: Resolve dry-run version
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
-      - name: Parse tag
+      - name: Resolve
         id: version
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
 
-          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Tag '${TAG}' does not match vX.Y.Z (v1 does not support pre-releases)" >&2
+          # workflow_dispatch supplies inputs.version; pull_request does not.
+          # For PR runs we synthesize a deterministic stamp from the PR number
+          # so multiple dry-runs across PRs produce distinguishable archives.
+          if [[ -n "${INPUT_VERSION:-}" ]]; then
+            VERSION="${INPUT_VERSION}"
+          elif [[ -n "${PR_NUMBER:-}" ]]; then
+            VERSION="0.0.0-pr${PR_NUMBER}"
+          else
+            VERSION="0.0.0-dryrun"
+          fi
+
+          # Light validation: must be non-empty, no whitespace, no path separators.
+          if [[ ! "${VERSION}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Resolved version '${VERSION}' contains disallowed characters" >&2
             exit 1
           fi
-          echo "VERSION=${TAG#v}" >> "${GITHUB_OUTPUT}"
+
+          echo "Resolved dry-run version: ${VERSION}"
+          echo "VERSION=${VERSION}" >> "${GITHUB_OUTPUT}"
 
   build-frontend:
     name: Build frontend (once)
-    needs: extract-version
+    needs: resolve-version
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -56,7 +101,7 @@ jobs:
 
   build-matrix:
     name: Build ${{ matrix.rid }}
-    needs: [extract-version, build-frontend]
+    needs: [resolve-version, build-frontend]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -102,18 +147,15 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # Pull the pre-built frontend into the API project so dotnet publish
-      # picks it up as static web assets.
       - name: Download frontend artifact
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
           path: backend/Collabhost.Api/wwwroot
 
-      # Download the pinned Caddy archive and verify its upstream hash before
-      # extraction. Mismatch fails the job hard. Caddy's published
-      # caddy_<version>_checksums.txt uses SHA-512 (128 hex chars per line),
-      # not SHA-256, so we hash the downloaded archive with sha512 and compare.
+      # Mirrors publish.yml: download + SHA-512 verify + extract caddy binary.
+      # See publish.yml for the inline rationale on SHA-512 vs SHA-256 and the
+      # awk-based filename match.
       - name: Download and verify Caddy
         shell: bash
         env:
@@ -125,8 +167,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Strip every whitespace byte (including the trailing newline editors
-          # add) so downstream string interpolation never embeds %0A in URLs.
           VER=$(tr -d '[:space:]' < caddy.version)
           ASSET="caddy_${VER}_${CADDY_OS}_${CADDY_ARCH}.${CADDY_EXT}"
           CHECKSUMS="caddy_${VER}_checksums.txt"
@@ -141,18 +181,12 @@ jobs:
           echo "Downloading Caddy checksums: ${CHECKSUMS}"
           curl -fsSL --retry 3 --retry-delay 5 -o "${CHECKSUMS}" "${BASE}/${CHECKSUMS}"
 
-          # Pick sha512 tool (sha512sum on Linux/Git-Bash for Windows,
-          # shasum -a 512 on macOS).
           if command -v sha512sum >/dev/null 2>&1; then
             SHA_CMD="sha512sum"
           else
             SHA_CMD="shasum -a 512"
           fi
 
-          # Pull the expected hash from upstream's checksums.txt. Format is
-          # standard sha512sum output: "<hex>  <filename>". Match on the
-          # filename field exactly (awk $2) to avoid regex portability issues
-          # between GNU grep (Linux, Git-Bash) and BSD grep (macOS).
           EXPECTED=$(awk -v name="${ASSET}" '$2 == name {print $1}' "${CHECKSUMS}")
           if [[ -z "${EXPECTED}" ]]; then
             echo "Could not find ${ASSET} in upstream checksums file" >&2
@@ -172,9 +206,6 @@ jobs:
 
           echo "Caddy SHA-512 verified."
 
-          # Extract only the caddy binary. Upstream archives also contain
-          # LICENSE and README.md which we do not ship (we ship our own pinned
-          # copies).
           case "${ASSET}" in
             *.zip)
               unzip -o "${ASSET}" "${CADDY_BIN}"
@@ -184,24 +215,18 @@ jobs:
               ;;
           esac
 
-          # Only Unix RIDs need the execute bit. Failing chmod on a Unix leg
-          # should surface as a hard error, not be swallowed by `|| true`.
           if [[ "${RID}" != win-x64 ]]; then
             chmod +x "${CADDY_BIN}"
           fi
 
-      # Self-contained single-file publish. The output binary is renamed from
-      # Collabhost.Api[.exe] to collabhost[.exe] by a PublishSingleFile-scoped
-      # <AssemblyName> property in Collabhost.Api.csproj. That property lives in
-      # the csproj rather than here as -p:AssemblyName=collabhost because a CLI
-      # MSBuild global property propagates to every project in the restore graph
-      # (Collabhost.ServiceDefaults in our case), which makes NuGet restore fail
-      # with "Ambiguous project name 'collabhost'". Not trimmed, not ReadyToRun.
+      # Mirrors publish.yml: self-contained single-file publish. AssemblyName
+      # rename happens via PublishSingleFile-scoped property in the csproj
+      # (see publish.yml comment block for the global-property landmine).
       - name: Publish
         shell: bash
         working-directory: backend
         env:
-          VER: ${{ needs.extract-version.outputs.version }}
+          VER: ${{ needs.resolve-version.outputs.version }}
           RID: ${{ matrix.rid }}
         run: |
           set -euo pipefail
@@ -214,17 +239,10 @@ jobs:
             -p:Version="${VER}" \
             -o "../publish/collabhost-${VER}-${RID}"
 
-      # Explicit allow-list re-stage. Copy ONLY the six contract items from the
-      # publish output into a clean archive-stage directory. This is the
-      # contract boundary for what ships: anything dotnet publish emits that
-      # isn't listed here (collabhost.pdb, *.staticwebassets.endpoints.json,
-      # future SDK-emitted manifests, scratch files) is dropped. The archive
-      # contract is enumerated here, not inferred from publish-flag
-      # combinations.
       - name: Stage archive
         shell: bash
         env:
-          VER: ${{ needs.extract-version.outputs.version }}
+          VER: ${{ needs.resolve-version.outputs.version }}
           RID: ${{ matrix.rid }}
           CADDY_BIN: ${{ matrix.caddy_bin }}
           COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
@@ -237,8 +255,6 @@ jobs:
           rm -rf "${STAGE}"
           mkdir -p "${STAGE}/LICENSES"
 
-          # Six contract items (spec §5.1): collabhost, caddy, appsettings.json,
-          # INSTALL.md, LICENSES/caddy-LICENSE, LICENSES/caddy-NOTICE.
           cp "${PUB}/${COLLABHOST_BIN}"         "${STAGE}/"
           cp "${PUB}/appsettings.json"          "${STAGE}/"
           cp "caddy-download/${CADDY_BIN}"      "${STAGE}/"
@@ -246,10 +262,6 @@ jobs:
           cp "release-assets/caddy-LICENSE"     "${STAGE}/LICENSES/"
           cp "release-assets/caddy-NOTICE"      "${STAGE}/LICENSES/"
 
-          # Unix archives must carry the execute bit on the collabhost binary.
-          # PublishSingleFile on Linux/macOS sets +x on the emitted binary, but
-          # this defensive chmod guarantees the archived entry matches what
-          # operators need on extraction regardless of SDK behavior drift.
           if [[ "${RID}" != win-x64 ]]; then
             chmod +x "${STAGE}/${COLLABHOST_BIN}"
             chmod +x "${STAGE}/${CADDY_BIN}"
@@ -259,15 +271,11 @@ jobs:
           ls -la "${STAGE}"
           ls -la "${STAGE}/LICENSES"
 
-      # Platform-appropriate archive. .zip on Windows via Compress-Archive,
-      # .tar.gz everywhere else via native tar (locked decision 7). Both use
-      # the archive-stage directory as input, which contains exactly the
-      # six allow-listed items.
       - name: Archive (zip)
         if: matrix.ext == 'zip'
         shell: pwsh
         env:
-          VER: ${{ needs.extract-version.outputs.version }}
+          VER: ${{ needs.resolve-version.outputs.version }}
           RID: ${{ matrix.rid }}
         run: |
           $stage = "archive-stage/collabhost-$env:VER-$env:RID"
@@ -278,7 +286,7 @@ jobs:
         if: matrix.ext == 'tar.gz'
         shell: bash
         env:
-          VER: ${{ needs.extract-version.outputs.version }}
+          VER: ${{ needs.resolve-version.outputs.version }}
           RID: ${{ matrix.rid }}
           CADDY_BIN: ${{ matrix.caddy_bin }}
           COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
@@ -288,9 +296,6 @@ jobs:
           STAGE="archive-stage/collabhost-${VER}-${RID}"
           ARCHIVE="collabhost-${VER}-${RID}.tar.gz"
 
-          # Explicit file list rather than `tar -C dir .` globbing. Keeps the
-          # archive contract enforced at archival time: only the six named
-          # items land in the tar stream.
           tar -czf "${ARCHIVE}" \
             -C "${STAGE}" \
             "${COLLABHOST_BIN}" \
@@ -300,13 +305,10 @@ jobs:
             LICENSES/caddy-LICENSE \
             LICENSES/caddy-NOTICE
 
-      # Contract verification: open the archive in a temp directory and
-      # assert all six items are present. Fails the leg hard if anything is
-      # missing. Cheap safety net for a workflow that can't be dry-run.
       - name: Verify archive contents
         shell: bash
         env:
-          VER: ${{ needs.extract-version.outputs.version }}
+          VER: ${{ needs.resolve-version.outputs.version }}
           RID: ${{ matrix.rid }}
           EXT: ${{ matrix.ext }}
           CADDY_BIN: ${{ matrix.caddy_bin }}
@@ -328,11 +330,6 @@ jobs:
           echo "Archive listing:"
           (cd "${VERIFY_DIR}" && find . -type f | sort)
 
-          # Flat-layout assertion: the six contract items must be at the
-          # archive root, not nested under a wrapping "collabhost-*" dir.
-          # The installer scripts (docs/install.sh, docs/install.ps1) copy
-          # straight from the extract directory and assume flat layout.
-          # This check locks that contract at archival time.
           if [[ -d "${VERIFY_DIR}/collabhost-${VER}-${RID}" ]]; then
             echo "Archive layout unexpected: found wrapping directory collabhost-${VER}-${RID}/ at archive root." >&2
             echo "Archives must be flat (contract items at root). Installer scripts assume flat layout." >&2
@@ -361,11 +358,10 @@ jobs:
 
           echo "Archive contract verified: flat layout, 6/6 items present."
 
-      # Per-archive SHA256 (locked decision 9). Portable `sha256sum -c` format.
       - name: Checksum
         shell: bash
         env:
-          VER: ${{ needs.extract-version.outputs.version }}
+          VER: ${{ needs.resolve-version.outputs.version }}
           RID: ${{ matrix.rid }}
           EXT: ${{ matrix.ext }}
         run: |
@@ -380,61 +376,20 @@ jobs:
 
           cat "${ARCHIVE}.sha256"
 
-      # Log any pre-existing assets on the release for this leg before
-      # clobbering. Re-publishing the same tag (or re-triggering the workflow
-      # on an existing release) replaces assets silently via --clobber. This
-      # step makes the overwrite visible in the workflow log. Spec §16.2
-      # covers the operator posture: re-cut to the next patch version rather
-      # than re-publishing a tag.
-      - name: Log existing release assets (pre-upload)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-          VER: ${{ needs.extract-version.outputs.version }}
-          RID: ${{ matrix.rid }}
-          EXT: ${{ matrix.ext }}
-        run: |
-          set -euo pipefail
+      # Dry-run divergence point: instead of `gh release upload`, attach the
+      # archive + per-leg checksum to the workflow run as a downloadable
+      # artifact. Operators inspect the run page; nothing leaks to Releases.
+      - name: Upload archive artifact (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.rid }}
+          path: |
+            collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}
+            collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}.sha256
+          retention-days: 7
 
-          ARCHIVE="collabhost-${VER}-${RID}.${EXT}"
-          CHECKSUM="${ARCHIVE}.sha256"
-
-          echo "Checking for existing assets on release ${TAG} that would be clobbered..."
-          EXISTING=$(gh release view "${TAG}" --repo MrBildo/collabhost --json assets --jq \
-            ".assets[] | select(.name == \"${ARCHIVE}\" or .name == \"${CHECKSUM}\") | .name" \
-            || true)
-
-          if [[ -n "${EXISTING}" ]]; then
-            echo "WARNING: the following asset(s) already exist on ${TAG} and will be replaced by --clobber:"
-            echo "${EXISTING}"
-            echo "If this is not a matrix re-run, consider re-cutting to the next patch version (spec §16.2)."
-          else
-            echo "No pre-existing assets for this leg on ${TAG}."
-          fi
-
-      # Upload archive + per-archive checksum to the GitHub Release that
-      # triggered this workflow. --clobber makes re-runs idempotent.
-      - name: Upload release assets
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-          VER: ${{ needs.extract-version.outputs.version }}
-          RID: ${{ matrix.rid }}
-          EXT: ${{ matrix.ext }}
-        run: |
-          set -euo pipefail
-
-          gh release upload "${TAG}" \
-            "collabhost-${VER}-${RID}.${EXT}" \
-            "collabhost-${VER}-${RID}.${EXT}.sha256" \
-            --repo MrBildo/collabhost \
-            --clobber
-
-      # Per-leg checksum artifact for the aggregation job. Bumped to 7 days
-      # so `publish-checksums` can be re-run after an aggregation failure
-      # discovered later in the week without re-running the matrix.
+      # Per-leg checksum artifact for the aggregation job. Same shape as
+      # publish.yml so the aggregator can be a near-copy.
       - name: Upload per-leg checksum artifact
         uses: actions/upload-artifact@v4
         with:
@@ -442,7 +397,7 @@ jobs:
           path: collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}.sha256
           retention-days: 7
 
-  publish-checksums:
+  aggregate-checksums:
     name: Aggregate checksums.txt
     needs: build-matrix
     runs-on: ubuntu-latest
@@ -460,41 +415,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Normalize the aggregated file to text-mode format: strip any
-          # leading '*' from the filename column. sha256sum on Git-Bash
-          # (Windows runners) defaults to binary mode and emits
-          # "<hash>  *<filename>", while Linux/macOS emit
-          # "<hash>  <filename>". Normalizing here means checksums.txt is
-          # uniform across platforms -- human operators reading the file
-          # see one format, and installer parsers don't need per-line
-          # tolerance for the '*' prefix.
+          # Mirrors publish.yml normalization: strip the leading '*' that
+          # Git-Bash sha256sum emits in binary mode so the aggregated file
+          # matches the format installer parsers expect.
           cat checksums-in/*.sha256 | sed 's/  \*/  /' > checksums.txt
           cat checksums.txt
 
-      - name: Log existing checksums.txt (pre-upload)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-
-          EXISTING=$(gh release view "${TAG}" --repo MrBildo/collabhost --json assets --jq \
-            '.assets[] | select(.name == "checksums.txt") | .name' \
-            || true)
-
-          if [[ -n "${EXISTING}" ]]; then
-            echo "WARNING: checksums.txt already exists on ${TAG} and will be replaced by --clobber."
-            echo "If this is not a matrix re-run, consider re-cutting to the next patch version (spec §16.2)."
-          else
-            echo "No pre-existing checksums.txt on ${TAG}."
-          fi
-
-      - name: Upload aggregated checksums to release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          gh release upload "${TAG}" checksums.txt --repo MrBildo/collabhost --clobber
+      - name: Upload aggregated checksums (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums-aggregated
+          path: checksums.txt
+          retention-days: 7

@@ -236,7 +236,7 @@ Drop that in your project's `.mcp.json` (or the equivalent for your client) and 
 | Role | Access |
 |------|--------|
 | Administrator | Full tool surface (18 tools) plus user management through the REST API. |
-| Agent | 16 of 18 tools. Everything except `delete_app` (deletion is administrator-only) and `list_events` (activity log is administrator-only). |
+| Agent | 17 of 18 tools. Everything except `delete_app` (deletion is administrator-only). |
 
 ### Tool surface
 
@@ -246,7 +246,7 @@ Drop that in your project's `.mcp.json` (or the equivalent for your client) and 
 - **Lifecycle (5)** — `start_app`, `stop_app`, `restart_app`, `kill_app`, `get_logs`. Full process control. `get_logs` is token-budgeted for LLM context.
 - **Configuration (4)** — `get_settings`, `update_settings`, `list_routes`, `reload_proxy`. Read and change schema-driven settings, inspect Caddy routes.
 - **Registration (4)** — `register_app`, `delete_app`, `browse_filesystem`, `detect_strategy`. End-to-end app setup. `browse_filesystem` lets agents locate install directories iteratively; `detect_strategy` reports what Collabhost can auto-discover for a given path and app type.
-- **Activity (1)** — `list_events` (administrator-only). Recent state changes and operator actions, filterable by app, event type, or category.
+- **Activity (1)** — `list_events`. Recent state changes and operator actions, filterable by app, event type, or category.
 
 Each tool has a full description, parameter schema, and read-only/destructive/idempotent annotations. The MCP server also ships `ServerInstructions` describing common workflows (registration, lifecycle, diagnostics) so a freshly-connected agent has a usable mental model without reading the source.
 

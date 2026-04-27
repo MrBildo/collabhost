@@ -35,6 +35,8 @@ backend/Collabhost.Api/wwwroot/
 *.db-wal
 *.db.bak-*
 backend/Collabhost.Api/db/
+backend/Collabhost.Api/Data/.last-boot-version
+backend/Collabhost.Api/Data/backups/
 
 # IDE / editor
 .vscode/

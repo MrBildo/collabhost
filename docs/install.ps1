@@ -160,7 +160,9 @@ try
         $headResponse = Invoke-WithRetry -Script {
             Invoke-WebRequest -UseBasicParsing -Method Head -Uri $ArchiveUrl
         }
-        $contentLength = $headResponse.Headers['Content-Length']
+        # PS7 returns Headers['Content-Length'] as String[], PS5.1 as a scalar.
+        # @(...)[0] coerces either shape to a scalar string safely.
+        $contentLength = @($headResponse.Headers['Content-Length'])[0]
         if ($contentLength -and [long]$contentLength -gt 0)
         {
             $sizeMb = [Math]::Round([long]$contentLength / 1MB)
