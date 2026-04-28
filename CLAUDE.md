@@ -323,7 +323,35 @@ Work is tracked on the Collabhost Collaboard board. Bots and drones use the `col
 
 Auth key: `.agents.env` → `COLLABOARD_AUTH_KEY` (gitignored, per-operator). Drones receive the key in the dispatch prompt.
 
-Project deviations from Collabot-org board defaults: none currently.
+### Project lane deviation (Collabhost-only)
+
+This project deviates from the org-default lane set defined in the `collaboard` skill. Two changes:
+
+- **Added: `On Deck`** — sits between `Triage` and `Ready`. Acts as the bench / depth chart for work that's been decided-on but isn't the immediate next pickup.
+- **Removed: `Review`** — review happens on PRs, not on a board lane. The lane was unused.
+
+**Lane order:** `Backlog` → `Triage` → `On Deck` → `Ready` → `In Progress` → `Done` → `Archived`.
+
+**Lane semantics:**
+
+| Lane | Meaning |
+|---|---|
+| Backlog | Someday/maybe. No commitment to ship. |
+| Triage | New, awaiting disposition. Default exit is **On Deck** (or Backlog if long-tail, or Archived if rejected). |
+| On Deck | Decided to do, queued for the cycle, not the immediate next. |
+| Ready | Picked up next session (or right now). Curated by the operator; coordinator proposes promotions from On Deck. Target depth: 3-5 cards. |
+| In Progress | Active work in flight. |
+| Done | Shipped, awaiting archive. |
+| Archived | Closed. |
+
+**Coordinator implications:**
+
+- Triage walks sub-batch dispositions as `On Deck / Backlog / Archive`, not `Ready / Backlog / Archive`.
+- `HANDOFF.md` "what's next session" is a snapshot of the Ready lane — no mental subsetting required.
+- When proposing card creation, default destination is On Deck unless the card is the imminent next pickup.
+- At session-end, glance at On Deck depth — if it's growing past ~10 cards without churn, surface it (it shouldn't quietly become a second Backlog).
+
+If On Deck proves out and other Collabot-org projects adopt it, promote the lane definition into the `collaboard` skill at that point.
 
 ## Named Agents
 
