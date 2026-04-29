@@ -16,6 +16,13 @@ These rules are non-negotiable and apply to every agent, every dispatch, every c
 
 2. **Specs live under `.agents/specs/` and are NOT part of the published source.** Source code comments must not reference spec documents (e.g., `// per .agents/specs/release-pipeline.md §6.2`). Cross-reference internal design via card numbers, GitHub issues, or inline rationale — anything an external reader of the published source can resolve.
 
+3. **Pre-production posture: don't design for migration.**
+   - Collabhost is pre-production. Anyone currently using it is aware of the possibility of breaking changes.
+   - Surface migration concerns, but **do not plan around them, prioritize them, scope around them, or design for them** unless explicitly told to. This applies to settings schema, API shape, persisted state, and operator-facing contracts.
+   - At some point this posture will change. Until the project owner says so, treat breaking-change cost as zero.
+
+   Project owner's verbatim framing (2026-04-29): *"We are still in a pre-production state. Anyone currently using Collabhost is well aware of the possibility of breaking changes. So regarding setting migration concerns, they are nil. I want everyone to be clear, surface migration concerns, but don't plan around them, prioritize, scope, or design for them unless I tell you to. At some point we will have those concerns. That is not today or tomorrow."*
+
 ## Coding Conventions
 
 ### Skills agents must use
@@ -94,7 +101,7 @@ The reverse proxy is exposed in the UI as "Proxy" — never "Caddy". Backend ide
 | Layer | Technology |
 |-------|-----------|
 | Backend | .NET 10 / C# (Minimal API, EF Core, SQLite) |
-| Frontend | React 18 + TypeScript, Vite, Biome, War Machine design system |
+| Frontend | React 19 + TypeScript, Vite, Biome, War Machine design system |
 | Testing | xUnit + Shouldly (backend), Vitest (frontend) |
 | Orchestration | Aspire 13.3, OpenTelemetry |
 | Reverse Proxy | Caddy (edge), managed by Collabhost via JSON API |
@@ -122,16 +129,23 @@ collabhost/
 │   ├── Collabhost.AppHost/    # Aspire orchestrator
 │   ├── Collabhost.ServiceDefaults/  # Shared telemetry/health
 │   ├── Collabhost.Api/        # Main API project
-│   │   ├── Authorization/     # Auth middleware (X-User-Key header, ?key= for SSE only)
-│   │   ├── Capabilities/      # Catalog, config types, schemas, resolver
-│   │   ├── Dashboard/         # Dashboard stats endpoint
-│   │   ├── Data/              # EF Core DbContext, seed data, migrations
+│   │   ├── ActivityLog/       # ActivityEvent store + query endpoint (operator-visible audit)
+│   │   ├── Authorization/     # Auth middleware (X-User-Key header, ?key= for SSE only), Users, roles
+│   │   ├── Capabilities/      # Catalog, config types, schemas, resolver, override store
+│   │   ├── Dashboard/         # Dashboard stats + events endpoints
+│   │   ├── Data/              # EF Core DbContext, migrations, AppType file-store, built-in type JSON
 │   │   ├── Events/            # Generic typed event bus
+│   │   ├── Filesystem/        # Filesystem browse + strategy detection endpoints
+│   │   ├── Mcp/               # MCP server (tools, auth, server instructions) at /mcp
+│   │   ├── Platform/          # Boot version tracking, version info, startup preflight, self-port validator
+│   │   ├── Probes/            # Project metadata extractors (dotnet, node, react, typescript) + curator
 │   │   ├── Proxy/             # ProxyManager, CaddyClient, config builder, seeder
-│   │   ├── Registry/          # App/AppType entities, AppStore, CRUD endpoints
-│   │   ├── Shared/            # RingBuffer, LogEntry
-│   │   ├── Supervisor/        # ProcessSupervisor, ManagedProcess, PortAllocator
-│   │   ├── System/            # Status endpoint
+│   │   ├── Registry/          # App entity, AppStore, CRUD + lifecycle endpoints
+│   │   ├── Shared/            # RingBuffer, LogEntry, PathExtensions, UTC date converter
+│   │   ├── Supervisor/        # ProcessSupervisor, ManagedProcess, PortAllocator, platform runners
+│   │   │   └── Containment/   # IProcessContainment + Windows (Job Objects), Linux, Null impls
+│   │   ├── System/            # Status + version endpoints (public, no auth)
+│   │   ├── Updates/           # Update-check subsystem (placeholder; in flight)
 │   │   └── Properties/        # launchSettings.json (required for Aspire)
 │   ├── Collabhost.Api.Tests/  # Integration tests (WebApplicationFactory + fakes)
 │   └── Collabhost.AppHost.Tests/  # Aspire smoke tests (real Kestrel + SQLite)
@@ -145,14 +159,17 @@ collabhost/
 │       ├── api/               # Client, endpoints, types
 │       ├── chrome/            # Topbar, Layout, AuthGate, Breadcrumbs
 │       ├── forms/             # SchemaField, RegistrationField, form inputs
-│       ├── hooks/             # TanStack Query hooks per domain
+│       ├── hooks/             # TanStack Query hooks per domain (incl. use-log-stream SSE hook)
+│       ├── lib/               # cn helper, constants (POLL_INTERVALS), routes, format helpers
 │       ├── log/               # LogViewer, LogLine
 │       ├── pages/             # All page components
+│       ├── probes/            # Probe panels (dotnet, node, react, typescript) + registry
 │       ├── shared/            # EmptyState, ErrorBanner, ConfirmDialog, etc.
 │       ├── status/            # StatusDot, StatusText, StatusStrip, StatsStrip
 │       ├── styles/            # War Machine tokens, components, reset
-│       └── tables/            # DataTable, FilterBar, app-columns
-└── tools/
+│       ├── tables/            # DataTable, FilterBar, app-columns
+│       └── test/              # Test setup + helpers for Vitest
+└── tools/                     # Demo + scratch projects used during dev (gitignored fixtures, demo apps)
     └── generate-ids.cs        # ULID/GUID generator for seed data
 ```
 
@@ -215,30 +232,33 @@ cd frontend && npm run test                                  # Vitest — all gr
 ## Core Subsystems
 
 ### App Registry (`Registry/`)
-- `App`, `AppType` entities with ULID primary keys, slug-based identity
+- `App` entity with ULID primary key, slug-based identity. Slug is the immutable external handle.
+- `AppType` (separate subsystem under `Data/AppTypes/`) is a slug-keyed file-backed type record loaded by `TypeStore` from `Data/BuiltInTypes/*.json` plus an optional user-types directory.
 - `AppStore` singleton with `IDbContextFactory<AppDbContext>` + `IMemoryCache`
 - 5 built-in app types: `dotnet-app`, `nodejs-app`, `static-site`, `executable`, `system-service`
 - Slug: unique, immutable, `[a-z0-9-]`, used in API routes and domain names
 
 ### Capability System (`Capabilities/`)
 - 8 behavioral capabilities: process, port-injection, routing, health-check, environment-defaults, restart, auto-start, artifact
-- Static `CapabilityCatalog` (code-only, no DB table)
-- `CapabilityBinding` (type-level defaults) + `CapabilityOverride` (per-app overrides)
-- `CapabilityResolver.Resolve<T>()` — pure static function, JSON merge, no I/O
+- Static `CapabilityCatalog` (code-only, no DB table) — `FrozenDictionary<string, CapabilityDefinition>` keyed by capability slug, defines display name + configuration type + schema.
+- Type-level defaults live on the `AppType` JSON files (`Data/BuiltInTypes/*.json` and the user-types dir) as a `capabilities` dictionary. Per-app overrides are stored as `CapabilityOverride` rows (`AppId` + `CapabilitySlug` + `ConfigurationJson`).
+- `CapabilityResolver.Resolve<T>(defaultJson, overrideJson)` — pure static function, deep JSON merge, no I/O. `ResolveJson(...)` returns the merged JSON without deserialization. `ValidateEdits(...)` enforces schema known-key + Locked/Derived field rules.
 - Schema-driven: co-located `Schema` static property on each config type drives form generation and validation
 
 ### Process Supervisor (`Supervisor/`)
 - Singleton `IHostedService`, `ConcurrentDictionary<Ulid, ManagedProcess>`
 - Start/stop/restart/kill managed processes
-- `IManagedProcessRunner` interface — platform-specific implementations (`WindowsProcessRunner`, `LinuxProcessRunner` planned)
-- `IProcessContainment` / `IContainmentHandle` — process containment abstraction (Windows: Job Objects, Linux: planned)
-- Windows: CreateProcess P/Invoke, process groups, `GenerateConsoleCtrlEvent` for graceful shutdown, Job Objects for orphan protection
+- `IManagedProcessRunner` interface with platform-specific implementations: `WindowsProcessRunner`, `LinuxProcessRunner`, and `FallbackProcessRunner` (uses `System.Diagnostics.Process` where the native runners do not apply).
+- `IProcessContainment` / `IContainmentHandle` — process containment abstraction. Implementations under `Supervisor/Containment/`: `WindowsJobObjectContainment` (Windows Job Objects), `LinuxContainment`, and `NullContainment` (no-op fallback).
+- Windows: CreateProcess P/Invoke, process groups, `GenerateConsoleCtrlEvent` for graceful shutdown, Job Objects for orphan protection.
+- Linux: native fork/exec via `LinuxNativeMethods` with cgroup v2 containment for orphan protection (see `.agents/specs/linux-process-management.md` for the design).
 - Stdout/stderr capture into in-memory ring buffer
 - Crash detection + restart with exponential backoff
 - Discovery strategy via switch expression (DotNetRuntimeConfiguration, PackageJson, Manual)
 - Port allocation via bind-to-zero (`PortAllocator`)
 - Auto-start on Collabhost startup
 - Static sites: start/stop toggles Caddy routing (no process)
+- Log streaming: SSE endpoint registered in `LogStreamEndpoints` consumes the same ring buffer.
 
 ### Event Bus (`Events/`)
 - Generic `IEventBus<T>` with in-memory implementation
@@ -257,13 +277,42 @@ cd frontend && npm run test                                  # Vitest — all gr
 - EnableRoute/DisableRoute for static site start/stop
 
 ### Dashboard (`Dashboard/`)
-- `GET /dashboard/stats` — aggregated counts (total, running, stopped, crashed)
+- `GET /dashboard/stats` — aggregated counts (total, running, stopped, crashed, backoff, fatal)
+- `GET /dashboard/events` — recent activity-log events for the dashboard feed
+
+### Activity Log (`ActivityLog/`)
+- `ActivityEvent` rows persisted via EF Core, queryable through `GET /events`
+- Subsystems publish events via `ActivityEventStore`; events surface in the dashboard feed and per-app views.
 
 ### Auth (`Authorization/`)
 - Header-based: `X-User-Key` (ULID)
-- Query param `?key=` fallback scoped to SSE endpoint (`/logs/stream`) only
-- Middleware skips `/health`, `/alive`, `/openapi`, `GET /status`
+- Query param `?key=` fallback scoped to SSE endpoints (`/logs/stream`) only
+- Middleware skips path prefixes: `/health`, `/alive`, `/openapi`, `/mcp` (MCP has its own auth filter)
+- Public GETs (no key required): `GET /api/v1/status`, `GET /api/v1/version`
+- `User` entity with `UserRole` (Administrator, HumanUser, AgentUser); `UserStore` and `UserSeedService` handle the admin-key 3-scenario boot model (blind first run generates + prints; configured first run seeds silently; subsequent boot with a new configured key inserts an additional break-glass admin).
+- `RequireRoleFilter` is the endpoint-level guard for role-restricted routes (e.g. `/users/*`).
 - Admin key from config (`Auth:AdminKey`)
+
+### MCP (`Mcp/`)
+- Streamable HTTP MCP server mounted at `/mcp` (separate from REST surface; bypasses the standard auth middleware and uses `McpAuthentication`).
+- Tool surface: `RegistrationTools`, `LifecycleTools`, `ConfigurationTools`, `DiscoveryTools`, `ActivityLogTools`.
+- `McpServerInstructions` carries the operator-facing tool guidance.
+
+### Platform (`Platform/`)
+- `VersionInfo.Current` — build-stamped version string surfaced via `/api/v1/version` and stderr-printed on startup.
+- `BootVersionTracker` / `IBootVersionWriter` — records the last-booted version into `data/`. Drives migration's "from-version" detection.
+- `StartupPreflight` — validates data + user-types directories before DI is built; failure halts before any DB touch (exit 10).
+- `StartupStderr` — structured stderr writer for fatal startup failures (summary + details + recovery steps).
+- `SelfPortValidator` — cross-checks `Proxy:SelfPort` config against Kestrel's bound listen port and warns on mismatch.
+
+### Probes (`Probes/`)
+- Project metadata extractors keyed off the app's artifact path. `DotnetExtractor`, `NodeExtractor`, `TypeScriptExtractor` (and a React panel layered on top of node) emit structured probe data consumed by the frontend's per-app detail view.
+- `ProbeService` orchestrates extraction; `ProbeCurator` selects which probes apply per app type.
+- `ProbeStartupService` warms the cache on boot.
+
+### Filesystem (`Filesystem/`)
+- `GET /filesystem/browse` — directory listing for the registration form's path picker.
+- `GET /filesystem/detect-strategy` — sniffs an artifact path and returns the recommended discovery strategy (DotNetRuntimeConfiguration, PackageJson, Manual).
 
 ## API Surface
 
@@ -287,7 +336,18 @@ GET    /api/v1/app-types/{slug}/registration # Registration schema
 GET    /api/v1/routes                        # Proxy route listing
 POST   /api/v1/proxy/reload                  # Force proxy config regeneration
 GET    /api/v1/dashboard/stats               # Dashboard statistics
+GET    /api/v1/dashboard/events              # Dashboard activity-event feed
+GET    /api/v1/events                        # Activity log query (filter + paginate)
+GET    /api/v1/users                         # User list (admin-only)
+POST   /api/v1/users                         # Create user (admin-only)
+GET    /api/v1/users/{id}                    # Get user (admin-only)
+PATCH  /api/v1/users/{id}/deactivate         # Deactivate user (admin-only)
+GET    /api/v1/auth/me                       # Current authenticated user
+GET    /api/v1/filesystem/browse             # Directory browse (registration path picker)
+GET    /api/v1/filesystem/detect-strategy    # Recommended discovery strategy for a path
 GET    /api/v1/status                        # System status (public, no auth)
+GET    /api/v1/version                       # Build version (public, no auth)
+ANY    /mcp                                  # MCP streamable HTTP endpoint (separate auth)
 GET    /health                               # Health check
 GET    /alive                                # Liveness check
 ```
@@ -300,17 +360,19 @@ GET    /alive                                # Liveness check
 - IBM Plex Mono / Plex Sans fonts
 - Component classes (`wm-*`) for visual identity, layout via standard CSS
 - Biome for linting and formatting (not ESLint/Prettier)
-- TanStack Query for data fetching (polling-based, no SSE yet)
+- TanStack Query for data fetching (polling-based for most data); SSE is used for the per-app log stream via the `use-log-stream` hook (with `?lastEventId=` resume).
 - React Router with slug-based routes
 
 ### Pages
 - **Dashboard** — stats strip, app table, events feed
 - **App List** — filter chips, search, sortable table, inline actions
-- **App Detail** — identity header, action bar, stats strip, log viewer, route display
+- **App Detail** — identity header, action bar, stats strip, log viewer (SSE), route display, probe panels
 - **App Settings** — schema-driven fields, FieldEditable variants, danger zone
-- **App Registration** — two-step flow (type picker → schema-driven form)
+- **App Create** — two-step flow at `/apps/new` (type picker → schema-driven form)
 - **Routes** — route table, reload proxy button
 - **System** — hostname, version, uptime
+- **Users** — user list at `/users` (admin-only)
+- **User Create** — new user at `/users/new` (admin-only)
 
 ## Collabhost Board
 
@@ -363,6 +425,8 @@ Currently-active named agents on Collabhost, with workspaces under `.agents/agen
 | **Dana** | Frontend lead | React, War Machine design system, UX |
 | **Marcus** | Backend advisor | Architecture review, domain modeling |
 | **Kai** | Code reviewer | Simplification, challenging assumptions |
+| **Nolan** | Coordinator | Dispatch, triage, session handoffs, board curation |
+| **Theo** | Tooling | Harness/tool experiments, skill authoring, evals |
 
 Agents sign commits with `Co-Authored-By: {Name} <{name}@collabot.dev>`.
 
@@ -373,10 +437,9 @@ All sub-agent dispatches are logged in `.agents/agents/nolan/DISPATCH_LOG.md` wi
 ## Deferred Features
 
 See `v2-architecture.md` § Deferred Features for full list. Key items:
-- Health check execution (capability schema exists, no runtime logic)
-- App metadata probing (spec at `app-metadata-probing.md`, in-memory cache design decided)
-- App updates / SSE deployment (deferred from v2)
-- Real-time push (SSE/WebSocket for dashboard)
+- Health check execution (capability schema exists, no runtime executor wired)
+- App updates / deployment hooks (subsystem stubbed under `Updates/`, not yet wired)
+- Real-time push for dashboard (log streaming ships via SSE; dashboard stats and routes still poll)
 - Action error feedback for failed mutations (card #101)
 
 ## Relationship to Other Projects
