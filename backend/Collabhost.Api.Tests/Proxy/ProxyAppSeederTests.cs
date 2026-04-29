@@ -11,16 +11,15 @@ namespace Collabhost.Api.Tests.Proxy;
 // high-level guards for ProxyAppSeeder itself. See CaddyResolverTests for the full suite.
 public class ProxyAppSeederTests
 {
+    // Card #196: bare-name PATH walking was removed. A name without a directory
+    // separator now fails File.Exists and returns null. Operators routing to a
+    // system Caddy must use COLLABHOST_CADDY_PATH with an absolute path.
     [Fact]
-    public void ResolveBinaryPathSetting_BareName_ResolvesFromPath()
-    {
-        // 'where' / 'which' exists on every supported platform's PATH.
-        var result = CaddyResolver.ResolveBinaryPathSetting(OperatingSystem.IsWindows() ? "where" : "sh");
-
-        result.ShouldNotBeNull();
-    }
+    public void ResolveBinaryPathSetting_BareName_ReturnsNull() =>
+        CaddyResolver.ResolveBinaryPathSetting(OperatingSystem.IsWindows() ? "where" : "sh")
+            .ShouldBeNull();
 
     [Fact]
-    public void ResolveBinaryPathSetting_BareNameNotOnPath_ReturnsNull() =>
+    public void ResolveBinaryPathSetting_NonexistentPath_ReturnsNull() =>
         CaddyResolver.ResolveBinaryPathSetting("nonexistent-binary-12345").ShouldBeNull();
 }

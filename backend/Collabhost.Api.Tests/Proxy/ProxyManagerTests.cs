@@ -2,6 +2,7 @@ using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Platform;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
@@ -127,7 +128,7 @@ public class ProxyManagerTests
         (
             new Collabhost.Api.Events.EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-notexist") },
-            new ProxySettings { BaseDomain = "collab.internal", BinaryPath = "caddy", ListenAddress = ":443", CertLifetime = "168h", SelfPort = 58400 },
+            new ProxySettings { BaseDomain = "collab.internal", BinaryPath = "caddy", ListenAddress = ":443", CertLifetime = "168h" },
             NullLogger<TypeStore>.Instance
         );
         var capabilityStore = new CapabilityStore(typeStore, appStore, NullLogger<CapabilityStore>.Instance);
@@ -151,9 +152,9 @@ public class ProxyManagerTests
                 BinaryPath = "caddy",
                 ListenAddress = ":443",
                 CertLifetime = "168h",
-                SelfPort = 58400,
                 AdminPort = 2019
             },
+            new HostingSettings { ListenPort = 58400 },
             activityEventStore,
             NullLogger<ProxyManager>.Instance
         );

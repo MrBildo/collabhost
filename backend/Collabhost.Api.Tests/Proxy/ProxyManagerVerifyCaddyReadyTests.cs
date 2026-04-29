@@ -4,6 +4,7 @@ using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Platform;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
@@ -280,9 +281,10 @@ public class ProxyManagerVerifyCaddyReadyTests
             BinaryPath = null,
             ListenAddress = ":443",
             CertLifetime = "168h",
-            SelfPort = 58400,
             AdminPort = 2019
         };
+
+        var hostingSettings = new HostingSettings { ListenPort = 58400 };
 
         var typeStore = new TypeStore
         (
@@ -318,6 +320,7 @@ public class ProxyManagerVerifyCaddyReadyTests
             supervisor,
             eventBus,
             settings,
+            hostingSettings,
             activityEventStore,
             NullLogger<ProxyManager>.Instance
         );

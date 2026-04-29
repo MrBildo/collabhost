@@ -223,10 +223,10 @@ Then `.\startup.ps1`.
 | `COLLABHOST_DATA_PATH`          | SQLite DB parent directory | Absolute directory path | `/srv/collabhost/data` |
 | `COLLABHOST_USER_TYPES_PATH`    | `TypeStore:UserTypesDirectory` | Absolute directory path | `/srv/collabhost/user-types` |
 | `COLLABHOST_CADDY_PATH`         | Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
+| `COLLABHOST_HOSTING_LISTEN_PORT` | `Hosting:ListenPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_PROXY_BASE_DOMAIN`  | `Proxy:BaseDomain` | Domain suffix | `collabhost.lan` |
 | `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec | `:8443` |
 | `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string | `720h` |
-| `COLLABHOST_PROXY_SELF_PORT`    | `Proxy:SelfPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
 
 Operator-relevant framework-standard variables (not Collabhost-specific):
@@ -389,9 +389,9 @@ or set `COLLABHOST_PROXY_LISTEN_ADDRESS`. Remember to include the colon.
 ### 9.3 Port 58400 already in use
 
 Another service on the host owns the Collabhost API port. Edit
-`Proxy:SelfPort` in `appsettings.json` (or set `COLLABHOST_PROXY_SELF_PORT`)
-to a free port, and update any bookmarks / scripts that hit the dashboard at
-`http://localhost:58400`.
+`Hosting:ListenPort` in `appsettings.json` (or set
+`COLLABHOST_HOSTING_LISTEN_PORT`) to a free port, and update any bookmarks /
+scripts that hit the dashboard at `http://localhost:58400`.
 
 ### 9.4 Collabhost won't launch on macOS
 

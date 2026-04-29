@@ -46,8 +46,7 @@ public class TypeStoreUserTypeTests : IDisposable
         BaseDomain = "collab.internal",
         BinaryPath = "caddy",
         ListenAddress = ":443",
-        CertLifetime = "168h",
-        SelfPort = 58400
+        CertLifetime = "168h"
     };
 
     private TypeStore CreateTypeStore() =>

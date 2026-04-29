@@ -93,28 +93,12 @@ public static class ProxyRegistration
             ? envCertLifetime
             : section["CertLifetime"] ?? "168h";
 
-        var selfPort = ResolveSelfPort(section);
-
         return new ProxySettings
         {
             BaseDomain = baseDomain,
             BinaryPath = binaryPath,
             ListenAddress = listenAddress,
-            CertLifetime = certLifetime,
-            SelfPort = selfPort
+            CertLifetime = certLifetime
         };
-    }
-
-    private static int ResolveSelfPort(IConfigurationSection section)
-    {
-        const int defaultSelfPort = 58400;
-
-        var envValue = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_SELF_PORT");
-
-        return !string.IsNullOrWhiteSpace(envValue)
-            && int.TryParse(envValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var fromEnv)
-            && fromEnv is >= 1 and <= 65535
-            ? fromEnv
-            : section.GetValue<int?>("SelfPort") ?? defaultSelfPort;
     }
 }

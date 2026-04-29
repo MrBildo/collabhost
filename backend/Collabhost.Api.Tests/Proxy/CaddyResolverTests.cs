@@ -19,8 +19,7 @@ public class CaddyResolverTests
             BaseDomain = "collab.internal",
             BinaryPath = binaryPath,
             ListenAddress = ":443",
-            CertLifetime = "168h",
-            SelfPort = 58400
+            CertLifetime = "168h"
         };
 
     // --- Env-var branch ---
@@ -70,7 +69,7 @@ public class CaddyResolverTests
     {
         // A whitespace env var must be treated as unset. Verify by proving the config branch
         // runs: supply an absolute-path config entry pointing at a known temp file, assert
-        // resolution succeeds. This avoids any ambient PATH dependency.
+        // resolution succeeds.
         var tempFile = Path.Combine(Path.GetTempPath(), $"caddy-test-{Guid.NewGuid():N}");
         File.WriteAllText(tempFile, "fake");
 
@@ -112,60 +111,16 @@ public class CaddyResolverTests
     }
 
     [Fact]
-    public void Resolve_ConfigBinaryPathBareNameResolvesViaPath_ReturnsResolvedPath()
+    public void Resolve_ConfigBinaryPathBareName_FallsThrough()
     {
-        // Place a fake binary in an isolated temp directory and supply only that directory
-        // as PATH to the child process. Verifies bare-name resolution without depending on
-        // ambient runner PATH state -- which is what caused the intermittent CI failure.
-        var tempDir = Path.Combine(Path.GetTempPath(), $"caddy-path-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDir);
+        // Card #196: bare-name PATH walking was removed. A bare name in Proxy:BinaryPath now
+        // fails File.Exists and the resolver falls through to bundled (which is also absent
+        // in the test assembly's BaseDirectory).
+        Environment.SetEnvironmentVariable(CaddyResolver.EnvVarName, null);
 
-        var fakeName = OperatingSystem.IsWindows() ? "fakecaddy.exe" : "fakecaddy";
-        var fakePath = Path.Combine(tempDir, fakeName);
-        File.WriteAllText(fakePath, "fake");
+        var result = CaddyResolver.Resolve(DefaultSettings("caddy"), NullLogger.Instance);
 
-        if (!OperatingSystem.IsWindows())
-        {
-            // where/which on Unix requires the file to be marked executable.
-            File.SetUnixFileMode(fakePath, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-        }
-
-        // On Windows, where.exe resolves bare names against PATHEXT to determine which file
-        // extensions count as executables. Clearing the child environment removes the
-        // inherited PATHEXT, which causes 'where fakecaddy' to fail to match 'fakecaddy.exe'
-        // (exits 1, "Could not find files for the given pattern(s)"). This was the root
-        // cause of the Windows-CI failure on the first attempt at this test. We include a
-        // standard PATHEXT here so the child process can resolve the executable. SystemRoot
-        // is added as a belt-and-suspenders defense for Windows loader behaviour on stripped
-        // environments (some Windows binaries fail to start without %SystemRoot%).
-        var environment = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["PATH"] = tempDir
-        };
-
-        if (OperatingSystem.IsWindows())
-        {
-            environment["PATHEXT"] = ".COM;.EXE;.BAT;.CMD";
-
-            var systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
-
-            if (!string.IsNullOrEmpty(systemRoot))
-            {
-                environment["SystemRoot"] = systemRoot;
-            }
-        }
-
-        try
-        {
-            var result = CaddyResolver.ResolveBinaryPathSetting("fakecaddy", environment);
-
-            result.ShouldNotBeNull();
-            result.ShouldContain("fakecaddy", Case.Insensitive);
-        }
-        finally
-        {
-            Directory.Delete(tempDir, recursive: true);
-        }
+        result.ShouldBeNull();
     }
 
     [Fact]

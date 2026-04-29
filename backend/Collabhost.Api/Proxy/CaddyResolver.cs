@@ -1,9 +1,12 @@
-using System.Diagnostics;
-
 namespace Collabhost.Api.Proxy;
 
 // Pure resolver implementing the Caddy binary precedence chain: env > config > bundled.
 // Returns null when no Caddy binary can be located -- callers soft-fail with visibility.
+//
+// The operator contract is two-tier: the bundled sidecar (default) or COLLABHOST_CADDY_PATH
+// (explicit absolute-path override). Proxy:BinaryPath in appsettings.json is honored as an
+// undocumented escape hatch for absolute paths only -- bare-name PATH walking was removed
+// in card #196.
 public static class CaddyResolver
 {
     public const string EnvVarName = "COLLABHOST_CADDY_PATH";
@@ -31,8 +34,8 @@ public static class CaddyResolver
             );
         }
 
-        // 2. Proxy:BinaryPath from appsettings.json. Absolute path -> used as-is.
-        //    Bare name -> PATH resolution via where/which.
+        // 2. Proxy:BinaryPath from appsettings.json. Treated as an absolute-or-relative path
+        //    only; bare-name PATH lookups were removed in card #196.
         if (!string.IsNullOrWhiteSpace(settings.BinaryPath))
         {
             var resolvedFromSetting = ResolveBinaryPathSetting(settings.BinaryPath);
@@ -65,105 +68,13 @@ public static class CaddyResolver
         return null;
     }
 
-    // Exposed for tests. Returns the resolved absolute path, or null if unresolvable.
-    internal static string? ResolveBinaryPathSetting(string binaryPath) =>
-        ResolveBinaryPathSetting(binaryPath, environment: null);
-
-    // Overload for test isolation: accepts an explicit environment dictionary that replaces
-    // the ambient process environment in the child PATH-lookup process. Pass null to inherit.
-    internal static string? ResolveBinaryPathSetting
-    (
-        string binaryPath,
-        IReadOnlyDictionary<string, string>? environment
-    )
+    // Exposed for tests. Returns the resolved absolute path, or null if the file does not
+    // exist. Bare-name (PATH-walked) values are no longer supported -- a name without a
+    // directory separator falls through to "not found" via File.Exists.
+    internal static string? ResolveBinaryPathSetting(string binaryPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(binaryPath);
 
-        // If the path contains a directory separator, treat as absolute/relative path.
-        if (binaryPath.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            || binaryPath.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
-        {
-            return File.Exists(binaryPath) ? Path.GetFullPath(binaryPath) : null;
-        }
-
-        // Bare name -- resolve via PATH using where/which.
-        return ResolveFromPath(binaryPath, environment);
-    }
-
-    // 2 second upper bound on PATH lookup. Normal completion is milliseconds; the timeout
-    // defends against pathological environments (antivirus interposition, network drives on
-    // %PATH%) hanging the API startup path, which calls Resolve during ProxyAppSeeder.SeedAsync.
-    private static readonly TimeSpan _pathLookupTimeout = TimeSpan.FromSeconds(2);
-
-    private static string? ResolveFromPath
-    (
-        string binaryName,
-        IReadOnlyDictionary<string, string>? environment
-    )
-    {
-        var command = OperatingSystem.IsWindows() ? "where" : "which";
-
-        try
-        {
-            using var process = new Process();
-
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = command,
-                Arguments = binaryName,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            if (environment is not null)
-            {
-                startInfo.Environment.Clear();
-
-                foreach (var (key, value) in environment)
-                {
-                    startInfo.Environment[key] = value;
-                }
-            }
-
-            process.StartInfo = startInfo;
-
-            process.Start();
-
-            // WaitForExit(timeout) bounds the wall clock. Reading stdout after the child has
-            // exited is safe. Calling ReadToEnd() before WaitForExit would block indefinitely
-            // on a stuck child -- defeating the timeout entirely.
-            if (!process.WaitForExit((int)_pathLookupTimeout.TotalMilliseconds))
-            {
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch (Exception)
-                {
-                    // Best-effort kill. The process may have exited between WaitForExit returning
-                    // false and our Kill call, or the OS may deny access.
-                }
-
-                return null;
-            }
-
-            var output = process.StandardOutput.ReadToEnd().Trim();
-
-            if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
-            {
-                // 'where' on Windows may return multiple lines. Take the first.
-                var firstLine = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)[0];
-
-                return firstLine;
-            }
-        }
-        catch (Exception)
-        {
-            // Binary resolution failed -- caller treats as unresolvable.
-        }
-
-        return null;
+        return File.Exists(binaryPath) ? Path.GetFullPath(binaryPath) : null;
     }
 }

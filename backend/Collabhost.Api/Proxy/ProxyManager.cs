@@ -7,6 +7,7 @@ using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
+using Collabhost.Api.Platform;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
@@ -22,6 +23,7 @@ public class ProxyManager
     ProcessSupervisor processSupervisor,
     IEventBus<ProcessStateChangedEvent> eventBus,
     ProxySettings settings,
+    HostingSettings hostingSettings,
     ActivityEventStore activityEventStore,
     ILogger<ProxyManager> logger
 ) : IHostedService, IDisposable
@@ -46,6 +48,9 @@ public class ProxyManager
 
     private readonly ProxySettings _settings = settings
         ?? throw new ArgumentNullException(nameof(settings));
+
+    private readonly HostingSettings _hostingSettings = hostingSettings
+        ?? throw new ArgumentNullException(nameof(hostingSettings));
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
@@ -198,7 +203,7 @@ public class ProxyManager
         {
             var routeEntries = await LoadRoutableAppsAsync(ct);
 
-            var config = ProxyConfigurationBuilder.Build(routeEntries, _settings);
+            var config = ProxyConfigurationBuilder.Build(routeEntries, _settings, _hostingSettings);
 
             var success = await _caddyClient.LoadConfigAsync(config, ct);
 

@@ -155,7 +155,6 @@ public class ProxyArgumentProviderTests : IDisposable
                 BinaryPath = "caddy",
                 ListenAddress = ":443",
                 CertLifetime = "168h",
-                SelfPort = 58400,
                 AdminPort = adminPort
             },
             NullLogger<ProxyArgumentProvider>.Instance
