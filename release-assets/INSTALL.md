@@ -222,12 +222,20 @@ Then `.\startup.ps1`.
 |----------|-----------|-------|---------|
 | `COLLABHOST_DATA_PATH`          | SQLite DB parent directory | Absolute directory path | `/srv/collabhost/data` |
 | `COLLABHOST_USER_TYPES_PATH`    | `TypeStore:UserTypesDirectory` | Absolute directory path | `/srv/collabhost/user-types` |
-| `COLLABHOST_CADDY_PATH`         | Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
+| `COLLABHOST_CADDY_PATH`         | `Proxy:BinaryPath` — Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
 | `COLLABHOST_HOSTING_LISTEN_PORT` | `Hosting:ListenPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_PROXY_BASE_DOMAIN`  | `Proxy:BaseDomain` | Domain suffix | `collabhost.lan` |
 | `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec | `:8443` |
 | `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string | `720h` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
+
+**Caddy binary resolution — three-tier precedence (highest first):**
+
+1. `COLLABHOST_CADDY_PATH` — absolute path to any Caddy binary, set in your startup wrapper.
+2. `Proxy:BinaryPath` in `appsettings.json` — same absolute-path constraint; useful for persistent per-host overrides without a wrapper script.
+3. Bundled `caddy[.exe]` next to the Collabhost binary — the default; no configuration needed.
+
+If none of the three resolves to an existing file, Collabhost boots with `proxyState = disabled` (see §3).
 
 Operator-relevant framework-standard variables (not Collabhost-specific):
 
@@ -375,8 +383,10 @@ not pass the startup probe within the deadline.
 
 Options:
 
-- Set `COLLABHOST_CADDY_PATH` to a known-working Caddy binary on the host
-  (e.g., a system-installed Caddy at `/usr/local/bin/caddy`).
+- Set `COLLABHOST_CADDY_PATH` (env var) or `Proxy:BinaryPath` (appsettings.json) to the
+  absolute path of a known-working Caddy binary on the host
+  (e.g., `/usr/local/bin/caddy`). The env var takes precedence; see §5.4 for the
+  full three-tier resolution chain.
 - Verify the bundled `caddy` binary is executable (`chmod +x caddy`).
 - Check structured logs for the Caddy process's stderr.
 
