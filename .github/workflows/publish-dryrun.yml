@@ -82,8 +82,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -93,7 +93,7 @@ jobs:
       - name: Build
         run: npx vite build
       - name: Upload frontend artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: frontend-dist
           path: frontend/dist
@@ -141,14 +141,14 @@ jobs:
             collabhost_bin: collabhost
             ext: tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
       - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: frontend-dist
           path: backend/Collabhost.Api/wwwroot
@@ -380,7 +380,7 @@ jobs:
       # archive + per-leg checksum to the workflow run as a downloadable
       # artifact. Operators inspect the run page; nothing leaks to Releases.
       - name: Upload archive artifact (workflow run)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: archive-${{ matrix.rid }}
           path: |
@@ -391,7 +391,7 @@ jobs:
       # Per-leg checksum artifact for the aggregation job. Same shape as
       # publish.yml so the aggregator can be a near-copy.
       - name: Upload per-leg checksum artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: checksum-${{ matrix.rid }}
           path: collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}.sha256
@@ -404,7 +404,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Download per-leg checksums
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: checksum-*
           merge-multiple: true
@@ -422,7 +422,7 @@ jobs:
           cat checksums.txt
 
       - name: Upload aggregated checksums (workflow run)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: checksums-aggregated
           path: checksums.txt
