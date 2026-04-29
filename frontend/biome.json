@@ -26,7 +26,7 @@
         "noUnusedVariables": "error"
       },
       "style": {
-        "noDefaultExport": "off",
+        "noDefaultExport": "error",
         "useImportType": "error",
         "noNonNullAssertion": "warn"
       },
