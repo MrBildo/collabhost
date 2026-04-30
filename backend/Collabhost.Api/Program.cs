@@ -407,6 +407,21 @@ app.Lifetime.ApplicationStarted.Register
     }
 );
 
+// Emit a log line on graceful shutdown so operators can confirm the signal was received.
+// Without this, a process going silent after SIGINT/SIGTERM is indistinguishable from
+// the signal not having been delivered -- both cases look identical in a truncated log
+// tail. ApplicationStopping fires once the host acknowledges the stop request.
+// ApplicationStopped fires after all hosted services have returned. See card #189.
+app.Lifetime.ApplicationStopping.Register
+(
+    () => app.Logger.LogInformation("Collabhost shutting down...")
+);
+
+app.Lifetime.ApplicationStopped.Register
+(
+    () => app.Logger.LogInformation("Collabhost shutdown complete.")
+);
+
 // Middleware
 app.UseCollabhostAuthorization();
 
