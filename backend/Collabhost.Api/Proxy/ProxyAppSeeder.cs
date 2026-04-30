@@ -1,6 +1,8 @@
 using System.Globalization;
 
 using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Capabilities;
+using Collabhost.Api.Data;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Registry;
 
@@ -11,6 +13,7 @@ namespace Collabhost.Api.Proxy;
 public class ProxyAppSeeder
 (
     AppStore appStore,
+    IDbContextFactory<AppDbContext> dbFactory,
     TypeStore typeStore,
     ProxySettings settings,
     ActivityEventStore activityEventStore,
@@ -19,6 +22,9 @@ public class ProxyAppSeeder
 {
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
+
+    private readonly IDbContextFactory<AppDbContext> _dbFactory = dbFactory
+        ?? throw new ArgumentNullException(nameof(dbFactory));
 
     private readonly TypeStore _typeStore = typeStore
         ?? throw new ArgumentNullException(nameof(typeStore));
@@ -82,9 +88,23 @@ public class ProxyAppSeeder
             AppTypeSlug = "system-service"
         };
 
-        await _appStore.CreateAsync(proxyApp, cancellationToken);
+        // All seed writes (App row + CapabilityOverride rows) happen inside a single
+        // transaction so a first-boot SIGINT cannot leave a partial state -- the DB
+        // is either fully seeded or untouched after a crash or cancellation.
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        await CreateCapabilityOverridesAsync(proxyApp.Id, resolvedPath, cancellationToken);
+        db.Apps.Add(proxyApp);
+
+        BuildCapabilityOverrides(proxyApp.Id, resolvedPath, db);
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        await tx.CommitAsync(cancellationToken);
+
+        // Invalidate AppStore cache entries that were bypassed by the direct DB write above.
+        _appStore.Invalidate("proxy");
+        _appStore.InvalidateOverrides(proxyApp.Id);
 
         try
         {
@@ -109,11 +129,11 @@ public class ProxyAppSeeder
         _logger.LogInformation("Proxy app seeded -- binary at '{BinaryPath}'", resolvedPath);
     }
 
-    private async Task CreateCapabilityOverridesAsync
+    private static void BuildCapabilityOverrides
     (
         Ulid appId,
         string resolvedPath,
-        CancellationToken cancellationToken
+        AppDbContext db
     )
     {
         // Process capability override: manual discovery, caddy binary as command.
@@ -133,7 +153,12 @@ public class ProxyAppSeeder
             _jsonOptions
         );
 
-        await _appStore.SaveOverrideAsync(appId, "process", processOverride, cancellationToken);
+        db.CapabilityOverrides.Add(new CapabilityOverride
+        {
+            AppId = appId,
+            CapabilitySlug = "process",
+            ConfigurationJson = processOverride
+        });
 
         // Auto-start capability override: always start with Collabhost
         var autoStartOverride = JsonSerializer.Serialize
@@ -142,7 +167,12 @@ public class ProxyAppSeeder
             _jsonOptions
         );
 
-        await _appStore.SaveOverrideAsync(appId, "auto-start", autoStartOverride, cancellationToken);
+        db.CapabilityOverrides.Add(new CapabilityOverride
+        {
+            AppId = appId,
+            CapabilitySlug = "auto-start",
+            ConfigurationJson = autoStartOverride
+        });
 
         // Artifact capability override: location is the directory containing the binary
         var artifactOverride = JsonSerializer.Serialize
@@ -151,6 +181,11 @@ public class ProxyAppSeeder
             _jsonOptions
         );
 
-        await _appStore.SaveOverrideAsync(appId, "artifact", artifactOverride, cancellationToken);
+        db.CapabilityOverrides.Add(new CapabilityOverride
+        {
+            AppId = appId,
+            CapabilitySlug = "artifact",
+            ConfigurationJson = artifactOverride
+        });
     }
 }
