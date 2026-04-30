@@ -44,12 +44,12 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 // (env > appsettings.json > default). Dev-only effect -- .Local.json does not ship to production.
 builder.Configuration.AddEnvironmentVariables();
 
-// Bind Kestrel to Proxy:SelfPort for the installed-binary path. In dev, launchSettings.json
+// Bind Kestrel to Hosting:ListenPort for the installed-binary path. In dev, launchSettings.json
 // (applicationUrl) and under Aspire, ASPNETCORE_URLS set the "urls" configuration key before
 // this point -- those win. In production there is no launchSettings.json and no
 // ASPNETCORE_URLS, so Kestrel would otherwise fall through to its default :5000 while Caddy
-// dials localhost:{Proxy:SelfPort} and every reverse_proxy hop returns 502. Use SelfPort as
-// the fallback dial/listen target so Caddy and Kestrel cannot disagree on port.
+// dials localhost:{Hosting:ListenPort} and every reverse_proxy hop returns 502. Use ListenPort
+// as the fallback dial/listen target so Caddy and Kestrel cannot disagree on port.
 //
 // No added log line here: Microsoft.Hosting.Lifetime already writes "Now listening on: <url>"
 // at Info, which the operator sees on stdout in production and which the KestrelListenPort
@@ -62,13 +62,13 @@ var configuredUrls = builder.Configuration["urls"]
 
 if (string.IsNullOrWhiteSpace(configuredUrls))
 {
-    var resolvedProxy = ProxyRegistration.ResolveSettings(builder.Configuration);
+    var resolvedHosting = HostingRegistration.ResolveSettings(builder.Configuration);
 
     var selfUrl = string.Format
     (
         CultureInfo.InvariantCulture,
         "http://localhost:{0}",
-        resolvedProxy.SelfPort
+        resolvedHosting.ListenPort
     );
 
     builder.WebHost.UseUrls(selfUrl);
@@ -123,6 +123,10 @@ builder.Services.ConfigureHttpJsonOptions
 
 // Platform (BootVersionWriter seam -- #156.1 PR #95 MED-2)
 builder.Services.AddPlatform();
+
+// Hosting settings -- ListenPort lives on its own section because it's a hosting concern,
+// not a proxy concern. The proxy reads it to know what to dial.
+builder.Services.AddHosting(builder.Configuration);
 
 // Database
 builder.Services.AddDataAccess(builder.Configuration);
@@ -370,7 +374,7 @@ app.Lifetime.ApplicationStarted.Register
     () => bootVersionWriter.Write(effectiveDataDir, toSemver)
 );
 
-// Cross-validate Proxy:SelfPort against Kestrel's actual listen port once the host has
+// Cross-validate Hosting:ListenPort against Kestrel's actual listen port once the host has
 // bound (#165). IServerAddressesFeature is only populated after Kestrel binds, so this
 // runs from ApplicationStarted rather than earlier in startup. Soft warning only -- a
 // mismatch is an operator misconfiguration, not a halt condition. TestServer (used by
@@ -381,26 +385,41 @@ app.Lifetime.ApplicationStarted.Register
     () =>
     {
         var server = app.Services.GetRequiredService<IServer>();
-        var proxySettings = app.Services.GetRequiredService<ProxySettings>();
+        var hostingSettings = app.Services.GetRequiredService<HostingSettings>();
 
-        var listeningAddresses = SelfPortValidator.GetListeningAddresses(server);
-        var outcome = SelfPortValidator.Validate(proxySettings.SelfPort, listeningAddresses);
+        var listeningAddresses = ListenPortValidator.GetListeningAddresses(server);
+        var outcome = ListenPortValidator.Validate(hostingSettings.ListenPort, listeningAddresses);
 
-        if (outcome.Status == SelfPortValidationStatus.Mismatch)
+        if (outcome.Status == ListenPortValidationStatus.Mismatch)
         {
             // Pre-rendered message keeps the operator-facing copy in one place
-            // (SelfPortValidator) and lets the structured logger emit it as a single
+            // (ListenPortValidator) and lets the structured logger emit it as a single
             // message field. The configured/observed values are also surfaced as
             // structured fields for downstream log queries.
             app.Logger.LogWarning
             (
-                "Proxy:SelfPort mismatch detected. {Message} (configured={ConfiguredSelfPort} observed={ObservedPorts})",
+                "Hosting:ListenPort mismatch detected. {Message} (configured={ConfiguredListenPort} observed={ObservedPorts})",
                 outcome.RenderedMessage,
-                outcome.ConfiguredSelfPort,
+                outcome.ConfiguredListenPort,
                 string.Join(',', outcome.ObservedPorts)
             );
         }
     }
+);
+
+// Emit a log line on graceful shutdown so operators can confirm the signal was received.
+// Without this, a process going silent after SIGINT/SIGTERM is indistinguishable from
+// the signal not having been delivered -- both cases look identical in a truncated log
+// tail. ApplicationStopping fires once the host acknowledges the stop request.
+// ApplicationStopped fires after all hosted services have returned. See card #189.
+app.Lifetime.ApplicationStopping.Register
+(
+    () => app.Logger.LogInformation("Collabhost shutting down...")
+);
+
+app.Lifetime.ApplicationStopped.Register
+(
+    () => app.Logger.LogInformation("Collabhost shutdown complete.")
 );
 
 // Middleware

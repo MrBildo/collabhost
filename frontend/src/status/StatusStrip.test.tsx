@@ -32,7 +32,7 @@ describe('StatusStrip + proxy cell', () => {
     renderProxy('disabled')
     const value = screen.getByText('Disabled')
     expect(value).toHaveClass('wm-status-cell__value--amber')
-    expect(screen.getByText('Install Caddy or set COLLABHOST_CADDY_PATH')).toBeInTheDocument()
+    expect(screen.getByText('Re-run the installer or set COLLABHOST_CADDY_PATH')).toBeInTheDocument()
   })
 
   test('applies amber value class for starting (transient warm-up)', () => {

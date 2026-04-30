@@ -312,6 +312,44 @@ try
         Write-Host "Preserved your existing appsettings.json$DataHint."
     }
 
+    # Seed Proxy:BinaryPath in appsettings.json to the bundled caddy.exe path on
+    # first install. On reinstall, leave the key alone -- if the operator pinned
+    # an external Caddy, we respect that. Smart-merge is intentionally minimal:
+    # absent -> seed; present (any value) -> leave alone.
+    $BundledCaddyPath = Join-Path $InstallPath 'caddy.exe'
+    try
+    {
+        $settings = Get-Content -LiteralPath $AppSettingsDst -Raw | ConvertFrom-Json
+        if (-not $settings.PSObject.Properties.Match('Proxy').Count)
+        {
+            $settings | Add-Member -MemberType NoteProperty -Name 'Proxy' -Value ([pscustomobject]@{})
+        }
+        $proxyHasBinaryPath = [bool]$settings.Proxy.PSObject.Properties.Match('BinaryPath').Count
+        $existingBinaryPath = if ($proxyHasBinaryPath) { $settings.Proxy.BinaryPath } else { $null }
+        if (-not $proxyHasBinaryPath -or [string]::IsNullOrWhiteSpace($existingBinaryPath))
+        {
+            if ($proxyHasBinaryPath)
+            {
+                $settings.Proxy.BinaryPath = $BundledCaddyPath
+            }
+            else
+            {
+                $settings.Proxy | Add-Member -MemberType NoteProperty -Name 'BinaryPath' -Value $BundledCaddyPath
+            }
+            $json = $settings | ConvertTo-Json -Depth 32
+            Set-Content -LiteralPath $AppSettingsDst -Value $json -Encoding UTF8
+        }
+    }
+    catch
+    {
+        # Non-fatal -- if we can't parse appsettings.json (operator has hand-edited it
+        # into invalid JSON, for instance), fall through. The operator can set
+        # COLLABHOST_CADDY_PATH or fix the file by hand. Surface the failure so they
+        # know to investigate.
+        Write-Host "Warning: could not seed Proxy:BinaryPath in appsettings.json -- $($_.Exception.Message)"
+        Write-Host "Set COLLABHOST_CADDY_PATH to '$BundledCaddyPath' or repair the file by hand."
+    }
+
     # data/ is never in the archive -- leave any existing directory untouched.
     # Merge-safe by construction.
 

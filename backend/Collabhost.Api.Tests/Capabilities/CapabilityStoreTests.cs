@@ -30,7 +30,7 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
         (
             new EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-notexist") },
-            new ProxySettings { BaseDomain = "collab.internal", BinaryPath = "caddy", ListenAddress = ":443", CertLifetime = "168h", SelfPort = 58400 },
+            new ProxySettings { BaseDomain = "collab.internal", BinaryPath = "caddy", ListenAddress = ":443", CertLifetime = "168h" },
             NullLogger<TypeStore>.Instance
         );
 

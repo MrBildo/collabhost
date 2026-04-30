@@ -8,14 +8,14 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Platform;
 
-// Regression tests for card #176: the installed binary must bind Kestrel to Proxy:SelfPort
+// Regression tests for card #176: the installed binary must bind Kestrel to Hosting:ListenPort
 // (or its env-var override), not fall through to Kestrel's default :5000 while Caddy dials
 // :58400. Separately, the dev path (ASPNETCORE_URLS set, which is what launchSettings.json
 // and Aspire both produce) must continue to win -- the fix is a *fallback*, not an override.
 public class KestrelListenPortTests
 {
     [Fact]
-    public async Task Startup_NoAspNetCoreUrls_BindsToProxySelfPort()
+    public async Task Startup_NoAspNetCoreUrls_BindsToHostingListenPort()
     {
         var port = GetFreePort();
 
@@ -23,7 +23,7 @@ public class KestrelListenPortTests
         (
             env: new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["COLLABHOST_PROXY_SELF_PORT"] = port.ToString(CultureInfo.InvariantCulture)
+                ["COLLABHOST_HOSTING_LISTEN_PORT"] = port.ToString(CultureInfo.InvariantCulture)
             }
         );
 
@@ -33,7 +33,7 @@ public class KestrelListenPortTests
             .ShouldBe
             (
                 $"http://localhost:{port.ToString(CultureInfo.InvariantCulture)}",
-                $"Kestrel should have bound to Proxy:SelfPort override, not default :5000. observed='{listeningAddress}'"
+                $"Kestrel should have bound to Hosting:ListenPort override, not default :5000. observed='{listeningAddress}'"
             );
     }
 
@@ -56,7 +56,7 @@ public class KestrelListenPortTests
             .ShouldBe
             (
                 $"http://localhost:{port.ToString(CultureInfo.InvariantCulture)}",
-                "Dev/Aspire path must still win: ASPNETCORE_URLS should beat Proxy:SelfPort fallback."
+                "Dev/Aspire path must still win: ASPNETCORE_URLS should beat Hosting:ListenPort fallback."
             );
     }
 

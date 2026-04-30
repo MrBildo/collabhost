@@ -155,14 +155,7 @@ function AppDetailPage() {
         {
           key: 'target',
           label: 'Target',
-          value:
-            !app.route.target || app.route.target === 'not-running' ? (
-              <span style={{ color: 'var(--wm-text-dim)' }}>--</span>
-            ) : app.route.target === 'file-server' ? (
-              'Static Files'
-            ) : (
-              app.route.target
-            ),
+          value: !app.route.target ? <span style={{ color: 'var(--wm-text-dim)' }}>--</span> : app.route.target,
         },
         {
           key: 'tls',

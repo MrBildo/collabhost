@@ -303,7 +303,7 @@ cd frontend && npm run test                                  # Vitest — all gr
 - `BootVersionTracker` / `IBootVersionWriter` — records the last-booted version into `data/`. Drives migration's "from-version" detection.
 - `StartupPreflight` — validates data + user-types directories before DI is built; failure halts before any DB touch (exit 10).
 - `StartupStderr` — structured stderr writer for fatal startup failures (summary + details + recovery steps).
-- `SelfPortValidator` — cross-checks `Proxy:SelfPort` config against Kestrel's bound listen port and warns on mismatch.
+- `ListenPortValidator` — cross-checks `Hosting:ListenPort` config against Kestrel's bound listen port and warns on mismatch.
 
 ### Probes (`Probes/`)
 - Project metadata extractors keyed off the app's artifact path. `DotnetExtractor`, `NodeExtractor`, `TypeScriptExtractor` (and a React panel layered on top of node) emit structured probe data consumed by the frontend's per-app detail view.
