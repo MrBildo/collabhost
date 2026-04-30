@@ -57,7 +57,7 @@ describe('buildProxyStateCell', () => {
     const cell = buildProxyStateCell('disabled')
     expect(cell.value).toBe('Disabled')
     expect(cell.color).toBe('amber')
-    expect(cell.detail).toBe('Install Caddy or set COLLABHOST_CADDY_PATH')
+    expect(cell.detail).toBe('Re-run the installer or set COLLABHOST_CADDY_PATH')
   })
 
   test('stopped cell: default color, informational detail', () => {
