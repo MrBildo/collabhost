@@ -1,12 +1,15 @@
 namespace Collabhost.Api.Proxy;
 
-// Pure resolver implementing the Caddy binary precedence chain: env > config > bundled.
-// Returns null when no Caddy binary can be located -- callers soft-fail with visibility.
+// Pure resolver implementing the Caddy binary precedence chain: env > appsettings > null.
 //
-// The operator contract is two-tier: the bundled sidecar (default) or COLLABHOST_CADDY_PATH
-// (explicit absolute-path override). Proxy:BinaryPath in appsettings.json is honored as an
-// undocumented escape hatch for absolute paths only -- bare-name PATH walking was removed
-// in card #196.
+// Returns null when no Caddy binary is configured. Callers (ProxyManager) translate
+// null into ProxyState.Disabled -- the proxy subsystem is a soft-fail by design.
+//
+// The "default" binary location is no longer hardcoded here. Install scripts
+// (docs/install.ps1, docs/install.sh) seed Proxy:BinaryPath in appsettings.json on
+// first install, pointing at the bundled caddy[.exe] next to the Collabhost binary.
+// Operators who delete the entry, or who never ran an installer, get the honest
+// "disabled" state until they configure something.
 public static class CaddyResolver
 {
     public const string EnvVarName = "COLLABHOST_CADDY_PATH";
@@ -28,7 +31,7 @@ public static class CaddyResolver
 
             logger.LogWarning
             (
-                "{EnvVar} set to '{Path}' but file not found -- falling through to config / bundled",
+                "{EnvVar} set to '{Path}' but file not found -- falling through to appsettings",
                 EnvVarName,
                 envOverride
             );
@@ -47,24 +50,12 @@ public static class CaddyResolver
 
             logger.LogWarning
             (
-                "Proxy:BinaryPath='{Path}' could not be resolved -- falling through to bundled",
+                "Proxy:BinaryPath='{Path}' could not be resolved -- proxy subsystem will run disabled",
                 settings.BinaryPath
             );
         }
 
-        // 3. Bundled sidecar next to the Collabhost binary (v1 default shipped in the archive).
-        var bundledPath = Path.Combine
-        (
-            AppContext.BaseDirectory,
-            OperatingSystem.IsWindows() ? "caddy.exe" : "caddy"
-        );
-
-        if (File.Exists(bundledPath))
-        {
-            return Path.GetFullPath(bundledPath);
-        }
-
-        // 4. No Caddy binary available -- proxy subsystem disabled.
+        // 3. Nothing configured -- proxy subsystem disabled.
         return null;
     }
 
