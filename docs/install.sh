@@ -262,6 +262,66 @@ if [ -n "${IS_REINSTALL}" ]; then
   echo "Preserved your existing appsettings.json${DATA_HINT}."
 fi
 
+# Seed Proxy:BinaryPath in appsettings.json to the bundled caddy path on first
+# install. On reinstall, leave the key alone -- if the operator pinned an
+# external Caddy, we respect that. Smart-merge is intentionally minimal:
+# absent or empty -> seed; present with a value -> leave alone.
+#
+# Prefer python3 (always present on macOS, near-universal on modern Linux).
+# Fall back to awk against the known seed shape when python3 is unavailable.
+BUNDLED_CADDY_PATH="${INSTALL_PATH}/caddy"
+APPSETTINGS="${INSTALL_PATH}/appsettings.json"
+
+seed_with_python() {
+  python3 - "${APPSETTINGS}" "${BUNDLED_CADDY_PATH}" <<'PY'
+import json
+import sys
+
+settings_path, bundled_path = sys.argv[1], sys.argv[2]
+with open(settings_path, 'r', encoding='utf-8') as fh:
+    data = json.load(fh)
+proxy = data.get('Proxy')
+if not isinstance(proxy, dict):
+    proxy = {}
+    data['Proxy'] = proxy
+existing = proxy.get('BinaryPath')
+if existing is None or (isinstance(existing, str) and existing.strip() == ''):
+    proxy['BinaryPath'] = bundled_path
+    with open(settings_path, 'w', encoding='utf-8') as fh:
+        json.dump(data, fh, indent=2)
+        fh.write('\n')
+PY
+}
+
+seed_with_awk() {
+  # Fallback: targets the known seed shape ("BinaryPath": "" inside a Proxy
+  # block) and rewrites it in place. Only used when python3 is unavailable.
+  # Bails (no rewrite) if the seed shape isn't present -- the operator will
+  # have to set the key by hand or use COLLABHOST_CADDY_PATH.
+  awk -v bundled="${BUNDLED_CADDY_PATH}" '
+    BEGIN { in_proxy = 0; replaced = 0 }
+    /"Proxy"[[:space:]]*:[[:space:]]*\{/ { in_proxy = 1; print; next }
+    in_proxy && /"BinaryPath"[[:space:]]*:[[:space:]]*""/ {
+      sub(/"BinaryPath"[[:space:]]*:[[:space:]]*""/, "\"BinaryPath\": \"" bundled "\"")
+      replaced = 1
+    }
+    in_proxy && /\}/ { in_proxy = 0 }
+    { print }
+  ' "${APPSETTINGS}" > "${APPSETTINGS}.new" && mv "${APPSETTINGS}.new" "${APPSETTINGS}"
+}
+
+if command -v python3 >/dev/null 2>&1; then
+  if ! seed_with_python; then
+    echo "Warning: could not seed Proxy:BinaryPath in appsettings.json via python3." >&2
+    echo "Set COLLABHOST_CADDY_PATH to '${BUNDLED_CADDY_PATH}' or repair the file by hand." >&2
+  fi
+else
+  if ! seed_with_awk; then
+    echo "Warning: could not seed Proxy:BinaryPath in appsettings.json via awk." >&2
+    echo "Set COLLABHOST_CADDY_PATH to '${BUNDLED_CADDY_PATH}' or repair the file by hand." >&2
+  fi
+fi
+
 # data/ is never in the archive -- leave any existing directory untouched.
 # Merge-safe by construction.
 

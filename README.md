@@ -82,11 +82,11 @@ Re-running the installer is upgrade-safe: your `appsettings.json` and `data/` di
 
 ### Caddy is bundled
 
-The installer ships Caddy next to the Collabhost binary — Collabhost finds it automatically. No separate install step. On first launch, Collabhost starts the bundled Caddy as a supervised process and every registered app gets an automatic `{slug}.collab.internal` subdomain route.
+The installer ships Caddy next to the Collabhost binary, and seeds `Proxy:BinaryPath` in `appsettings.json` to point at it on first install. No separate install step. On first launch, Collabhost starts the bundled Caddy as a supervised process and every registered app gets an automatic `{slug}.collab.internal` subdomain route.
 
-If you'd rather use a system-installed Caddy, point Collabhost at it by either setting `COLLABHOST_CADDY_PATH` to the absolute path before launching, or setting `Proxy:BinaryPath` (an absolute path) in `appsettings.json`. The env var takes precedence over the config file, and both take precedence over the bundled sidecar — see INSTALL.md §5.4 for the full resolution chain. `BaseDomain` defaults to `collab.internal` — change it to use any domain you control.
+If you'd rather use a system-installed Caddy, point Collabhost at it by either setting `COLLABHOST_CADDY_PATH` to the absolute path before launching (env var takes precedence) or editing `Proxy:BinaryPath` in `appsettings.json` directly. Operator edits to that key survive reinstalls — the installer only seeds the value when the key is absent or empty. See INSTALL.md §5.4 for the resolution chain. `BaseDomain` defaults to `collab.internal` — change it to use any domain you control.
 
-If no Caddy binary is found, everything else still works (app management, process supervision, logs, dashboard) — apps just don't get automatic subdomain routes.
+If no Caddy binary is configured, everything else still works (app management, process supervision, logs, dashboard) — apps just don't get automatic subdomain routes, and `proxyState` reports `disabled` on `/api/v1/status`.
 
 ### Register your first app
 
