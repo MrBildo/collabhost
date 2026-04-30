@@ -124,7 +124,7 @@ const PROXY_STATE_DETAILS: Record<ProxyState, string | undefined> = {
   starting: 'Warming up',
   running: undefined,
   failed: 'Check logs, restart Collabhost',
-  disabled: 'Install Caddy or set COLLABHOST_CADDY_PATH',
+  disabled: 'Re-run the installer or set COLLABHOST_CADDY_PATH',
   stopped: 'Proxy app stopped',
 }
 

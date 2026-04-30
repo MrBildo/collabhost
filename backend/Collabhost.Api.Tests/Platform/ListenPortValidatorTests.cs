@@ -6,22 +6,22 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Platform;
 
-// Tests for the cross-validation between Proxy:SelfPort (Caddy dial target) and Kestrel's
+// Tests for the cross-validation between Hosting:ListenPort (Caddy dial target) and Kestrel's
 // actual listen port. Card #165 -- soft warning, not fatal. Pure-function shape on
-// SelfPortValidator means we can exercise both branches without spinning up a host.
-public class SelfPortValidatorTests
+// ListenPortValidator means we can exercise both branches without spinning up a host.
+public class ListenPortValidatorTests
 {
     [Fact]
     public void Validate_PortMatches_ReportsMatch()
     {
-        var outcome = SelfPortValidator.Validate
+        var outcome = ListenPortValidator.Validate
         (
-            configuredSelfPort: 58400,
+            configuredListenPort: 58400,
             listeningAddresses: ["http://localhost:58400"]
         );
 
-        outcome.Status.ShouldBe(SelfPortValidationStatus.Match);
-        outcome.ConfiguredSelfPort.ShouldBe(58400);
+        outcome.Status.ShouldBe(ListenPortValidationStatus.Match);
+        outcome.ConfiguredListenPort.ShouldBe(58400);
         outcome.RenderedMessage.ShouldBeNull();
     }
 
@@ -29,10 +29,10 @@ public class SelfPortValidatorTests
     public void Validate_PortMatchesAmongMultipleAddresses_ReportsMatch()
     {
         // Kestrel can bind to multiple URLs at once (e.g. http+https). A match on any of
-        // them is enough -- Caddy can reach SelfPort.
-        var outcome = SelfPortValidator.Validate
+        // them is enough -- Caddy can reach ListenPort.
+        var outcome = ListenPortValidator.Validate
         (
-            configuredSelfPort: 58400,
+            configuredListenPort: 58400,
             listeningAddresses:
             [
                 "http://localhost:58400",
@@ -40,20 +40,20 @@ public class SelfPortValidatorTests
             ]
         );
 
-        outcome.Status.ShouldBe(SelfPortValidationStatus.Match);
+        outcome.Status.ShouldBe(ListenPortValidationStatus.Match);
     }
 
     [Fact]
     public void Validate_PortMismatch_ReportsMismatchWithBothValues()
     {
-        var outcome = SelfPortValidator.Validate
+        var outcome = ListenPortValidator.Validate
         (
-            configuredSelfPort: 58400,
+            configuredListenPort: 58400,
             listeningAddresses: ["http://localhost:5000"]
         );
 
-        outcome.Status.ShouldBe(SelfPortValidationStatus.Mismatch);
-        outcome.ConfiguredSelfPort.ShouldBe(58400);
+        outcome.Status.ShouldBe(ListenPortValidationStatus.Mismatch);
+        outcome.ConfiguredListenPort.ShouldBe(58400);
         outcome.ObservedPorts.ShouldBe([5000]);
 
         // The warning copy is operator-facing -- it must name both observed values and
@@ -61,7 +61,7 @@ public class SelfPortValidatorTests
         var message = outcome.RenderedMessage.ShouldNotBeNull();
         message.ShouldContain("58400");
         message.ShouldContain("5000");
-        message.ShouldContain("COLLABHOST_PROXY_SELF_PORT");
+        message.ShouldContain("COLLABHOST_HOSTING_LISTEN_PORT");
         message.ShouldContain("ASPNETCORE_URLS");
         message.ShouldContain("502");
     }
@@ -69,9 +69,9 @@ public class SelfPortValidatorTests
     [Fact]
     public void Validate_PortMismatchMultipleObserved_ReportsAllObservedPorts()
     {
-        var outcome = SelfPortValidator.Validate
+        var outcome = ListenPortValidator.Validate
         (
-            configuredSelfPort: 58400,
+            configuredListenPort: 58400,
             listeningAddresses:
             [
                 "http://localhost:5000",
@@ -79,7 +79,7 @@ public class SelfPortValidatorTests
             ]
         );
 
-        outcome.Status.ShouldBe(SelfPortValidationStatus.Mismatch);
+        outcome.Status.ShouldBe(ListenPortValidationStatus.Mismatch);
         outcome.ObservedPorts.ShouldBe([5000, 5001]);
         var message = outcome.RenderedMessage.ShouldNotBeNull();
         message.ShouldContain("5000");
@@ -92,13 +92,13 @@ public class SelfPortValidatorTests
         // TestServer (WebApplicationFactory<Program>) does not populate
         // IServerAddressesFeature.Addresses. The validator must short-circuit cleanly --
         // a mismatch warning under the test harness would be a false positive.
-        var outcome = SelfPortValidator.Validate
+        var outcome = ListenPortValidator.Validate
         (
-            configuredSelfPort: 58400,
+            configuredListenPort: 58400,
             listeningAddresses: []
         );
 
-        outcome.Status.ShouldBe(SelfPortValidationStatus.Skipped);
+        outcome.Status.ShouldBe(ListenPortValidationStatus.Skipped);
         outcome.SkipReason.ShouldNotBeNullOrWhiteSpace();
     }
 
@@ -107,13 +107,13 @@ public class SelfPortValidatorTests
     {
         // Defensive: if every address fails to parse as a Uri (would be an internal Kestrel
         // shape change), prefer "skipped" over a false-positive mismatch.
-        var outcome = SelfPortValidator.Validate
+        var outcome = ListenPortValidator.Validate
         (
-            configuredSelfPort: 58400,
+            configuredListenPort: 58400,
             listeningAddresses: ["not-a-url", string.Empty]
         );
 
-        outcome.Status.ShouldBe(SelfPortValidationStatus.Skipped);
+        outcome.Status.ShouldBe(ListenPortValidationStatus.Skipped);
     }
 
     [Fact]
@@ -121,12 +121,12 @@ public class SelfPortValidatorTests
     {
         // One garbage address shouldn't poison the whole comparison if a real one is also
         // present.
-        var outcome = SelfPortValidator.Validate
+        var outcome = ListenPortValidator.Validate
         (
-            configuredSelfPort: 58400,
+            configuredListenPort: 58400,
             listeningAddresses: ["not-a-url", "http://localhost:58400"]
         );
 
-        outcome.Status.ShouldBe(SelfPortValidationStatus.Match);
+        outcome.Status.ShouldBe(ListenPortValidationStatus.Match);
     }
 }

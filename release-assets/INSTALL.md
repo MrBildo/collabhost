@@ -222,12 +222,19 @@ Then `.\startup.ps1`.
 |----------|-----------|-------|---------|
 | `COLLABHOST_DATA_PATH`          | SQLite DB parent directory | Absolute directory path | `/srv/collabhost/data` |
 | `COLLABHOST_USER_TYPES_PATH`    | `TypeStore:UserTypesDirectory` | Absolute directory path | `/srv/collabhost/user-types` |
-| `COLLABHOST_CADDY_PATH`         | Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
+| `COLLABHOST_CADDY_PATH`         | `Proxy:BinaryPath` — Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
+| `COLLABHOST_HOSTING_LISTEN_PORT` | `Hosting:ListenPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_PROXY_BASE_DOMAIN`  | `Proxy:BaseDomain` | Domain suffix | `collabhost.lan` |
 | `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec | `:8443` |
 | `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string | `720h` |
-| `COLLABHOST_PROXY_SELF_PORT`    | `Proxy:SelfPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
+
+**Caddy binary resolution — two-tier precedence (highest first):**
+
+1. `COLLABHOST_CADDY_PATH` — absolute path to any Caddy binary, set in your startup wrapper. Highest precedence; useful for per-invocation overrides.
+2. `Proxy:BinaryPath` in `appsettings.json` — absolute path to a Caddy binary. The installer seeds this on first install with the bundled `caddy[.exe]` next to the Collabhost binary, so a fresh install works out of the box. Operator edits to this value are preserved across reinstalls — the installer only seeds when the key is absent or empty.
+
+If neither resolves to an existing file, Collabhost boots with `proxyState = disabled` (see §3). To recover, re-run the installer (which will seed the key when absent), set `COLLABHOST_CADDY_PATH` in a startup wrapper, or write an absolute path into `Proxy:BinaryPath` directly.
 
 Operator-relevant framework-standard variables (not Collabhost-specific):
 
@@ -375,8 +382,10 @@ not pass the startup probe within the deadline.
 
 Options:
 
-- Set `COLLABHOST_CADDY_PATH` to a known-working Caddy binary on the host
-  (e.g., a system-installed Caddy at `/usr/local/bin/caddy`).
+- Set `COLLABHOST_CADDY_PATH` (env var) or `Proxy:BinaryPath` (appsettings.json) to the
+  absolute path of a known-working Caddy binary on the host
+  (e.g., `/usr/local/bin/caddy`). The env var takes precedence; see §5.4 for the
+  full two-tier resolution chain.
 - Verify the bundled `caddy` binary is executable (`chmod +x caddy`).
 - Check structured logs for the Caddy process's stderr.
 
@@ -389,9 +398,9 @@ or set `COLLABHOST_PROXY_LISTEN_ADDRESS`. Remember to include the colon.
 ### 9.3 Port 58400 already in use
 
 Another service on the host owns the Collabhost API port. Edit
-`Proxy:SelfPort` in `appsettings.json` (or set `COLLABHOST_PROXY_SELF_PORT`)
-to a free port, and update any bookmarks / scripts that hit the dashboard at
-`http://localhost:58400`.
+`Hosting:ListenPort` in `appsettings.json` (or set
+`COLLABHOST_HOSTING_LISTEN_PORT`) to a free port, and update any bookmarks /
+scripts that hit the dashboard at `http://localhost:58400`.
 
 ### 9.4 Collabhost won't launch on macOS
 

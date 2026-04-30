@@ -7,6 +7,7 @@ using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
+using Collabhost.Api.Platform;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
@@ -22,6 +23,7 @@ public class ProxyManager
     ProcessSupervisor processSupervisor,
     IEventBus<ProcessStateChangedEvent> eventBus,
     ProxySettings settings,
+    HostingSettings hostingSettings,
     ActivityEventStore activityEventStore,
     ILogger<ProxyManager> logger
 ) : IHostedService, IDisposable
@@ -46,6 +48,9 @@ public class ProxyManager
 
     private readonly ProxySettings _settings = settings
         ?? throw new ArgumentNullException(nameof(settings));
+
+    private readonly HostingSettings _hostingSettings = hostingSettings
+        ?? throw new ArgumentNullException(nameof(hostingSettings));
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
@@ -119,9 +124,10 @@ public class ProxyManager
             _logger.LogWarning
             (
                 "No proxy app registered -- proxy subsystem disabled. " +
-                "No Caddy binary was resolved via COLLABHOST_CADDY_PATH, Proxy:BinaryPath, " +
-                "or the bundled sidecar. proxyState on /api/v1/status will report 'disabled'. " +
-                "Install Caddy or set COLLABHOST_CADDY_PATH and restart Collabhost."
+                "No Caddy binary was resolved via COLLABHOST_CADDY_PATH or Proxy:BinaryPath. " +
+                "proxyState on /api/v1/status will report 'disabled'. " +
+                "Re-run the installer to seed the bundled-sidecar path, " +
+                "or set COLLABHOST_CADDY_PATH and restart Collabhost."
             );
 
             return;
@@ -198,7 +204,7 @@ public class ProxyManager
         {
             var routeEntries = await LoadRoutableAppsAsync(ct);
 
-            var config = ProxyConfigurationBuilder.Build(routeEntries, _settings);
+            var config = ProxyConfigurationBuilder.Build(routeEntries, _settings, _hostingSettings);
 
             var success = await _caddyClient.LoadConfigAsync(config, ct);
 
@@ -224,7 +230,7 @@ public class ProxyManager
     // Post-launch admin-API probe. Soft-fail with visibility:
     // on success -> ProxyState.Running and route sync is activated.
     // on timeout -> ProxyState.Failed, proxy subsystem disabled for this process lifetime,
-    //              and loud error log pointing at COLLABHOST_CADDY_PATH / bundled fallback.
+    //              and loud error log pointing at COLLABHOST_CADDY_PATH / Proxy:BinaryPath.
     internal async Task<bool> VerifyCaddyReadyAsync(CancellationToken ct)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);
@@ -419,7 +425,7 @@ public class ProxyManager
             _logger.LogError
             (
                 "Caddy admin API did not become ready within 5s -- proxy subsystem disabled for this process lifetime " +
-                "(proxyState='failed'). Check Caddy logs, verify COLLABHOST_CADDY_PATH or the bundled binary, " +
+                "(proxyState='failed'). Check Caddy logs, verify COLLABHOST_CADDY_PATH or Proxy:BinaryPath, " +
                 "and restart Collabhost. The registry, supervisor, dashboard, and managed-app operations continue to function; " +
                 "HTTPS routing to {{slug}}.{BaseDomain} is offline until the proxy is restored.",
                 _settings.BaseDomain

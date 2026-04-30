@@ -5,24 +5,25 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 
 namespace Collabhost.Api.Platform;
 
-// Cross-validates Proxy:SelfPort (what Caddy dials for collabhost.collab.internal -> Kestrel)
+// Cross-validates Hosting:ListenPort (what Caddy dials for collabhost.collab.internal -> Kestrel)
 // against the API's actual bound listen port. The two are independent declarations of the
-// same number: Proxy:SelfPort lives in the Proxy section / COLLABHOST_PROXY_SELF_PORT env var,
-// while the listen port is resolved from urls / ASPNETCORE_URLS / launchSettings.json (dev)
-// and falls through to Proxy:SelfPort only when none of those are set (see Program.cs).
+// same number: Hosting:ListenPort lives in the Hosting section / COLLABHOST_HOSTING_LISTEN_PORT
+// env var, while the listen port observed by Kestrel is resolved from urls / ASPNETCORE_URLS /
+// launchSettings.json (dev) and falls through to Hosting:ListenPort only when none of those
+// are set (see Program.cs).
 //
-// Under Aspire or `dotnet run`, ASPNETCORE_URLS wins for Kestrel and SelfPort still governs
+// Under Aspire or `dotnet run`, ASPNETCORE_URLS wins for Kestrel and ListenPort still governs
 // the Caddy dial -- if an operator pins one and forgets the other, the dashboard's self-route
 // silently 502s with no obvious cause. Card #165 -- soft warning, not fatal.
-public static class SelfPortValidator
+public static class ListenPortValidator
 {
-    // Pure-function entry point: takes the configured SelfPort and the listening addresses
+    // Pure-function entry point: takes the configured ListenPort and the listening addresses
     // observed post-bind (typically from IServerAddressesFeature.Addresses). Returns the
     // outcome and -- for the mismatch case -- a ready-to-log warning message that names both
     // values and the env-var lever for each side.
-    public static SelfPortValidationOutcome Validate
+    public static ListenPortValidationOutcome Validate
     (
-        int configuredSelfPort,
+        int configuredListenPort,
         IReadOnlyCollection<string> listeningAddresses
     )
     {
@@ -30,7 +31,7 @@ public static class SelfPortValidator
 
         if (listeningAddresses.Count == 0)
         {
-            return SelfPortValidationOutcome.Skipped("no listening addresses observed");
+            return ListenPortValidationOutcome.Skipped("no listening addresses observed");
         }
 
         var observedPorts = new List<int>(listeningAddresses.Count);
@@ -45,12 +46,12 @@ public static class SelfPortValidator
 
         if (observedPorts.Count == 0)
         {
-            return SelfPortValidationOutcome.Skipped("no parseable listen ports observed");
+            return ListenPortValidationOutcome.Skipped("no parseable listen ports observed");
         }
 
-        if (observedPorts.Contains(configuredSelfPort))
+        if (observedPorts.Contains(configuredListenPort))
         {
-            return SelfPortValidationOutcome.Match(configuredSelfPort);
+            return ListenPortValidationOutcome.Match(configuredListenPort);
         }
 
         var observedJoined = string.Join(", ", observedPorts.Select(p => p.ToString(CultureInfo.InvariantCulture)));
@@ -60,13 +61,13 @@ public static class SelfPortValidator
         // Built once with InvariantCulture so the rendered message ships unchanged into the
         // structured log; the caller passes both numeric values as structured fields.
         var warning =
-            $"Proxy:SelfPort ({configuredSelfPort.ToString(CultureInfo.InvariantCulture)}) does not match the API's actual listen port ({observedJoined}). "
-            + $"Caddy will dial localhost:{configuredSelfPort.ToString(CultureInfo.InvariantCulture)} for collabhost.collab.internal, but Kestrel is bound to {observedJoined}, so the dashboard self-route will return 502. "
-            + $"Set COLLABHOST_PROXY_SELF_PORT to match the listen port, or set ASPNETCORE_URLS / urls to http://localhost:{configuredSelfPort.ToString(CultureInfo.InvariantCulture)} so Kestrel binds where Caddy dials.";
+            $"Hosting:ListenPort ({configuredListenPort.ToString(CultureInfo.InvariantCulture)}) does not match the API's actual listen port ({observedJoined}). "
+            + $"Caddy will dial localhost:{configuredListenPort.ToString(CultureInfo.InvariantCulture)} for collabhost.collab.internal, but Kestrel is bound to {observedJoined}, so the dashboard self-route will return 502. "
+            + $"Set COLLABHOST_HOSTING_LISTEN_PORT to match the listen port, or set ASPNETCORE_URLS / urls to http://localhost:{configuredListenPort.ToString(CultureInfo.InvariantCulture)} so Kestrel binds where Caddy dials.";
 
-        return SelfPortValidationOutcome.Mismatch
+        return ListenPortValidationOutcome.Mismatch
         (
-            configuredSelfPort: configuredSelfPort,
+            configuredListenPort: configuredListenPort,
             observedPorts: observedPorts,
             renderedMessage: warning
         );
@@ -112,27 +113,27 @@ public static class SelfPortValidator
     }
 }
 
-public sealed record SelfPortValidationOutcome
+public sealed record ListenPortValidationOutcome
 {
-    private SelfPortValidationOutcome
+    private ListenPortValidationOutcome
     (
-        SelfPortValidationStatus status,
-        int configuredSelfPort,
+        ListenPortValidationStatus status,
+        int configuredListenPort,
         IReadOnlyList<int> observedPorts,
         string? renderedMessage,
         string? skipReason
     )
     {
         Status = status;
-        ConfiguredSelfPort = configuredSelfPort;
+        ConfiguredListenPort = configuredListenPort;
         ObservedPorts = observedPorts;
         RenderedMessage = renderedMessage;
         SkipReason = skipReason;
     }
 
-    public SelfPortValidationStatus Status { get; }
+    public ListenPortValidationStatus Status { get; }
 
-    public int ConfiguredSelfPort { get; }
+    public int ConfiguredListenPort { get; }
 
     public IReadOnlyList<int> ObservedPorts { get; }
 
@@ -140,43 +141,43 @@ public sealed record SelfPortValidationOutcome
 
     public string? SkipReason { get; }
 
-    public static SelfPortValidationOutcome Match(int configuredSelfPort) =>
+    public static ListenPortValidationOutcome Match(int configuredListenPort) =>
         new
         (
-            status: SelfPortValidationStatus.Match,
-            configuredSelfPort: configuredSelfPort,
-            observedPorts: [configuredSelfPort],
+            status: ListenPortValidationStatus.Match,
+            configuredListenPort: configuredListenPort,
+            observedPorts: [configuredListenPort],
             renderedMessage: null,
             skipReason: null
         );
 
-    public static SelfPortValidationOutcome Mismatch
+    public static ListenPortValidationOutcome Mismatch
     (
-        int configuredSelfPort,
+        int configuredListenPort,
         IReadOnlyList<int> observedPorts,
         string renderedMessage
     ) =>
         new
         (
-            status: SelfPortValidationStatus.Mismatch,
-            configuredSelfPort: configuredSelfPort,
+            status: ListenPortValidationStatus.Mismatch,
+            configuredListenPort: configuredListenPort,
             observedPorts: observedPorts,
             renderedMessage: renderedMessage,
             skipReason: null
         );
 
-    public static SelfPortValidationOutcome Skipped(string reason) =>
+    public static ListenPortValidationOutcome Skipped(string reason) =>
         new
         (
-            status: SelfPortValidationStatus.Skipped,
-            configuredSelfPort: 0,
+            status: ListenPortValidationStatus.Skipped,
+            configuredListenPort: 0,
             observedPorts: [],
             renderedMessage: null,
             skipReason: reason
         );
 }
 
-public enum SelfPortValidationStatus
+public enum ListenPortValidationStatus
 {
     Match,
     Mismatch,

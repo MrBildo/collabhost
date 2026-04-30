@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using Collabhost.Api.Platform;
 using Collabhost.Api.Registry;
 
 namespace Collabhost.Api.Proxy;
@@ -9,11 +10,12 @@ public static class ProxyConfigurationBuilder
     public static JsonObject Build
     (
         IReadOnlyList<RouteEntry> routes,
-        ProxySettings settings
+        ProxySettings settings,
+        HostingSettings hostingSettings
     )
     {
         var subjects = BuildSubjectList(routes, settings);
-        var caddyRoutes = BuildRoutes(routes, settings);
+        var caddyRoutes = BuildRoutes(routes, settings, hostingSettings);
 
         var adminListen = string.Format
         (
@@ -59,12 +61,13 @@ public static class ProxyConfigurationBuilder
     private static JsonArray BuildRoutes
     (
         IReadOnlyList<RouteEntry> routes,
-        ProxySettings settings
+        ProxySettings settings,
+        HostingSettings hostingSettings
     )
     {
         var caddyRoutes = new JsonArray
         {
-            BuildSelfRoute(settings)
+            BuildSelfRoute(settings, hostingSettings)
         };
 
         foreach (var route in routes)
@@ -86,7 +89,7 @@ public static class ProxyConfigurationBuilder
         return caddyRoutes;
     }
 
-    private static JsonObject BuildSelfRoute(ProxySettings settings) =>
+    private static JsonObject BuildSelfRoute(ProxySettings settings, HostingSettings hostingSettings) =>
         new()
         {
             ["@id"] = "route_collabhost",
@@ -108,7 +111,7 @@ public static class ProxyConfigurationBuilder
                     {
                         new JsonObject
                         {
-                            ["dial"] = $"localhost:{settings.SelfPort.ToString(CultureInfo.InvariantCulture)}"
+                            ["dial"] = $"localhost:{hostingSettings.ListenPort.ToString(CultureInfo.InvariantCulture)}"
                         }
                     }
                 }

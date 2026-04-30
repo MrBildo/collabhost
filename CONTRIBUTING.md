@@ -26,9 +26,9 @@ No backend package restore step -- `dotnet build` handles that automatically.
 
 ### Caddy (optional)
 
-Caddy is the reverse proxy layer. You can develop without it -- proxy features just won't be available.
+Caddy is the reverse proxy layer. You can develop without it -- proxy features just won't be available, and `proxyState` will report `disabled` on `/api/v1/status`.
 
-**Local binary:** Download the Caddy binary to `tools/caddy/` and set the path in `appsettings.Development.json`:
+The shipped installer (`docs/install.ps1` / `docs/install.sh`) seeds `Proxy:BinaryPath` in `appsettings.json` for end users. The `dotnet run` dev workflow does **not** go through the installer, so dev contributors set `Proxy:BinaryPath` once in a gitignored `appsettings.Development.json`:
 
 ```json
 {
@@ -38,7 +38,9 @@ Caddy is the reverse proxy layer. You can develop without it -- proxy features j
 }
 ```
 
-**Global install:** `winget install CaddyServer.Caddy` (Windows) or `sudo apt install caddy` (Linux). To point Collabhost at a system-installed Caddy, set `COLLABHOST_CADDY_PATH` to the absolute path before launching, or set `Proxy:BinaryPath` in `appsettings.Development.json`.
+The resolver reads env var > appsettings > null. `COLLABHOST_CADDY_PATH` (env var) is the alternative if you'd rather not edit a settings file.
+
+**Getting a Caddy binary:** download from [caddyserver.com](https://caddyserver.com/docs/install) into `tools/caddy/`, or install globally with `winget install CaddyServer.Caddy` (Windows) / `sudo apt install caddy` (Linux). For a global install, point `Proxy:BinaryPath` (or `COLLABHOST_CADDY_PATH`) at the absolute path of the system binary.
 
 ## Build and Run
 
