@@ -282,6 +282,56 @@ public class UserSeedServiceTests : IAsyncLifetime
         users.Count.ShouldBe(1);
         users[0].AuthKey.ShouldBe(ConfiguredKey);
     }
+
+    // -- Atomicity (transaction rollback on SIGINT) -----------------------
+
+    [Fact]
+    public async Task SeedAsync_Scenario1_CancelledBeforeCommit_LeavesDbEmpty()
+    {
+        // A pre-cancelled token simulates a SIGINT arriving during the transaction window.
+        // The seeder must propagate the cancellation to the transaction so the DB is
+        // left in the pre-seed state -- no partial rows committed.
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var service = CreateService(configuredAdminKey: null);
+
+        await Should.ThrowAsync<OperationCanceledException>
+        (
+            () => service.SeedAsync(cts.Token)
+        );
+
+        var users = await GetUsersAsync();
+
+        users.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task SeedAsync_Scenario3_CancelledBeforeCommit_LeavesDbUnchanged()
+    {
+        // Pre-existing admin -- Scenario 3 (break-glass insert) path.
+        // Cancellation during the transaction must not commit the new admin row.
+        const string ExistingKey = "01EXISTING0ADMIN0KEY000000";
+        const string NewKey = "01BREAK0GLASS0KEY0000000AA";
+
+        await InsertUserAsync("Admin", ExistingKey, UserRole.Administrator);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var service = CreateService(configuredAdminKey: NewKey);
+
+        await Should.ThrowAsync<OperationCanceledException>
+        (
+            () => service.SeedAsync(cts.Token)
+        );
+
+        var users = await GetUsersAsync();
+
+        // Only the pre-existing admin -- no new row from the cancelled seed attempt
+        users.Count.ShouldBe(1);
+        users[0].AuthKey.ShouldBe(ExistingKey);
+    }
 }
 
 // Captures ILogger calls so assertions can inspect level + rendered message. File-scoped:

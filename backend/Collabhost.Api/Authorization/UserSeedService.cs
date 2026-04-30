@@ -94,8 +94,14 @@ public class UserSeedService
             Role = UserRole.Administrator,
         };
 
+        // Wrap the insert in a transaction so a first-boot SIGINT cannot leave a
+        // partial state -- the DB is either fully seeded or untouched after a crash.
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+
         db.Users.Add(admin);
         await db.SaveChangesAsync(cancellationToken);
+
+        await tx.CommitAsync(cancellationToken);
 
         await RecordSeedActivityAsync("first-run");
 
@@ -134,8 +140,14 @@ public class UserSeedService
             Role = UserRole.Administrator,
         };
 
+        // Wrap the insert in a transaction so a first-boot SIGINT cannot leave a
+        // partial state -- the DB is either fully seeded or untouched after a crash.
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+
         db.Users.Add(admin);
         await db.SaveChangesAsync(cancellationToken);
+
+        await tx.CommitAsync(cancellationToken);
 
         await RecordSeedActivityAsync("recovery-override");
 
