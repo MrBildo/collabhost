@@ -140,6 +140,15 @@ public class ProcessSupervisor
             await _graceTimer.DisposeAsync();
         }
 
+        // Cancel any pending restart-delay tasks BEFORE iterating processes.
+        // Without this, a process in Backoff/Restarting state during shutdown will not
+        // hit the IsRunning branch below; its Task.Delay completes after ApplicationStopping
+        // fires and StartAppInternalAsync runs against a torn-down dictionary state. (#191)
+        foreach (var process in _processes.Values)
+        {
+            process.CancelPendingRestart();
+        }
+
         var stopTasks = _processes.Select
         (
             async kvp =>
@@ -150,7 +159,7 @@ public class ProcessSupervisor
 
                 if (process.IsRunning)
                 {
-                    await StopProcessWithShutdownPolicyAsync(appId, process);
+                    await StopProcessWithShutdownPolicyAsync(appId, process, cancellationToken);
 
                     _logger.LogInformation
                     (
@@ -200,7 +209,7 @@ public class ProcessSupervisor
 
         process.MarkStoppedByOperator();
 
-        await StopProcessWithShutdownPolicyAsync(appId, process);
+        await StopProcessWithShutdownPolicyAsync(appId, process, ct);
 
         _logger.LogInformation("Stopped app '{DisplayName}'", process.DisplayName);
 
@@ -217,7 +226,7 @@ public class ProcessSupervisor
 
             existing.MarkStoppedByOperator();
 
-            await StopProcessWithShutdownPolicyAsync(appId, existing);
+            await StopProcessWithShutdownPolicyAsync(appId, existing, ct);
 
             stopped = existing;
         }
@@ -876,19 +885,19 @@ public class ProcessSupervisor
     }
 #pragma warning restore VSTHRD002
 
-    private async Task StopProcessWithShutdownPolicyAsync(Ulid appId, ManagedProcess process)
+    private async Task StopProcessWithShutdownPolicyAsync(Ulid appId, ManagedProcess process, CancellationToken cancellationToken)
     {
         var shutdownTimeoutSeconds = 10;
 
         try
         {
-            var app = await _appStore.GetByIdAsync(appId, CancellationToken.None);
+            var app = await _appStore.GetByIdAsync(appId, cancellationToken);
 
             if (app is not null)
             {
                 var processConfiguration = await _capabilityStore.ResolveAsync<ProcessConfiguration>
                 (
-                    "process", app, CancellationToken.None
+                    "process", app, cancellationToken
                 );
 
                 if (processConfiguration is not null)
@@ -911,14 +920,14 @@ public class ProcessSupervisor
 
         PublishStateChanged(process, previousState);
 
-        await SendGracefulShutdownAsync(process, shutdownTimeoutSeconds);
+        await SendGracefulShutdownAsync(process, shutdownTimeoutSeconds, cancellationToken);
 
         previousState = process.MarkStopped();
 
         PublishStateChanged(process, previousState);
     }
 
-    private async Task SendGracefulShutdownAsync(ManagedProcess process, int shutdownTimeoutSeconds)
+    private async Task SendGracefulShutdownAsync(ManagedProcess process, int shutdownTimeoutSeconds, CancellationToken cancellationToken)
     {
         _logger.LogInformation
         (
@@ -944,10 +953,11 @@ public class ProcessSupervisor
 
             _logger.LogDebug("Graceful shutdown signal sent to '{DisplayName}'", process.DisplayName);
 
-            using var timeoutCancellation = new CancellationTokenSource
-            (
-                TimeSpan.FromSeconds(shutdownTimeoutSeconds)
-            );
+            // Link the host's shutdown token with the per-app shutdown timeout.
+            // Whichever fires first trips the polling loop and falls through to hard kill,
+            // so supervisor shutdown is bounded by min(host budget, per-app timeout). (#191)
+            using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCancellation.CancelAfter(TimeSpan.FromSeconds(shutdownTimeoutSeconds));
 
             try
             {
@@ -964,7 +974,7 @@ public class ProcessSupervisor
             }
             catch (OperationCanceledException)
             {
-                // Timeout reached -- fall through to hard kill
+                // Either the host budget elapsed or the per-app timeout fired -- fall through to hard kill
             }
         }
         catch (Exception exception)
