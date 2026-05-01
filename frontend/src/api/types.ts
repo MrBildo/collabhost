@@ -316,6 +316,7 @@ type RouteEntry = {
   proxyMode: string
   https: boolean
   enabled: boolean
+  isPortal: boolean
 }
 
 // --- Users ---
@@ -363,6 +364,7 @@ type SystemStatus = {
   uptimeSeconds: number
   timestamp: string
   proxyState: ProxyState
+  portalUrl: string
 }
 
 // --- Filesystem ---

@@ -7,7 +7,8 @@
 #   bash install.sh [--version vX.Y.Z] [--install-path PATH] [--skip-path]
 #
 # Environment:
-#   COLLABHOST_VERSION=vX.Y.Z  -- pin to a specific release (same as --version)
+#   COLLABHOST_VERSION=vX.Y.Z        -- pin to a specific release (same as --version)
+#   COLLABHOST_INSTALL_BASE_URL=URL  -- override the archive download base URL (default: GitHub Releases)
 #
 # Verifies archive SHA-256 against the release's checksums.txt before extracting.
 # Preserves existing appsettings.json and data/ on re-run (upgrade-safe).
@@ -37,7 +38,8 @@ Options:
   --help                Print this message and exit
 
 Environment:
-  COLLABHOST_VERSION    Same as --version
+  COLLABHOST_VERSION           Same as --version
+  COLLABHOST_INSTALL_BASE_URL  Override archive download base URL (default: GitHub Releases)
 EOF
 }
 
@@ -140,7 +142,7 @@ fi
 
 VERSION="${TAG#v}"
 ARCHIVE="collabhost-${VERSION}-${RID}.${EXT}"
-BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+BASE_URL="${COLLABHOST_INSTALL_BASE_URL:-https://github.com/${REPO}/releases/download/${TAG}}"
 ARCHIVE_URL="${BASE_URL}/${ARCHIVE}"
 CHECKSUMS_URL="${BASE_URL}/checksums.txt"
 
@@ -215,8 +217,9 @@ fi
 
 # ---- Extract -----------------------------------------------------------------
 
-# The archive is flat -- the six contract items sit at the archive root, no
-# wrapping directory. Extract straight into EXTRACT_DIR and copy from there.
+# The archive is flat -- seven items sit at the archive root (six files/dirs
+# plus wwwroot/), no wrapping directory. Extract straight into EXTRACT_DIR and
+# copy from there.
 EXTRACT_DIR="${TMP_DIR}/extract"
 mkdir -p "${EXTRACT_DIR}"
 echo "Extracting archive..."
@@ -224,6 +227,11 @@ tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "${EXTRACT_DIR}"
 
 if [ ! -f "${EXTRACT_DIR}/collabhost" ]; then
   echo "Archive layout unexpected: collabhost binary not found at archive root after extract." >&2
+  exit 1
+fi
+
+if [ ! -f "${EXTRACT_DIR}/wwwroot/index.html" ]; then
+  echo "Archive layout unexpected: wwwroot/index.html not found after extract." >&2
   exit 1
 fi
 

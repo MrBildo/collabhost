@@ -3,9 +3,9 @@ name: Install integration
 # End-to-end validation that the published install scripts (docs/install.sh,
 # docs/install.ps1) successfully install a real GitHub Release and that the
 # resulting binary works as expected. Complements publish-dryrun.yml: dry-run
-# validates archive build (BUILD side); this workflow validates archive
-# consumption (CONSUME side -- installer + backend contract against shipped
-# archives).
+# validates archive build AND smokes the archive end-to-end on PRs (BUILD +
+# PR-time CONSUME); this workflow validates the operator's actual install path
+# (install scripts + GitHub Releases download) at release-time.
 #
 # Card #175. Motivated by 3 HIGH bugs that shipped past v0.1.0 pre-release
 # gates because no test consumed both the installer's actual output and the
@@ -14,18 +14,23 @@ name: Install integration
 #   F2 -- Windows sha256sum -b binary-mode prefix
 #   F3 -- backend ContentRootPath CWD-relative when run from $HOME
 #
+# Trigger posture (card #184): PR-time smoke moved into publish-dryrun.yml's
+# archive-smoke job, where THIS PR's archive is tested against THIS PR's
+# verification logic. install-integration is now release-time only -- it
+# downloads the just-published GitHub Release archive and exercises the live
+# install scripts against it. Pairing PR-side scripts with a previous release's
+# archive (the old PR mode) is structurally guaranteed to break on any archive
+# contract change (e.g., the wwwroot/ first-class-artifact addition), so that
+# coupling has been dropped.
+#
 # Triggers:
-#   - pull_request: PRs touching the install scripts, the publish workflows,
-#     or release-assets bundle. Self-validates this workflow on the PR that
-#     adds it.
-#   - workflow_dispatch: manual runs, optional version override.
+#   - workflow_dispatch: manual runs, with required version override.
 #   - release.published: post-release validation against the just-shipped
 #     archives.
 #
 # Verification target version:
 #   - workflow_dispatch -> inputs.version (must be a tag that exists)
 #   - release.published -> the released tag
-#   - pull_request -> the LATEST released tag at workflow start
 #
 # Runners:
 #   linux-x64    -> ubuntu-latest        (native)
@@ -35,19 +40,11 @@ name: Install integration
 #   win-x64      -> windows-latest       (native)
 
 on:
-  pull_request:
-    paths:
-      - 'docs/install.sh'
-      - 'docs/install.ps1'
-      - '.github/workflows/publish.yml'
-      - '.github/workflows/publish-dryrun.yml'
-      - '.github/workflows/install-integration.yml'
-      - 'release-assets/**'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag to install (e.g. v0.1.0). Default: latest published release.'
-        required: false
+        description: 'Release tag to install (e.g. v0.1.0). Required; the run will fail if absent.'
+        required: true
         default: ''
   release:
     types: [published]
@@ -68,7 +65,6 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -79,12 +75,8 @@ jobs:
             VERSION="${INPUT_VERSION}"
             SOURCE="workflow_dispatch input"
           else
-            # PR trigger or workflow_dispatch with no input. Use the latest
-            # published release as the integration target -- this gives us
-            # something real to install against without depending on an
-            # unreleased tag.
-            VERSION="$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)"
-            SOURCE="latest published release"
+            echo "No release tag and no workflow_dispatch input provided." >&2
+            exit 1
           fi
 
           if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -190,12 +182,12 @@ jobs:
           fi
           echo "Reinstall preservation verified."
 
-      # Bundled Caddy version. On PR runs the comparator is the current
-      # caddy.version on this branch -- which may not match the version baked
-      # into the release we're installing (releases ship with the caddy.version
-      # at release-build time). We therefore EMIT the version for inspection
-      # but only ENFORCE the match on release.published runs, where the
-      # caddy.version on the released commit IS the comparator.
+      # Bundled Caddy version. On workflow_dispatch the dispatch ref's
+      # caddy.version is the comparator -- it may or may not match the
+      # caddy.version baked into the release archive (releases ship with the
+      # caddy.version at release-build time). We therefore EMIT the version
+      # for inspection but only ENFORCE the match on release.published runs,
+      # where the caddy.version on the released commit IS the comparator.
       - name: Caddy bundled version
         shell: bash
         run: |
@@ -254,6 +246,37 @@ jobs:
             fi
             sleep 1
           done
+          # HTTP smoke check (Portal). Always-on now -- this workflow is
+          # release-time / dispatch-only, so the archive being installed is
+          # always one this PR's scripts are paired with. PR-time smoke lives
+          # in publish-dryrun.yml's archive-smoke job. Card #184.
+          if [[ -n "${FOUND}" ]]; then
+            PORT=58400
+            for _ in $(seq 1 30); do
+              if curl -fsSL "http://localhost:${PORT}/api/v1/status" >/dev/null 2>&1; then
+                break
+              fi
+              sleep 1
+            done
+            STATUS_BODY="$(curl -fsSL "http://localhost:${PORT}/api/v1/status")"
+            echo "${STATUS_BODY}" | grep -q '"status"' || {
+              echo "Status endpoint did not return expected JSON: ${STATUS_BODY}" >&2
+              exit 1
+            }
+            DASH_BODY="$(curl -fsSL "http://localhost:${PORT}/")"
+            echo "${DASH_BODY}" | grep -qi '<!doctype html' || {
+              echo "Dashboard root did not return HTML; wwwroot likely missing or unwired." >&2
+              echo "${DASH_BODY}" | head -50 >&2
+              exit 1
+            }
+            DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
+            echo "${DEEP_BODY}" | grep -qi '<!doctype html' || {
+              echo "SPA fallback not wired: /apps returned non-HTML." >&2
+              exit 1
+            }
+            echo "HTTP smoke check passed: status, root, deep link."
+          fi
+
           # Bounded stop ladder: SIGINT -> 5s grace -> SIGTERM -> 3s grace -> SIGKILL.
           # Mirrors the linux-arm64 (QEMU) leg exactly. Worst-case bounded at ~8s.
           kill -INT "${PID}" 2>/dev/null || true
@@ -396,6 +419,33 @@ jobs:
             }
             Start-Sleep -Seconds 1
           }
+          # HTTP smoke check (Portal). Always-on now -- see Unix leg comment. Card #184.
+          if ($found) {
+            $port = 58400
+            $ok = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status" -ErrorAction Stop | Out-Null
+                $ok = $true
+                break
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $ok) { throw 'Status endpoint never came up after 30s.' }
+
+            $status = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status"
+            if ($status.Content -notmatch '"status"') { throw "Unexpected /status body: $($status.Content)" }
+
+            $dash = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/"
+            if ($dash.Content -notmatch '(?i)<!doctype html') { throw 'Dashboard root did not return HTML.' }
+
+            $deep = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/apps"
+            if ($deep.Content -notmatch '(?i)<!doctype html') { throw 'SPA fallback not wired: /apps returned non-HTML.' }
+
+            Write-Host 'HTTP smoke check passed: status, root, deep link.'
+          }
+
           # Stop the process (Windows has no clean SIGINT for our P/Invoke
           # process group from PS without GenerateConsoleCtrlEvent gymnastics;
           # Stop-Process is sufficient -- the integration test's success
@@ -414,10 +464,8 @@ jobs:
 
   install-linux-arm64:
     name: Install linux-arm64 (QEMU)
-    # QEMU emulation costs ~10 min per run. Skip on pull_request to keep PR
-    # feedback fast. Runs on workflow_dispatch (pre-tag manual check) and
-    # release.published (post-tag automated validation).
-    if: github.event_name != 'pull_request'
+    # QEMU emulation costs ~10 min per run. Always runs now -- this workflow
+    # is release-time / dispatch-only (PR-time smoke moved to publish-dryrun).
     needs: resolve-version
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -523,6 +571,24 @@ jobs:
                 fi
                 sleep 1
               done
+              # HTTP smoke check (Portal). Always-on now -- see native-leg comment. Card #184.
+              if [ -n "${FOUND}" ]; then
+                PORT=58400
+                for _ in $(seq 1 60); do
+                  if curl -fsSL "http://localhost:${PORT}/api/v1/status" >/dev/null 2>&1; then
+                    break
+                  fi
+                  sleep 1
+                done
+                STATUS_BODY="$(curl -fsSL "http://localhost:${PORT}/api/v1/status")"
+                echo "${STATUS_BODY}" | grep -q "\"status\"" || { echo "Unexpected /status body" >&2; exit 1; }
+                DASH_BODY="$(curl -fsSL "http://localhost:${PORT}/")"
+                echo "${DASH_BODY}" | grep -qi "<!doctype html" || { echo "Dashboard root not HTML" >&2; exit 1; }
+                DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
+                echo "${DEEP_BODY}" | grep -qi "<!doctype html" || { echo "SPA fallback not wired" >&2; exit 1; }
+                echo "HTTP smoke check passed (linux-arm64)."
+              fi
+
               kill -INT "${PID}" 2>/dev/null || true
               for _ in $(seq 1 10); do kill -0 "${PID}" 2>/dev/null || break; sleep 0.5; done
               kill -TERM "${PID}" 2>/dev/null || true

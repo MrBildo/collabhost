@@ -305,6 +305,12 @@ cd frontend && npm run test                                  # Vitest — all gr
 - `StartupStderr` — structured stderr writer for fatal startup failures (summary + details + recovery steps).
 - `ListenPortValidator` — cross-checks `Hosting:ListenPort` config against Kestrel's bound listen port and warns on mismatch.
 
+### Portal (`Portal/`)
+- Static-asset shipping for the React dashboard. The dashboard ships in the same binary as the API and is served via `app.UseDefaultFiles()` + `app.UseStaticFiles()` + a custom `UsePortalSpaFallback()` middleware that handles React Router client-side routes. All three run in the middleware phase **before** auth, so the SPA shell, the dashboard root, and SPA deep links are reachable unauthenticated; auth is enforced at API-call time by `<AuthGate>` calling `/api/v1/auth/me`. The auth wall continues to gate `/api/v1/*`, `/health`, `/alive`, `/openapi`, and `/mcp` as today.
+- `PortalSettings.Subdomain` — env `COLLABHOST_PORTAL_SUBDOMAIN` > `Portal:Subdomain` appsetting > hardcoded fallback `"collabhost"`. Resolved value is consumed by `ProxyConfigurationBuilder.BuildSelfRoute` and `BuildSubjectList` to set the Portal's proxy-fronted hostname. `RouteEntry.Domain` carries pre-resolved per-app hostnames (operators can customize via `RoutingConfiguration.DomainPattern`).
+- `PortalReachabilityCheck` — soft preflight wired into `app.Lifetime.ApplicationStarted` alongside `ListenPortValidator`. Warns (does not halt) when `wwwroot/index.html` is missing or `wwwroot/assets/` is empty. Two legitimate "missing" states exist (packaging regression, intentional stripped deployment); halting boot would trade a degraded mode for a fully unreachable one.
+- The Portal is **not** a registered app; it does not appear in `/api/v1/apps`, has no `AppType`, and is not seeded via `ProxyAppSeeder`. The `wwwroot/` directory is part of the archive contract (item 7 of 7). `/api/v1/routes` synthesizes a Portal row at index 0 (`isPortal: true`) so operators can see the resolved hostname; `/api/v1/status` carries `portalUrl`.
+
 ### Probes (`Probes/`)
 - Project metadata extractors keyed off the app's artifact path. `DotnetExtractor`, `NodeExtractor`, `TypeScriptExtractor` (and a React panel layered on top of node) emit structured probe data consumed by the frontend's per-app detail view.
 - `ProbeService` orchestrates extraction; `ProbeCurator` selects which probes apply per app type.

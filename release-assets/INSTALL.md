@@ -156,6 +156,7 @@ INSTALL.md             This file
 LICENSES/
   caddy-LICENSE        Caddy's Apache 2.0 license text
   caddy-NOTICE         Caddy's NOTICE file
+wwwroot/               Dashboard static assets (HTML/JS/CSS for the operator console)
 ```
 
 `data/` is created on first run next to the binary. It holds `collabhost.db`
@@ -227,7 +228,9 @@ Then `.\startup.ps1`.
 | `COLLABHOST_PROXY_BASE_DOMAIN`  | `Proxy:BaseDomain` | Domain suffix | `collabhost.lan` |
 | `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec | `:8443` |
 | `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string | `720h` |
+| `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
+| `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. | URL (no trailing slash) | `http://localhost:9000/releases/v0.1.0` |
 
 **Caddy binary resolution — two-tier precedence (highest first):**
 
@@ -333,6 +336,7 @@ To upgrade Collabhost, re-run the install script. The installer is
 - `caddy[.exe]` binary.
 - `INSTALL.md`.
 - `LICENSES/` directory contents.
+- `wwwroot/` directory (dashboard static assets — overwritten on every reinstall).
 
 ### 8.1 First-boot after upgrade
 

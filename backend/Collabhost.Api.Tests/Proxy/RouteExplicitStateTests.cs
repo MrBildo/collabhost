@@ -111,6 +111,7 @@ public class RouteExplicitStateTests
                 AdminPort = 2019
             },
             new HostingSettings { ListenPort = 58400 },
+            new Collabhost.Api.Portal.PortalSettings { Subdomain = "collabhost" },
             activityEventStore,
             NullLogger<ProxyManager>.Instance
         );

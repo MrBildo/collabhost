@@ -131,6 +131,27 @@ function SystemPage() {
                 </tr>
                 <tr>
                   <td className="text-xs font-semibold" style={{ color: 'var(--wm-text-dim)' }}>
+                    Portal URL
+                  </td>
+                  <td className="text-xs">
+                    <a
+                      href={status.portalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'var(--wm-amber)', textDecoration: 'none' }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = 'var(--wm-text-bright)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = 'var(--wm-amber)'
+                      }}
+                    >
+                      {status.portalUrl}
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="text-xs font-semibold" style={{ color: 'var(--wm-text-dim)' }}>
                     Timestamp
                   </td>
                   <td

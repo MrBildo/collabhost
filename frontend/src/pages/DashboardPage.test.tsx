@@ -77,6 +77,7 @@ function makeSystemStatus(proxyState: ProxyState): SystemStatus {
     uptimeSeconds: 120,
     timestamp: '2026-04-20T21:00:00.000Z',
     proxyState,
+    portalUrl: 'https://collabhost.collab.internal',
   }
 }
 

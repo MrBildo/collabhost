@@ -30,6 +30,7 @@ on:
       - 'docs/install.ps1'
       - 'caddy.version'
       - 'release-assets/**'
+      - 'frontend/**'
 
 # Read-only token. The dry-run never writes to the Releases surface, never
 # creates tags. Workflow-run artifacts upload via actions/upload-artifact
@@ -97,7 +98,7 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist
-          retention-days: 1
+          retention-days: 7
 
   build-matrix:
     name: Build ${{ matrix.rid }}
@@ -261,6 +262,7 @@ jobs:
           cp "release-assets/INSTALL.md"        "${STAGE}/"
           cp "release-assets/caddy-LICENSE"     "${STAGE}/LICENSES/"
           cp "release-assets/caddy-NOTICE"      "${STAGE}/LICENSES/"
+          cp -R "${PUB}/wwwroot"                "${STAGE}/"
 
           if [[ "${RID}" != win-x64 ]]; then
             chmod +x "${STAGE}/${COLLABHOST_BIN}"
@@ -303,7 +305,8 @@ jobs:
             "${CADDY_BIN}" \
             INSTALL.md \
             LICENSES/caddy-LICENSE \
-            LICENSES/caddy-NOTICE
+            LICENSES/caddy-NOTICE \
+            wwwroot
 
       - name: Verify archive contents
         shell: bash
@@ -351,12 +354,23 @@ jobs:
             fi
           done
 
+          if [[ ! -d "${VERIFY_DIR}/wwwroot" ]]; then
+            echo "MISSING: wwwroot/" >&2
+            MISSING=1
+          elif [[ ! -f "${VERIFY_DIR}/wwwroot/index.html" ]]; then
+            echo "MISSING: wwwroot/index.html" >&2
+            MISSING=1
+          elif [[ -z "$(ls -A "${VERIFY_DIR}/wwwroot/assets" 2>/dev/null)" ]]; then
+            echo "MISSING: wwwroot/assets/* (directory empty)" >&2
+            MISSING=1
+          fi
+
           if [[ "${MISSING}" -ne 0 ]]; then
             echo "Archive contract verification failed." >&2
             exit 1
           fi
 
-          echo "Archive contract verified: flat layout, 6/6 items present."
+          echo "Archive contract verified: flat layout, 7/7 items present."
 
       - name: Checksum
         shell: bash
@@ -427,3 +441,308 @@ jobs:
           name: checksums-aggregated
           path: checksums.txt
           retention-days: 7
+
+  # Archive smoke: PR-time end-to-end validation that THIS PR's archive boots
+  # and serves the Portal correctly. Pairs THIS PR's archive (built by
+  # build-matrix above) with the smoke checks that previously lived in
+  # install-integration.yml's PR-side legs. Card #184 motivation: the install
+  # scripts grew an operator-side wwwroot/ defense that (correctly) refused to
+  # accept a v0.1.0 archive lacking wwwroot/. install-integration's PR mode
+  # downloaded the latest published release, so the PR's own scripts ran
+  # against an older archive's contract -- structurally guaranteed to break on
+  # any contract change. By moving PR-time smoke into the dryrun (where the
+  # archive being smoked IS this PR's archive), the contract loop closes.
+  #
+  # Coverage delta vs. the previous install-integration PR mode:
+  #   -- this DOES exercise: the archive contract, binary boot, ContentRootPath
+  #      (run from $HOME), Portal HTTP responses (/, /apps, /api/v1/status).
+  #   -- this does NOT exercise: install.sh / install.ps1's own logic (PATH
+  #      manipulation, reinstall preservation, Caddy bundling, sha256 verify).
+  #      Those remain release-time-only via install-integration.yml. The
+  #      install scripts hardcode the GitHub release URL, so driving them
+  #      against a workflow-run artifact would require a script-side hatch
+  #      we have explicitly chosen not to add.
+  #
+  # Runners mirror install-integration's native legs (linux-arm64 QEMU stays
+  # release-only -- 10+ min per leg is too slow for PR feedback).
+  archive-smoke:
+    name: Smoke ${{ matrix.rid }}
+    needs: [resolve-version, build-matrix]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+            ext: tar.gz
+            collabhost_bin: collabhost
+            caddy_bin: caddy
+          - rid: osx-arm64
+            os: macos-latest
+            ext: tar.gz
+            collabhost_bin: collabhost
+            caddy_bin: caddy
+          - rid: win-x64
+            os: windows-latest
+            ext: zip
+            collabhost_bin: collabhost.exe
+            caddy_bin: caddy.exe
+    env:
+      VER: ${{ needs.resolve-version.outputs.version }}
+      RID: ${{ matrix.rid }}
+      EXT: ${{ matrix.ext }}
+      COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
+      CADDY_BIN: ${{ matrix.caddy_bin }}
+    steps:
+      - name: Download archive artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: archive-${{ matrix.rid }}
+          path: archive-in
+
+      - name: Extract archive (Unix)
+        if: matrix.ext == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="archive-in/collabhost-${VER}-${RID}.${EXT}"
+          INSTALL_DIR="${HOME}/.collabhost/bin"
+          rm -rf "${INSTALL_DIR}"
+          mkdir -p "${INSTALL_DIR}"
+          tar -xzf "${ARCHIVE}" -C "${INSTALL_DIR}"
+          chmod +x "${INSTALL_DIR}/${COLLABHOST_BIN}" "${INSTALL_DIR}/${CADDY_BIN}"
+          echo "Extracted layout:"
+          ls -la "${INSTALL_DIR}"
+
+      - name: Extract archive (Windows)
+        if: matrix.ext == 'zip'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = "archive-in/collabhost-$env:VER-$env:RID.$env:EXT"
+          $installDir = Join-Path $HOME '.collabhost\bin'
+          if (Test-Path -LiteralPath $installDir) {
+            Remove-Item -LiteralPath $installDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+          Expand-Archive -LiteralPath $archive -DestinationPath $installDir
+          Write-Host 'Extracted layout:'
+          Get-ChildItem -LiteralPath $installDir | Select-Object Mode,Length,Name
+
+      # Verify the seven contract items survived the round-trip through
+      # upload-artifact + download-artifact + extract. Same checks as install.sh
+      # post-extract -- redundant with the build-matrix "Verify archive contents"
+      # step above, but that step verifies the freshly-built archive; this step
+      # verifies the artifact-uploaded version operators (and the next job)
+      # actually get.
+      - name: Verify install layout (Unix)
+        if: matrix.ext == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          INSTALL_DIR="${HOME}/.collabhost/bin"
+          test -x "${INSTALL_DIR}/${COLLABHOST_BIN}"  || { echo "Missing: ${COLLABHOST_BIN}" >&2; exit 1; }
+          test -x "${INSTALL_DIR}/${CADDY_BIN}"       || { echo "Missing: ${CADDY_BIN}" >&2; exit 1; }
+          test -f "${INSTALL_DIR}/appsettings.json"   || { echo "Missing: appsettings.json" >&2; exit 1; }
+          test -f "${INSTALL_DIR}/INSTALL.md"         || { echo "Missing: INSTALL.md" >&2; exit 1; }
+          test -d "${INSTALL_DIR}/LICENSES"           || { echo "Missing: LICENSES/" >&2; exit 1; }
+          test -f "${INSTALL_DIR}/wwwroot/index.html" || { echo "Missing: wwwroot/index.html" >&2; exit 1; }
+          echo "Install layout verified."
+
+      - name: Verify install layout (Windows)
+        if: matrix.ext == 'zip'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = Join-Path $HOME '.collabhost\bin'
+          foreach ($name in @('collabhost.exe','caddy.exe','appsettings.json','INSTALL.md')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $installDir $name))) {
+              throw "Missing: $name"
+            }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $installDir 'LICENSES') -PathType Container)) {
+            throw 'Missing: LICENSES/'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $installDir 'wwwroot\index.html'))) {
+            throw 'Missing: wwwroot/index.html'
+          }
+          Write-Host 'Install layout verified.'
+
+      # Run --version from $HOME -- catches the F3 class (ContentRootPath
+      # CWD-relative regressions). Mirrors install-integration.yml.
+      - name: collabhost --version (from $HOME) (Unix)
+        if: matrix.ext == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${HOME}"
+          OUT="$("${HOME}/.collabhost/bin/${COLLABHOST_BIN}" --version)"
+          echo "${OUT}"
+          echo "${OUT}" | grep -qi '^collabhost ' || {
+            echo "Unexpected --version output: ${OUT}" >&2
+            exit 1
+          }
+
+      - name: collabhost --version (from $HOME) (Windows)
+        if: matrix.ext == 'zip'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location $HOME
+          $exe = Join-Path $HOME '.collabhost\bin\collabhost.exe'
+          $out = & $exe --version
+          Write-Host $out
+          if ($out -notmatch '^(?i)collabhost ') {
+            throw "Unexpected --version output: $out"
+          }
+
+      # Boot the binary, wait for the admin-key bootstrap line, hit the Portal
+      # HTTP endpoints, then stop. THIS is the test that catches a Portal
+      # regression on the PR -- /, /apps, /api/v1/status all must respond
+      # correctly against THIS PR's archive. Card #184.
+      - name: Boot + HTTP smoke (Unix)
+        if: matrix.ext == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          INSTALL_DIR="${HOME}/.collabhost/bin"
+          # Force a clean database so the first-boot bootstrap path runs.
+          rm -rf "${INSTALL_DIR}/data"
+          cd "${HOME}"
+          LOG="${HOME}/firstboot.log"
+          "${INSTALL_DIR}/${COLLABHOST_BIN}" > "${LOG}" 2>&1 &
+          PID=$!
+          FOUND=""
+          for _ in $(seq 1 60); do
+            if grep -q 'Collabhost admin key:' "${LOG}" 2>/dev/null; then
+              FOUND=1
+              break
+            fi
+            if ! kill -0 "${PID}" 2>/dev/null; then
+              echo "Process exited before emitting admin-key line." >&2
+              echo "--- log ---" >&2
+              cat "${LOG}" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [[ -n "${FOUND}" ]]; then
+            PORT=58400
+            for _ in $(seq 1 30); do
+              if curl -fsSL "http://localhost:${PORT}/api/v1/status" >/dev/null 2>&1; then
+                break
+              fi
+              sleep 1
+            done
+            STATUS_BODY="$(curl -fsSL "http://localhost:${PORT}/api/v1/status")"
+            echo "${STATUS_BODY}" | grep -q '"status"' || {
+              echo "Status endpoint did not return expected JSON: ${STATUS_BODY}" >&2
+              exit 1
+            }
+            DASH_BODY="$(curl -fsSL "http://localhost:${PORT}/")"
+            echo "${DASH_BODY}" | grep -qi '<!doctype html' || {
+              echo "Dashboard root did not return HTML; wwwroot likely missing or unwired." >&2
+              echo "${DASH_BODY}" | head -50 >&2
+              exit 1
+            }
+            DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
+            echo "${DEEP_BODY}" | grep -qi '<!doctype html' || {
+              echo "SPA fallback not wired: /apps returned non-HTML." >&2
+              exit 1
+            }
+            echo "HTTP smoke check passed: status, root, deep link."
+          fi
+
+          # Bounded stop ladder: SIGINT -> 5s grace -> SIGTERM -> 3s grace -> SIGKILL.
+          kill -INT "${PID}" 2>/dev/null || true
+          for _ in $(seq 1 10); do kill -0 "${PID}" 2>/dev/null || break; sleep 0.5; done
+          kill -TERM "${PID}" 2>/dev/null || true
+          for _ in $(seq 1 6); do kill -0 "${PID}" 2>/dev/null || break; sleep 0.5; done
+          kill -KILL "${PID}" 2>/dev/null || true
+          wait "${PID}" 2>/dev/null || true
+
+          if [[ -z "${FOUND}" ]]; then
+            echo "Admin-key bootstrap line not seen within 60s." >&2
+            echo "--- log tail ---" >&2
+            tail -100 "${LOG}" >&2
+            exit 1
+          fi
+          echo "Admin-key bootstrap line emitted."
+
+      - name: Boot + HTTP smoke (Windows)
+        if: matrix.ext == 'zip'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $InstallDir = Join-Path $HOME '.collabhost\bin'
+          $exe = Join-Path $InstallDir 'collabhost.exe'
+
+          # Clean database for first-boot bootstrap path.
+          if (Test-Path -LiteralPath (Join-Path $InstallDir 'data')) {
+            Remove-Item -LiteralPath (Join-Path $InstallDir 'data') -Recurse -Force
+          }
+
+          Set-Location $HOME
+          $log = Join-Path $HOME 'firstboot.log'
+          if (Test-Path -LiteralPath $log) { Remove-Item -LiteralPath $log -Force }
+
+          $proc = Start-Process -FilePath $exe `
+                                -RedirectStandardOutput $log `
+                                -RedirectStandardError (Join-Path $HOME 'firstboot.err.log') `
+                                -PassThru -WindowStyle Hidden
+          $found = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            if ((Test-Path -LiteralPath $log) -and (Select-String -LiteralPath $log -Pattern 'Collabhost admin key:' -Quiet)) {
+              $found = $true
+              break
+            }
+            if ($proc.HasExited) {
+              Write-Host '--- stdout ---'
+              if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }
+              Write-Host '--- stderr ---'
+              if (Test-Path -LiteralPath (Join-Path $HOME 'firstboot.err.log')) { Get-Content -LiteralPath (Join-Path $HOME 'firstboot.err.log') }
+              throw 'Process exited before emitting admin-key line.'
+            }
+            Start-Sleep -Seconds 1
+          }
+
+          if ($found) {
+            $port = 58400
+            $ok = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status" -ErrorAction Stop | Out-Null
+                $ok = $true
+                break
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $ok) { throw 'Status endpoint never came up after 30s.' }
+
+            $status = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status"
+            if ($status.Content -notmatch '"status"') { throw "Unexpected /status body: $($status.Content)" }
+
+            $dash = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/"
+            if ($dash.Content -notmatch '(?i)<!doctype html') { throw 'Dashboard root did not return HTML.' }
+
+            $deep = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/apps"
+            if ($deep.Content -notmatch '(?i)<!doctype html') { throw 'SPA fallback not wired: /apps returned non-HTML.' }
+
+            Write-Host 'HTTP smoke check passed: status, root, deep link.'
+          }
+
+          if (-not $proc.HasExited) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            $proc.WaitForExit(5000) | Out-Null
+          }
+
+          if (-not $found) {
+            Write-Host '--- stdout tail ---'
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 100 }
+            throw 'Admin-key bootstrap line not seen within 60s.'
+          }
+          Write-Host 'Admin-key bootstrap line emitted.'

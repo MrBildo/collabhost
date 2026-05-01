@@ -8,6 +8,7 @@ using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Platform;
+using Collabhost.Api.Portal;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
@@ -24,6 +25,7 @@ public class ProxyManager
     IEventBus<ProcessStateChangedEvent> eventBus,
     ProxySettings settings,
     HostingSettings hostingSettings,
+    PortalSettings portalSettings,
     ActivityEventStore activityEventStore,
     ILogger<ProxyManager> logger
 ) : IHostedService, IDisposable
@@ -51,6 +53,9 @@ public class ProxyManager
 
     private readonly HostingSettings _hostingSettings = hostingSettings
         ?? throw new ArgumentNullException(nameof(hostingSettings));
+
+    private readonly PortalSettings _portalSettings = portalSettings
+        ?? throw new ArgumentNullException(nameof(portalSettings));
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
@@ -204,7 +209,7 @@ public class ProxyManager
         {
             var routeEntries = await LoadRoutableAppsAsync(ct);
 
-            var config = ProxyConfigurationBuilder.Build(routeEntries, _settings, _hostingSettings);
+            var config = ProxyConfigurationBuilder.Build(routeEntries, _settings, _hostingSettings, _portalSettings);
 
             var success = await _caddyClient.LoadConfigAsync(config, ct);
 
@@ -509,11 +514,23 @@ public class ProxyManager
 
             var enabled = IsRouteEnabled(app.Slug);
 
+            // Resolve the operator-configurable DomainPattern at the boundary so the builder
+            // consumes a pre-resolved hostname rather than recomputing. Closes the half-wired
+            // bug where DomainPattern surfaced in the routes table but was ignored by the
+            // emitted Caddy config.
+            var domain = CapabilityResolver.ResolveDomain
+            (
+                routingConfiguration.DomainPattern,
+                app.Slug,
+                _settings.BaseDomain
+            );
+
             result.Add
             (
                 new RouteEntry
                 (
                     app.Slug,
+                    domain,
                     routingConfiguration.ServeMode,
                     port,
                     routingConfiguration.SpaFallback,

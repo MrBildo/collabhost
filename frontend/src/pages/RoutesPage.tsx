@@ -89,19 +89,24 @@ function RoutesPage() {
     {
       key: 'app',
       header: 'App',
-      render: (route) => (
-        <button
-          type="button"
-          className="text-xs wm-link"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--wm-amber)' }}
-          onClick={(e) => {
-            e.stopPropagation()
-            navigate(ROUTES.appDetail(route.appName))
-          }}
-        >
-          {route.appDisplayName}
-        </button>
-      ),
+      render: (route) =>
+        route.isPortal ? (
+          <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
+            {route.appDisplayName}
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="text-xs wm-link"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--wm-amber)' }}
+            onClick={(e) => {
+              e.stopPropagation()
+              navigate(ROUTES.appDetail(route.appName))
+            }}
+          >
+            {route.appDisplayName}
+          </button>
+        ),
     },
   ]
 
