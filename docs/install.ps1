@@ -306,11 +306,69 @@ try
     Get-ChildItem -LiteralPath $LicensesDst -File -Force | Remove-Item -Force
     Copy-Item -Path (Join-Path $ExtractDir 'LICENSES\*') -Destination $LicensesDst -Force
 
-    # Preserve appsettings.json if it already exists. Only seed from the archive
-    # on first install. On upgrade the operator's edits survive (spec section 9.7, R2.1).
+    # appsettings.json: smart-merge on upgrade, plain copy on first install.
+    #
+    # First install: copy the archive's shipped appsettings.json into place AND seed the sidecar
+    # baseline (appsettings.shipped.json) so the next upgrade has a reference for distinguishing
+    # operator-edited keys from untouched defaults (card #161).
+    #
+    # Upgrade: invoke `collabhost --merge-appsettings <shipped> <ondisk> --baseline <baseline>`
+    # to perform the three-way merge. The new binary owns the merge logic so the same shape runs
+    # on every platform without duplicating JSON-handling code in PS + bash.
+    $ShippedSrc      = Join-Path $ExtractDir 'appsettings.json'
+    $BaselineDst     = Join-Path $InstallPath 'appsettings.shipped.json'
+    $CollabhostExe   = Join-Path $InstallPath 'collabhost.exe'
+
     if (-not (Test-Path -LiteralPath $AppSettingsDst))
     {
-        Copy-Item -LiteralPath (Join-Path $ExtractDir 'appsettings.json') -Destination $InstallPath -Force
+        # First install -- copy the shipped file and seed the baseline.
+        Copy-Item -LiteralPath $ShippedSrc -Destination $AppSettingsDst -Force
+        Copy-Item -LiteralPath $ShippedSrc -Destination $BaselineDst    -Force
+    }
+    else
+    {
+        # Upgrade -- run the smart-merge subcommand if the new binary supports it. The merge
+        # subcommand shipped in v1.0.0; older binaries do not recognize the flag and would fall
+        # through to starting the host. Feature-gate on --version output (stable since pre-v0.1.0)
+        # and skip the merge for v0.x binaries -- in that scenario the current behavior (preserve
+        # appsettings.json as bytes, no merge) is what the operator already had.
+        $supportsMerge = $false
+        try
+        {
+            $versionLine = & $CollabhostExe --version 2>$null
+            if ($LASTEXITCODE -eq 0 -and $versionLine -match '^Collabhost v[1-9][0-9]*\.')
+            {
+                $supportsMerge = $true
+            }
+        }
+        catch
+        {
+            # Non-fatal -- treat as unsupported and skip the merge.
+            Write-Verbose "Could not probe collabhost --version: $_"
+        }
+
+        if ($supportsMerge)
+        {
+            try
+            {
+                $mergeOutput = & $CollabhostExe --merge-appsettings $ShippedSrc $AppSettingsDst --baseline $BaselineDst 2>&1
+                $exit = $LASTEXITCODE
+                if ($mergeOutput) { $mergeOutput | ForEach-Object { Write-Host $_ } }
+                if ($exit -ne 0)
+                {
+                    Write-Host "Warning: appsettings.json smart-merge exited with code $exit."
+                    Write-Host "Your existing appsettings.json was left in place; new shipped defaults may not be picked up automatically."
+                    Write-Host "See $InstallPath\appsettings.json and $ShippedSrc to reconcile by hand if needed."
+                }
+            }
+            catch
+            {
+                # Non-fatal: a failed merge leaves appsettings.json untouched (the merger writes
+                # atomically), and the operator's existing config remains valid.
+                Write-Host "Warning: appsettings.json smart-merge failed -- $($_.Exception.Message)"
+                Write-Host "Your existing appsettings.json was left in place."
+            }
+        }
     }
 
     if ($IsReinstall)

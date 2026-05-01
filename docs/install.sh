@@ -256,10 +256,40 @@ mkdir -p "${INSTALL_PATH}/LICENSES"
 rm -f "${INSTALL_PATH}/LICENSES/"*
 cp "${EXTRACT_DIR}/LICENSES/"* "${INSTALL_PATH}/LICENSES/"
 
-# Preserve appsettings.json if it already exists. Only seed from the archive on
-# first install. On upgrade the operator's edits survive (spec §9.7, R2.1).
-if [ ! -f "${INSTALL_PATH}/appsettings.json" ]; then
-  cp "${EXTRACT_DIR}/appsettings.json" "${INSTALL_PATH}/"
+# appsettings.json: smart-merge on upgrade, plain copy on first install.
+#
+# First install: copy the archive's shipped appsettings.json into place AND seed the sidecar
+# baseline (appsettings.shipped.json) so the next upgrade has a reference for distinguishing
+# operator-edited keys from untouched defaults (card #161).
+#
+# Upgrade: invoke `collabhost --merge-appsettings <shipped> <ondisk> --baseline <baseline>` to
+# perform the three-way merge. The new binary owns the merge logic so the same shape runs on
+# every platform without duplicating JSON-handling code in PS + bash.
+SHIPPED_SRC="${EXTRACT_DIR}/appsettings.json"
+APPSETTINGS_DST="${INSTALL_PATH}/appsettings.json"
+BASELINE_DST="${INSTALL_PATH}/appsettings.shipped.json"
+COLLABHOST_BIN="${INSTALL_PATH}/collabhost"
+
+if [ ! -f "${APPSETTINGS_DST}" ]; then
+  # First install -- copy the shipped file and seed the baseline.
+  cp "${SHIPPED_SRC}" "${APPSETTINGS_DST}"
+  cp "${SHIPPED_SRC}" "${BASELINE_DST}"
+else
+  # Upgrade -- run the smart-merge subcommand if the new binary supports it. The merge
+  # subcommand shipped in v1.0.0; older binaries do not recognize the flag and would fall
+  # through to starting the host. We feature-gate on `--version` output (which has been stable
+  # since pre-v0.1.0) and skip the merge for v0.x binaries -- in that scenario the current
+  # behavior (preserve appsettings.json as bytes, no merge) is what the operator already had.
+  chmod +x "${COLLABHOST_BIN}" 2>/dev/null || true
+  COLLABHOST_VERSION_LINE="$("${COLLABHOST_BIN}" --version 2>/dev/null || true)"
+  # Match "Collabhost v1.X.Y" or "Collabhost vN.X.Y" for N >= 1.
+  if echo "${COLLABHOST_VERSION_LINE}" | grep -Eq '^Collabhost v[1-9][0-9]*\.'; then
+    if ! "${COLLABHOST_BIN}" --merge-appsettings "${SHIPPED_SRC}" "${APPSETTINGS_DST}" --baseline "${BASELINE_DST}"; then
+      echo "Warning: appsettings.json smart-merge failed."
+      echo "Your existing appsettings.json was left in place; new shipped defaults may not be picked up automatically."
+      echo "See ${APPSETTINGS_DST} and ${SHIPPED_SRC} to reconcile by hand if needed."
+    fi
+  fi
 fi
 
 if [ -n "${IS_REINSTALL}" ]; then

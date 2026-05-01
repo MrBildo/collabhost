@@ -8,6 +8,7 @@ using Collabhost.Api.Data;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Filesystem;
+using Collabhost.Api.Installation;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Portal;
@@ -22,6 +23,14 @@ if (args.Any(a => a is "--version" or "-v"))
 {
     Console.WriteLine($"Collabhost {VersionInfo.Current}");
     return 0;
+}
+
+// Installer-invoked subcommand: merge a freshly-shipped appsettings.json against the operator's
+// on-disk file (preserve edits, refresh untouched defaults, add new keys). Runs before any host
+// setup so this path never touches the database, the supervisor, or the network. Card #161.
+if (args.Length > 0 && args[0] == "--merge-appsettings")
+{
+    return AppSettingsMergeCli.Run(args[1..], Console.Out, Console.Error);
 }
 
 // Anchor the host's content root to the binary directory, not the shell's CWD. Without this
