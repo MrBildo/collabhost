@@ -16,6 +16,14 @@ public static class DataRegistration
                 Directory.CreateDirectory(dataDir);
             }
 
+            // WAL journal mode improves concurrency (readers don't block writers) and durability
+            // (atomic commit via a separate WAL file). SQLite persists `journal_mode=WAL` in the
+            // database file header on first write, so once enabled it sticks across restarts --
+            // we just need to fire the pragma once here at registration time. SQLite stores
+            // sidecar `*-wal` and `*-shm` files alongside the main DB while WAL is active; both
+            // live in the data directory and are managed by SQLite itself.
+            EnableWalJournalMode(connectionString);
+
             services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(connectionString));
 
             services.AddSingleton<MigrationRunner>();
@@ -53,6 +61,19 @@ public static class DataRegistration
             : null;
 
         return (normalizedConnectionString, configuredDataDir);
+    }
+
+    // Internal visibility for unit tests
+    internal static void EnableWalJournalMode(string connectionString)
+    {
+        using var connection = new SqliteConnection(connectionString);
+
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+
+        command.CommandText = "PRAGMA journal_mode=WAL;";
+        command.ExecuteScalar();
     }
 
     private static string NormalizeRelativeDataSource(string connectionString)
