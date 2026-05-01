@@ -92,7 +92,8 @@ Options:
   -Help                 Print this message and exit
 
 Environment:
-  COLLABHOST_VERSION    Same as -Version
+  COLLABHOST_VERSION           Same as -Version
+  COLLABHOST_INSTALL_BASE_URL  Override archive download base URL (default: GitHub Releases)
 '@
     return
 }
@@ -134,7 +135,7 @@ if ($Tag -notmatch '^v\d+\.\d+\.\d+$')
 
 $VersionNumber = $Tag.TrimStart('v')
 $Archive       = "collabhost-$VersionNumber-$Rid.$Ext"
-$BaseUrl       = "https://github.com/$Repo/releases/download/$Tag"
+$BaseUrl       = if ($env:COLLABHOST_INSTALL_BASE_URL) { $env:COLLABHOST_INSTALL_BASE_URL } else { "https://github.com/$Repo/releases/download/$Tag" }
 $ArchiveUrl    = "$BaseUrl/$Archive"
 $ChecksumsUrl  = "$BaseUrl/checksums.txt"
 
@@ -256,9 +257,9 @@ try
 
     # ---- Extract ------------------------------------------------------------
 
-    # The archive is flat -- the six contract items sit at the archive root,
-    # no wrapping directory. Extract straight into ExtractDir and copy from
-    # there.
+    # The archive is flat -- seven items sit at the archive root (six files/dirs
+    # plus wwwroot/), no wrapping directory. Extract straight into ExtractDir
+    # and copy from there.
     $ExtractDir = Join-Path $TmpDir 'extract'
     New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
     Write-Host 'Extracting archive...'
