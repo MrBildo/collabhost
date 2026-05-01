@@ -4,6 +4,7 @@ import { useDashboardEvents, useDashboardStats } from '@/hooks/use-dashboard'
 import { useSystemStatus } from '@/hooks/use-system-status'
 import { POLL_INTERVALS } from '@/lib/constants'
 import { formatMemory } from '@/lib/format'
+import { formatActionError } from '@/lib/format-action-error'
 import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
 import { ErrorBanner } from '@/shared/ErrorBanner'
@@ -70,6 +71,12 @@ function DashboardPage() {
     isActionPending: startMutation.isPending || stopMutation.isPending,
   })
 
+  const actionErrorEntry = startMutation.isError
+    ? { verb: 'Start', error: startMutation.error, reset: startMutation.reset }
+    : stopMutation.isError
+      ? { verb: 'Stop', error: stopMutation.error, reset: stopMutation.reset }
+      : null
+
   if (isLoading) {
     return (
       <div className="py-8">
@@ -91,6 +98,14 @@ function DashboardPage() {
 
       {error && (
         <ErrorBanner message={error instanceof Error ? error.message : 'Failed to load dashboard'} className="mb-4" />
+      )}
+
+      {actionErrorEntry && (
+        <ErrorBanner
+          message={formatActionError(actionErrorEntry.error, actionErrorEntry.verb)}
+          onDismiss={() => actionErrorEntry.reset()}
+          className="mb-4"
+        />
       )}
 
       {stats && <StatusStrip cells={statusCells} className="mb-5" />}
