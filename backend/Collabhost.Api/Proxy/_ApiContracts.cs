@@ -17,5 +17,6 @@ public record RouteListEntry
     string Target,
     string ProxyMode,
     bool Https,
-    bool Enabled
+    bool Enabled,
+    bool IsPortal
 );

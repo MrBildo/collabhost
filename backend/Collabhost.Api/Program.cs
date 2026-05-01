@@ -10,6 +10,7 @@ using Collabhost.Api.Events;
 using Collabhost.Api.Filesystem;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
+using Collabhost.Api.Portal;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
@@ -147,6 +148,7 @@ builder.Services.AddCapabilities();
 builder.Services.AddEventBus();
 builder.Services.AddSupervisor();
 builder.Services.AddProxy(builder.Configuration);
+builder.Services.AddPortal(builder.Configuration);
 builder.Services.AddProbes();
 
 // MCP
@@ -364,6 +366,13 @@ if (app.Environment.IsDevelopment())
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 }
 
+// Portal: static-asset shipping for the embedded React dashboard. UseDefaultFiles +
+// UseStaticFiles + a SPA-fallback middleware all run in the middleware phase BEFORE auth
+// so the dashboard shell is reachable unauthenticated; auth is enforced at API-call time
+// by <AuthGate>. The auth wall continues to gate /api/v1/* via UseCollabhostAuthorization
+// below. Card #184.
+app.UsePortal();
+
 // Write the last-boot-version sentinel once the host is fully started. Routed through
 // IBootVersionWriter so integration-test fixtures can substitute a no-op writer and keep temp
 // data directories free of the sentinel side-effect (PR #95 MED-2).
@@ -402,6 +411,29 @@ app.Lifetime.ApplicationStarted.Register
                 outcome.RenderedMessage,
                 outcome.ConfiguredListenPort,
                 string.Join(',', outcome.ObservedPorts)
+            );
+        }
+    }
+);
+
+// Portal reachability preflight. Soft validator -- warns, never halts. Two legitimate
+// "missing" states exist (packaging regression where wwwroot/ didn't ship, or an operator
+// intentionally stripping the dashboard); halting boot trades a degraded mode (API still
+// serves; dashboard 404s) for a fully unreachable host. Card #184.
+app.Lifetime.ApplicationStarted.Register
+(
+    () =>
+    {
+        var outcome = PortalReachabilityCheck.Validate(AppContext.BaseDirectory, app.Logger);
+
+        if (outcome.Status != PortalReachabilityStatus.Ok)
+        {
+            app.Logger.LogWarning
+            (
+                "Portal reachability check: {Status} at {WwwrootPath}. {RecoverySteps}",
+                outcome.Status,
+                outcome.WwwrootPath,
+                string.Join(' ', outcome.RecoverySteps)
             );
         }
     }

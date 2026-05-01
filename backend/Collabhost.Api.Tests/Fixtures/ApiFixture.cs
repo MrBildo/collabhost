@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Proxy;
 
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,6 +16,7 @@ public class ApiFixture : IAsyncLifetime
     private WebApplicationFactory<Program> _factory = null!;
     private string? _dbDirectory;
     private string? _userTypesDirectory;
+    private string? _wwwrootDirectory;
 
     public const string AdminKey = "01INTEG0TEST0KEY00000000";
 
@@ -24,7 +26,11 @@ public class ApiFixture : IAsyncLifetime
 
     public HttpClient CreateClient() => _factory.CreateClient();
 
-    public Task InitializeAsync()
+    public string WwwrootDirectory =>
+        _wwwrootDirectory
+            ?? throw new InvalidOperationException("ApiFixture not initialized.");
+
+    public async Task InitializeAsync()
     {
         // Null the env var so a developer shell with COLLABHOST_USER_TYPES_PATH set does not
         // shadow the UseSetting path below. Env var takes precedence in TypeStoreRegistration
@@ -46,6 +52,27 @@ public class ApiFixture : IAsyncLifetime
             Path.GetTempPath(), "collabhost-api-tests-usertypes", Guid.NewGuid().ToString("N")
         );
 
+        // Per-test temp wwwroot. Seeded with index.html and assets/seeded.js so
+        // PortalReachabilityCheck reports Ok and the SPA-fallback middleware finds
+        // a real shell to serve. Tests that exercise the missing-shell degraded mode
+        // delete the seeded files at the start of the test (see Portal middleware tests).
+        _wwwrootDirectory = Path.Combine
+        (
+            Path.GetTempPath(), "collabhost-api-tests-wwwroot", Guid.NewGuid().ToString("N")
+        );
+
+        Directory.CreateDirectory(Path.Combine(_wwwrootDirectory, "assets"));
+        await File.WriteAllTextAsync
+        (
+            Path.Combine(_wwwrootDirectory, "index.html"),
+            "<!doctype html><html><body data-test=\"seeded-shell\"></body></html>"
+        );
+        await File.WriteAllTextAsync
+        (
+            Path.Combine(_wwwrootDirectory, "assets", "seeded.js"),
+            "// seeded\n"
+        );
+
         var dbPath = Path.Combine(_dbDirectory, "collabhost.db");
 
         _factory = new WebApplicationFactory<Program>()
@@ -62,6 +89,7 @@ public class ApiFixture : IAsyncLifetime
                     builder.UseSetting("Proxy:ListenAddress", ":443");
                     builder.UseSetting("Proxy:CertLifetime", "168h");
                     builder.UseSetting("Hosting:ListenPort", "58400");
+                    builder.UseSetting(WebHostDefaults.WebRootKey, _wwwrootDirectory);
 
                     // Suppress verbose EF Core SQL and ASP.NET Core info logging during tests.
                     // When dotnet test runs multiple projects concurrently, high-volume console
@@ -86,8 +114,6 @@ public class ApiFixture : IAsyncLifetime
             );
 
         Client = _factory.CreateClient();
-
-        return Task.CompletedTask;
     }
 
     public async Task DisposeAsync()
@@ -113,6 +139,18 @@ public class ApiFixture : IAsyncLifetime
             try
             {
                 Directory.Delete(_userTypesDirectory, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup
+            }
+        }
+
+        if (_wwwrootDirectory is not null && Directory.Exists(_wwwrootDirectory))
+        {
+            try
+            {
+                Directory.Delete(_wwwrootDirectory, recursive: true);
             }
             catch
             {

@@ -5,6 +5,8 @@ using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Platform;
+using Collabhost.Api.Portal;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
@@ -29,12 +31,33 @@ public static class ProxyEndpoints
         ProcessSupervisor supervisor,
         ProxyManager proxy,
         ProxySettings settings,
+        PortalSettings portalSettings,
+        HostingSettings hostingSettings,
         CancellationToken ct
     )
     {
         var apps = await store.ListAsync(ct);
 
-        var entries = new List<RouteListEntry>();
+        var entries = new List<RouteListEntry>
+        {
+            // Synthetic Portal row pinned at index 0. The Portal is not a registered app
+            // (no App entity, no AppType, no ProxyAppSeeder); the row is synthesized so the
+            // operator can see the resolved Portal hostname without curling Caddy admin.
+            // IsPortal flags the row so the frontend can render it distinctly without
+            // empty-AppExternalId sniffing. Card #184.
+            new
+            (
+                AppExternalId: string.Empty,
+                AppName: "collabhost",
+                AppDisplayName: "Collabhost Portal",
+                Domain: $"{portalSettings.Subdomain}.{settings.BaseDomain}",
+                Target: $"localhost:{hostingSettings.ListenPort.ToString(CultureInfo.InvariantCulture)}",
+                ProxyMode: "reverseProxy",
+                Https: true,
+                Enabled: true,
+                IsPortal: true
+            )
+        };
 
         foreach (var app in apps)
         {
@@ -82,7 +105,8 @@ public static class ProxyEndpoints
                         ? "reverseProxy"
                         : "fileServer",
                     true,
-                    proxy.IsRouteEnabled(app.Slug)
+                    proxy.IsRouteEnabled(app.Slug),
+                    IsPortal: false
                 )
             );
         }

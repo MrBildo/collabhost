@@ -64,6 +64,8 @@ cd frontend && npm run dev
 
 The frontend dev server proxies API requests to the backend automatically. Open `http://localhost:5173` to use the dashboard.
 
+**Dev vs prod URLs.** During `aspire start`, the React dashboard is served by Vite at `http://localhost:5173` with HMR; `http://localhost:58400` is the API only and will return 404 (or fall through to auth → 401) for `/`. In a published binary (post-`dotnet publish` or installer), the dashboard ships in `wwwroot/` and is served by the API at `http://localhost:58400`. The `/api/v1/*` paths are the same in both modes; only the static-asset-serving differs.
+
 ### Initial admin key (dev)
 
 On first run the backend seeds an administrator account and prints the API key to stdout. Copy it into the dashboard's API key prompt; it's stored in `localStorage` per browser.

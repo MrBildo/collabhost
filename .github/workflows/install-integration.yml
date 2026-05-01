@@ -254,6 +254,37 @@ jobs:
             fi
             sleep 1
           done
+          # HTTP smoke check (Portal) -- gated to release.published only. PR runs target
+          # the latest published release, which on pre-Portal releases (v0.1.1 and earlier)
+          # ships no wwwroot/. The dryrun pipeline catches Portal regressions on PRs by
+          # running the full archive build. Card #184.
+          if [[ "${{ github.event_name }}" == "release" && -n "${FOUND}" ]]; then
+            PORT=58400
+            for _ in $(seq 1 30); do
+              if curl -fsSL "http://localhost:${PORT}/api/v1/status" >/dev/null 2>&1; then
+                break
+              fi
+              sleep 1
+            done
+            STATUS_BODY="$(curl -fsSL "http://localhost:${PORT}/api/v1/status")"
+            echo "${STATUS_BODY}" | grep -q '"status"' || {
+              echo "Status endpoint did not return expected JSON: ${STATUS_BODY}" >&2
+              exit 1
+            }
+            DASH_BODY="$(curl -fsSL "http://localhost:${PORT}/")"
+            echo "${DASH_BODY}" | grep -qi '<!doctype html' || {
+              echo "Dashboard root did not return HTML; wwwroot likely missing or unwired." >&2
+              echo "${DASH_BODY}" | head -50 >&2
+              exit 1
+            }
+            DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
+            echo "${DEEP_BODY}" | grep -qi '<!doctype html' || {
+              echo "SPA fallback not wired: /apps returned non-HTML." >&2
+              exit 1
+            }
+            echo "HTTP smoke check passed: status, root, deep link."
+          fi
+
           # Bounded stop ladder: SIGINT -> 5s grace -> SIGTERM -> 3s grace -> SIGKILL.
           # Mirrors the linux-arm64 (QEMU) leg exactly. Worst-case bounded at ~8s.
           kill -INT "${PID}" 2>/dev/null || true
@@ -396,6 +427,33 @@ jobs:
             }
             Start-Sleep -Seconds 1
           }
+          # HTTP smoke check (Portal) -- gated to release.published only. Card #184.
+          if ($env:GITHUB_EVENT_NAME -eq 'release' -and $found) {
+            $port = 58400
+            $ok = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status" -ErrorAction Stop | Out-Null
+                $ok = $true
+                break
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $ok) { throw 'Status endpoint never came up after 30s.' }
+
+            $status = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status"
+            if ($status.Content -notmatch '"status"') { throw "Unexpected /status body: $($status.Content)" }
+
+            $dash = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/"
+            if ($dash.Content -notmatch '(?i)<!doctype html') { throw 'Dashboard root did not return HTML.' }
+
+            $deep = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/apps"
+            if ($deep.Content -notmatch '(?i)<!doctype html') { throw 'SPA fallback not wired: /apps returned non-HTML.' }
+
+            Write-Host 'HTTP smoke check passed: status, root, deep link.'
+          }
+
           # Stop the process (Windows has no clean SIGINT for our P/Invoke
           # process group from PS without GenerateConsoleCtrlEvent gymnastics;
           # Stop-Process is sufficient -- the integration test's success
@@ -523,6 +581,24 @@ jobs:
                 fi
                 sleep 1
               done
+              # HTTP smoke check (Portal) -- gated to release.published only. Card #184.
+              if [ "${GITHUB_EVENT_NAME:-}" = "release" ] && [ -n "${FOUND}" ]; then
+                PORT=58400
+                for _ in $(seq 1 60); do
+                  if curl -fsSL "http://localhost:${PORT}/api/v1/status" >/dev/null 2>&1; then
+                    break
+                  fi
+                  sleep 1
+                done
+                STATUS_BODY="$(curl -fsSL "http://localhost:${PORT}/api/v1/status")"
+                echo "${STATUS_BODY}" | grep -q "\"status\"" || { echo "Unexpected /status body" >&2; exit 1; }
+                DASH_BODY="$(curl -fsSL "http://localhost:${PORT}/")"
+                echo "${DASH_BODY}" | grep -qi "<!doctype html" || { echo "Dashboard root not HTML" >&2; exit 1; }
+                DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
+                echo "${DEEP_BODY}" | grep -qi "<!doctype html" || { echo "SPA fallback not wired" >&2; exit 1; }
+                echo "HTTP smoke check passed (linux-arm64)."
+              fi
+
               kill -INT "${PID}" 2>/dev/null || true
               for _ in $(seq 1 10); do kill -0 "${PID}" 2>/dev/null || break; sleep 0.5; done
               kill -TERM "${PID}" 2>/dev/null || true

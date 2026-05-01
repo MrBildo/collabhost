@@ -30,6 +30,7 @@ on:
       - 'docs/install.ps1'
       - 'caddy.version'
       - 'release-assets/**'
+      - 'frontend/**'
 
 # Read-only token. The dry-run never writes to the Releases surface, never
 # creates tags. Workflow-run artifacts upload via actions/upload-artifact
@@ -97,7 +98,7 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist
-          retention-days: 1
+          retention-days: 7
 
   build-matrix:
     name: Build ${{ matrix.rid }}
@@ -261,6 +262,7 @@ jobs:
           cp "release-assets/INSTALL.md"        "${STAGE}/"
           cp "release-assets/caddy-LICENSE"     "${STAGE}/LICENSES/"
           cp "release-assets/caddy-NOTICE"      "${STAGE}/LICENSES/"
+          cp -R "${PUB}/wwwroot"                "${STAGE}/"
 
           if [[ "${RID}" != win-x64 ]]; then
             chmod +x "${STAGE}/${COLLABHOST_BIN}"
@@ -303,7 +305,8 @@ jobs:
             "${CADDY_BIN}" \
             INSTALL.md \
             LICENSES/caddy-LICENSE \
-            LICENSES/caddy-NOTICE
+            LICENSES/caddy-NOTICE \
+            wwwroot
 
       - name: Verify archive contents
         shell: bash
@@ -351,12 +354,23 @@ jobs:
             fi
           done
 
+          if [[ ! -d "${VERIFY_DIR}/wwwroot" ]]; then
+            echo "MISSING: wwwroot/" >&2
+            MISSING=1
+          elif [[ ! -f "${VERIFY_DIR}/wwwroot/index.html" ]]; then
+            echo "MISSING: wwwroot/index.html" >&2
+            MISSING=1
+          elif [[ -z "$(ls -A "${VERIFY_DIR}/wwwroot/assets" 2>/dev/null)" ]]; then
+            echo "MISSING: wwwroot/assets/* (directory empty)" >&2
+            MISSING=1
+          fi
+
           if [[ "${MISSING}" -ne 0 ]]; then
             echo "Archive contract verification failed." >&2
             exit 1
           fi
 
-          echo "Archive contract verified: flat layout, 6/6 items present."
+          echo "Archive contract verified: flat layout, 7/7 items present."
 
       - name: Checksum
         shell: bash

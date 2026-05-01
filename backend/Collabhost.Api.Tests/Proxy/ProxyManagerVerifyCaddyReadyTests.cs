@@ -321,6 +321,7 @@ public class ProxyManagerVerifyCaddyReadyTests
             eventBus,
             settings,
             hostingSettings,
+            new Collabhost.Api.Portal.PortalSettings { Subdomain = "collabhost" },
             activityEventStore,
             NullLogger<ProxyManager>.Instance
         );

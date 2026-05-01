@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 
 using Collabhost.Api.Platform;
+using Collabhost.Api.Portal;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 
@@ -26,10 +27,20 @@ public class ProxyConfigurationBuilderTests
         ListenPort = 58400
     };
 
+    private static readonly PortalSettings _defaultPortal = new()
+    {
+        Subdomain = "collabhost"
+    };
+
+    // Resolve the default-domain shape so RouteEntry call sites don't have to recompute.
+    // Tests that target a custom domain pass it explicitly.
+    private static string DefaultDomain(string slug, string baseDomain = "collab.internal") =>
+        $"{slug}.{baseDomain}";
+
     [Fact]
     public void Build_EmptyRoutes_ReturnsSelfRouteOnly()
     {
-        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
 
         var routes = GetRoutes(config);
 
@@ -41,7 +52,7 @@ public class ProxyConfigurationBuilderTests
     [Fact]
     public void Build_SelfRoute_HasFlushInterval()
     {
-        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
 
         var selfRoute = GetRoutes(config)![0]!;
 
@@ -53,7 +64,7 @@ public class ProxyConfigurationBuilderTests
     [Fact]
     public void Build_SelfRoute_HasCorrectHostAndDial()
     {
-        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
 
         var selfRoute = GetRoutes(config)![0]!;
 
@@ -69,10 +80,10 @@ public class ProxyConfigurationBuilderTests
     {
         var routes = new List<RouteEntry>
         {
-            new("my-app", ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
+            new("my-app", DefaultDomain("my-app"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
 
         var caddyRoutes = GetRoutes(config)!;
         caddyRoutes.Count.ShouldBe(2);
@@ -96,10 +107,10 @@ public class ProxyConfigurationBuilderTests
     {
         var routes = new List<RouteEntry>
         {
-            new("my-app", ServeMode.ReverseProxy, Port: null, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
+            new("my-app", DefaultDomain("my-app"), ServeMode.ReverseProxy, Port: null, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
 
         var appRoute = GetRoutes(config)![1]!;
         var dial = appRoute["handle"]![0]!["upstreams"]![0]!["dial"]!.GetValue<string>();
@@ -111,10 +122,10 @@ public class ProxyConfigurationBuilderTests
     {
         var routes = new List<RouteEntry>
         {
-            new("docs", ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true)
+            new("docs", DefaultDomain("docs"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
 
         var appRoute = GetRoutes(config)![1]!;
         appRoute["@id"]!.GetValue<string>().ShouldBe("route_docs");
@@ -140,10 +151,10 @@ public class ProxyConfigurationBuilderTests
     {
         var routes = new List<RouteEntry>
         {
-            new("spa", ServeMode.FileServer, Port: null, SpaFallback: true, ArtifactDirectory: "/srv/spa", Enabled: true)
+            new("spa", DefaultDomain("spa"), ServeMode.FileServer, Port: null, SpaFallback: true, ArtifactDirectory: "/srv/spa", Enabled: true)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
 
         var appRoute = GetRoutes(config)![1]!;
 
@@ -166,10 +177,10 @@ public class ProxyConfigurationBuilderTests
     {
         var routes = new List<RouteEntry>
         {
-            new("offline", ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: false)
+            new("offline", DefaultDomain("offline"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: false)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
 
         var appRoute = GetRoutes(config)![1]!;
         appRoute["@id"]!.GetValue<string>().ShouldBe("route_offline");
@@ -185,11 +196,11 @@ public class ProxyConfigurationBuilderTests
     {
         var routes = new List<RouteEntry>
         {
-            new("app-a", ServeMode.ReverseProxy, Port: 3000, SpaFallback: false, ArtifactDirectory: null, Enabled: true),
-            new("app-b", ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/b", Enabled: true)
+            new("app-a", DefaultDomain("app-a"), ServeMode.ReverseProxy, Port: 3000, SpaFallback: false, ArtifactDirectory: null, Enabled: true),
+            new("app-b", DefaultDomain("app-b"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/b", Enabled: true)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
 
         var subjects = config["apps"]!["tls"]!["automation"]!["policies"]![0]!["subjects"]!.AsArray();
         subjects.Count.ShouldBe(3);
@@ -201,7 +212,7 @@ public class ProxyConfigurationBuilderTests
     [Fact]
     public void Build_PkiConfig_HasLocalAuthority()
     {
-        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
 
         var pki = config["apps"]!["pki"]!;
         var ca = pki["certificate_authorities"]!["local"]!;
@@ -212,7 +223,7 @@ public class ProxyConfigurationBuilderTests
     [Fact]
     public void Build_HttpConfig_UsesSettingsListenAddress()
     {
-        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
 
         var listen = config["apps"]!["http"]!["servers"]!["srv0"]!["listen"]![0]!.GetValue<string>();
         listen.ShouldBe(":443");
@@ -230,7 +241,7 @@ public class ProxyConfigurationBuilderTests
             AdminPort = 9876
         };
 
-        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, _defaultPortal);
 
         var adminListen = config["admin"]!["listen"]!.GetValue<string>();
         adminListen.ShouldBe("localhost:9876");
@@ -252,10 +263,10 @@ public class ProxyConfigurationBuilderTests
 
         var routes = new List<RouteEntry>
         {
-            new("test-app", ServeMode.ReverseProxy, Port: 8080, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
+            new("test-app", DefaultDomain("test-app", "mylab.local"), ServeMode.ReverseProxy, Port: 8080, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, settings, hosting);
+        var config = ProxyConfigurationBuilder.Build(routes, settings, hosting, _defaultPortal);
 
         var selfHost = GetRoutes(config)![0]!["match"]![0]!["host"]![0]!.GetValue<string>();
         selfHost.ShouldBe("collabhost.mylab.local");
@@ -269,12 +280,12 @@ public class ProxyConfigurationBuilderTests
     {
         var routes = new List<RouteEntry>
         {
-            new("alpha", ServeMode.ReverseProxy, Port: 3000, SpaFallback: false, ArtifactDirectory: null, Enabled: true),
-            new("bravo", ServeMode.ReverseProxy, Port: 3001, SpaFallback: false, ArtifactDirectory: null, Enabled: true),
-            new("charlie", ServeMode.FileServer, Port: null, SpaFallback: true, ArtifactDirectory: "/srv/c", Enabled: true)
+            new("alpha", DefaultDomain("alpha"), ServeMode.ReverseProxy, Port: 3000, SpaFallback: false, ArtifactDirectory: null, Enabled: true),
+            new("bravo", DefaultDomain("bravo"), ServeMode.ReverseProxy, Port: 3001, SpaFallback: false, ArtifactDirectory: null, Enabled: true),
+            new("charlie", DefaultDomain("charlie"), ServeMode.FileServer, Port: null, SpaFallback: true, ArtifactDirectory: "/srv/c", Enabled: true)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
 
         var caddyRoutes = GetRoutes(config)!;
         caddyRoutes.Count.ShouldBe(4);
@@ -290,10 +301,10 @@ public class ProxyConfigurationBuilderTests
     {
         var routes = new List<RouteEntry>
         {
-            new("static-site", ServeMode.FileServer, Port: null, SpaFallback: true, ArtifactDirectory: "/srv/site", Enabled: false)
+            new("static-site", DefaultDomain("static-site"), ServeMode.FileServer, Port: null, SpaFallback: true, ArtifactDirectory: "/srv/site", Enabled: false)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
 
         var appRoute = GetRoutes(config)![1]!;
         appRoute["@id"]!.GetValue<string>().ShouldBe("route_static-site");
@@ -315,7 +326,7 @@ public class ProxyConfigurationBuilderTests
             AdminPort = 2019
         };
 
-        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, _defaultPortal);
 
         var lifetime = config["apps"]!["tls"]!["automation"]!["policies"]![0]!["issuers"]![0]!["lifetime"]!.GetValue<string>();
         lifetime.ShouldBe("720h");
@@ -326,10 +337,10 @@ public class ProxyConfigurationBuilderTests
     {
         var routes = new List<RouteEntry>
         {
-            new("test", ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
+            new("test", DefaultDomain("test"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
         };
 
-        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting);
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
 
         var caddyRoutes = GetRoutes(config)!;
 
@@ -337,6 +348,100 @@ public class ProxyConfigurationBuilderTests
         {
             route!["terminal"]!.GetValue<bool>().ShouldBeTrue();
         }
+    }
+
+    // ----- Card #184: Portal:Subdomain knob threaded through self-route -----
+
+    [Fact]
+    public void Build_DefaultPortalSubdomain_ProducesCollabhostHost()
+    {
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var selfHost = GetRoutes(config)![0]!["match"]![0]!["host"]![0]!.GetValue<string>();
+        selfHost.ShouldBe("collabhost.collab.internal");
+    }
+
+    [Fact]
+    public void Build_CustomPortalSubdomain_ChangesSelfRouteHostAndTlsSubject()
+    {
+        var portal = new PortalSettings { Subdomain = "portal" };
+        var settings = new ProxySettings
+        {
+            BaseDomain = "collabot.dev",
+            BinaryPath = "caddy",
+            ListenAddress = ":443",
+            CertLifetime = "168h",
+            AdminPort = 2019
+        };
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, portal);
+
+        var selfHost = GetRoutes(config)![0]!["match"]![0]!["host"]![0]!.GetValue<string>();
+        selfHost.ShouldBe("portal.collabot.dev");
+
+        var subjects = config["apps"]!["tls"]!["automation"]!["policies"]![0]!["subjects"]!.AsArray();
+        subjects[0]!.GetValue<string>().ShouldBe("portal.collabot.dev");
+    }
+
+    // ----- Card #184: RouteEntry.Domain consumed by per-app routes -----
+
+    [Fact]
+    public void Build_RouteEntryWithCustomDomain_EmitsCustomHost()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new("myapp", "console.example.com", ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var appHost = GetRoutes(config)![1]!["match"]![0]!["host"]![0]!.GetValue<string>();
+        appHost.ShouldBe("console.example.com");
+
+        var subjects = config["apps"]!["tls"]!["automation"]!["policies"]![0]!["subjects"]!.AsArray();
+        subjects.ShouldContain(s => s!.GetValue<string>() == "console.example.com");
+    }
+
+    [Fact]
+    public void Build_RouteEntryWithDefaultDomainPattern_EmitsSlugBaseDomain()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new("myapp", "myapp.collab.internal", ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var appHost = GetRoutes(config)![1]!["match"]![0]!["host"]![0]!.GetValue<string>();
+        appHost.ShouldBe("myapp.collab.internal");
+    }
+
+    [Fact]
+    public void Build_DisabledRoute_UsesRouteEntryDomain()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new("weird", "weird.example.com", ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: false)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var appHost = GetRoutes(config)![1]!["match"]![0]!["host"]![0]!.GetValue<string>();
+        appHost.ShouldBe("weird.example.com");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_UsesRouteEntryDomain()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new("docs", "docs.example.com", ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var appHost = GetRoutes(config)![1]!["match"]![0]!["host"]![0]!.GetValue<string>();
+        appHost.ShouldBe("docs.example.com");
     }
 
     private static JsonArray? GetRoutes(JsonObject config) =>

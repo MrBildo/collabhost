@@ -1,6 +1,7 @@
 using System.Globalization;
 
 using Collabhost.Api.Platform;
+using Collabhost.Api.Portal;
 using Collabhost.Api.Registry;
 
 namespace Collabhost.Api.Proxy;
@@ -11,11 +12,12 @@ public static class ProxyConfigurationBuilder
     (
         IReadOnlyList<RouteEntry> routes,
         ProxySettings settings,
-        HostingSettings hostingSettings
+        HostingSettings hostingSettings,
+        PortalSettings portalSettings
     )
     {
-        var subjects = BuildSubjectList(routes, settings);
-        var caddyRoutes = BuildRoutes(routes, settings, hostingSettings);
+        var subjects = BuildSubjectList(routes, settings, portalSettings);
+        var caddyRoutes = BuildRoutes(routes, settings, hostingSettings, portalSettings);
 
         var adminListen = string.Format
         (
@@ -42,17 +44,18 @@ public static class ProxyConfigurationBuilder
     private static JsonArray BuildSubjectList
     (
         IReadOnlyList<RouteEntry> routes,
-        ProxySettings settings
+        ProxySettings settings,
+        PortalSettings portalSettings
     )
     {
         var subjects = new JsonArray
         {
-            $"collabhost.{settings.BaseDomain}"
+            $"{portalSettings.Subdomain}.{settings.BaseDomain}"
         };
 
         foreach (var route in routes)
         {
-            subjects.Add($"{route.Slug}.{settings.BaseDomain}");
+            subjects.Add(route.Domain);
         }
 
         return subjects;
@@ -62,21 +65,22 @@ public static class ProxyConfigurationBuilder
     (
         IReadOnlyList<RouteEntry> routes,
         ProxySettings settings,
-        HostingSettings hostingSettings
+        HostingSettings hostingSettings,
+        PortalSettings portalSettings
     )
     {
         var caddyRoutes = new JsonArray
         {
-            BuildSelfRoute(settings, hostingSettings)
+            BuildSelfRoute(settings, hostingSettings, portalSettings)
         };
 
         foreach (var route in routes)
         {
             var caddyRoute = route switch
             {
-                { Enabled: false } => BuildDisabledRoute(route, settings),
-                { ServeMode: ServeMode.ReverseProxy } => BuildReverseProxyRoute(route, settings),
-                { ServeMode: ServeMode.FileServer } => BuildFileServerRoute(route, settings),
+                { Enabled: false } => BuildDisabledRoute(route),
+                { ServeMode: ServeMode.ReverseProxy } => BuildReverseProxyRoute(route),
+                { ServeMode: ServeMode.FileServer } => BuildFileServerRoute(route),
                 _ => null
             };
 
@@ -89,15 +93,23 @@ public static class ProxyConfigurationBuilder
         return caddyRoutes;
     }
 
-    private static JsonObject BuildSelfRoute(ProxySettings settings, HostingSettings hostingSettings) =>
+    private static JsonObject BuildSelfRoute
+    (
+        ProxySettings settings,
+        HostingSettings hostingSettings,
+        PortalSettings portalSettings
+    ) =>
         new()
         {
+            // The @id literal is an internal Caddy CRUD identifier, never operator-visible.
+            // Renaming it is a Caddy-config-state migration concern; pre-production posture
+            // says don't (CLAUDE.md Rule 3). The host below now respects Portal:Subdomain.
             ["@id"] = "route_collabhost",
             ["match"] = new JsonArray
             {
                 new JsonObject
                 {
-                    ["host"] = new JsonArray { $"collabhost.{settings.BaseDomain}" }
+                    ["host"] = new JsonArray { $"{portalSettings.Subdomain}.{settings.BaseDomain}" }
                 }
             },
             ["handle"] = new JsonArray
@@ -119,7 +131,7 @@ public static class ProxyConfigurationBuilder
             ["terminal"] = true
         };
 
-    private static JsonObject BuildDisabledRoute(RouteEntry route, ProxySettings settings) =>
+    private static JsonObject BuildDisabledRoute(RouteEntry route) =>
         new()
         {
             ["@id"] = $"route_{route.Slug}",
@@ -127,7 +139,7 @@ public static class ProxyConfigurationBuilder
             {
                 new JsonObject
                 {
-                    ["host"] = new JsonArray { $"{route.Slug}.{settings.BaseDomain}" }
+                    ["host"] = new JsonArray { route.Domain }
                 }
             },
             ["handle"] = new JsonArray
@@ -146,7 +158,7 @@ public static class ProxyConfigurationBuilder
             ["terminal"] = true
         };
 
-    private static JsonObject BuildReverseProxyRoute(RouteEntry route, ProxySettings settings)
+    private static JsonObject BuildReverseProxyRoute(RouteEntry route)
     {
         var dialPort = route.Port?.ToString(CultureInfo.InvariantCulture) ?? "0";
 
@@ -157,7 +169,7 @@ public static class ProxyConfigurationBuilder
             {
                 new JsonObject
                 {
-                    ["host"] = new JsonArray { $"{route.Slug}.{settings.BaseDomain}" }
+                    ["host"] = new JsonArray { route.Domain }
                 }
             },
             ["handle"] = new JsonArray
@@ -178,7 +190,7 @@ public static class ProxyConfigurationBuilder
         };
     }
 
-    private static JsonObject BuildFileServerRoute(RouteEntry route, ProxySettings settings)
+    private static JsonObject BuildFileServerRoute(RouteEntry route)
     {
         var subrouteHandlers = new JsonArray
         {
@@ -208,7 +220,7 @@ public static class ProxyConfigurationBuilder
             {
                 new JsonObject
                 {
-                    ["host"] = new JsonArray { $"{route.Slug}.{settings.BaseDomain}" }
+                    ["host"] = new JsonArray { route.Domain }
                 }
             },
             ["handle"] = new JsonArray
@@ -317,6 +329,7 @@ public static class ProxyConfigurationBuilder
 public record RouteEntry
 (
     string Slug,
+    string Domain,
     ServeMode ServeMode,
     int? Port,
     bool SpaFallback,

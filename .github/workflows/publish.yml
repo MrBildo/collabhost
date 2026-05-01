@@ -52,7 +52,7 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist
-          retention-days: 1
+          retention-days: 7
 
   build-matrix:
     name: Build ${{ matrix.rid }}
@@ -237,14 +237,17 @@ jobs:
           rm -rf "${STAGE}"
           mkdir -p "${STAGE}/LICENSES"
 
-          # Six contract items (spec §5.1): collabhost, caddy, appsettings.json,
-          # INSTALL.md, LICENSES/caddy-LICENSE, LICENSES/caddy-NOTICE.
+          # Seven contract items: collabhost, caddy, appsettings.json,
+          # INSTALL.md, LICENSES/caddy-LICENSE, LICENSES/caddy-NOTICE, wwwroot/.
           cp "${PUB}/${COLLABHOST_BIN}"         "${STAGE}/"
           cp "${PUB}/appsettings.json"          "${STAGE}/"
           cp "caddy-download/${CADDY_BIN}"      "${STAGE}/"
           cp "release-assets/INSTALL.md"        "${STAGE}/"
           cp "release-assets/caddy-LICENSE"     "${STAGE}/LICENSES/"
           cp "release-assets/caddy-NOTICE"      "${STAGE}/LICENSES/"
+          # wwwroot/ is the dashboard's static assets. dotnet publish emits it because
+          # build-frontend populates backend/Collabhost.Api/wwwroot before publish.
+          cp -R "${PUB}/wwwroot"                "${STAGE}/"
 
           # Unix archives must carry the execute bit on the collabhost binary.
           # PublishSingleFile on Linux/macOS sets +x on the emitted binary, but
@@ -298,7 +301,8 @@ jobs:
             "${CADDY_BIN}" \
             INSTALL.md \
             LICENSES/caddy-LICENSE \
-            LICENSES/caddy-NOTICE
+            LICENSES/caddy-NOTICE \
+            wwwroot
 
       # Contract verification: open the archive in a temp directory and
       # assert all six items are present. Fails the leg hard if anything is
@@ -354,12 +358,24 @@ jobs:
             fi
           done
 
+          # wwwroot/ is a directory; verify presence + index.html + non-empty assets/.
+          if [[ ! -d "${VERIFY_DIR}/wwwroot" ]]; then
+            echo "MISSING: wwwroot/" >&2
+            MISSING=1
+          elif [[ ! -f "${VERIFY_DIR}/wwwroot/index.html" ]]; then
+            echo "MISSING: wwwroot/index.html" >&2
+            MISSING=1
+          elif [[ -z "$(ls -A "${VERIFY_DIR}/wwwroot/assets" 2>/dev/null)" ]]; then
+            echo "MISSING: wwwroot/assets/* (directory empty)" >&2
+            MISSING=1
+          fi
+
           if [[ "${MISSING}" -ne 0 ]]; then
             echo "Archive contract verification failed." >&2
             exit 1
           fi
 
-          echo "Archive contract verified: flat layout, 6/6 items present."
+          echo "Archive contract verified: flat layout, 7/7 items present."
 
       # Per-archive SHA256 (locked decision 9). Portable `sha256sum -c` format.
       - name: Checksum
