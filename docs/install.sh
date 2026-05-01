@@ -227,6 +227,11 @@ if [ ! -f "${EXTRACT_DIR}/collabhost" ]; then
   exit 1
 fi
 
+if [ ! -f "${EXTRACT_DIR}/wwwroot/index.html" ]; then
+  echo "Archive layout unexpected: wwwroot/index.html not found after extract." >&2
+  exit 1
+fi
+
 # ---- Install (reinstall-safe) ------------------------------------------------
 
 # Detect a pre-existing install BEFORE touching anything. Used to emit the

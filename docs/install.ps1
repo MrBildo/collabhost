@@ -270,6 +270,12 @@ try
         throw "Archive layout unexpected: collabhost.exe not found at archive root after extract."
     }
 
+    $PortalIndex = Join-Path $ExtractDir 'wwwroot\index.html'
+    if (-not (Test-Path -LiteralPath $PortalIndex -PathType Leaf))
+    {
+        throw "Archive layout unexpected: wwwroot\index.html not found after extract."
+    }
+
     # ---- Install (reinstall-safe) -------------------------------------------
 
     # Detect a pre-existing install BEFORE touching anything. Used to emit the
