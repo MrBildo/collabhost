@@ -464,8 +464,27 @@ for your version.
 
 ### 9.7 Binary crashes before I see anything
 
-Run Collabhost with stdout + stderr redirected so you can read the failure
-after the fact:
+Collabhost writes a crash log to disk on startup failure or unhandled exception.
+Look in:
+
+```
+~/.collabhost/data/logs/         (Linux / macOS)
+%USERPROFILE%\.collabhost\data\logs\   (Windows)
+```
+
+Each crash produces a `collabhost-crash-<utc-timestamp>.log` file containing the
+same summary, details, and recovery steps printed to stderr, plus the exception
+stack trace where applicable. The directory keeps the last 10 crash logs and
+prunes older ones automatically.
+
+The crash log directory is configurable:
+
+- Environment variable: `COLLABHOST_LOGS_PATH=/some/other/dir`.
+- Appsetting: `"Diagnostics": { "CrashLogs": { "Directory": "..." } }`.
+- Retention count: `"Diagnostics": { "CrashLogs": { "Retention": 25 } }`.
+
+If you need stdout + stderr captured as well (e.g., for an issue report),
+redirect the process output:
 
 ```sh
 ./collabhost > collabhost.log 2>&1
@@ -474,9 +493,6 @@ after the fact:
 ```powershell
 .\collabhost.exe *> collabhost.log
 ```
-
-Inspect `collabhost.log`. Structured log-directory support is planned; this
-redirect is the v0.1.0 fallback.
 
 ### 9.8 Recovery after a failed upgrade (migration failure)
 

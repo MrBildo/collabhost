@@ -52,4 +52,47 @@ public static class StartupStderr
 
         writer.Flush();
     }
+
+    // Write the stderr block AND persist a crash log file to disk for post-mortem
+    // diagnostics. Stdout/stderr are gone with the terminated process; the file is
+    // what an operator finds afterward. Crash-log write is best-effort and never
+    // throws -- the stderr block is still the primary signal.
+    public static void WriteAndPersist
+    (
+        string summary,
+        IReadOnlyList<(string Label, string Value)> details,
+        IReadOnlyList<string> recoverySteps,
+        int exitCode,
+        string crashLogDirectory,
+        int crashLogRetention,
+        Exception? exception = null
+    )
+    {
+        Write(summary, details, recoverySteps, exitCode);
+
+        var content = CrashLog.BuildContent
+        (
+            timestampUtc: DateTimeOffset.UtcNow,
+            summary: summary,
+            details: details,
+            recoverySteps: recoverySteps,
+            exitCode: exitCode,
+            exception: exception
+        );
+
+        var written = CrashLog.TryWrite
+        (
+            directory: crashLogDirectory,
+            timestampUtc: DateTimeOffset.UtcNow,
+            content: content,
+            retention: crashLogRetention
+        );
+
+        if (written is not null)
+        {
+            Console.Error.WriteLine($"Crash log written to: {written}");
+            Console.Error.WriteLine();
+            Console.Error.Flush();
+        }
+    }
 }

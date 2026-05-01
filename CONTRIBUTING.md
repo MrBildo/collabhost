@@ -255,6 +255,10 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 
 **On a PR run, the target version is the latest published release** -- there may not be an unreleased tag to test against. On a `release.published` run, the target is the just-shipped tag.
 
+## Maintaining releases
+
+If you're cutting a Collabhost release (tagging, publishing the archive, bumping bundled deps), see [docs/release-process.md](docs/release-process.md). It covers the bundled-Caddy CVE response process, the response-time SLA, the pre-release checklist, and the version-pin mechanism (`caddy.version`). Bundling Caddy means Collabhost owns its CVE response window for end users -- the process exists so security fixes don't get stuck behind us.
+
 ## Questions?
 
 Open an issue. We're a small project and happy to help contributors get oriented.

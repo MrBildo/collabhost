@@ -66,6 +66,7 @@ Documented inline in `.editorconfig`, `backend/Directory.Build.props`, and `back
 
 **`backend/Directory.Build.targets` (test projects only):**
 - `CA1707` — test method names use `MethodName_Scenario_ExpectedResult` with underscores.
+- `VSTHRD200` — xUnit `[Fact]`/`[Theory]` methods conventionally omit the `Async` suffix; community norm predates the analyzer. Project-wide suppression avoids per-class `#pragma` noise.
 
 ### Frontend overrides
 

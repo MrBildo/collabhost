@@ -279,6 +279,10 @@ Apps are registered with a slug, discovered from the filesystem, and supervised 
 
 Contributions are welcome. If you'd like to build from source, run the dev environment, or submit a pull request, see [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, setup, coding conventions, and the PR process.
 
+## Security and bundled-binary maintenance
+
+Collabhost ships a Caddy binary in its release archive, which means Collabhost owns Caddy's CVE response window for end users. See [docs/release-process.md](docs/release-process.md) for the upstream-monitoring sources, response-time SLA, release checklist, and version-pin mechanism.
+
 ## Credits
 
 Collabhost is built by a human-AI collaborative team. The bots are autonomous AI agents on the Collabot platform — they design, write code, review each other's work, and ship features alongside their human teammate.
