@@ -34,8 +34,16 @@ const mockUseSystemStatus = vi.mocked(useSystemStatus)
 const mockUseStartApp = vi.mocked(useStartApp)
 const mockUseStopApp = vi.mocked(useStopApp)
 
-function makeMutationStub() {
-  return { mutate: vi.fn(), isPending: false } as unknown as ReturnType<typeof useStartApp>
+function makeMutationStub(
+  overrides: Partial<{ isError: boolean; error: Error | null; isPending: boolean; reset: () => void }> = {},
+) {
+  return {
+    mutate: vi.fn(),
+    isPending: overrides.isPending ?? false,
+    isError: overrides.isError ?? false,
+    error: overrides.error ?? null,
+    reset: overrides.reset ?? vi.fn(),
+  } as unknown as ReturnType<typeof useStartApp>
 }
 
 function makeEvent(overrides: Partial<DashboardEvent> = {}): DashboardEvent {
@@ -229,6 +237,40 @@ describe('DashboardPage', () => {
     // Strip still renders (stats loaded), but no Proxy cell yet
     expect(screen.getByText('Total Apps')).toBeInTheDocument()
     expect(screen.queryByText('Proxy')).toBeNull()
+  })
+
+  test('renders an action-error banner when the start mutation fails', () => {
+    mockUseStartApp.mockReturnValue(makeMutationStub({ isError: true, error: new Error('API 409: already running') }))
+
+    render(<DashboardPage />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Start failed: state conflict — already running')
+  })
+
+  test('renders an action-error banner when the stop mutation fails', () => {
+    mockUseStopApp.mockReturnValue(makeMutationStub({ isError: true, error: new Error('API 500: kaboom') }))
+
+    render(<DashboardPage />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Stop failed: server error (500) — kaboom')
+  })
+
+  test('dismissing the action-error banner calls mutation.reset()', async () => {
+    const reset = vi.fn()
+    mockUseStartApp.mockReturnValue(makeMutationStub({ isError: true, error: new Error('API 409: nope'), reset }))
+
+    const { default: userEvent } = await import('@testing-library/user-event')
+    const user = userEvent.setup()
+    render(<DashboardPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss error' }))
+    expect(reset).toHaveBeenCalledOnce()
+  })
+
+  test('omits the action-error banner when no mutation is in error state', () => {
+    render(<DashboardPage />)
+
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   test('shows full page spinner while primary data is loading', () => {
