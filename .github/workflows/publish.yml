@@ -154,8 +154,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-user-static
           # Sanity-check that binfmt routes aarch64 ELFs through qemu.
-          ls /proc/sys/fs/binfmt_misc/ | grep -q '^qemu-aarch64$' \
-            || { echo "qemu-aarch64 binfmt registration missing" >&2; exit 1; }
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            echo "qemu-aarch64 binfmt registration missing" >&2
+            exit 1
+          fi
 
       - name: Build Caddy with plugins (xcaddy)
         shell: bash
