@@ -1,0 +1,13 @@
+# Caddy plugins baked into the bundled Caddy binary.
+#
+# Format: three whitespace-separated columns per non-comment line:
+#   <go-module-path>  <version>  <caddy-module-id>
+#
+# - go-module-path + version pin the Go dependency (used by `xcaddy build`)
+# - caddy-module-id is what `caddy list-modules` prints once the plugin is
+#   loaded. The build workflow greps for it post-build to assert the plugin
+#   actually got baked in -- a missing module fails the leg.
+#
+# Lines starting with `#` and blank lines are ignored.
+# Bumping or adding a plugin: see docs/release-process.md.
+github.com/caddy-dns/cloudflare  v0.2.4  dns.providers.cloudflare
