@@ -257,7 +257,7 @@ try
 
     # ---- Extract ------------------------------------------------------------
 
-    # The archive is flat -- seven items sit at the archive root (six files/dirs
+    # The archive is flat -- eight items sit at the archive root (seven files/dirs
     # plus wwwroot/), no wrapping directory. Extract straight into ExtractDir
     # and copy from there.
     $ExtractDir = Join-Path $TmpDir 'extract'
@@ -305,6 +305,16 @@ try
     }
     Get-ChildItem -LiteralPath $LicensesDst -File -Force | Remove-Item -Force
     Copy-Item -Path (Join-Path $ExtractDir 'LICENSES\*') -Destination $LicensesDst -Force
+
+    # wwwroot: always overwrite from the archive. This is the Portal SPA bundle
+    # and must track the binary version exactly. Operators do not edit it; new
+    # versions ship new bundles (see INSTALL.md §8 "Overwritten on re-run").
+    $WwwrootDst = Join-Path $InstallPath 'wwwroot'
+    if (Test-Path -LiteralPath $WwwrootDst)
+    {
+        Remove-Item -LiteralPath $WwwrootDst -Recurse -Force
+    }
+    Copy-Item -LiteralPath (Join-Path $ExtractDir 'wwwroot') -Destination $InstallPath -Recurse -Force
 
     # appsettings.json: smart-merge on upgrade, plain copy on first install.
     #
