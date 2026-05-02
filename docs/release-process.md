@@ -34,17 +34,28 @@ These are targets, not contracts. Collabhost is a small project. If a critical a
 Before tagging a release, walk this list:
 
 - [ ] **Caddy upstream check.** Is there a newer Caddy release than the one pinned in `caddy.version`? Read its release notes and security advisories. If a CVE is fixed, treat the bump as required and surface it in the Collabhost release notes.
-- [ ] **Bump `caddy.version` if needed.** Single-line file at the repo root. The publish workflow downloads this version into the release archive.
+- [ ] **Bump `caddy.version` if needed.** Single-line file at the repo root. The publish workflow feeds this version to `xcaddy build` for each target RID.
+- [ ] **Plugin upstream check.** For every line in `caddy-plugins.txt`, verify the pinned version is still current at the plugin's upstream repo (e.g. `github.com/caddy-dns/cloudflare`). Bump if a security fix or compatibility-with-new-Caddy-core release lands.
 - [ ] **Smoke-test the new Caddy version against `CaddyClient`.** Collabhost talks to Caddy through the admin API (`POST /load`, `PATCH /config/...`). Caddy occasionally tightens admin-API behaviour between minors. Run `aspire start` or a standalone backend with the bumped version, register a managed app, exercise route reload. Log lines should be clean.
-- [ ] **Run the dry-run pipeline.** `.github/workflows/publish-dryrun.yml` builds the same archives the real release will produce. Required if `caddy.version` changed.
+- [ ] **Run the dry-run pipeline.** `.github/workflows/publish-dryrun.yml` builds the same archives the real release will produce. Required if `caddy.version`, `xcaddy.version`, or `caddy-plugins.txt` changed. The post-build step asserts every plugin's Caddy module is reachable via `caddy list-modules` — a missing plugin fails the leg, so a bump that breaks plugin compatibility surfaces here, not in production.
 - [ ] **Run the install-integration workflow.** Trigger `install-integration.yml` via `workflow_dispatch` and confirm at minimum the `linux-arm64` leg passes (the QEMU leg only runs on manual + `release.published`).
 - [ ] **Credit upstream in release notes.** When a release rolls a Caddy security fix, note the CVE ID(s) and link the upstream advisory. Don't quietly ship security fixes — give operators a reason to update.
 
 ### Version pin mechanism
 
-The pinned Caddy version lives in `caddy.version` at the repo root — a single-line file containing the version number (e.g. `2.11.2`). The publish workflow (`.github/workflows/publish.yml`) reads this file at archive-build time and downloads the matching binary from the official Caddy release surface for each target RID.
+Three pin files at the repo root drive the bundled Caddy build, all consumed by the publish workflow (`.github/workflows/publish.yml`):
 
-When you bump it, that's the only file you change for a Caddy version bump (apart from the release notes).
+| File | Shape | Purpose |
+|---|---|---|
+| `caddy.version` | Single-line plain text (e.g. `2.11.2`) | Caddy core version. Fed to `xcaddy build vX.Y.Z`. |
+| `xcaddy.version` | Single-line plain text (e.g. `0.4.5`) | Pinned `xcaddy` itself, installed via `go install` at build time. Bumping is rare — only when xcaddy ships a build-side fix. |
+| `caddy-plugins.txt` | One plugin per non-comment line: `<go-module-path>  <version>  <caddy-module-id>` | Plugins baked into the build. The third column (`caddy-module-id`) is what `caddy list-modules` prints once the plugin is loaded; the workflow grep-asserts it post-build. |
+
+**Bumping Caddy** now means a coordinated walk: bump `caddy.version`, then check whether each plugin in `caddy-plugins.txt` has a newer release tag compatible with the new Caddy core. The dry-run pipeline catches mismatches at build time (Go's module resolution refuses incompatible combinations) and at verify time (a plugin that loaded but moved its Caddy module ID will fail the assertion).
+
+**Adding a plugin:** append a line to `caddy-plugins.txt` with the three columns. The CI build step assembles `--with` flags from the file; no workflow edit needed. Update [CONTRIBUTING.md](../CONTRIBUTING.md) if the plugin enables a new operator-facing setting.
+
+**Local reproduction.** `tools/build-caddy.ps1` (Windows) and `tools/build-caddy.sh` (Linux/macOS) read the same three pin files and produce a binary structurally identical to the CI build. Requires [Go](https://go.dev/dl/) on PATH. Useful for verifying a bump locally before pushing.
 
 ### Future scope
 

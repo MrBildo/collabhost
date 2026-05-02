@@ -65,33 +65,29 @@ jobs:
         include:
           - rid: win-x64
             os: windows-latest
-            caddy_os: windows
-            caddy_arch: amd64
-            caddy_ext: zip
+            goos: windows
+            goarch: amd64
             caddy_bin: caddy.exe
             collabhost_bin: collabhost.exe
             ext: zip
           - rid: osx-arm64
             os: macos-latest
-            caddy_os: mac
-            caddy_arch: arm64
-            caddy_ext: tar.gz
+            goos: darwin
+            goarch: arm64
             caddy_bin: caddy
             collabhost_bin: collabhost
             ext: tar.gz
           - rid: linux-x64
             os: ubuntu-latest
-            caddy_os: linux
-            caddy_arch: amd64
-            caddy_ext: tar.gz
+            goos: linux
+            goarch: amd64
             caddy_bin: caddy
             collabhost_bin: collabhost
             ext: tar.gz
           - rid: linux-arm64
             os: ubuntu-latest
-            caddy_os: linux
-            caddy_arch: arm64
-            caddy_ext: tar.gz
+            goos: linux
+            goarch: arm64
             caddy_bin: caddy
             collabhost_bin: collabhost
             ext: tar.gz
@@ -110,85 +106,157 @@ jobs:
           name: frontend-dist
           path: backend/Collabhost.Api/wwwroot
 
-      # Download the pinned Caddy archive and verify its upstream hash before
-      # extraction. Mismatch fails the job hard. Caddy's published
-      # caddy_<version>_checksums.txt uses SHA-512 (128 hex chars per line),
-      # not SHA-256, so we hash the downloaded archive with sha512 and compare.
-      - name: Download and verify Caddy
+      # ---------------------------------------------------------------------
+      # Caddy bundling -- replaced the upstream-binary download with an in-CI
+      # `xcaddy build` so we can bake `caddy-dns/cloudflare` (and any future
+      # plugins listed in caddy-plugins.txt) into the shipped binary. Vanilla
+      # Caddy lacks DNS-01 providers; without this, ACME issuance against
+      # *.collabot.dev would fail at runtime with "unknown module
+      # dns.providers.cloudflare".
+      #
+      # Pinned versions:
+      #   caddy.version     -- Caddy core (e.g. 2.11.2)
+      #   xcaddy.version    -- xcaddy itself (e.g. 0.4.5)
+      #   caddy-plugins.txt -- one plugin per non-comment line:
+      #     <go-module-path>  <version>  <caddy-module-id>
+      #
+      # The third column is the Caddy module ID (e.g. `dns.providers.cloudflare`)
+      # that `caddy list-modules` prints once the plugin is loaded; the post-
+      # build verify step greps for it to assert the plugin actually got baked
+      # in. The build runs natively on Windows/macOS legs and cross-compiles
+      # for linux-arm64 from the x64 ubuntu runner via GOOS/GOARCH.
+      # ---------------------------------------------------------------------
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+
+      - name: Install xcaddy
+        shell: bash
+        run: |
+          set -euo pipefail
+          XCADDY_VER=$(tr -d '[:space:]' < xcaddy.version)
+          echo "Installing xcaddy v${XCADDY_VER}"
+          go install "github.com/caddyserver/xcaddy/cmd/xcaddy@v${XCADDY_VER}"
+          # Surface the GOPATH/bin location once for the leg log; subsequent
+          # steps invoke xcaddy through the absolute path.
+          go env GOPATH
+
+      - name: Set up qemu (linux-arm64 only)
+        # Only the linux-arm64 leg cross-compiles; we need qemu-user-static
+        # so the post-build `caddy list-modules` assertion can execute the
+        # foreign binary on the x64 runner. Other legs build natively.
+        if: matrix.rid == 'linux-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+          # Sanity-check that binfmt routes aarch64 ELFs through qemu.
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            echo "qemu-aarch64 binfmt registration missing" >&2
+            exit 1
+          fi
+
+      - name: Build Caddy with plugins (xcaddy)
         shell: bash
         env:
-          RID: ${{ matrix.rid }}
-          CADDY_OS: ${{ matrix.caddy_os }}
-          CADDY_ARCH: ${{ matrix.caddy_arch }}
-          CADDY_EXT: ${{ matrix.caddy_ext }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
           CADDY_BIN: ${{ matrix.caddy_bin }}
         run: |
           set -euo pipefail
 
-          # Strip every whitespace byte (including the trailing newline editors
-          # add) so downstream string interpolation never embeds %0A in URLs.
-          VER=$(tr -d '[:space:]' < caddy.version)
-          ASSET="caddy_${VER}_${CADDY_OS}_${CADDY_ARCH}.${CADDY_EXT}"
-          CHECKSUMS="caddy_${VER}_checksums.txt"
-          BASE="https://github.com/caddyserver/caddy/releases/download/v${VER}"
-
-          mkdir -p caddy-download
-          cd caddy-download
-
-          echo "Downloading Caddy asset: ${ASSET}"
-          curl -fsSL --retry 3 --retry-delay 5 -o "${ASSET}" "${BASE}/${ASSET}"
-
-          echo "Downloading Caddy checksums: ${CHECKSUMS}"
-          curl -fsSL --retry 3 --retry-delay 5 -o "${CHECKSUMS}" "${BASE}/${CHECKSUMS}"
-
-          # Pick sha512 tool (sha512sum on Linux/Git-Bash for Windows,
-          # shasum -a 512 on macOS).
-          if command -v sha512sum >/dev/null 2>&1; then
-            SHA_CMD="sha512sum"
+          CADDY_VER=$(tr -d '[:space:]' < caddy.version)
+          # `go install` writes xcaddy(.exe) into GOPATH/bin. Pick whichever
+          # exists -- Windows runners install xcaddy.exe; Linux/macOS get the
+          # bare name. Git-Bash on Windows does NOT auto-append .exe for
+          # explicit-path invocations, so we resolve the suffix here.
+          GOPATH_BIN="$(go env GOPATH)/bin"
+          if [[ -x "${GOPATH_BIN}/xcaddy.exe" ]]; then
+            XCADDY="${GOPATH_BIN}/xcaddy.exe"
+          elif [[ -x "${GOPATH_BIN}/xcaddy" ]]; then
+            XCADDY="${GOPATH_BIN}/xcaddy"
           else
-            SHA_CMD="shasum -a 512"
-          fi
-
-          # Pull the expected hash from upstream's checksums.txt. Format is
-          # standard sha512sum output: "<hex>  <filename>". Match on the
-          # filename field exactly (awk $2) to avoid regex portability issues
-          # between GNU grep (Linux, Git-Bash) and BSD grep (macOS).
-          EXPECTED=$(awk -v name="${ASSET}" '$2 == name {print $1}' "${CHECKSUMS}")
-          if [[ -z "${EXPECTED}" ]]; then
-            echo "Could not find ${ASSET} in upstream checksums file" >&2
-            cat "${CHECKSUMS}" >&2
+            echo "xcaddy not found in ${GOPATH_BIN}" >&2
             exit 1
           fi
 
-          ACTUAL=$(${SHA_CMD} "${ASSET}" | awk '{print $1}')
+          # Assemble --with flags from caddy-plugins.txt. Skip blank lines and
+          # comments. First two columns (module + version) are the build
+          # input; the third (caddy-module-id) is consumed by the verify step.
+          WITH_ARGS=()
+          while IFS= read -r line || [[ -n "${line}" ]]; do
+            trimmed="${line#"${line%%[![:space:]]*}"}"
+            [[ -z "${trimmed}" || "${trimmed:0:1}" == "#" ]] && continue
+            # shellcheck disable=SC2206
+            parts=( ${trimmed} )
+            if (( ${#parts[@]} < 2 )); then
+              echo "Malformed plugin line: ${line}" >&2
+              exit 1
+            fi
+            WITH_ARGS+=( --with "${parts[0]}@${parts[1]}" )
+          done < caddy-plugins.txt
 
-          echo "Expected: ${EXPECTED}"
-          echo "Actual:   ${ACTUAL}"
-
-          if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
-            echo "SHA-512 mismatch for ${ASSET} -- refusing to bundle" >&2
+          if (( ${#WITH_ARGS[@]} == 0 )); then
+            echo "No plugins declared in caddy-plugins.txt -- xcaddy needs at least one --with" >&2
             exit 1
           fi
 
-          echo "Caddy SHA-512 verified."
+          mkdir -p caddy-build
+          OUTPUT="caddy-build/${CADDY_BIN}"
 
-          # Extract only the caddy binary. Upstream archives also contain
-          # LICENSE and README.md which we do not ship (we ship our own pinned
-          # copies).
-          case "${ASSET}" in
-            *.zip)
-              unzip -o "${ASSET}" "${CADDY_BIN}"
-              ;;
-            *.tar.gz)
-              tar -xzf "${ASSET}" "${CADDY_BIN}"
-              ;;
-          esac
+          echo "Building Caddy v${CADDY_VER} for GOOS=${GOOS} GOARCH=${GOARCH}"
+          echo "Plugins: ${WITH_ARGS[*]}"
+          "${XCADDY}" build "v${CADDY_VER}" "${WITH_ARGS[@]}" --output "${OUTPUT}"
 
-          # Only Unix RIDs need the execute bit. Failing chmod on a Unix leg
-          # should surface as a hard error, not be swallowed by `|| true`.
-          if [[ "${RID}" != win-x64 ]]; then
-            chmod +x "${CADDY_BIN}"
+          if [[ "${GOOS}" != "windows" ]]; then
+            chmod +x "${OUTPUT}"
           fi
+          ls -la "${OUTPUT}"
+
+      - name: Verify Caddy modules
+        shell: bash
+        env:
+          CADDY_BIN: ${{ matrix.caddy_bin }}
+        run: |
+          set -euo pipefail
+
+          BIN="caddy-build/${CADDY_BIN}"
+          # Print version + build info up-front so a build with no plugins
+          # surfaces visibly in the log.
+          "${BIN}" version
+          MODULES="$("${BIN}" list-modules)"
+
+          # Walk caddy-plugins.txt's third column and assert each Caddy module
+          # ID is present in `caddy list-modules` output. Missing module fails
+          # the leg -- a vanilla build would silently strip the plugin
+          # otherwise.
+          MISSING=0
+          while IFS= read -r line || [[ -n "${line}" ]]; do
+            trimmed="${line#"${line%%[![:space:]]*}"}"
+            [[ -z "${trimmed}" || "${trimmed:0:1}" == "#" ]] && continue
+            # shellcheck disable=SC2206
+            parts=( ${trimmed} )
+            (( ${#parts[@]} >= 3 )) || continue
+            module_id="${parts[2]}"
+            if grep -Fxq "${module_id}" <<< "${MODULES}"; then
+              echo "  ok: ${module_id}"
+            else
+              echo "  MISSING: ${module_id}" >&2
+              MISSING=1
+            fi
+          done < caddy-plugins.txt
+
+          if [[ "${MISSING}" -ne 0 ]]; then
+            echo "One or more plugins missing from built Caddy binary." >&2
+            echo "--- caddy list-modules ---" >&2
+            echo "${MODULES}" >&2
+            exit 1
+          fi
+
+          echo "All declared plugins are baked into the binary."
 
       # Self-contained single-file publish. The output binary is renamed from
       # Collabhost.Api[.exe] to collabhost[.exe] by a PublishSingleFile-scoped
@@ -241,7 +309,7 @@ jobs:
           # INSTALL.md, LICENSES/caddy-LICENSE, LICENSES/caddy-NOTICE, wwwroot/.
           cp "${PUB}/${COLLABHOST_BIN}"         "${STAGE}/"
           cp "${PUB}/appsettings.json"          "${STAGE}/"
-          cp "caddy-download/${CADDY_BIN}"      "${STAGE}/"
+          cp "caddy-build/${CADDY_BIN}"         "${STAGE}/"
           cp "release-assets/INSTALL.md"        "${STAGE}/"
           cp "release-assets/caddy-LICENSE"     "${STAGE}/LICENSES/"
           cp "release-assets/caddy-NOTICE"      "${STAGE}/LICENSES/"

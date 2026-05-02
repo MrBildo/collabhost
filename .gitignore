@@ -53,8 +53,12 @@ frontend/src/**/*.js
 # Playwright MCP
 .playwright-mcp/
 
-# Local tools (downloaded binaries)
-tools/
+# Local tools -- ignore everything by default (downloaded binaries, scratch
+# subprojects), but track the scripts and source files contributors share.
+tools/*
+!tools/build-caddy.ps1
+!tools/build-caddy.sh
+!tools/generate-ids.cs
 
 # OS files
 Thumbs.db
