@@ -110,6 +110,7 @@ public class ProcessSupervisorStopAsyncTests
             typeStore,
             eventBus,
             argumentProviders: [],
+            environmentProviders: [],
             activityEventStore,
             NullLogger<ProcessSupervisor>.Instance
         );

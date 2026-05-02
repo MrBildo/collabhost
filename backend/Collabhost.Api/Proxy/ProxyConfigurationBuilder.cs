@@ -26,18 +26,27 @@ public static class ProxyConfigurationBuilder
             settings.AdminPort
         );
 
+        var apps = new JsonObject();
+
+        // The internal-CA issuer relies on Caddy's local PKI block to advertise
+        // the local authority. The ACME branch (Let's Encrypt) ignores any local
+        // CA configuration -- omit the pki block entirely when DnsProvider is
+        // set so the emitted config carries no dead weight.
+        if (string.IsNullOrWhiteSpace(settings.DnsProvider))
+        {
+            apps["pki"] = BuildPkiConfiguration();
+        }
+
+        apps["tls"] = BuildTlsConfiguration(subjects, settings);
+        apps["http"] = BuildHttpConfiguration(caddyRoutes, settings);
+
         return new JsonObject
         {
             ["admin"] = new JsonObject
             {
                 ["listen"] = adminListen
             },
-            ["apps"] = new JsonObject
-            {
-                ["pki"] = BuildPkiConfiguration(),
-                ["tls"] = BuildTlsConfiguration(subjects, settings),
-                ["http"] = BuildHttpConfiguration(caddyRoutes, settings)
-            }
+            ["apps"] = apps
         };
     }
 
@@ -288,8 +297,13 @@ public static class ProxyConfigurationBuilder
             }
         };
 
-    private static JsonObject BuildTlsConfiguration(JsonArray subjects, ProxySettings settings) =>
-        new()
+    private static JsonObject BuildTlsConfiguration(JsonArray subjects, ProxySettings settings)
+    {
+        var issuer = string.IsNullOrWhiteSpace(settings.DnsProvider)
+            ? BuildInternalIssuer(settings)
+            : BuildAcmeIssuer(settings);
+
+        return new JsonObject
         {
             ["automation"] = new JsonObject
             {
@@ -298,15 +312,41 @@ public static class ProxyConfigurationBuilder
                     new JsonObject
                     {
                         ["subjects"] = subjects,
-                        ["issuers"] = new JsonArray
-                        {
-                            new JsonObject
-                            {
-                                ["module"] = "internal",
-                                ["ca"] = "local",
-                                ["lifetime"] = settings.CertLifetime
-                            }
-                        }
+                        ["issuers"] = new JsonArray { issuer }
+                    }
+                }
+            }
+        };
+    }
+
+    private static JsonObject BuildInternalIssuer(ProxySettings settings) =>
+        new()
+        {
+            ["module"] = "internal",
+            ["ca"] = "local",
+            ["lifetime"] = settings.CertLifetime
+        };
+
+    // ACME issuer with DNS-01 challenge. The api_token uses Caddy's {env.NAME}
+    // placeholder so the secret is resolved from Caddy's process env at issue
+    // time -- the token never appears in the JSON config snapshot, log diff,
+    // or DB row. ProxyEnvironmentProvider plumbs the env var into the Caddy
+    // child's process env at spawn time.
+    //
+    // No "lifetime" field: Let's Encrypt sets 90 days and rejects custom
+    // lifetimes; CertLifetime is internal-CA-only.
+    private static JsonObject BuildAcmeIssuer(ProxySettings settings) =>
+        new()
+        {
+            ["module"] = "acme",
+            ["challenges"] = new JsonObject
+            {
+                ["dns"] = new JsonObject
+                {
+                    ["provider"] = new JsonObject
+                    {
+                        ["name"] = settings.DnsProvider,
+                        ["api_token"] = $"{{env.{settings.DnsApiTokenEnvVar}}}"
                     }
                 }
             }

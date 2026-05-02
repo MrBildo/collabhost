@@ -92,7 +92,7 @@ public class RouteExplicitStateTests
         var runner = new FakeManagedProcessRunner();
         var eventBus = new Collabhost.Api.Events.EventBus<Collabhost.Api.Events.ProcessStateChangedEvent>();
         var activityEventStore = new ActivityEventStore(dbFactory, NullLogger<ActivityEventStore>.Instance);
-        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, capabilityStore, typeStore, eventBus, [], activityEventStore, NullLogger<ProcessSupervisor>.Instance);
+        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, capabilityStore, typeStore, eventBus, [], [], activityEventStore, NullLogger<ProcessSupervisor>.Instance);
 
         return new ProxyManager
         (

@@ -307,6 +307,7 @@ public class ProxyManagerVerifyCaddyReadyTests
             typeStore,
             eventBus,
             [],
+            [],
             activityEventStore,
             NullLogger<ProcessSupervisor>.Instance
         );

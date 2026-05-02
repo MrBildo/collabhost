@@ -210,8 +210,10 @@ public class ProxyConfigurationBuilderTests
     }
 
     [Fact]
-    public void Build_PkiConfig_HasLocalAuthority()
+    public void Build_InternalBranch_PkiConfig_HasLocalAuthority()
     {
+        // Predicate: internal-CA branch only. The ACME branch (Build_RealDomain_DoesNotEmitPkiBlock)
+        // asserts the inverse for completeness.
         var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
 
         var pki = config["apps"]!["pki"]!;
@@ -315,8 +317,11 @@ public class ProxyConfigurationBuilderTests
     }
 
     [Fact]
-    public void Build_CertLifetime_ReflectedInTlsConfig()
+    public void Build_InternalBranch_CertLifetime_ReflectedInTlsConfig()
     {
+        // Predicate: lifetime is internal-CA-only. Let's Encrypt sets 90 days
+        // and rejects custom lifetimes, so the ACME branch (see
+        // Build_RealDomain_DoesNotEmitLifetime) does not emit this field.
         var settings = new ProxySettings
         {
             BaseDomain = "collab.internal",
@@ -442,6 +447,113 @@ public class ProxyConfigurationBuilderTests
 
         var appHost = GetRoutes(config)![1]!["match"]![0]!["host"]![0]!.GetValue<string>();
         appHost.ShouldBe("docs.example.com");
+    }
+
+    // ----- Card #34 Phase C: TLS issuer branching (internal CA vs ACME DNS-01) -----
+
+    [Fact]
+    public void Build_InternalDomain_UsesInternalIssuer()
+    {
+        // Default settings have DnsProvider unset -- exercises the internal-CA branch.
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var issuer = config["apps"]!["tls"]!["automation"]!["policies"]![0]!["issuers"]![0]!;
+
+        issuer["module"]!.GetValue<string>().ShouldBe("internal");
+        issuer["ca"]!.GetValue<string>().ShouldBe("local");
+    }
+
+    [Fact]
+    public void Build_RealDomain_UsesAcmeIssuer_WithCloudflareDnsChallenge()
+    {
+        var settings = new ProxySettings
+        {
+            BaseDomain = "collabot.dev",
+            BinaryPath = "caddy",
+            ListenAddress = ":443",
+            CertLifetime = "168h",
+            DnsProvider = "cloudflare",
+            DnsApiTokenEnvVar = "CLOUDFLARE_API_TOKEN",
+            AdminPort = 2019
+        };
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, _defaultPortal);
+
+        var issuer = config["apps"]!["tls"]!["automation"]!["policies"]![0]!["issuers"]![0]!;
+
+        issuer["module"]!.GetValue<string>().ShouldBe("acme");
+
+        var provider = issuer["challenges"]!["dns"]!["provider"]!;
+        provider["name"]!.GetValue<string>().ShouldBe("cloudflare");
+        provider["api_token"]!.GetValue<string>().ShouldBe("{env.CLOUDFLARE_API_TOKEN}");
+    }
+
+    [Fact]
+    public void Build_RealDomain_UsesConfiguredApiTokenEnvVar()
+    {
+        // Custom env-var name flows through the placeholder unchanged.
+        var settings = new ProxySettings
+        {
+            BaseDomain = "collabot.dev",
+            BinaryPath = "caddy",
+            ListenAddress = ":443",
+            CertLifetime = "168h",
+            DnsProvider = "cloudflare",
+            DnsApiTokenEnvVar = "MY_CF_TOKEN",
+            AdminPort = 2019
+        };
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, _defaultPortal);
+
+        var apiToken = config["apps"]!["tls"]!["automation"]!["policies"]![0]!["issuers"]![0]!
+            ["challenges"]!["dns"]!["provider"]!["api_token"]!.GetValue<string>();
+
+        apiToken.ShouldBe("{env.MY_CF_TOKEN}");
+    }
+
+    [Fact]
+    public void Build_RealDomain_DoesNotEmitLifetime()
+    {
+        // Let's Encrypt rejects custom lifetimes -- ACME branch must omit the field
+        // even when CertLifetime is set in settings.
+        var settings = new ProxySettings
+        {
+            BaseDomain = "collabot.dev",
+            BinaryPath = "caddy",
+            ListenAddress = ":443",
+            CertLifetime = "720h",
+            DnsProvider = "cloudflare",
+            DnsApiTokenEnvVar = "CLOUDFLARE_API_TOKEN",
+            AdminPort = 2019
+        };
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, _defaultPortal);
+
+        var issuer = config["apps"]!["tls"]!["automation"]!["policies"]![0]!["issuers"]![0]!.AsObject();
+
+        issuer.ContainsKey("lifetime").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Build_RealDomain_DoesNotEmitPkiBlock()
+    {
+        // Caddy ignores the local pki block under ACME -- omit it as dead weight.
+        var settings = new ProxySettings
+        {
+            BaseDomain = "collabot.dev",
+            BinaryPath = "caddy",
+            ListenAddress = ":443",
+            CertLifetime = "168h",
+            DnsProvider = "cloudflare",
+            DnsApiTokenEnvVar = "CLOUDFLARE_API_TOKEN",
+            AdminPort = 2019
+        };
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, _defaultPortal);
+
+        var apps = config["apps"]!.AsObject();
+
+        apps.ContainsKey("pki").ShouldBeFalse();
     }
 
     private static JsonArray? GetRoutes(JsonObject config) =>
