@@ -25,12 +25,15 @@ name: Install integration
 #
 # Triggers:
 #   - workflow_dispatch: manual runs, with required version override.
-#   - release.published: post-release validation against the just-shipped
-#     archives.
+#   - workflow_run (on Publish success): post-release validation against the
+#     just-shipped archives. Chained off publish.yml to avoid the
+#     release.published parallel-fire race that caused all 4 legs to fail on
+#     the v1.0.0 cut (card #211). publish.yml must complete successfully before
+#     install-integration can start downloading archives.
 #
 # Verification target version:
 #   - workflow_dispatch -> inputs.version (must be a tag that exists)
-#   - release.published -> the released tag
+#   - workflow_run      -> github.event.workflow_run.head_branch (the tag name)
 #
 # Runners:
 #   linux-x64    -> ubuntu-latest        (native)
@@ -40,14 +43,15 @@ name: Install integration
 #   win-x64      -> windows-latest       (native)
 
 on:
+  workflow_run:
+    workflows: [Publish]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
         description: 'Release tag to install (e.g. v0.1.0). Required; the run will fail if absent.'
         required: true
         default: ''
-  release:
-    types: [published]
 
 permissions:
   contents: read
@@ -57,6 +61,14 @@ jobs:
     name: Resolve target version
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # For workflow_run: only proceed when publish.yml completed successfully on
+    # a release event. This excludes failed publish runs and any PR-time
+    # publish-dryrun.yml runs (different workflow name, but guard is defensive).
+    # For workflow_dispatch: always proceed (operator-initiated manual retry).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'release')
     outputs:
       version: ${{ steps.resolve.outputs.VERSION }}
     steps:
@@ -64,13 +76,16 @@ jobs:
         id: resolve
         env:
           INPUT_VERSION: ${{ inputs.version }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          # workflow_run: head_branch carries the tag name (e.g. "v1.0.0") when
+          # publish.yml was triggered by a release event on a tag push.
+          # workflow_dispatch: this will be empty; INPUT_VERSION is used instead.
+          RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
 
           if [[ -n "${RELEASE_TAG:-}" ]]; then
             VERSION="${RELEASE_TAG}"
-            SOURCE="release.published"
+            SOURCE="workflow_run (publish.yml)"
           elif [[ -n "${INPUT_VERSION:-}" ]]; then
             VERSION="${INPUT_VERSION}"
             SOURCE="workflow_dispatch input"
@@ -197,14 +212,17 @@ jobs:
           PINNED="v$(tr -d '[:space:]' < caddy.version)"
           echo "Bundled Caddy: ${ACTUAL}"
           echo "Pinned (this commit): ${PINNED}"
-          if [[ "${{ github.event_name }}" == "release" ]]; then
+          # workflow_run is always release-mode (guard on resolve-version ensures
+          # this). workflow_dispatch is always a manual/informational run where
+          # the dispatch ref's caddy.version may differ from the release archive.
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
             if [[ "${ACTUAL}" != "${PINNED}" ]]; then
               echo "Bundled Caddy version (${ACTUAL}) does not match pin (${PINNED})." >&2
               exit 1
             fi
             echo "Caddy version matches pin."
           else
-            echo "Informational-only on non-release runs (release archive may predate current pin)."
+            echo "Informational-only on workflow_dispatch runs (release archive may predate current pin)."
           fi
 
       # Admin-key bootstrap line. Start the binary, wait for the line, then
@@ -371,13 +389,14 @@ jobs:
           $pinned = 'v' + (Get-Content -LiteralPath 'caddy.version' -Raw).Trim()
           Write-Host "Bundled Caddy: $actual"
           Write-Host "Pinned (this commit): $pinned"
-          if ($env:GITHUB_EVENT_NAME -eq 'release') {
+          # workflow_run is always release-mode; workflow_dispatch is manual/informational.
+          if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') {
             if ($actual -ne $pinned) {
               throw "Bundled Caddy version ($actual) does not match pin ($pinned)."
             }
             Write-Host 'Caddy version matches pin.'
           } else {
-            Write-Host 'Informational-only on non-release runs (release archive may predate current pin).'
+            Write-Host 'Informational-only on workflow_dispatch runs (release archive may predate current pin).'
           }
 
       - name: Admin-key bootstrap line
@@ -537,12 +556,12 @@ jobs:
               test -f "${INSTALL_DIR}/data/sentinel.txt"
               echo "Reinstall preservation verified (linux-arm64)."
 
-              # Caddy version (informational unless release.published).
+              # Caddy version (enforced on workflow_run/release; informational on workflow_dispatch).
               ACTUAL="$("${INSTALL_DIR}/caddy" version 2>/dev/null | awk "{print \$1; exit}")"
               PINNED="v$(tr -d "[:space:]" < /work/caddy.version)"
               echo "Bundled Caddy: ${ACTUAL}"
               echo "Pinned: ${PINNED}"
-              if [ "${GITHUB_EVENT_NAME:-}" = "release" ]; then
+              if [ "${GITHUB_EVENT_NAME:-}" != "workflow_dispatch" ]; then
                 [ "${ACTUAL}" = "${PINNED}" ] || { echo "Caddy version mismatch" >&2; exit 1; }
               fi
 
