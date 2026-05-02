@@ -16,12 +16,11 @@ These rules are non-negotiable and apply to every agent, every dispatch, every c
 
 2. **Specs live under `.agents/specs/` and are NOT part of the published source.** Source code comments must not reference spec documents (e.g., `// per .agents/specs/release-pipeline.md §6.2`). Cross-reference internal design via card numbers, GitHub issues, or inline rationale — anything an external reader of the published source can resolve.
 
-3. **Pre-production posture: don't design for migration.**
-   - Collabhost is pre-production. Anyone currently using it is aware of the possibility of breaking changes.
-   - Surface migration concerns, but **do not plan around them, prioritize them, scope around them, or design for them** unless explicitly told to. This applies to settings schema, API shape, persisted state, and operator-facing contracts.
-   - At some point this posture will change. Until the project owner says so, treat breaking-change cost as zero.
-
-   Project owner's verbatim framing (2026-04-29): *"We are still in a pre-production state. Anyone currently using Collabhost is well aware of the possibility of breaking changes. So regarding setting migration concerns, they are nil. I want everyone to be clear, surface migration concerns, but don't plan around them, prioritize, scope, or design for them unless I tell you to. At some point we will have those concerns. That is not today or tomorrow."*
+3. **Production posture: design for backward compatibility.**
+   - Collabhost is at v1.0.0 (sunset of pre-production posture, 2026-05-01). Operators installing v1.0.0 are no longer "well aware of the possibility of breaking changes" — durable homelab deployments are now real, and the cost of a breaking change is operator-facing.
+   - **Surface migration concerns and design for them.** This applies to settings schema, API shape, persisted state, and operator-facing contracts. New settings keys, API additions, and schema changes must consider how an existing v1.0.x install reaches the new shape without operator intervention.
+   - When a breaking change is genuinely required, the operator must be told: an explicit migration step in the installer or release notes, a deprecation window where both shapes work, or a tool that performs the transformation. Silent breakage is not an option.
+   - **Historical reference — pre-production posture (in force from project start through v0.1.x):** *"We are still in a pre-production state. Anyone currently using Collabhost is well aware of the possibility of breaking changes. So regarding setting migration concerns, they are nil. I want everyone to be clear, surface migration concerns, but don't plan around them, prioritize, scope, or design for them unless I tell you to. At some point we will have those concerns. That is not today or tomorrow."* — Bill Wheelock, 2026-04-29. The "at some point" arrived at the v1.0.0 tag.
 
 ## Coding Conventions
 
@@ -66,6 +65,7 @@ Documented inline in `.editorconfig`, `backend/Directory.Build.props`, and `back
 
 **`backend/Directory.Build.targets` (test projects only):**
 - `CA1707` — test method names use `MethodName_Scenario_ExpectedResult` with underscores.
+- `VSTHRD200` — xUnit `[Fact]`/`[Theory]` methods conventionally omit the `Async` suffix; community norm predates the analyzer. Project-wide suppression avoids per-class `#pragma` noise.
 
 ### Frontend overrides
 

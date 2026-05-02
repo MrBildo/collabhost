@@ -51,12 +51,11 @@ public sealed class MigrationRunner
         {
             throw new MigrationFailedException
             (
-                exitCode: 11,
-                summary: "database is locked",
-                backupPath: null,
-                migrationAttempted: null,
-                cause: ex,
-                recoverySteps:
+                11,
+                "database is locked",
+                null,
+                null,
+                ex,
                 [
                     "Another Collabhost process may be using the database. Stop it first.",
                     $"Database location: {ResolveDbPath(dataDirectory)}",
@@ -68,7 +67,7 @@ public sealed class MigrationRunner
         if (pending.Count == 0)
         {
             _logger.LogInformation("No pending migrations; schema is current.");
-            return new MigrationOutcome(Migrated: false, BackupPath: null, AppliedMigrations: []);
+            return new MigrationOutcome(false, null, []);
         }
 
         _logger.LogInformation
@@ -90,18 +89,17 @@ public sealed class MigrationRunner
 
             try
             {
-                File.Copy(dbPath, backupPath, overwrite: false);
+                File.Copy(dbPath, backupPath, false);
             }
             catch (IOException ex) when (File.Exists(backupPath))
             {
                 throw new MigrationFailedException
                 (
-                    exitCode: 11,
-                    summary: "backup filename collision; refusing to proceed",
-                    backupPath: backupPath,
-                    migrationAttempted: pending[0],
-                    cause: ex,
-                    recoverySteps:
+                    11,
+                    "backup filename collision; refusing to proceed",
+                    backupPath,
+                    pending[0],
+                    ex,
                     [
                         "A backup with this timestamp already exists. Wait a moment and retry.",
                         "If this persists, inspect the backups directory for stuck files."
@@ -112,12 +110,11 @@ public sealed class MigrationRunner
             {
                 throw new MigrationFailedException
                 (
-                    exitCode: 20,
-                    summary: "pre-migration backup failed",
-                    backupPath: null,
-                    migrationAttempted: pending[0],
-                    cause: ex,
-                    recoverySteps:
+                    20,
+                    "pre-migration backup failed",
+                    null,
+                    pending[0],
+                    ex,
                     [
                         "Verify filesystem permissions on the data directory.",
                         "Ensure sufficient disk space before retrying."
@@ -128,12 +125,12 @@ public sealed class MigrationRunner
             {
                 throw new MigrationFailedException
                 (
-                    exitCode: 20,
-                    summary: "pre-migration backup failed",
-                    backupPath: null,
-                    migrationAttempted: pending[0],
-                    cause: ex,
-                    recoverySteps: ["Verify filesystem permissions on the data directory."]
+                    20,
+                    "pre-migration backup failed",
+                    null,
+                    pending[0],
+                    ex,
+                    ["Verify filesystem permissions on the data directory."]
                 );
             }
 
@@ -165,12 +162,11 @@ public sealed class MigrationRunner
         {
             throw new MigrationFailedException
             (
-                exitCode: 11,
-                summary: "database is locked",
-                backupPath: backupPath,
-                migrationAttempted: pending[0],
-                cause: ex,
-                recoverySteps:
+                11,
+                "database is locked",
+                backupPath,
+                pending[0],
+                ex,
                 [
                     "Another Collabhost process may be using the database. Stop it first.",
                     $"Database location: {dbPath}"
@@ -181,12 +177,11 @@ public sealed class MigrationRunner
         {
             throw new MigrationFailedException
             (
-                exitCode: 20,
-                summary: "migration failed",
-                backupPath: backupPath,
-                migrationAttempted: pending[0],
-                cause: ex,
-                recoverySteps:
+                20,
+                "migration failed",
+                backupPath,
+                pending[0],
+                ex,
                 [
                     "See INSTALL.md -> Troubleshooting -> \"If an upgrade fails.\"",
                     backupPath is not null
@@ -203,12 +198,7 @@ public sealed class MigrationRunner
             string.Join(", ", pending)
         );
 
-        return new MigrationOutcome
-        (
-            Migrated: true,
-            BackupPath: backupPath,
-            AppliedMigrations: pending
-        );
+        return new MigrationOutcome(true, backupPath, pending);
     }
 
     public static string ResolveDbPath(string dataDirectory) =>

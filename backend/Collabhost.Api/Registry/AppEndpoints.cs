@@ -347,7 +347,7 @@ public static class AppEndpoints
 
             var validationErrors = CapabilityResolver.ValidateEdits
             (
-                sectionKey, proposedOverrides, isNewApp: false
+                sectionKey, proposedOverrides, false
             );
 
             if (validationErrors.Count > 0)
@@ -825,7 +825,7 @@ public static class AppEndpoints
 
                 var validationErrors = CapabilityResolver.ValidateEdits
                 (
-                    sectionKey, overrideObject, isNewApp: true
+                    sectionKey, overrideObject, true
                 );
 
                 if (validationErrors.Count > 0)
@@ -858,7 +858,7 @@ public static class AppEndpoints
             {
                 var processErrors = CapabilityResolver.ValidateEdits
                 (
-                    "process", processOverrides, isNewApp: true
+                    "process", processOverrides, true
                 );
 
                 if (processErrors.Count > 0)

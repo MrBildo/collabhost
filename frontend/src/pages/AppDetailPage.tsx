@@ -14,6 +14,7 @@ import { useLogStream } from '@/hooks/use-log-stream'
 import { cn } from '@/lib/cn'
 import { LOG_BUFFER_CAP } from '@/lib/constants'
 import { formatDateTime, formatHealthStatus, formatMemory, formatUptime } from '@/lib/format'
+import { formatActionError } from '@/lib/format-action-error'
 import { ROUTES } from '@/lib/routes'
 import type { LogStream } from '@/log/LogViewer'
 import { LogViewer } from '@/log/LogViewer'
@@ -69,6 +70,18 @@ function AppDetailPage() {
     restartMutation.isPending ||
     killMutation.isPending ||
     (app ? ['starting', 'stopping', 'restarting'].includes(app.status) : false)
+
+  // Action error surface: the first mutation in error state wins. Operators
+  // can dismiss; the next click resets state on success or replaces the error.
+  const actionErrorEntry = startMutation.isError
+    ? { verb: 'Start', error: startMutation.error, reset: startMutation.reset }
+    : stopMutation.isError
+      ? { verb: 'Stop', error: stopMutation.error, reset: stopMutation.reset }
+      : restartMutation.isError
+        ? { verb: 'Restart', error: restartMutation.error, reset: restartMutation.reset }
+        : killMutation.isError
+          ? { verb: 'Kill', error: killMutation.error, reset: killMutation.reset }
+          : null
 
   if (!slug) {
     return <ErrorBanner message="No app slug provided" />
@@ -243,6 +256,15 @@ function AppDetailPage() {
           }}
         />
       </div>
+
+      {/* Action error banner — surfaces failed Start/Stop/Restart/Kill mutations */}
+      {actionErrorEntry && (
+        <ErrorBanner
+          message={formatActionError(actionErrorEntry.error, actionErrorEntry.verb)}
+          onDismiss={() => actionErrorEntry.reset()}
+          className="mb-4"
+        />
+      )}
 
       {/* Stats strip */}
       <StatsStrip items={statItems} className="mt-4 mb-4" />

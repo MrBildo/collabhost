@@ -177,7 +177,7 @@ public class FilesystemBrowseTests(ApiFixture fixture)
         }
         finally
         {
-            Directory.Delete(parentDirectory, recursive: true);
+            Directory.Delete(parentDirectory, true);
         }
     }
 

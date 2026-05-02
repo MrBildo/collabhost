@@ -8,6 +8,7 @@ using Collabhost.Api.Data;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Filesystem;
+using Collabhost.Api.Installation;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Portal;
@@ -22,6 +23,14 @@ if (args.Any(a => a is "--version" or "-v"))
 {
     Console.WriteLine($"Collabhost {VersionInfo.Current}");
     return 0;
+}
+
+// Installer-invoked subcommand: merge a freshly-shipped appsettings.json against the operator's
+// on-disk file (preserve edits, refresh untouched defaults, add new keys). Runs before any host
+// setup so this path never touches the database, the supervisor, or the network. Card #161.
+if (args.Length > 0 && args[0] == "--merge-appsettings")
+{
+    return AppSettingsMergeCli.Run(args[1..], Console.Out, Console.Error);
 }
 
 // Anchor the host's content root to the binary directory, not the shell's CWD. Without this
@@ -83,6 +92,38 @@ builder.AddServiceDefaults();
 var (_, resolvedDataDir) = DataRegistration.ResolveConnectionString(builder.Configuration);
 var effectiveDataDir = resolvedDataDir ?? Path.Combine(AppContext.BaseDirectory, "data");
 
+// Crash log directory + retention. Resolved before any preflight so a preflight failure
+// can still write a crash file. Default is {DataDir}/logs/. Card #162.
+var crashLogDir = CrashLog.ResolveDirectory(builder.Configuration, effectiveDataDir);
+var crashLogRetention = CrashLog.ResolveRetention(builder.Configuration);
+
+// Last-chance unhandled-exception hook. Fires when the runtime is about to terminate
+// without graceful shutdown -- past the point where the host's logging pipeline can be
+// counted on to flush. Writing a crash file is best-effort; if we throw here we'd mask
+// the original failure, so any IO error inside CrashLog.TryWrite is swallowed by design.
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    if (e.ExceptionObject is not Exception ex)
+    {
+        return;
+    }
+
+    var content = CrashLog.BuildContent
+    (
+        DateTimeOffset.UtcNow,
+        $"unhandled exception ({ex.GetType().Name})",
+        [("Message", ex.Message)],
+        [
+            "Inspect the crash log for the full stack trace.",
+            "File an issue at https://github.com/MrBildo/collabhost/issues and attach the crash log."
+        ],
+        -1,
+        ex
+    );
+
+    CrashLog.TryWrite(crashLogDir, DateTimeOffset.UtcNow, content, crashLogRetention);
+};
+
 // Resolve TypeStore settings once so preflight and DI registration use the same values
 // without reading the env var twice (LOW-3).
 var typeStoreSettings = TypeStoreRegistration.ResolveSettings(builder.Configuration);
@@ -101,12 +142,14 @@ using (var preflightLoggerFactory = LoggerFactory.Create(logging => logging.AddC
             preflightResult.FailureSummary
         );
 
-        StartupStderr.Write
+        StartupStderr.WriteAndPersist
         (
-            summary: preflightResult.FailureSummary!,
-            details: preflightResult.FailureDetails,
-            recoverySteps: preflightResult.RecoverySteps,
-            exitCode: 10
+            preflightResult.FailureSummary!,
+            preflightResult.FailureDetails,
+            preflightResult.RecoverySteps,
+            10,
+            crashLogDir,
+            crashLogRetention
         );
 
         return 10;
@@ -223,12 +266,15 @@ catch (MigrationFailedException ex)
         details.Add(("Exception", $"{ex.InnerException.GetType().Name}: {ex.InnerException.Message}"));
     }
 
-    StartupStderr.Write
+    StartupStderr.WriteAndPersist
     (
-        summary: ex.Summary,
-        details: details,
-        recoverySteps: ex.RecoverySteps,
-        exitCode: ex.ExitCode
+        ex.Summary,
+        details,
+        ex.RecoverySteps,
+        ex.ExitCode,
+        crashLogDir,
+        crashLogRetention,
+        ex
     );
 
     return ex.ExitCode;
@@ -255,16 +301,18 @@ catch (TypeStoreValidationException ex)
             ex.Errors.Count
         );
 
-        StartupStderr.Write
+        StartupStderr.WriteAndPersist
         (
-            summary: "built-in type validation failed -- this is a packaging bug",
-            details: BuildTypeStoreErrorDetails(ex.Errors),
-            recoverySteps:
+            "built-in type validation failed -- this is a packaging bug",
+            BuildTypeStoreErrorDetails(ex.Errors),
             [
                 "File an issue at https://github.com/MrBildo/collabhost/issues and include this stderr block.",
                 "Re-install the previous Collabhost version from releases."
             ],
-            exitCode: 30
+            30,
+            crashLogDir,
+            crashLogRetention,
+            ex
         );
 
         return 30;
@@ -278,16 +326,18 @@ catch (TypeStoreValidationException ex)
         effectiveUserTypesDir
     );
 
-    StartupStderr.Write
+    StartupStderr.WriteAndPersist
     (
-        summary: $"invalid user type JSON in '{effectiveUserTypesDir}'",
-        details: BuildTypeStoreErrorDetails(ex.Errors),
-        recoverySteps:
+        $"invalid user type JSON in '{effectiveUserTypesDir}'",
+        BuildTypeStoreErrorDetails(ex.Errors),
         [
             $"Inspect the files listed above in {effectiveUserTypesDir}.",
             "Fix or remove the invalid file(s) and restart Collabhost."
         ],
-        exitCode: 31
+        31,
+        crashLogDir,
+        crashLogRetention,
+        ex
     );
 
     return 31;
@@ -307,17 +357,19 @@ await using (var seederScope = app.Services.CreateAsyncScope())
     {
         app.Logger.LogCritical(ex, "Startup halted: proxy app seeder threw unexpectedly");
 
-        StartupStderr.Write
+        StartupStderr.WriteAndPersist
         (
-            summary: "proxy app seeding failed",
-            details: [("Exception", $"{ex.GetType().Name}: {ex.Message}")],
-            recoverySteps:
+            "proxy app seeding failed",
+            [("Exception", $"{ex.GetType().Name}: {ex.Message}")],
             [
                 "This usually indicates database corruption or a transaction rollback.",
                 "File an issue at https://github.com/MrBildo/collabhost/issues and include this stderr block.",
                 "If the issue persists, restore the most recent pre-migration backup from data/backups/."
             ],
-            exitCode: 40
+            40,
+            crashLogDir,
+            crashLogRetention,
+            ex
         );
 
         return 40;
@@ -341,17 +393,19 @@ await using (var userSeedScope = app.Services.CreateAsyncScope())
     {
         app.Logger.LogCritical(ex, "Startup halted: admin user seeder threw unexpectedly");
 
-        StartupStderr.Write
+        StartupStderr.WriteAndPersist
         (
-            summary: "admin user seeding failed",
-            details: [("Exception", $"{ex.GetType().Name}: {ex.Message}")],
-            recoverySteps:
+            "admin user seeding failed",
+            [("Exception", $"{ex.GetType().Name}: {ex.Message}")],
             [
                 "This usually indicates database corruption or a transaction rollback.",
                 "File an issue at https://github.com/MrBildo/collabhost/issues and include this stderr block.",
                 "If the issue persists, restore the most recent pre-migration backup from data/backups/."
             ],
-            exitCode: 40
+            40,
+            crashLogDir,
+            crashLogRetention,
+            ex
         );
 
         return 40;

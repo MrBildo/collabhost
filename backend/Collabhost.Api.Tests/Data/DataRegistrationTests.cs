@@ -1,5 +1,6 @@
 using Collabhost.Api.Data;
 
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 
 using Shouldly;
@@ -106,6 +107,45 @@ public class DataRegistrationTests
         connectionString.ShouldContain("Cache=Shared");
         connectionString.ShouldContain("Mode=ReadWriteCreate");
         dataDir.ShouldBe(Path.GetDirectoryName(expectedDbFile));
+    }
+
+    [Fact]
+    public void EnableWalJournalMode_OnFreshDatabase_PersistsWalInHeader()
+    {
+        // Card #205: PRAGMA journal_mode=WAL must fire and SQLite must accept it.
+        // SQLite persists journal_mode in the DB file header on first write, so opening
+        // a separate connection afterwards should still report `wal`.
+        var dbFile = Path.Combine(Path.GetTempPath(), $"collabhost-wal-test-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={dbFile}";
+
+        try
+        {
+            DataRegistration.EnableWalJournalMode(connectionString);
+
+            using var verify = new SqliteConnection(connectionString);
+            verify.Open();
+
+            using var command = verify.CreateCommand();
+            command.CommandText = "PRAGMA journal_mode;";
+
+            var mode = (string?)command.ExecuteScalar();
+
+            mode.ShouldNotBeNull();
+            mode.ShouldBe("wal", StringCompareShould.IgnoreCase);
+        }
+        finally
+        {
+            // Pool clears so the file handle releases on Windows before we delete.
+            SqliteConnection.ClearAllPools();
+
+            foreach (var path in new[] { dbFile, $"{dbFile}-wal", $"{dbFile}-shm" })
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        }
     }
 
     [Fact]

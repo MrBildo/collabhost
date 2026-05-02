@@ -328,7 +328,9 @@ To upgrade Collabhost, re-run the install script. The installer is
 
 - `data/` — your SQLite database and any data the binary writes.
 - `data/backups/` — pre-migration backups taken before upgrades (see §8.1).
-- `appsettings.json` — your persistent configuration file.
+- `appsettings.json` — your persistent configuration file. Smart-merged with
+  the new shipped file on each upgrade so operator edits survive while new
+  shipped defaults are picked up automatically (see §8.2).
 
 **Overwritten on re-run:**
 
@@ -337,6 +339,8 @@ To upgrade Collabhost, re-run the install script. The installer is
 - `INSTALL.md`.
 - `LICENSES/` directory contents.
 - `wwwroot/` directory (dashboard static assets — overwritten on every reinstall).
+- `appsettings.shipped.json` — sidecar baseline managed by the installer to
+  drive the smart-merge in §8.2. Do not edit by hand.
 
 ### 8.1 First-boot after upgrade
 
@@ -362,18 +366,32 @@ rotates out the oldest. Operators who want longer retention can symlink
 
 ### 8.2 New configuration keys in newer versions
 
-Because `appsettings.json` is preserved, an operator on v0.1.0's shipped file
-does not automatically pick up a newly shipped configuration key in v0.2.0+.
+The installer performs a three-way smart-merge of `appsettings.json` on every
+upgrade: operator edits are preserved, defaults the operator never touched are
+refreshed to the new shipped value, and brand-new keys in the shipped file are
+added.
 
-The discipline that makes this safe: **every new shipped key ships with a
-working in-code default**, so boot does not break when the key is absent from
-an older `appsettings.json`. Release notes call out any new keys worth
-enabling.
+The merge runs the new release's `collabhost --merge-appsettings` subcommand
+against three files: the operator's on-disk `appsettings.json`, the shipped
+`appsettings.json` from the new archive, and a sidecar baseline kept at
+`appsettings.shipped.json` that records what was last shipped to this install.
+The baseline is what lets the merger distinguish operator-edited keys
+(preserve) from untouched defaults (refresh).
 
-If you want to incorporate shipped defaults from a new release into your
-existing `appsettings.json`, diff it against `appsettings.json` extracted
-from the archive of the new version and merge by hand. A smart-merge is
-planned but not in v0.1.0.
+The first upgrade *into* a smart-merge-aware release (operators coming from
+v0.1.x) runs in conservative mode because no baseline exists yet — every
+existing key in `appsettings.json` is preserved, only brand-new keys are
+added. The baseline is seeded during that upgrade so the next upgrade has the
+full three-way information available.
+
+The merge writes atomically (write to a temp file, then rename), so a failed
+or interrupted merge cannot truncate `appsettings.json`. On any error the
+installer leaves the on-disk file untouched and prints a warning pointing at
+the shipped file in the install dir for manual reconciliation.
+
+The `appsettings.shipped.json` sidecar is managed by the installer — do not
+edit it. Treating it like a normal config file would cause the next merge to
+think operator-edited keys were untouched defaults and refresh them.
 
 ---
 
@@ -464,8 +482,27 @@ for your version.
 
 ### 9.7 Binary crashes before I see anything
 
-Run Collabhost with stdout + stderr redirected so you can read the failure
-after the fact:
+Collabhost writes a crash log to disk on startup failure or unhandled exception.
+Look in:
+
+```
+~/.collabhost/data/logs/         (Linux / macOS)
+%USERPROFILE%\.collabhost\data\logs\   (Windows)
+```
+
+Each crash produces a `collabhost-crash-<utc-timestamp>.log` file containing the
+same summary, details, and recovery steps printed to stderr, plus the exception
+stack trace where applicable. The directory keeps the last 10 crash logs and
+prunes older ones automatically.
+
+The crash log directory is configurable:
+
+- Environment variable: `COLLABHOST_LOGS_PATH=/some/other/dir`.
+- Appsetting: `"Diagnostics": { "CrashLogs": { "Directory": "..." } }`.
+- Retention count: `"Diagnostics": { "CrashLogs": { "Retention": 25 } }`.
+
+If you need stdout + stderr captured as well (e.g., for an issue report),
+redirect the process output:
 
 ```sh
 ./collabhost > collabhost.log 2>&1
@@ -474,9 +511,6 @@ after the fact:
 ```powershell
 .\collabhost.exe *> collabhost.log
 ```
-
-Inspect `collabhost.log`. Structured log-directory support is planned; this
-redirect is the v0.1.0 fallback.
 
 ### 9.8 Recovery after a failed upgrade (migration failure)
 

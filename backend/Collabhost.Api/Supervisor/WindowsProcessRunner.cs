@@ -82,7 +82,7 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
             }
 
             return new ProcessRunResult(-1, true);
@@ -447,7 +447,7 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         {
             if (!_process.HasExited)
             {
-                _process.Kill(entireProcessTree: true);
+                _process.Kill(true);
             }
         }
 
@@ -576,7 +576,7 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         {
             if (!_process.HasExited)
             {
-                _process.Kill(entireProcessTree: true);
+                _process.Kill(true);
             }
         }
 

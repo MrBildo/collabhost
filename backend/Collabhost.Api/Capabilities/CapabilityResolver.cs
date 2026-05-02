@@ -9,7 +9,7 @@ public static partial class CapabilityResolver
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
-    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.None, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.None, 100)]
     private static partial Regex EnvironmentVariableKeyPattern { get; }
 
     public static T Resolve<T>(string defaultConfigurationJson, string? overrideConfigurationJson)

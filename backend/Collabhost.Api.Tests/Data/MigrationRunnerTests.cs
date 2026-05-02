@@ -51,7 +51,7 @@ public class MigrationRunnerTests : IAsyncDisposable
         {
             try
             {
-                Directory.Delete(_dataDirectory, recursive: true);
+                Directory.Delete(_dataDirectory, true);
             }
             catch
             {
@@ -187,7 +187,7 @@ public class MigrationRunnerTests : IAsyncDisposable
     [Fact]
     public void TryPruneBackups_RetainsFiveMostRecent()
     {
-        PlantBackups(count: 8);
+        PlantBackups(8);
 
         MigrationRunner.TryPruneBackups(_backupsDirectory, NullLogger<MigrationRunner>.Instance);
 
@@ -199,7 +199,7 @@ public class MigrationRunnerTests : IAsyncDisposable
     [Fact]
     public void TryPruneBackups_OnFewerThanRetentionCount_NoOp()
     {
-        PlantBackups(count: 3);
+        PlantBackups(3);
 
         MigrationRunner.TryPruneBackups(_backupsDirectory, NullLogger<MigrationRunner>.Instance);
 
@@ -219,7 +219,7 @@ public class MigrationRunnerTests : IAsyncDisposable
         File.WriteAllText(oldest, "oldest");
         File.SetCreationTimeUtc(oldest, DateTime.UtcNow.AddMinutes(-100));
 
-        PlantBackups(count: 5);
+        PlantBackups(5);
 
         MigrationRunner.TryPruneBackups(_backupsDirectory, NullLogger<MigrationRunner>.Instance);
 

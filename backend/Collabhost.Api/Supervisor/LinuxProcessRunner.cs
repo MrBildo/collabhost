@@ -162,7 +162,7 @@ public class LinuxProcessRunner : IManagedProcessRunner
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
             }
 
             return new ProcessRunResult(-1, true);
@@ -401,7 +401,7 @@ public class LinuxProcessRunner : IManagedProcessRunner
                     // Fallback: use .NET's KillTree which walks /proc for ppid-based children
                     if (!_process.HasExited)
                     {
-                        _process.Kill(entireProcessTree: true);
+                        _process.Kill(true);
                     }
                 }
             }
@@ -409,7 +409,7 @@ public class LinuxProcessRunner : IManagedProcessRunner
             {
                 // Process group not established -- use .NET's KillTree for best-effort
                 // child cleanup via ppid walking
-                _process.Kill(entireProcessTree: true);
+                _process.Kill(true);
             }
         }
 

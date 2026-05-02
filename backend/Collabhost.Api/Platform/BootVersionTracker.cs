@@ -64,7 +64,7 @@ public static partial class BootVersionTracker
             File.WriteAllText(tempPath, version + Environment.NewLine);
 
             // Atomic replace on POSIX; overwrite on Windows via File.Move with overwrite.
-            File.Move(tempPath, path, overwrite: true);
+            File.Move(tempPath, path, true);
         }
         catch (IOException ex)
         {

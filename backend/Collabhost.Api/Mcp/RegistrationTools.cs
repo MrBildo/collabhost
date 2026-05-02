@@ -165,7 +165,7 @@ public class RegistrationTools
 
                     var validationErrors = CapabilityResolver.ValidateEdits
                     (
-                        sectionKey, sectionChanges, isNewApp: true
+                        sectionKey, sectionChanges, true
                     );
 
                     if (validationErrors.Count > 0)

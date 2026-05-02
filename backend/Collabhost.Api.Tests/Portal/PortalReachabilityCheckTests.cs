@@ -25,7 +25,7 @@ public class PortalReachabilityCheckTests : IDisposable
     {
         if (Directory.Exists(_baseDirectory))
         {
-            Directory.Delete(_baseDirectory, recursive: true);
+            Directory.Delete(_baseDirectory, true);
         }
 
         GC.SuppressFinalize(this);

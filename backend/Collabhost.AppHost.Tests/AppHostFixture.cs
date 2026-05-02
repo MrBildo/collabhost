@@ -100,7 +100,7 @@ public class AppHostFixture : IAsyncLifetime
         {
             try
             {
-                Directory.Delete(_dbDirectory, recursive: true);
+                Directory.Delete(_dbDirectory, true);
             }
             catch
             {
@@ -112,7 +112,7 @@ public class AppHostFixture : IAsyncLifetime
         {
             try
             {
-                Directory.Delete(_userTypesDirectory, recursive: true);
+                Directory.Delete(_userTypesDirectory, true);
             }
             catch
             {

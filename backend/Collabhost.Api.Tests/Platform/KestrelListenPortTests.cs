@@ -108,7 +108,7 @@ public class KestrelListenPortTests
             {
                 if (!process!.HasExited)
                 {
-                    process.Kill(entireProcessTree: true);
+                    process.Kill(true);
                 }
             }
             catch (InvalidOperationException)
@@ -125,7 +125,7 @@ public class KestrelListenPortTests
         {
             try
             {
-                Directory.Delete(alienCwd, recursive: true);
+                Directory.Delete(alienCwd, true);
             }
             catch
             {

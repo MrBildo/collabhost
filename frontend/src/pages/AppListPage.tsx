@@ -1,5 +1,6 @@
 import { ActionButton } from '@/actions/ActionButton'
 import { useApps, useStartApp, useStopApp } from '@/hooks/use-apps'
+import { formatActionError } from '@/lib/format-action-error'
 import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
 import { ErrorBanner } from '@/shared/ErrorBanner'
@@ -60,6 +61,12 @@ function AppListPage() {
     isActionPending: startMutation.isPending || stopMutation.isPending,
   })
 
+  const actionErrorEntry = startMutation.isError
+    ? { verb: 'Start', error: startMutation.error, reset: startMutation.reset }
+    : stopMutation.isError
+      ? { verb: 'Stop', error: stopMutation.error, reset: stopMutation.reset }
+      : null
+
   if (appsQuery.isLoading) {
     return (
       <div className="py-8">
@@ -85,6 +92,14 @@ function AppListPage() {
       {appsQuery.error && (
         <ErrorBanner
           message={appsQuery.error instanceof Error ? appsQuery.error.message : 'Failed to load apps'}
+          className="mb-4"
+        />
+      )}
+
+      {actionErrorEntry && (
+        <ErrorBanner
+          message={formatActionError(actionErrorEntry.error, actionErrorEntry.verb)}
+          onDismiss={() => actionErrorEntry.reset()}
           className="mb-4"
         />
       )}

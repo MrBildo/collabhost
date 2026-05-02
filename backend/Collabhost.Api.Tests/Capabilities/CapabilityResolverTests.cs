@@ -126,7 +126,7 @@ public class CapabilityResolverTests
             ["domainPattern"] = "custom.example.com"
         };
 
-        var errors = CapabilityResolver.ValidateEdits("routing", overrides, isNewApp: false);
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, false);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldContain("domainPattern");
@@ -141,7 +141,7 @@ public class CapabilityResolverTests
             ["spaFallback"] = true
         };
 
-        var errors = CapabilityResolver.ValidateEdits("routing", overrides, isNewApp: false);
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, false);
 
         errors.Count.ShouldBe(0);
     }
@@ -154,7 +154,7 @@ public class CapabilityResolverTests
             ["nonExistentField"] = "value"
         };
 
-        var errors = CapabilityResolver.ValidateEdits("routing", overrides, isNewApp: false);
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, false);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldContain("Unknown field");
@@ -168,7 +168,7 @@ public class CapabilityResolverTests
             ["domainPattern"] = "custom.example.com"
         };
 
-        var errors = CapabilityResolver.ValidateEdits("routing", overrides, isNewApp: true);
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, true);
 
         errors.Count.ShouldBe(0);
     }
@@ -181,7 +181,7 @@ public class CapabilityResolverTests
             ["location"] = "C:\\Projects\\my-site"
         };
 
-        var errors = CapabilityResolver.ValidateEdits("artifact", overrides, isNewApp: true);
+        var errors = CapabilityResolver.ValidateEdits("artifact", overrides, true);
 
         errors.Count.ShouldBe(0);
     }
@@ -194,7 +194,7 @@ public class CapabilityResolverTests
             ["location"] = "C:\\Projects\\my-site"
         };
 
-        var errors = CapabilityResolver.ValidateEdits("artifact", overrides, isNewApp: false);
+        var errors = CapabilityResolver.ValidateEdits("artifact", overrides, false);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldContain("location");
@@ -209,7 +209,7 @@ public class CapabilityResolverTests
             ["spaFallback"] = true
         };
 
-        var errors = CapabilityResolver.ValidateEdits("routing", overrides, isNewApp: true);
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, true);
 
         errors.Count.ShouldBe(0);
     }
@@ -222,7 +222,7 @@ public class CapabilityResolverTests
             ["anything"] = "value"
         };
 
-        var errors = CapabilityResolver.ValidateEdits("unknown-capability", overrides, isNewApp: false);
+        var errors = CapabilityResolver.ValidateEdits("unknown-capability", overrides, false);
 
         errors.Count.ShouldBe(0);
     }
@@ -252,7 +252,7 @@ public class CapabilityResolverTests
             ["variables"] = new JsonObject { [key] = "value" }
         };
 
-        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, isNewApp: false);
+        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, false);
 
         errors.Count.ShouldBe(0);
     }
@@ -273,7 +273,7 @@ public class CapabilityResolverTests
             ["variables"] = new JsonObject { [key] = "value" }
         };
 
-        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, isNewApp: false);
+        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, false);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldContain("Invalid key");
@@ -293,7 +293,7 @@ public class CapabilityResolverTests
             }
         };
 
-        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, isNewApp: false);
+        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, false);
 
         errors.Count.ShouldBe(2);
     }
@@ -306,7 +306,7 @@ public class CapabilityResolverTests
             ["variables"] = new JsonObject { ["bad key"] = "value" }
         };
 
-        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, isNewApp: true);
+        var errors = CapabilityResolver.ValidateEdits("environment-defaults", overrides, true);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldContain("Invalid key");

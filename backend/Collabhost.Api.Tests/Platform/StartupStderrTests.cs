@@ -31,10 +31,10 @@ public class StartupStderrTests : IDisposable
     {
         StartupStderr.Write
         (
-            summary: "migration failed",
-            details: [("Backup created at", "/tmp/backup.db")],
-            recoverySteps: ["Restore the backup."],
-            exitCode: 20
+            "migration failed",
+            [("Backup created at", "/tmp/backup.db")],
+            ["Restore the backup."],
+            20
         );
 
         var output = _capture.ToString();
@@ -52,10 +52,10 @@ public class StartupStderrTests : IDisposable
     {
         StartupStderr.Write
         (
-            summary: "data directory not writable",
-            details: [],
-            recoverySteps: [],
-            exitCode: 10
+            "data directory not writable",
+            [],
+            [],
+            10
         );
 
         var output = _capture.ToString();
@@ -71,10 +71,10 @@ public class StartupStderrTests : IDisposable
     {
         StartupStderr.Write
         (
-            summary: "x",
-            details: [],
-            recoverySteps: ["first step", "second step", "third step"],
-            exitCode: 50
+            "x",
+            [],
+            ["first step", "second step", "third step"],
+            50
         );
 
         var output = _capture.ToString();
