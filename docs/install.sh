@@ -217,7 +217,7 @@ fi
 
 # ---- Extract -----------------------------------------------------------------
 
-# The archive is flat -- seven items sit at the archive root (six files/dirs
+# The archive is flat -- eight items sit at the archive root (seven files/dirs
 # plus wwwroot/), no wrapping directory. Extract straight into EXTRACT_DIR and
 # copy from there.
 EXTRACT_DIR="${TMP_DIR}/extract"
@@ -255,6 +255,12 @@ mkdir -p "${INSTALL_PATH}/LICENSES"
 # Clear then copy -- keeps LICENSES/ in sync with what the archive ships.
 rm -f "${INSTALL_PATH}/LICENSES/"*
 cp "${EXTRACT_DIR}/LICENSES/"* "${INSTALL_PATH}/LICENSES/"
+
+# wwwroot: always overwrite from the archive. This is the Portal SPA bundle
+# and must track the binary version exactly. Operators do not edit it; new
+# versions ship new bundles (see INSTALL.md §8 "Overwritten on re-run").
+rm -rf "${INSTALL_PATH}/wwwroot"
+cp -R "${EXTRACT_DIR}/wwwroot" "${INSTALL_PATH}/"
 
 # appsettings.json: smart-merge on upgrade, plain copy on first install.
 #

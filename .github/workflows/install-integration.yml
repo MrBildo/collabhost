@@ -147,6 +147,8 @@ jobs:
           test -f "${INSTALL_DIR}/appsettings.json"  || { echo "Missing: appsettings.json" >&2; exit 1; }
           test -f "${INSTALL_DIR}/INSTALL.md"        || { echo "Missing: INSTALL.md" >&2; exit 1; }
           test -d "${INSTALL_DIR}/LICENSES"          || { echo "Missing: LICENSES/" >&2; exit 1; }
+          test -d "${INSTALL_DIR}/wwwroot"           || { echo "Missing: wwwroot/" >&2; exit 1; }
+          test -f "${INSTALL_DIR}/wwwroot/index.html" || { echo "Missing: wwwroot/index.html" >&2; exit 1; }
           echo "Install layout verified."
 
       # collabhost --version must work and must work FROM $HOME (not the install
@@ -340,6 +342,12 @@ jobs:
           }
           if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'LICENSES') -PathType Container)) {
             throw "Missing: LICENSES/"
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'wwwroot') -PathType Container)) {
+            throw "Missing: wwwroot/"
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'wwwroot\index.html') -PathType Leaf)) {
+            throw "Missing: wwwroot\index.html"
           }
           Write-Host 'Install layout verified.'
 
@@ -538,6 +546,8 @@ jobs:
               test -f "${INSTALL_DIR}/appsettings.json"
               test -f "${INSTALL_DIR}/INSTALL.md"
               test -d "${INSTALL_DIR}/LICENSES"
+              test -d "${INSTALL_DIR}/wwwroot"
+              test -f "${INSTALL_DIR}/wwwroot/index.html"
               echo "Install layout verified (linux-arm64)."
 
               # --version from $HOME.
