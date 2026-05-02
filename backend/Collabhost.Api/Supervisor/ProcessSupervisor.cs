@@ -21,6 +21,7 @@ public class ProcessSupervisor
     TypeStore typeStore,
     IEventBus<ProcessStateChangedEvent> eventBus,
     IEnumerable<IProcessArgumentProvider> argumentProviders,
+    IEnumerable<IProcessEnvironmentProvider> environmentProviders,
     ActivityEventStore activityEventStore,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
@@ -45,6 +46,9 @@ public class ProcessSupervisor
 
     private readonly IProcessArgumentProvider[] _argumentProviders =
         [.. (argumentProviders ?? throw new ArgumentNullException(nameof(argumentProviders)))];
+
+    private readonly IProcessEnvironmentProvider[] _environmentProviders =
+        [.. (environmentProviders ?? throw new ArgumentNullException(nameof(environmentProviders)))];
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
@@ -352,6 +356,22 @@ public class ProcessSupervisor
         if (environmentConfiguration?.Variables is not null)
         {
             foreach (var (key, value) in environmentConfiguration.Variables)
+            {
+                environmentVariables[key] = value;
+            }
+        }
+
+        // Allow subsystems to contribute environment variables at start time.
+        // This is how the proxy subsystem flows secrets (e.g. the DNS API token)
+        // from Collabhost's own host process env into the Caddy child without
+        // ever persisting them to the database. Provider contributions win over
+        // capability defaults on key conflict -- the provider is the source of
+        // truth for any key it contributes.
+        foreach (var provider in _environmentProviders)
+        {
+            var contributions = provider.ContributeEnvironment(app.Slug);
+
+            foreach (var (key, value) in contributions)
             {
                 environmentVariables[key] = value;
             }

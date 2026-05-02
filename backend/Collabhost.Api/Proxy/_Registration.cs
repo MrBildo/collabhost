@@ -46,6 +46,7 @@ public static class ProxyRegistration
 
             services.AddSingleton<ProxyAppSeeder>();
             services.AddSingleton<IProcessArgumentProvider, ProxyArgumentProvider>();
+            services.AddSingleton<IProcessEnvironmentProvider, ProxyEnvironmentProvider>();
             services.AddSingleton<ProxyManager>();
             services.AddHostedService(provider => provider.GetRequiredService<ProxyManager>());
 
@@ -94,12 +95,26 @@ public static class ProxyRegistration
             ? envCertLifetime
             : section["CertLifetime"] ?? "168h";
 
+        var envDnsProvider = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_DNS_PROVIDER");
+
+        var dnsProvider = !string.IsNullOrWhiteSpace(envDnsProvider)
+            ? envDnsProvider
+            : section["DnsProvider"];
+
+        var envDnsApiTokenEnvVar = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_DNS_API_TOKEN_ENV_VAR");
+
+        var dnsApiTokenEnvVar = !string.IsNullOrWhiteSpace(envDnsApiTokenEnvVar)
+            ? envDnsApiTokenEnvVar
+            : section["DnsApiTokenEnvVar"] ?? "CLOUDFLARE_API_TOKEN";
+
         return new ProxySettings
         {
             BaseDomain = baseDomain,
             BinaryPath = binaryPath,
             ListenAddress = listenAddress,
-            CertLifetime = certLifetime
+            CertLifetime = certLifetime,
+            DnsProvider = string.IsNullOrWhiteSpace(dnsProvider) ? null : dnsProvider,
+            DnsApiTokenEnvVar = dnsApiTokenEnvVar
         };
     }
 }

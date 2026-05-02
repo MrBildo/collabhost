@@ -42,6 +42,19 @@ The resolver reads env var > appsettings > null. `COLLABHOST_CADDY_PATH` (env va
 
 **Getting a Caddy binary:** download from [caddyserver.com](https://caddyserver.com/docs/install) into `tools/caddy/`, or install globally with `winget install CaddyServer.Caddy` (Windows) / `sudo apt install caddy` (Linux). For a global install, point `Proxy:BinaryPath` (or `COLLABHOST_CADDY_PATH`) at the absolute path of the system binary.
 
+#### TLS issuer: internal CA vs ACME (Let's Encrypt)
+
+By default the proxy uses Caddy's internal CA (`Proxy:DnsProvider` is unset / empty). This is the right choice for `*.collab.internal`-style local deployments — certificates are signed by Caddy's local authority and the operator trusts the root manually.
+
+For real internet-reachable domains, set `Proxy:DnsProvider` (e.g. `"cloudflare"`) and the proxy emits a Let's Encrypt issuer block configured for DNS-01 challenge. The DNS API token is read from the host process env at Caddy spawn time — its name comes from `Proxy:DnsApiTokenEnvVar` (defaults to `CLOUDFLARE_API_TOKEN`). The token never touches the database, the JSON config snapshot, or any log line.
+
+| Setting | Env var | Default | Notes |
+|---|---|---|---|
+| `Proxy:DnsProvider` | `COLLABHOST_PROXY_DNS_PROVIDER` | unset (internal CA) | Caddy DNS provider name. Currently only `cloudflare` is built into the shipped Caddy. |
+| `Proxy:DnsApiTokenEnvVar` | `COLLABHOST_PROXY_DNS_API_TOKEN_ENV_VAR` | `CLOUDFLARE_API_TOKEN` | Name of the host-process env var carrying the DNS API token. |
+
+The shipped Caddy build must include the corresponding `caddy-dns/<provider>` plugin for ACME issuance to work — see `docs/release-process.md`.
+
 ## Build and Run
 
 ### With Aspire (recommended)

@@ -392,8 +392,19 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
 
             _process.Exited += (_, _) =>
             {
-                // Cancel pipe readers when the process exits so they don't block indefinitely
-                _pipeReaderCancellation?.Cancel();
+                // Cancel pipe readers when the process exits so they don't block indefinitely.
+                // The Exited callback fires asynchronously on a thread-pool thread, so it can
+                // race with Dispose() — if Dispose has already cancelled and disposed the CTS,
+                // this Cancel() would throw ObjectDisposedException into the unhandled-exception
+                // handler and crash the host. Mirror Dispose()'s defensive try/catch.
+                try
+                {
+                    _pipeReaderCancellation?.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // CTS already disposed by Dispose() — pipe readers are already torn down
+                }
 
                 Exited?.Invoke(_process.ExitCode);
             };
