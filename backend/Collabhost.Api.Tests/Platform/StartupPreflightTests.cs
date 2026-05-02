@@ -21,7 +21,7 @@ public class StartupPreflightTests : IDisposable
         {
             try
             {
-                Directory.Delete(_rootDirectory, recursive: true);
+                Directory.Delete(_rootDirectory, true);
             }
             catch
             {

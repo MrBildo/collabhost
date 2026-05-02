@@ -10,11 +10,6 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Proxy;
 
-/// <summary>
-/// Verifies that /api/v1/routes returns operator-friendly display strings in the
-/// 'target' field rather than raw Caddy handler names or internal state strings.
-/// See card #102.
-/// </summary>
 [Collection("Api")]
 public class RouteListDisplayTests(ApiFixture fixture)
 {

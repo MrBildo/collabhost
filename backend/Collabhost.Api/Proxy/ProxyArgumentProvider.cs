@@ -89,10 +89,10 @@ public partial class ProxyArgumentProvider
     }
 
     // Matches --admin followed by a host:port value (e.g., --admin localhost:12345)
-    [GeneratedRegex(@"--admin\s+\S+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(@"--admin\s+\S+", RegexOptions.None, 1000)]
     private static partial Regex AdminFlagPattern { get; }
 
     // Matches --config followed by a quoted or unquoted path (e.g., --config "" or --config /path/to/file)
-    [GeneratedRegex("""--config\s+("[^"]*"|\S+)""", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex("""--config\s+("[^"]*"|\S+)""", RegexOptions.None, 1000)]
     private static partial Regex ConfigFlagPattern { get; }
 }

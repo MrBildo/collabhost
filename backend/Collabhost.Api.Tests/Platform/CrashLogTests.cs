@@ -31,7 +31,7 @@ public class CrashLogTests : IDisposable
         {
             try
             {
-                Directory.Delete(_tempRoot, recursive: true);
+                Directory.Delete(_tempRoot, true);
             }
             catch (IOException)
             {
@@ -139,11 +139,11 @@ public class CrashLogTests : IDisposable
 
         var content = CrashLog.BuildContent
         (
-            timestampUtc: stamp,
-            summary: "preflight failed",
-            details: [("Path", "/data"), ("Error", "permission denied")],
-            recoverySteps: ["Check permissions.", "Use COLLABHOST_DATA_PATH override."],
-            exitCode: 10
+            stamp,
+            "preflight failed",
+            [("Path", "/data"), ("Error", "permission denied")],
+            ["Check permissions.", "Use COLLABHOST_DATA_PATH override."],
+            10
         );
 
         content.ShouldContain("Collabhost crash log");
@@ -164,12 +164,12 @@ public class CrashLogTests : IDisposable
 
         var content = CrashLog.BuildContent
         (
-            timestampUtc: stamp,
-            summary: "boom",
-            details: [],
-            recoverySteps: [],
-            exitCode: 1,
-            exception: ex
+            stamp,
+            "boom",
+            [],
+            [],
+            1,
+            ex
         );
 
         content.ShouldContain("Exception:");

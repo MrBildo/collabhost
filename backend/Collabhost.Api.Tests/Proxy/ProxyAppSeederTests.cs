@@ -112,7 +112,7 @@ public class ProxyAppSeederAtomicityTests : IAsyncLifetime
         {
             try
             {
-                Directory.Delete(_dataDirectory, recursive: true);
+                Directory.Delete(_dataDirectory, true);
             }
             catch
             {

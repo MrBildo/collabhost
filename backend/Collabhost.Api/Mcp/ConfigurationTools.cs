@@ -290,7 +290,7 @@ public class ConfigurationTools
 
             var validationErrors = CapabilityResolver.ValidateEdits
             (
-                sectionKey, proposedOverrides, isNewApp: false
+                sectionKey, proposedOverrides, false
             );
 
             if (validationErrors.Count > 0)

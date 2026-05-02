@@ -22,7 +22,7 @@ public class AppSettingsMergeCliTests : IDisposable
         {
             try
             {
-                Directory.Delete(_scratchDir, recursive: true);
+                Directory.Delete(_scratchDir, true);
             }
             catch
             {

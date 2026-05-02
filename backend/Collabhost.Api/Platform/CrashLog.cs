@@ -190,9 +190,9 @@ public static class CrashLog
 
             var pattern = $"{FilenamePrefix}*{FilenameExtension}";
             var files = Directory.EnumerateFiles(directory, pattern, SearchOption.TopDirectoryOnly)
-                .Select(path => new FileInfo(path))
-                .OrderByDescending(info => info.LastWriteTimeUtc)
-                .ToList();
+                    .Select(path => new FileInfo(path))
+                    .OrderByDescending(info => info.LastWriteTimeUtc)
+                        .ToList();
 
             if (files.Count <= retention)
             {

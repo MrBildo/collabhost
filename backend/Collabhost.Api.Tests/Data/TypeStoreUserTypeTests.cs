@@ -116,7 +116,7 @@ public class TypeStoreUserTypeTests : IDisposable
     public async Task LoadAsync_NoUserTypesDirectory_LoadsOnlyBuiltInTypes()
     {
         // Delete the user types directory so it doesn't exist
-        Directory.Delete(_userTypesDirectory, recursive: true);
+        Directory.Delete(_userTypesDirectory, true);
 
         var store = CreateTypeStore();
 
@@ -203,7 +203,7 @@ public class TypeStoreUserTypeTests : IDisposable
             await WaitForConditionAsync
             (
                 () => store.ListTypes().Count == 6,
-                timeoutMilliseconds: 5000
+                5000
             );
 
             store.ListTypes().Count.ShouldBe(6);
@@ -271,7 +271,7 @@ public class TypeStoreUserTypeTests : IDisposable
             await WaitForConditionAsync
             (
                 () => store.ListTypes().Count == 5,
-                timeoutMilliseconds: 5000
+                5000
             );
 
             store.ListTypes().Count.ShouldBe(5);
@@ -302,7 +302,7 @@ public class TypeStoreUserTypeTests : IDisposable
             await WaitForConditionAsync
             (
                 () => store.ListTypes().Count == 6,
-                timeoutMilliseconds: 5000
+                5000
             );
 
             // Built-in type should still be intact
@@ -337,7 +337,7 @@ public class TypeStoreUserTypeTests : IDisposable
             await WaitForConditionAsync
             (
                 () => receivedEvent is not null,
-                timeoutMilliseconds: 5000
+                5000
             );
 
             receivedEvent.ShouldNotBeNull();
@@ -487,7 +487,7 @@ public class TypeStoreUserTypeTests : IDisposable
         {
             try
             {
-                Directory.Delete(_userTypesDirectory, recursive: true);
+                Directory.Delete(_userTypesDirectory, true);
             }
             catch
             {

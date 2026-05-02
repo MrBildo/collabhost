@@ -22,7 +22,7 @@ public class BootVersionTrackerTests : IDisposable
         {
             try
             {
-                Directory.Delete(_dataDirectory, recursive: true);
+                Directory.Delete(_dataDirectory, true);
             }
             catch
             {

@@ -332,7 +332,7 @@ public class McpToolTests(ApiFixture fixture)
 
             if (Directory.Exists(installDirectory))
             {
-                Directory.Delete(installDirectory, recursive: true);
+                Directory.Delete(installDirectory, true);
             }
         }
     }

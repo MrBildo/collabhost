@@ -72,20 +72,20 @@ public static class StartupStderr
 
         var content = CrashLog.BuildContent
         (
-            timestampUtc: DateTimeOffset.UtcNow,
-            summary: summary,
-            details: details,
-            recoverySteps: recoverySteps,
-            exitCode: exitCode,
-            exception: exception
+            DateTimeOffset.UtcNow,
+            summary,
+            details,
+            recoverySteps,
+            exitCode,
+            exception
         );
 
         var written = CrashLog.TryWrite
         (
-            directory: crashLogDirectory,
-            timestampUtc: DateTimeOffset.UtcNow,
-            content: content,
-            retention: crashLogRetention
+            crashLogDirectory,
+            DateTimeOffset.UtcNow,
+            content,
+            crashLogRetention
         );
 
         if (written is not null)

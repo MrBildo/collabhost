@@ -71,7 +71,7 @@ public class ContentRootTests
             {
                 if (!process!.HasExited)
                 {
-                    process.Kill(entireProcessTree: true);
+                    process.Kill(true);
                 }
             }
             catch (InvalidOperationException)
@@ -113,7 +113,7 @@ public class ContentRootTests
         {
             try
             {
-                Directory.Delete(alienCwd, recursive: true);
+                Directory.Delete(alienCwd, true);
             }
             catch
             {

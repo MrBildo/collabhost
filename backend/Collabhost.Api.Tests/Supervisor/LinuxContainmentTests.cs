@@ -136,7 +136,7 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
                 process.WaitForExit(5000);
             }
         }

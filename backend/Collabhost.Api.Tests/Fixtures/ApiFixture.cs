@@ -126,7 +126,7 @@ public class ApiFixture : IAsyncLifetime
         {
             try
             {
-                Directory.Delete(_dbDirectory, recursive: true);
+                Directory.Delete(_dbDirectory, true);
             }
             catch
             {
@@ -138,7 +138,7 @@ public class ApiFixture : IAsyncLifetime
         {
             try
             {
-                Directory.Delete(_userTypesDirectory, recursive: true);
+                Directory.Delete(_userTypesDirectory, true);
             }
             catch
             {
@@ -150,7 +150,7 @@ public class ApiFixture : IAsyncLifetime
         {
             try
             {
-                Directory.Delete(_wwwrootDirectory, recursive: true);
+                Directory.Delete(_wwwrootDirectory, true);
             }
             catch
             {

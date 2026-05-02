@@ -258,7 +258,7 @@ public sealed class PortalMiddlewareTests : IAsyncLifetime
         {
             if (Directory.Exists(path))
             {
-                Directory.Delete(path, recursive: true);
+                Directory.Delete(path, true);
             }
         }
         catch

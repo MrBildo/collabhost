@@ -2,22 +2,6 @@ using System.Globalization;
 
 namespace Collabhost.Api.Installation;
 
-/// <summary>
-/// CLI entry point for <c>collabhost --merge-appsettings &lt;shipped&gt; &lt;ondisk&gt; --baseline &lt;path&gt;</c>.
-/// Invoked by <c>install.ps1</c> / <c>install.sh</c> on a reinstall: takes the shipped
-/// <c>appsettings.json</c> from the new archive, the operator's current on-disk file, and an
-/// optional sidecar baseline that records what was last shipped, then writes the merged result
-/// back to the on-disk path and refreshes the baseline.
-/// </summary>
-/// <remarks>
-/// Pure I/O wrapper around <see cref="AppSettingsMerger.Merge"/>. The CLI:
-/// <list type="bullet">
-///   <item><description>Reads up to three JSON files, with parser errors surfaced individually.</description></item>
-///   <item><description>Writes the merged file atomically (tmp + rename) so a crash mid-merge cannot truncate the operator's <c>appsettings.json</c>.</description></item>
-///   <item><description>Refreshes the baseline file to the new shipped content if a baseline path was provided.</description></item>
-///   <item><description>Returns a non-zero exit code on any IO or parse failure so the installer can fall through to its existing warning path.</description></item>
-/// </list>
-/// </remarks>
 public static class AppSettingsMergeCli
 {
     public const int ExitOk = 0;
@@ -205,7 +189,7 @@ public static class AppSettingsMergeCli
             // File.Move with overwrite=true is atomic on the same volume on both Windows and POSIX
             // (NTFS rename + ext4 rename). The on-disk file is therefore either the prior content
             // or the new content at any observable moment; never a half-written file.
-            File.Move(tempPath, path, overwrite: true);
+            File.Move(tempPath, path, true);
             error = null;
             return true;
         }

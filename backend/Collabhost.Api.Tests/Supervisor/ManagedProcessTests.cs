@@ -495,7 +495,7 @@ public class ManagedProcessTests
     public void HandleExitCode_ProcessExited_ReturnsExitCode()
     {
         var process = CreateProcess();
-        var handle = new FakeExitedProcessHandle(exitCode: 42);
+        var handle = new FakeExitedProcessHandle(42);
 
         process.SetHandle(handle);
 
@@ -517,7 +517,7 @@ public class ManagedProcessTests
     public void HasProcessExited_ProcessExited_ReturnsTrue()
     {
         var process = CreateProcess();
-        var handle = new FakeExitedProcessHandle(exitCode: 0);
+        var handle = new FakeExitedProcessHandle(0);
 
         process.SetHandle(handle);
 
@@ -528,7 +528,7 @@ public class ManagedProcessTests
     public void ReconciliationCondition_RunningButExited_Detected()
     {
         var process = CreateProcess();
-        var handle = new FakeExitedProcessHandle(exitCode: 137);
+        var handle = new FakeExitedProcessHandle(137);
 
         process.MarkStarting();
         process.SetHandle(handle);
