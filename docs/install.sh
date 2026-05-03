@@ -288,13 +288,26 @@ else
   # behavior (preserve appsettings.json as bytes, no merge) is what the operator already had.
   chmod +x "${COLLABHOST_BIN}" 2>/dev/null || true
   COLLABHOST_VERSION_LINE="$("${COLLABHOST_BIN}" --version 2>/dev/null || true)"
-  # Match "Collabhost v1.X.Y" or "Collabhost vN.X.Y" for N >= 1.
-  if echo "${COLLABHOST_VERSION_LINE}" | grep -Eq '^Collabhost v[1-9][0-9]*\.'; then
+  # Match "Collabhost X.Y.Z" or "Collabhost vX.Y.Z" -- the optional 'v' guards against
+  # any future change to VersionInfo.Current's prefix without re-breaking the gate
+  # (card #213 root cause: the prior regex required 'v' that the binary doesn't emit).
+  # Drop the major-version >= 1 constraint -- merge-appsettings shipped in v1.0.0,
+  # so a v0.x binary won't recognize it and will exit non-zero, which the gate already
+  # handles. Surface a warning when the regex misses so the next format drift is loud
+  # instead of silent.
+  COLLABHOST_VERSION_REGEX='^Collabhost v?[0-9]+\.[0-9]+\.[0-9]+'
+  if echo "${COLLABHOST_VERSION_LINE}" | grep -Eq "${COLLABHOST_VERSION_REGEX}"; then
     if ! "${COLLABHOST_BIN}" --merge-appsettings "${SHIPPED_SRC}" "${APPSETTINGS_DST}" --baseline "${BASELINE_DST}"; then
       echo "Warning: appsettings.json smart-merge failed."
       echo "Your existing appsettings.json was left in place; new shipped defaults may not be picked up automatically."
       echo "See ${APPSETTINGS_DST} and ${SHIPPED_SRC} to reconcile by hand if needed."
     fi
+  else
+    echo "Warning: skipping appsettings.json smart-merge -- collabhost --version output did not match the expected pattern." >&2
+    echo "  Got:      ${COLLABHOST_VERSION_LINE:-<empty>}" >&2
+    echo "  Expected: pattern '${COLLABHOST_VERSION_REGEX}'" >&2
+    echo "  Effect:   new shipped keys in appsettings.json may not be picked up automatically." >&2
+    echo "  See ${APPSETTINGS_DST} and ${SHIPPED_SRC} to reconcile by hand." >&2
   fi
 fi
 

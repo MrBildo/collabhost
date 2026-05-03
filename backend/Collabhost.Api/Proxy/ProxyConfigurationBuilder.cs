@@ -40,7 +40,7 @@ public static class ProxyConfigurationBuilder
         apps["tls"] = BuildTlsConfiguration(subjects, settings);
         apps["http"] = BuildHttpConfiguration(caddyRoutes, settings);
 
-        return new JsonObject
+        var config = new JsonObject
         {
             ["admin"] = new JsonObject
             {
@@ -48,7 +48,27 @@ public static class ProxyConfigurationBuilder
             },
             ["apps"] = apps
         };
+
+        // Operator-controlled Caddy storage path. Emitted only when set so the unset
+        // case preserves Caddy's built-in default (XDG_DATA_HOME on Linux, %AppData%
+        // \Caddy on Windows, $HOME/Library/Application Support/Caddy on macOS) bit-for
+        // -bit. System-install operators with a dedicated service user use this lever
+        // to pin CA / account / cert data at a known persistent path independent of
+        // the service user's $HOME / XDG resolution. Card #230 phase 1.
+        if (!string.IsNullOrWhiteSpace(settings.StoragePath))
+        {
+            config["storage"] = BuildStorageConfiguration(settings.StoragePath);
+        }
+
+        return config;
     }
+
+    private static JsonObject BuildStorageConfiguration(string storagePath) =>
+        new()
+        {
+            ["module"] = "file_system",
+            ["root"] = storagePath
+        };
 
     private static JsonArray BuildSubjectList
     (

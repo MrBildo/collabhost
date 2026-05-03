@@ -342,11 +342,21 @@ try
         # through to starting the host. Feature-gate on --version output (stable since pre-v0.1.0)
         # and skip the merge for v0.x binaries -- in that scenario the current behavior (preserve
         # appsettings.json as bytes, no merge) is what the operator already had.
-        $supportsMerge = $false
+        # Match "Collabhost X.Y.Z" or "Collabhost vX.Y.Z" -- the optional 'v' guards
+        # against any future change to VersionInfo.Current's prefix without re-breaking
+        # the gate (card #213 root cause: the prior regex required 'v' that the binary
+        # doesn't emit). Drop the major-version >= 1 constraint -- merge-appsettings
+        # shipped in v1.0.0, so a v0.x binary won't recognize it and will exit non-zero,
+        # which the gate already handles. Surface a warning when the regex misses so
+        # the next format drift is loud instead of silent.
+        $supportsMerge   = $false
+        $versionLine     = $null
+        $versionPattern  = '^Collabhost v?\d+\.\d+\.\d+'
+        $probeFailed     = $false
         try
         {
             $versionLine = & $CollabhostExe --version 2>$null
-            if ($LASTEXITCODE -eq 0 -and $versionLine -match '^Collabhost v[1-9][0-9]*\.')
+            if ($LASTEXITCODE -eq 0 -and $versionLine -match $versionPattern)
             {
                 $supportsMerge = $true
             }
@@ -354,7 +364,18 @@ try
         catch
         {
             # Non-fatal -- treat as unsupported and skip the merge.
+            $probeFailed = $true
             Write-Verbose "Could not probe collabhost --version: $_"
+        }
+
+        if (-not $supportsMerge -and -not $probeFailed)
+        {
+            $observed = if ($versionLine) { $versionLine } else { '<empty>' }
+            [Console]::Error.WriteLine("Warning: skipping appsettings.json smart-merge -- collabhost --version output did not match the expected pattern.")
+            [Console]::Error.WriteLine("  Got:      $observed")
+            [Console]::Error.WriteLine("  Expected: pattern '$versionPattern'")
+            [Console]::Error.WriteLine("  Effect:   new shipped keys in appsettings.json may not be picked up automatically.")
+            [Console]::Error.WriteLine("  See $AppSettingsDst and $ShippedSrc to reconcile by hand.")
         }
 
         if ($supportsMerge)
