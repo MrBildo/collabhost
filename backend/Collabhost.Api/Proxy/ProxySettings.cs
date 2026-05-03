@@ -30,6 +30,15 @@ public class ProxySettings
     // to "CLOUDFLARE_API_TOKEN"; only consulted when DnsProvider is set.
     public string? DnsApiTokenEnvVar { get; init; }
 
+    // When set, the proxy emits an explicit Caddy "storage" block pointing at this
+    // path (file_system module). When null/empty/whitespace, no storage block is
+    // emitted and Caddy falls back to its built-in default (XDG_DATA_HOME on Linux,
+    // %AppData%\Caddy on Windows, $HOME/Library/Application Support/Caddy on macOS).
+    // System-install operators with a dedicated service user need this lever so the
+    // CA / account / cert data lands at a known, owned, persistent path independent
+    // of the service user's $HOME / XDG resolution. Card #230 phase 1.
+    public string? StoragePath { get; init; }
+
     // Allocated at startup via PortAllocator -- not from configuration
     public int AdminPort { get; set; }
 }

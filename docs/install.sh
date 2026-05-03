@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Collabhost install script (Linux / macOS).
+# Collabhost install script (Linux / macOS) -- USER SCOPE.
+#
+# Installs Collabhost into the operator's home directory. No root required.
+# For a system-scope install (/opt/collabhost + dedicated service user +
+# /etc/systemd/system/collabhost.service), see install-system.sh.
 #
 # Usage:
 #   curl -fsSL https://mrbildo.github.io/collabhost/install.sh | bash
@@ -23,11 +27,17 @@ INSTALL_PATH="${HOME}/.collabhost/bin"
 SKIP_PATH=""
 TAG="${COLLABHOST_VERSION:-}"
 
+# ---- Locate + source shared lib ----------------------------------------------
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=_install-lib.sh
+. "${SCRIPT_DIR}/_install-lib.sh"
+
 # ---- Arg parsing -------------------------------------------------------------
 
 usage() {
   cat <<EOF
-Collabhost installer (Linux / macOS)
+Collabhost installer (Linux / macOS) -- user scope
 
 Usage: install.sh [options]
 
@@ -40,6 +50,9 @@ Options:
 Environment:
   COLLABHOST_VERSION           Same as --version
   COLLABHOST_INSTALL_BASE_URL  Override archive download base URL (default: GitHub Releases)
+
+For system-scope installs (root-owned /opt/collabhost layout + dedicated
+service user + system-level systemd unit), see install-system.sh.
 EOF
 }
 
@@ -69,81 +82,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# ---- Platform detection ------------------------------------------------------
+# ---- Platform + tools --------------------------------------------------------
 
-UNAME_S="$(uname -s)"
-UNAME_M="$(uname -m)"
-
-case "${UNAME_S}-${UNAME_M}" in
-  Linux-x86_64)   RID="linux-x64"   ; EXT="tar.gz" ;;
-  Linux-aarch64)  RID="linux-arm64" ; EXT="tar.gz" ;;
-  Linux-arm64)    RID="linux-arm64" ; EXT="tar.gz" ;;
-  Darwin-arm64)   RID="osx-arm64"   ; EXT="tar.gz" ;;
-  Darwin-x86_64)
-    echo "Intel Mac (osx-x64) is not supported. Collabhost ships macOS builds for Apple Silicon (arm64) only." >&2
-    echo "See https://github.com/${REPO}/releases for the osx-arm64 archive." >&2
-    exit 1
-    ;;
-  *)
-    echo "Unsupported platform: ${UNAME_S}-${UNAME_M}" >&2
-    echo "Supported: Linux x86_64/aarch64, macOS arm64 (Apple Silicon)." >&2
-    echo "Windows: use install.ps1." >&2
-    exit 1
-    ;;
-esac
-
-# ---- Tool checks -------------------------------------------------------------
-
-need() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "Missing required tool: $1" >&2
-    exit 1
-  }
-}
-
-need curl
-need tar
-need mktemp
-need awk
-
-# sha256sum OR shasum -- macOS ships shasum, Linux ships sha256sum.
-if command -v sha256sum >/dev/null 2>&1; then
-  SHA_CMD="sha256sum"
-elif command -v shasum >/dev/null 2>&1; then
-  SHA_CMD="shasum -a 256"
-else
-  echo "Missing required tool: sha256sum or shasum" >&2
-  exit 1
-fi
+detect_platform
+require_common_tools
+resolve_sha_command
 
 # ---- Resolve tag / version ---------------------------------------------------
 
-if [ -z "${TAG}" ]; then
-  echo "Resolving latest release from GitHub..."
-  LATEST_JSON="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" || {
-    echo "Failed to query https://api.github.com/repos/${REPO}/releases/latest" >&2
-    exit 1
-  }
-  # Parse tag_name without jq -- GitHub's JSON field is always on its own line
-  # and always the string form "tag_name": "vX.Y.Z".
-  TAG="$(printf '%s\n' "${LATEST_JSON}" \
-    | awk -F'"' '/"tag_name"[[:space:]]*:/ {print $4; exit}')"
-  if [ -z "${TAG}" ]; then
-    echo "Could not parse latest tag from GitHub API response." >&2
-    exit 1
-  fi
-fi
+resolve_tag
 
-# Validate tag shape (vX.Y.Z). v1 does not support pre-release tags (decision 5).
-if ! printf '%s' "${TAG}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-  echo "Invalid release tag '${TAG}' -- expected vX.Y.Z." >&2
-  exit 1
-fi
-
-VERSION="${TAG#v}"
 ARCHIVE="collabhost-${VERSION}-${RID}.${EXT}"
 BASE_URL="${COLLABHOST_INSTALL_BASE_URL:-https://github.com/${REPO}/releases/download/${TAG}}"
+# ARCHIVE_URL / CHECKSUMS_URL are consumed by download_and_verify (sourced lib).
+# shellcheck disable=SC2034
 ARCHIVE_URL="${BASE_URL}/${ARCHIVE}"
+# shellcheck disable=SC2034
 CHECKSUMS_URL="${BASE_URL}/checksums.txt"
 
 # ---- Download + verify -------------------------------------------------------
@@ -152,88 +106,11 @@ TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "${TMP_DIR}"; }
 trap cleanup EXIT
 
-# Heartbeat: emit archive size from a HEAD request so the operator knows what
-# to expect during the silent download window. The same HEAD response also
-# serves as a pre-flight existence check -- a 404 here means the version tag
-# does not exist on the release server (typo, deleted release, pre-release tag
-# that passed the regex). Fatal on 404; non-fatal on all other failures so that
-# a transient network error does not block the install.
-SIZE_HINT=""
-HEAD_HEADERS="$(curl -sIL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" 2>/dev/null)" || true
-HEAD_STATUS="$(printf '%s\n' "${HEAD_HEADERS}" | awk '/^HTTP\// {code=$2} END {print code+0}')" || true
-if [ "${HEAD_STATUS}" = "404" ]; then
-  echo "Release tag '${TAG}' not found. See https://github.com/${REPO}/releases for available versions." >&2
-  exit 1
-fi
-RAW_CL="$(printf '%s\n' "${HEAD_HEADERS}" \
-  | awk '/^[Cc]ontent-[Ll]ength:/ {print $2}' \
-  | tr -d '\r' \
-  | tail -1)" || true
-if [ -n "${RAW_CL}" ] && [ "${RAW_CL}" -gt 0 ] 2>/dev/null; then
-  SIZE_MB=$(( (RAW_CL + 524288) / 1048576 ))
-  SIZE_HINT=" (~${SIZE_MB} MB)"
-fi
-
-echo "Downloading ${ARCHIVE}${SIZE_HINT}..."
-curl -fsSL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" -o "${TMP_DIR}/${ARCHIVE}"
-
-echo "Downloading checksums.txt..."
-curl -fsSL --retry 3 --retry-delay 2 "${CHECKSUMS_URL}" -o "${TMP_DIR}/checksums.txt"
-
-echo "Verifying SHA-256..."
-# Portable lookup -- match the archive name exactly in the second column.
-# sha256sum output format: "<hash>  <filename>" (two spaces).
-EXPECTED="$(awk -v name="${ARCHIVE}" '$2 == name {print $1; exit}' "${TMP_DIR}/checksums.txt")"
-if [ -z "${EXPECTED}" ]; then
-  echo "Could not find checksum for ${ARCHIVE} in checksums.txt" >&2
-  exit 1
-fi
-
-ACTUAL="$(${SHA_CMD} "${TMP_DIR}/${ARCHIVE}" | awk '{print $1}')"
-if [ "${EXPECTED}" != "${ACTUAL}" ]; then
-  echo "Checksum mismatch for ${ARCHIVE}" >&2
-  echo "  Expected: ${EXPECTED}" >&2
-  echo "  Actual:   ${ACTUAL}" >&2
-  exit 1
-fi
-
-# ---- Archive content pre-check ----------------------------------------------
-
-# Guard against zero-byte or HTML-error downloads that somehow matched a
-# checksum (defense in depth -- a valid checksum implies the bytes are what
-# was published, but an operator who reruns after a partial download with
-# a hand-edited checksums.txt would bypass that). Gzip magic is 0x1f 0x8b.
-ARCHIVE_SIZE="$(wc -c < "${TMP_DIR}/${ARCHIVE}")"
-if [ "${ARCHIVE_SIZE}" -lt 1024 ]; then
-  echo "Archive ${ARCHIVE} looks truncated (${ARCHIVE_SIZE} bytes)." >&2
-  exit 1
-fi
-
-MAGIC="$(head -c 2 "${TMP_DIR}/${ARCHIVE}" | od -An -tx1 | tr -d ' \n')"
-if [ "${MAGIC}" != "1f8b" ]; then
-  echo "Archive ${ARCHIVE} is not a valid gzip file (magic=${MAGIC})." >&2
-  exit 1
-fi
+download_and_verify
 
 # ---- Extract -----------------------------------------------------------------
 
-# The archive is flat -- eight items sit at the archive root (seven files/dirs
-# plus wwwroot/), no wrapping directory. Extract straight into EXTRACT_DIR and
-# copy from there.
-EXTRACT_DIR="${TMP_DIR}/extract"
-mkdir -p "${EXTRACT_DIR}"
-echo "Extracting archive..."
-tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "${EXTRACT_DIR}"
-
-if [ ! -f "${EXTRACT_DIR}/collabhost" ]; then
-  echo "Archive layout unexpected: collabhost binary not found at archive root after extract." >&2
-  exit 1
-fi
-
-if [ ! -f "${EXTRACT_DIR}/wwwroot/index.html" ]; then
-  echo "Archive layout unexpected: wwwroot/index.html not found after extract." >&2
-  exit 1
-fi
+extract_archive
 
 # ---- Install (reinstall-safe) ------------------------------------------------
 
@@ -276,27 +153,7 @@ APPSETTINGS_DST="${INSTALL_PATH}/appsettings.json"
 BASELINE_DST="${INSTALL_PATH}/appsettings.shipped.json"
 COLLABHOST_BIN="${INSTALL_PATH}/collabhost"
 
-if [ ! -f "${APPSETTINGS_DST}" ]; then
-  # First install -- copy the shipped file and seed the baseline.
-  cp "${SHIPPED_SRC}" "${APPSETTINGS_DST}"
-  cp "${SHIPPED_SRC}" "${BASELINE_DST}"
-else
-  # Upgrade -- run the smart-merge subcommand if the new binary supports it. The merge
-  # subcommand shipped in v1.0.0; older binaries do not recognize the flag and would fall
-  # through to starting the host. We feature-gate on `--version` output (which has been stable
-  # since pre-v0.1.0) and skip the merge for v0.x binaries -- in that scenario the current
-  # behavior (preserve appsettings.json as bytes, no merge) is what the operator already had.
-  chmod +x "${COLLABHOST_BIN}" 2>/dev/null || true
-  COLLABHOST_VERSION_LINE="$("${COLLABHOST_BIN}" --version 2>/dev/null || true)"
-  # Match "Collabhost v1.X.Y" or "Collabhost vN.X.Y" for N >= 1.
-  if echo "${COLLABHOST_VERSION_LINE}" | grep -Eq '^Collabhost v[1-9][0-9]*\.'; then
-    if ! "${COLLABHOST_BIN}" --merge-appsettings "${SHIPPED_SRC}" "${APPSETTINGS_DST}" --baseline "${BASELINE_DST}"; then
-      echo "Warning: appsettings.json smart-merge failed."
-      echo "Your existing appsettings.json was left in place; new shipped defaults may not be picked up automatically."
-      echo "See ${APPSETTINGS_DST} and ${SHIPPED_SRC} to reconcile by hand if needed."
-    fi
-  fi
-fi
+smart_merge_appsettings "${SHIPPED_SRC}" "${APPSETTINGS_DST}" "${BASELINE_DST}" "${COLLABHOST_BIN}"
 
 if [ -n "${IS_REINSTALL}" ]; then
   DATA_HINT=""

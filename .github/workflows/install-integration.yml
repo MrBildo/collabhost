@@ -173,17 +173,23 @@ jobs:
       # the installer again, and confirm the marker survived. This catches
       # R2.1 §9.7 regressions where a careless installer change might
       # overwrite an operator-edited config on upgrade.
+      #
+      # Smart-merge gate assertion (card #213): the installer prints
+      # "merge-appsettings:" output when the gate fires, regardless of whether
+      # the merge produced changes. A silent install is the bug shape #213
+      # tracked -- the regex missed and the gate fell through with no signal.
+      # Capture installer stdout/stderr and assert the gate fired. NOTE: the
+      # JSON-invalid marker is appended BEFORE the second install and survives
+      # past it; the merge subcommand parses appsettings.json and would error
+      # on the marker. To exercise both paths cleanly, do the marker check on
+      # one install and the merge-fired check on a second clean reinstall.
       - name: Reinstall preserves appsettings.json
         shell: bash
         run: |
           set -euo pipefail
           INSTALL_DIR="${HOME}/.collabhost/bin"
           MARKER="// collabhost-install-test-marker $(date +%s)"
-          # Append a comment line to appsettings.json. JSON does not support
-          # comments, but the installer never parses it -- it copies bytes.
-          # The marker is what we look for after reinstall.
           echo "${MARKER}" >> "${INSTALL_DIR}/appsettings.json"
-          # Also seed data/ so the "and data/" hint is exercised.
           mkdir -p "${INSTALL_DIR}/data"
           touch "${INSTALL_DIR}/data/sentinel.txt"
 
@@ -198,6 +204,52 @@ jobs:
             exit 1
           fi
           echo "Reinstall preservation verified."
+
+      - name: Smart-merge gate fires on reinstall
+        shell: bash
+        run: |
+          set -euo pipefail
+          INSTALL_DIR="${HOME}/.collabhost/bin"
+          # Strip the JSON-invalid marker line so --merge-appsettings can parse
+          # the file. The gate fires regardless of parseability, but we want the
+          # merger to reach its summary line.
+          if grep -q '^//' "${INSTALL_DIR}/appsettings.json"; then
+            grep -v '^//' "${INSTALL_DIR}/appsettings.json" > "${INSTALL_DIR}/appsettings.json.clean"
+            mv "${INSTALL_DIR}/appsettings.json.clean" "${INSTALL_DIR}/appsettings.json"
+          fi
+
+          INSTALL_LOG="${HOME}/install-merge-probe.log"
+          # Capture combined stdout/stderr so we can verify either the success
+          # summary (stdout) or the regex-miss warning (stderr) shows up.
+          if ! bash docs/install.sh --version "${TAG}" --skip-path > "${INSTALL_LOG}" 2>&1; then
+            cat "${INSTALL_LOG}" >&2
+            exit 1
+          fi
+          echo "--- installer log ---"
+          cat "${INSTALL_LOG}"
+          echo "---------------------"
+
+          # Same-version reinstall -- merge runs and prints "no changes to <path>".
+          # If the regex missed (the #213 bug shape), the gate falls through and
+          # the warning we added prints "skipping appsettings.json smart-merge".
+          # Either string proves the gate executed; "no changes" proves the
+          # merge subcommand actually ran. Assert the success path -- the warning
+          # path is the bug we're guarding against.
+          if ! grep -q 'merge-appsettings:' "${INSTALL_LOG}"; then
+            echo "Smart-merge subcommand never ran on reinstall." >&2
+            echo "Card #213 recurrence: the version-line regex did not match the" >&2
+            echo "binary's --version output, so --merge-appsettings was skipped." >&2
+            exit 1
+          fi
+
+          if grep -q 'skipping appsettings.json smart-merge' "${INSTALL_LOG}"; then
+            echo "Smart-merge gate emitted the regex-miss warning." >&2
+            echo "Card #213 recurrence: the version-line regex did not match the" >&2
+            echo "binary's --version output. Inspect the installer log above." >&2
+            exit 1
+          fi
+
+          echo "Smart-merge gate fired correctly on reinstall."
 
       # Bundled Caddy version. On workflow_dispatch the dispatch ref's
       # caddy.version is the comparator -- it may or may not match the
@@ -386,6 +438,40 @@ jobs:
           }
           Write-Host 'Reinstall preservation verified.'
 
+      # Smart-merge gate assertion (card #213): captured installer output must
+      # contain "merge-appsettings:" and must NOT contain the regex-miss warning.
+      # See the linux/macOS leg's identical step for the full rationale.
+      - name: Smart-merge gate fires on reinstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $InstallDir = Join-Path $HOME '.collabhost\bin'
+          $Settings = Join-Path $InstallDir 'appsettings.json'
+
+          # Strip the JSON-invalid marker so --merge-appsettings can parse the file.
+          $lines = Get-Content -LiteralPath $Settings | Where-Object { $_ -notmatch '^\s*//' }
+          Set-Content -LiteralPath $Settings -Value $lines
+
+          $InstallLog = Join-Path $HOME 'install-merge-probe.log'
+          # 2>&1 in pwsh combines stderr into the success stream so a single
+          # capture covers both the merge summary (stdout) and the warning
+          # surface (stderr).
+          & docs/install.ps1 -Version $env:TAG -SkipPath *>&1 | Tee-Object -FilePath $InstallLog | Out-Null
+
+          $log = Get-Content -LiteralPath $InstallLog -Raw
+          Write-Host '--- installer log ---'
+          Write-Host $log
+          Write-Host '---------------------'
+
+          if ($log -notmatch 'merge-appsettings:') {
+            throw "Smart-merge subcommand never ran on reinstall. Card #213 recurrence: the version-line regex did not match the binary's --version output."
+          }
+          if ($log -match 'skipping appsettings.json smart-merge') {
+            throw "Smart-merge gate emitted the regex-miss warning. Card #213 recurrence: inspect the installer log above."
+          }
+
+          Write-Host 'Smart-merge gate fired correctly on reinstall.'
+
       - name: Caddy bundled version
         shell: pwsh
         run: |
@@ -565,6 +651,36 @@ jobs:
               grep -qF "${MARKER}" "${INSTALL_DIR}/appsettings.json"
               test -f "${INSTALL_DIR}/data/sentinel.txt"
               echo "Reinstall preservation verified (linux-arm64)."
+
+              # Smart-merge gate assertion (card #213). Strip the JSON-invalid
+              # marker first so --merge-appsettings can parse the file, then
+              # capture installer output and assert "merge-appsettings:" appears
+              # and the regex-miss warning does NOT appear. See the native-leg
+              # equivalent for the full rationale.
+              if grep -q "^//" "${INSTALL_DIR}/appsettings.json"; then
+                grep -v "^//" "${INSTALL_DIR}/appsettings.json" > "${INSTALL_DIR}/appsettings.json.clean"
+                mv "${INSTALL_DIR}/appsettings.json.clean" "${INSTALL_DIR}/appsettings.json"
+              fi
+              INSTALL_LOG="${HOME}/install-merge-probe.log"
+              if ! bash /work/docs/install.sh --version "${TAG}" --skip-path > "${INSTALL_LOG}" 2>&1; then
+                cat "${INSTALL_LOG}" >&2
+                exit 1
+              fi
+              echo "--- installer log ---"
+              cat "${INSTALL_LOG}"
+              echo "---------------------"
+              if ! grep -q "merge-appsettings:" "${INSTALL_LOG}"; then
+                echo "Smart-merge subcommand never ran on reinstall (linux-arm64)." >&2
+                echo "Card #213 recurrence: the version-line regex did not match the" >&2
+                echo "binary'\''s --version output." >&2
+                exit 1
+              fi
+              if grep -q "skipping appsettings.json smart-merge" "${INSTALL_LOG}"; then
+                echo "Smart-merge gate emitted the regex-miss warning (linux-arm64)." >&2
+                echo "Card #213 recurrence: inspect the installer log above." >&2
+                exit 1
+              fi
+              echo "Smart-merge gate fired correctly on reinstall (linux-arm64)."
 
               # Caddy version (enforced on workflow_run/release; informational on workflow_dispatch).
               ACTUAL="$("${INSTALL_DIR}/caddy" version 2>/dev/null | awk "{print \$1; exit}")"

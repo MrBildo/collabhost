@@ -157,9 +157,10 @@ describe('toSlug', () => {
 })
 
 describe('formatProxyState', () => {
-  test('capitalizes all five states', () => {
+  test('capitalizes all six states', () => {
     expect(formatProxyState('starting')).toBe('Starting')
     expect(formatProxyState('running')).toBe('Running')
+    expect(formatProxyState('degraded')).toBe('Degraded')
     expect(formatProxyState('failed')).toBe('Failed')
     expect(formatProxyState('disabled')).toBe('Disabled')
     expect(formatProxyState('stopped')).toBe('Stopped')
@@ -169,6 +170,10 @@ describe('formatProxyState', () => {
 describe('proxyStateDetail', () => {
   test('running has no detail (healthy steady state)', () => {
     expect(proxyStateDetail('running')).toBeUndefined()
+  })
+
+  test('degraded names the operator-facing reason', () => {
+    expect(proxyStateDetail('degraded')).toBe('Routes not reaching public listener')
   })
 
   test('failed names the operator action', () => {

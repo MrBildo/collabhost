@@ -305,6 +305,8 @@ type CreateAppResponse = {
 type RouteListResponse = {
   routes: RouteEntry[]
   baseDomain: string
+  proxyState: ProxyState
+  portalReachable: boolean
 }
 
 type RouteEntry = {
@@ -355,7 +357,14 @@ type CreateUserRequest = {
 
 // --- System ---
 
-type ProxyState = 'starting' | 'running' | 'failed' | 'disabled' | 'stopped'
+type ProxyState = 'starting' | 'running' | 'degraded' | 'failed' | 'disabled' | 'stopped'
+
+type ProxyDetail = {
+  lastSyncOk: boolean
+  lastSyncError: string | null
+  lastSyncAt: string | null
+  listenAddress: string
+}
 
 type SystemStatus = {
   status: string
@@ -365,6 +374,8 @@ type SystemStatus = {
   timestamp: string
   proxyState: ProxyState
   portalUrl: string
+  portalReachable: boolean
+  proxyDetail: ProxyDetail | null
 }
 
 // --- Filesystem ---
@@ -434,6 +445,7 @@ export type {
   RouteEntry,
   SystemStatus,
   ProxyState,
+  ProxyDetail,
   DetectStrategyResponse,
   FilesystemBrowseResponse,
   DirectoryEntry,

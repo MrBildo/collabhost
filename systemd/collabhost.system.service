@@ -1,0 +1,100 @@
+# Collabhost -- systemd system-scope unit (production).
+#
+# This file is the canonical reference for the system-scope unit. install-system.sh
+# embeds an equivalent heredoc that gets dropped at /etc/systemd/system/collabhost.service
+# (the heredoc in the script is what's actually installed; this standalone file
+# exists so operators can review the unit shape on GitHub before running the
+# script). Keep the two in lockstep -- if you change one, change the other.
+#
+# Operators do not edit /etc/systemd/system/collabhost.service by hand on a
+# normal install -- re-running install-system.sh re-installs it. To customize,
+# drop overrides at /etc/systemd/system/collabhost.service.d/override.conf
+# (systemd merges drop-ins on top of the base unit, and drop-ins survive
+# upgrades).
+#
+# Compared to the user-scope variant (collabhost.user.service):
+#
+#   * Runs under a dedicated `collabhost` system user (no shell, no home).
+#   * Pinned to /opt/collabhost (binaries + wwwroot), /var/lib/collabhost
+#     (data), /etc/collabhost (config) -- the canonical Linux server layout.
+#   * AmbientCapabilities=CAP_NET_BIND_SERVICE lets the bundled Caddy bind
+#     :80/:443 without root and without per-binary setcap. This is the line
+#     that resolves card #214 (cap_net_bind_service xattr stripped on cp
+#     during upgrade) by construction -- no binary attribute, no upgrade
+#     fragility.
+
+[Unit]
+Description=Collabhost
+Documentation=https://github.com/MrBildo/collabhost
+After=network-online.target
+Wants=network-online.target
+# Rate-limit crash loops. Per systemd.unit(5), StartLimitBurst /
+# StartLimitIntervalSec are [Unit]-section keys; placing them in [Service]
+# silently no-ops with an "Unknown key name" warning in the journal. Restart=
+# / RestartSec= below stay in [Service] -- those ARE Service keys.
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=collabhost
+Group=collabhost
+WorkingDirectory=/opt/collabhost
+ExecStart=/opt/collabhost/bin/collabhost
+
+# Point Collabhost at the canonical system layout. Each path matches what
+# install-system.sh creates and chowns. See INSTALL.md §5.4 for the full
+# environment-variable reference.
+Environment="COLLABHOST_DATA_PATH=/var/lib/collabhost/data"
+Environment="COLLABHOST_USER_TYPES_PATH=/var/lib/collabhost/user-types"
+Environment="COLLABHOST_LOGS_PATH=/var/log/collabhost"
+Environment="COLLABHOST_PROXY_STORAGE_PATH=/var/lib/collabhost/caddy"
+# Single-file .NET hosts extract embedded native deps to $HOME/.net/... by
+# default. The collabhost system user has --no-create-home, so $HOME points at
+# /home/collabhost which doesn't exist -- and even if it did, ProtectHome=true
+# below makes /home/* invisible to the service. Pin extraction to a path under
+# our existing ReadWritePaths so the host can land its native deps without
+# touching $HOME.
+Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/collabhost/dotnet-bundle"
+# Card #246 (c2-A): explicit content-root + config-file paths. Without these, the
+# binary's default ContentRoot is AppContext.BaseDirectory (= /opt/collabhost/bin/),
+# which is where the binary lives but NOT where the operator-facing config + Portal
+# assets live. ASPNETCORE_CONTENTROOT pins ContentRoot to /opt/collabhost so wwwroot
+# resolves to /opt/collabhost/wwwroot/ via ASP.NET's {ContentRoot}/wwwroot default,
+# and COLLABHOST_CONFIG_PATH points the explicit AddJsonFile call at the operator-
+# editable canonical location in /etc/collabhost.
+Environment="ASPNETCORE_CONTENTROOT=/opt/collabhost"
+Environment="COLLABHOST_CONFIG_PATH=/etc/collabhost/appsettings.json"
+# DOTNET_ENVIRONMENT keeps the production defaults from any dev-only overrides.
+Environment="DOTNET_ENVIRONMENT=Production"
+Environment="ASPNETCORE_ENVIRONMENT=Production"
+
+# Privileged-port bind without root, without per-binary setcap. The kernel
+# grants cap_net_bind_service to the process tree, which the bundled Caddy
+# child inherits (CapabilityBoundingSet caps the upper bound so other code
+# paths cannot accidentally request more). This is the load-bearing line that
+# closes card #214: Caddy never needs setcap on the binary itself, so a `cp`
+# upgrade cannot strip the xattr (because there is no xattr).
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+# Restart on crash. RestartSec gives the host a moment to flush stderr / crash
+# logs before systemd respawns. The matching StartLimitBurst /
+# StartLimitIntervalSec live in [Unit] above (systemd's parser rejects them in
+# [Service]).
+Restart=on-failure
+RestartSec=5
+
+# Conservative process hygiene. ProtectSystem=strict + the explicit
+# ReadWritePaths is the standard "service can write to its data dirs and
+# nothing else" shape. PrivateTmp keeps stray /tmp files isolated. Add
+# additional hardening directives in a drop-in override if your deployment
+# allows (NoNewPrivileges, ProtectKernelTunables, etc. are standard
+# candidates).
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/collabhost /var/log/collabhost /etc/collabhost
+
+[Install]
+WantedBy=multi-user.target

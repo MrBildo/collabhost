@@ -33,18 +33,38 @@ if (args.Length > 0 && args[0] == "--merge-appsettings")
     return AppSettingsMergeCli.Run(args[1..], Console.Out, Console.Error);
 }
 
-// Anchor the host's content root to the binary directory, not the shell's CWD. Without this
-// an installed operator running `collabhost` from any directory other than the install dir
-// gets Kestrel + Host defaults (appsettings.json invisible, WebRootPath pointing at CWD,
-// relative data/ landing in the operator's current shell location). See card #164.
+// Anchor the host's content root explicitly. Card #164 baked in the rule that we never
+// trust the operator's CWD. Card #246 (c2-A) extends that rule: when ASPNETCORE_CONTENTROOT
+// is set (system-install layout via the systemd unit), honor it; otherwise fall through to
+// AppContext.BaseDirectory (Windows install.ps1, Linux user-scope, Aspire dev).
+//
+// The resolved value is passed to WebApplicationOptions explicitly so the CWD-immunity from
+// #164 holds in BOTH the env-var-set and env-var-unset paths -- WebApplication.CreateBuilder
+// would otherwise treat an unset env var as "fall through to CWD," which is exactly what
+// #164 forbids.
+var contentRoot = Environment.GetEnvironmentVariable("ASPNETCORE_CONTENTROOT")
+    ?? AppContext.BaseDirectory;
+
 var builder = WebApplication.CreateBuilder
 (
     new WebApplicationOptions
     {
         Args = args,
-        ContentRootPath = AppContext.BaseDirectory
+        ContentRootPath = contentRoot
     }
 );
+
+// Card #246 (c2-A): operator-editable config file path. When set (system-install layout),
+// the binary loads /etc/collabhost/appsettings.json directly. When unset, only the framework's
+// default ContentRoot/appsettings.json applies (already loaded by WebApplication.CreateBuilder
+// above). The explicit AddJsonFile is added LATER in the provider chain so it wins on key
+// conflicts when both files happen to exist -- which is the operator's intent when they set
+// the env var.
+var configPath = Environment.GetEnvironmentVariable("COLLABHOST_CONFIG_PATH");
+if (!string.IsNullOrWhiteSpace(configPath))
+{
+    builder.Configuration.AddJsonFile(configPath, optional: true, reloadOnChange: true);
+}
 
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
@@ -478,7 +498,7 @@ app.Lifetime.ApplicationStarted.Register
 (
     () =>
     {
-        var outcome = PortalReachabilityCheck.Validate(AppContext.BaseDirectory, app.Logger);
+        var outcome = PortalReachabilityCheck.Validate(app.Environment.ContentRootPath, app.Logger);
 
         if (outcome.Status != PortalReachabilityStatus.Ok)
         {

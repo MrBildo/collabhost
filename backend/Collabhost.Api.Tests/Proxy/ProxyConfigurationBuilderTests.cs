@@ -556,6 +556,79 @@ public class ProxyConfigurationBuilderTests
         apps.ContainsKey("pki").ShouldBeFalse();
     }
 
+    // ----- Card #230 phase 1: Caddy storage block (operator-controlled path) -----
+
+    [Fact]
+    public void Build_StoragePathUnset_OmitsStorageBlock()
+    {
+        // Default settings have StoragePath unset -- Caddy uses its built-in default
+        // (XDG_DATA_HOME / %AppData% / ~/Library). Additive contract for v1.0.x: an
+        // operator who hasn't touched the new key must see no behavior change.
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
+
+        config.AsObject().ContainsKey("storage").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Build_StoragePathSet_EmitsFileSystemStorageBlock()
+    {
+        var settings = new ProxySettings
+        {
+            BaseDomain = "collab.internal",
+            BinaryPath = "caddy",
+            ListenAddress = ":443",
+            CertLifetime = "168h",
+            StoragePath = "/var/lib/collabhost/caddy",
+            AdminPort = 2019
+        };
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, _defaultPortal);
+
+        var storage = config["storage"]!;
+
+        storage["module"]!.GetValue<string>().ShouldBe("file_system");
+        storage["root"]!.GetValue<string>().ShouldBe("/var/lib/collabhost/caddy");
+    }
+
+    [Fact]
+    public void Build_StoragePathWhitespace_OmitsStorageBlock()
+    {
+        // Whitespace-only treated as unset (consistent with the env-var blank-is-unset
+        // contract in ProxyRegistration.ResolveSettings).
+        var settings = new ProxySettings
+        {
+            BaseDomain = "collab.internal",
+            BinaryPath = "caddy",
+            ListenAddress = ":443",
+            CertLifetime = "168h",
+            StoragePath = "   ",
+            AdminPort = 2019
+        };
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, _defaultPortal);
+
+        config.AsObject().ContainsKey("storage").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Build_StoragePathSet_DoesNotAffectAppsBlock()
+    {
+        // Sanity check: storage is a top-level Caddy concept, not under apps.
+        var settings = new ProxySettings
+        {
+            BaseDomain = "collab.internal",
+            BinaryPath = "caddy",
+            ListenAddress = ":443",
+            CertLifetime = "168h",
+            StoragePath = "/var/lib/collabhost/caddy",
+            AdminPort = 2019
+        };
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, _defaultPortal);
+
+        config["apps"]!.AsObject().ContainsKey("storage").ShouldBeFalse();
+    }
+
     private static JsonArray? GetRoutes(JsonObject config) =>
         config["apps"]?["http"]?["servers"]?["srv0"]?["routes"]?.AsArray();
 }

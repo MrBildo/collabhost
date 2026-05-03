@@ -85,9 +85,13 @@ public static class ProxyRegistration
 
         var envListenAddress = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_LISTEN_ADDRESS");
 
+        // Default ":80,:443" — Caddy auto-emits an HTTP->HTTPS redirect server on :80
+        // when both ports are listed, so http:// typos land at the right place. Operators
+        // who can't grant privileged-port binds can override with COLLABHOST_PROXY_LISTEN_ADDRESS=":8080,:8443"
+        // or by editing appsettings.json. Card #217.
         var listenAddress = !string.IsNullOrWhiteSpace(envListenAddress)
             ? envListenAddress
-            : section["ListenAddress"] ?? ":443";
+            : section["ListenAddress"] ?? ":80,:443";
 
         var envCertLifetime = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_CERT_LIFETIME");
 
@@ -107,6 +111,16 @@ public static class ProxyRegistration
             ? envDnsApiTokenEnvVar
             : section["DnsApiTokenEnvVar"] ?? "CLOUDFLARE_API_TOKEN";
 
+        // StoragePath is operator-opt-in. Unset (env + config + default all empty) leaves
+        // ProxyConfigurationBuilder emitting no storage block, which preserves Caddy's
+        // built-in default behavior bit-for-bit -- the additive contract for v1.0.x
+        // installs that haven't set the value. Card #230 phase 1.
+        var envStoragePath = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_STORAGE_PATH");
+
+        var storagePath = !string.IsNullOrWhiteSpace(envStoragePath)
+            ? envStoragePath
+            : section["StoragePath"];
+
         return new ProxySettings
         {
             BaseDomain = baseDomain,
@@ -114,7 +128,8 @@ public static class ProxyRegistration
             ListenAddress = listenAddress,
             CertLifetime = certLifetime,
             DnsProvider = string.IsNullOrWhiteSpace(dnsProvider) ? null : dnsProvider,
-            DnsApiTokenEnvVar = dnsApiTokenEnvVar
+            DnsApiTokenEnvVar = dnsApiTokenEnvVar,
+            StoragePath = string.IsNullOrWhiteSpace(storagePath) ? null : storagePath
         };
     }
 }
