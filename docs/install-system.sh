@@ -376,6 +376,11 @@ Environment="COLLABHOST_PROXY_STORAGE_PATH=${CADDY_STORAGE_DIR}"
 # would block /home/* anyway. Pin extraction to a writable path under
 # ReadWritePaths so the host doesn't probe \$HOME.
 Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=${DOTNET_BUNDLE_DIR}"
+# Card #246 (c2-A): pin ContentRoot to the install prefix so wwwroot/ resolves
+# correctly, and load the operator-editable appsettings.json from /etc/collabhost
+# directly (no symlink back into BIN_DIR needed).
+Environment="ASPNETCORE_CONTENTROOT=${INSTALL_PREFIX}"
+Environment="COLLABHOST_CONFIG_PATH=${APPSETTINGS_DST}"
 Environment="DOTNET_ENVIRONMENT=Production"
 Environment="ASPNETCORE_ENVIRONMENT=Production"
 
