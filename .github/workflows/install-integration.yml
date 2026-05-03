@@ -887,15 +887,42 @@ jobs:
       # symptom -- the binary couldn't see appsettings.json so the proxy never
       # bound 80/443. Asserts proxyState=running AND portalReachable=true AND
       # proxyDetail is null (proxyDetail populated would mean degraded mode).
+      #
+      # Race-condition guard (card #243 fix-up): "Now listening on:" fires when
+      # Kestrel binds -- before ProxyManager completes its first config sync.
+      # The proxy transitions starting -> running (or -> degraded / -> disabled)
+      # asynchronously. Poll until proxyState exits "starting" before asserting,
+      # with a 60s ceiling matching the readiness wait above. A timeout that
+      # expires while still "starting" is a distinct failure mode from a
+      # non-running terminal state.
       - name: Verify /api/v1/status shape
         shell: bash
         run: |
           set -euo pipefail
+          # Poll until proxyState leaves the "starting" transient state.
+          PROXY_STATE="starting"
+          for _ in $(seq 1 60); do
+            STATUS_BODY="$(curl -fsSL http://localhost:58400/api/v1/status 2>/dev/null || true)"
+            if [[ -n "${STATUS_BODY}" ]]; then
+              PROXY_STATE="$(echo "${STATUS_BODY}" | jq -r '.proxyState' 2>/dev/null || echo "starting")"
+              if [[ "${PROXY_STATE}" != "starting" ]]; then
+                break
+              fi
+            fi
+            sleep 1
+          done
+          # Capture a fresh snapshot for the assertion output regardless of
+          # whether the poll loop produced a clean response.
           STATUS_BODY="$(curl -fsSL http://localhost:58400/api/v1/status)"
           echo "${STATUS_BODY}" | jq .
           PROXY_STATE="$(echo "${STATUS_BODY}" | jq -r '.proxyState')"
           PORTAL_REACHABLE="$(echo "${STATUS_BODY}" | jq -r '.portalReachable')"
           PROXY_DETAIL="$(echo "${STATUS_BODY}" | jq -r '.proxyDetail')"
+          if [[ "${PROXY_STATE}" == "starting" ]]; then
+            echo "proxyState is still 'starting' after 60s -- proxy never stabilized." >&2
+            echo "This is a startup-time regression, not a #244 recurrence." >&2
+            exit 1
+          fi
           if [[ "${PROXY_STATE}" != "running" ]]; then
             echo "proxyState is '${PROXY_STATE}', expected 'running'." >&2
             echo "Card #244 recurrence: the binary likely cannot see appsettings.json" >&2
