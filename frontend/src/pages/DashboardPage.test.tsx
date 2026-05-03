@@ -86,6 +86,8 @@ function makeSystemStatus(proxyState: ProxyState): SystemStatus {
     timestamp: '2026-04-20T21:00:00.000Z',
     proxyState,
     portalUrl: 'https://collabhost.collab.internal',
+    portalReachable: proxyState === 'running',
+    proxyDetail: null,
   }
 }
 
@@ -200,6 +202,24 @@ describe('DashboardPage', () => {
     // 'Running' appears as both the stats cell label and the proxy value; verify proxy value exists
     const runningCells = screen.getAllByText('Running')
     expect(runningCells.length).toBeGreaterThanOrEqual(1)
+  })
+
+  test('renders Degraded proxy state with short routes-not-reaching detail (full detail lives on System page)', () => {
+    mockUseDashboardStats.mockReturnValue({
+      data: makeStats({ totalApps: 3, running: 2, appTypes: 2 }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDashboardStats>)
+    mockUseSystemStatus.mockReturnValue({
+      data: makeSystemStatus('degraded'),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSystemStatus>)
+
+    render(<DashboardPage />)
+
+    expect(screen.getByText('Degraded')).toBeInTheDocument()
+    expect(screen.getByText('Routes not reaching public listener')).toBeInTheDocument()
   })
 
   test('renders Failed proxy state with remediation detail', () => {

@@ -17,6 +17,7 @@ function RoutesPage() {
 
   const routes = routesQuery.data?.routes ?? []
   const baseDomain = routesQuery.data?.baseDomain ?? ''
+  const portalReachable = routesQuery.data?.portalReachable ?? true
 
   const modeLabels: Record<string, string> = {
     reverseproxy: 'Reverse Proxy',
@@ -34,8 +35,33 @@ function RoutesPage() {
       key: 'domain',
       header: 'Domain',
       sortFn: (a, b) => a.domain.localeCompare(b.domain),
-      render: (route) =>
-        route.enabled ? (
+      render: (route) => {
+        const portalUnreachable = route.isPortal && !portalReachable
+        if (!route.enabled) {
+          return (
+            <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
+              {route.domain}
+            </span>
+          )
+        }
+        if (portalUnreachable) {
+          return (
+            <a
+              href={`${route.https ? 'https' : 'http'}://${route.domain}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs"
+              data-testid="portal-row-domain-unreachable"
+              style={{ color: 'var(--wm-text-dim)', textDecoration: 'none' }}
+              onClick={(e) => e.stopPropagation()}
+              title="Portal not reachable while proxy is degraded"
+            >
+              {route.domain}
+              <span style={{ marginLeft: 6, fontStyle: 'italic' }}>(not reachable)</span>
+            </a>
+          )
+        }
+        return (
           <a
             href={`${route.https ? 'https' : 'http'}://${route.domain}`}
             target="_blank"
@@ -52,11 +78,8 @@ function RoutesPage() {
           >
             {route.domain}
           </a>
-        ) : (
-          <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
-            {route.domain}
-          </span>
-        ),
+        )
+      },
     },
     {
       key: 'target',

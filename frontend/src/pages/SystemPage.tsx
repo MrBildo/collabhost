@@ -1,5 +1,5 @@
 import { useSystemStatus } from '@/hooks/use-system-status'
-import { formatProxyState, formatUptimeLong, proxyStateDetail } from '@/lib/format'
+import { formatDateTime, formatProxyState, formatUptimeLong, proxyStateDetail } from '@/lib/format'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { Spinner } from '@/shared/Spinner'
 import type { StatusCell } from '@/status/StatusStrip'
@@ -134,20 +134,36 @@ function SystemPage() {
                     Portal URL
                   </td>
                   <td className="text-xs">
-                    <a
-                      href={status.portalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: 'var(--wm-amber)', textDecoration: 'none' }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.color = 'var(--wm-text-bright)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.color = 'var(--wm-amber)'
-                      }}
-                    >
-                      {status.portalUrl}
-                    </a>
+                    {(status.portalReachable ?? true) ? (
+                      <a
+                        href={status.portalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--wm-amber)', textDecoration: 'none' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.color = 'var(--wm-text-bright)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.color = 'var(--wm-amber)'
+                        }}
+                      >
+                        {status.portalUrl}
+                      </a>
+                    ) : (
+                      <span>
+                        <a
+                          href={status.portalUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--wm-text-dim)', textDecoration: 'none' }}
+                        >
+                          {status.portalUrl}
+                        </a>
+                        <span style={{ color: 'var(--wm-text-dim)', marginLeft: 8, fontStyle: 'italic' }}>
+                          — not reachable while proxy is {formatProxyState(status.proxyState).toLowerCase()}
+                        </span>
+                      </span>
+                    )}
                   </td>
                 </tr>
                 <tr>
@@ -164,6 +180,73 @@ function SystemPage() {
               </tbody>
             </table>
           </div>
+
+          {status.proxyDetail && (
+            <div className="wm-panel p-4 mt-4" data-testid="proxy-detail-panel">
+              <div
+                className="text-xs font-semibold mb-3"
+                style={{ color: 'var(--wm-text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+              >
+                Proxy Detail
+              </div>
+              <table className="wm-table">
+                <tbody>
+                  <tr>
+                    <td className="text-xs font-semibold" style={{ color: 'var(--wm-text-dim)', width: '140px' }}>
+                      Last sync
+                    </td>
+                    <td className="text-xs" style={{ color: 'var(--wm-text-bright)' }}>
+                      {status.proxyDetail.lastSyncOk ? (
+                        <span style={{ color: 'var(--wm-green)' }}>succeeded</span>
+                      ) : (
+                        <span style={{ color: 'var(--wm-amber)' }}>failed</span>
+                      )}
+                      {status.proxyDetail.lastSyncAt && (
+                        <span style={{ color: 'var(--wm-text-dim)', marginLeft: 8 }}>
+                          at {formatDateTime(status.proxyDetail.lastSyncAt)}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="text-xs font-semibold" style={{ color: 'var(--wm-text-dim)' }}>
+                      Listen
+                    </td>
+                    <td
+                      className="text-xs"
+                      style={{ color: 'var(--wm-text-bright)', fontFamily: 'var(--wm-font-mono, monospace)' }}
+                    >
+                      {status.proxyDetail.listenAddress}
+                    </td>
+                  </tr>
+                  {status.proxyDetail.lastSyncError && (
+                    <tr>
+                      <td
+                        className="text-xs font-semibold"
+                        style={{ color: 'var(--wm-text-dim)', verticalAlign: 'top' }}
+                      >
+                        Error
+                      </td>
+                      <td className="text-xs">
+                        <code
+                          className="block"
+                          style={{
+                            color: 'var(--wm-amber)',
+                            fontFamily: 'var(--wm-font-mono, monospace)',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            userSelect: 'text',
+                          }}
+                        >
+                          {status.proxyDetail.lastSyncError}
+                        </code>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
     </div>

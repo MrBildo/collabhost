@@ -111,6 +111,7 @@ function formatRole(role: UserRole): string {
 const PROXY_STATE_LABELS: Record<ProxyState, string> = {
   starting: 'Starting',
   running: 'Running',
+  degraded: 'Degraded',
   failed: 'Failed',
   disabled: 'Disabled',
   stopped: 'Stopped',
@@ -123,6 +124,7 @@ function formatProxyState(state: ProxyState): string {
 const PROXY_STATE_DETAILS: Record<ProxyState, string | undefined> = {
   starting: 'Warming up',
   running: undefined,
+  degraded: 'Routes not reaching public listener',
   failed: 'Check logs, restart Collabhost',
   disabled: 'Re-run the installer or set COLLABHOST_CADDY_PATH',
   stopped: 'Proxy app stopped',
