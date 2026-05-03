@@ -214,4 +214,81 @@ public class ProxyRegistrationTests
             Environment.SetEnvironmentVariable("COLLABHOST_PROXY_CERT_LIFETIME", null);
         }
     }
+
+    // --- COLLABHOST_PROXY_STORAGE_PATH (card #230 phase 1) ---
+
+    [Fact]
+    public void ResolveSettings_StoragePathEnvVarSet_WinsOverConfig()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_PROXY_STORAGE_PATH", "/var/lib/collabhost/caddy");
+
+        try
+        {
+            var config = ConfigWithProxy(("StoragePath", "/etc/collabhost/caddy"));
+
+            var result = ProxyRegistration.ResolveSettings(config);
+
+            result.StoragePath.ShouldBe("/var/lib/collabhost/caddy");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COLLABHOST_PROXY_STORAGE_PATH", null);
+        }
+    }
+
+    [Fact]
+    public void ResolveSettings_StoragePathEnvVarUnset_FallsBackToConfig()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_PROXY_STORAGE_PATH", null);
+
+        var config = ConfigWithProxy(("StoragePath", "/srv/caddy"));
+
+        var result = ProxyRegistration.ResolveSettings(config);
+
+        result.StoragePath.ShouldBe("/srv/caddy");
+    }
+
+    [Fact]
+    public void ResolveSettings_StoragePathEnvVarUnsetConfigUnset_ReturnsNull()
+    {
+        // Default is "leave Caddy on its built-in default" -- no storage block emitted.
+        Environment.SetEnvironmentVariable("COLLABHOST_PROXY_STORAGE_PATH", null);
+
+        var result = ProxyRegistration.ResolveSettings(EmptyConfig());
+
+        result.StoragePath.ShouldBeNull();
+    }
+
+    [Fact]
+    public void ResolveSettings_StoragePathEnvVarWhitespace_FallsBackToConfig()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_PROXY_STORAGE_PATH", "   ");
+
+        try
+        {
+            var config = ConfigWithProxy(("StoragePath", "/srv/caddy"));
+
+            var result = ProxyRegistration.ResolveSettings(config);
+
+            result.StoragePath.ShouldBe("/srv/caddy");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COLLABHOST_PROXY_STORAGE_PATH", null);
+        }
+    }
+
+    [Fact]
+    public void ResolveSettings_StoragePathConfigWhitespace_NormalizesToNull()
+    {
+        // Mirrors the DnsProvider whitespace-to-null normalization so downstream
+        // ProxyConfigurationBuilder logic only ever sees "null" or a real path.
+        Environment.SetEnvironmentVariable("COLLABHOST_PROXY_STORAGE_PATH", null);
+
+        var config = ConfigWithProxy(("StoragePath", "   "));
+
+        var result = ProxyRegistration.ResolveSettings(config);
+
+        result.StoragePath.ShouldBeNull();
+    }
 }

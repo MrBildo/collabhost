@@ -253,6 +253,41 @@ as unset — the effective value falls through to `appsettings.json`, then to
 the built-in default. This blank-is-unset behavior is Collabhost-specific and
 only applies to the `COLLABHOST_*` variables above.
 
+### 5.5 Running as a service (Linux: systemd user template)
+
+For a persistent install on Linux, a systemd **user-scope** unit template ships
+in the repository at:
+
+```
+https://github.com/MrBildo/collabhost/blob/main/systemd/collabhost.user.service
+```
+
+Download or copy the file into `~/.config/systemd/user/collabhost.service`,
+edit the `WorkingDirectory` and `ExecStart` lines if you installed somewhere
+other than `$HOME/.collabhost/bin`, and enable:
+
+```sh
+loginctl enable-linger "$USER"          # keep the user manager alive after logout
+systemctl --user daemon-reload
+systemctl --user enable --now collabhost.service
+```
+
+Logs flow to `journald`:
+
+```sh
+journalctl --user -u collabhost -f
+```
+
+The template carries commented-out `Environment=` lines for the common
+operator-relevant overrides (`COLLABHOST_DATA_PATH`, `COLLABHOST_PROXY_BASE_DOMAIN`,
+`COLLABHOST_ADMIN_KEY`, ACME provider tokens). See §5.4 for the full reference.
+
+A **system-scope** variant (`systemd/collabhost.system.service`) — running under
+a dedicated `collabhost` system user with `AmbientCapabilities=CAP_NET_BIND_SERVICE`
+and the production `/opt/collabhost` + `/var/lib/collabhost` layout — is planned
+in a follow-up release alongside an `install-system.sh` entry point. This
+section will grow when that lands.
+
 ---
 
 ## 6. macOS: first-run quarantine

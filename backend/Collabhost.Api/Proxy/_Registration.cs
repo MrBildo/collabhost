@@ -111,6 +111,16 @@ public static class ProxyRegistration
             ? envDnsApiTokenEnvVar
             : section["DnsApiTokenEnvVar"] ?? "CLOUDFLARE_API_TOKEN";
 
+        // StoragePath is operator-opt-in. Unset (env + config + default all empty) leaves
+        // ProxyConfigurationBuilder emitting no storage block, which preserves Caddy's
+        // built-in default behavior bit-for-bit -- the additive contract for v1.0.x
+        // installs that haven't set the value. Card #230 phase 1.
+        var envStoragePath = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_STORAGE_PATH");
+
+        var storagePath = !string.IsNullOrWhiteSpace(envStoragePath)
+            ? envStoragePath
+            : section["StoragePath"];
+
         return new ProxySettings
         {
             BaseDomain = baseDomain,
@@ -118,7 +128,8 @@ public static class ProxyRegistration
             ListenAddress = listenAddress,
             CertLifetime = certLifetime,
             DnsProvider = string.IsNullOrWhiteSpace(dnsProvider) ? null : dnsProvider,
-            DnsApiTokenEnvVar = dnsApiTokenEnvVar
+            DnsApiTokenEnvVar = dnsApiTokenEnvVar,
+            StoragePath = string.IsNullOrWhiteSpace(storagePath) ? null : storagePath
         };
     }
 }
