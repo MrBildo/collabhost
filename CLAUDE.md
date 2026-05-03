@@ -37,10 +37,6 @@ The skills carry the universal patterns. The sections below name only Collabhost
 
 The domain entity `App` keeps its short form despite the `dotnet-dev` no-abbreviations rule. `App` is the product's named concept (`AppType`, `AppStore`, `Apps/` feature folder). `Application` is reserved for ASP.NET / hosting concepts.
 
-#### Lookup tables over enums (project-wide deviation)
-
-Collabhost uses lookup tables for fixed catalogs (app types, role types, restart policies) instead of the architecture skill's default of enums. We deviate because every catalog value carries display labels, ordering, and activation flags consumed by the schema-driven frontend, and we want one source-of-truth shape from DB to UI.
-
 #### Authorization
 
 - Header-based: `X-User-Key` (ULID).
