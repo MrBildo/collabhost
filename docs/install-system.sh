@@ -57,6 +57,9 @@ DATA_ROOT="/var/lib/collabhost"
 DATA_DIR="${DATA_ROOT}/data"
 USER_TYPES_DIR="${DATA_ROOT}/user-types"
 CADDY_STORAGE_DIR="${DATA_ROOT}/caddy"
+# Single-file .NET host extraction target. Under DATA_ROOT so the existing
+# ReadWritePaths covers it and teardown's `rm -rf /var/lib/collabhost` reaps it.
+DOTNET_BUNDLE_DIR="${DATA_ROOT}/dotnet-bundle"
 LOG_DIR="/var/log/collabhost"
 UNIT_DIR="/etc/systemd/system"
 UNIT_NAME="collabhost.service"
@@ -142,8 +145,14 @@ require_root() {
   # -H normalizes HOME for the elevated process; -E is intentionally avoided so
   # the operator's full env doesn't leak into the install -- we forward only the
   # COLLABHOST_* env vars the script reads.
+  #
+  # COLLABHOST_VERSION fallback to ${TAG} preserves --version: arg parsing
+  # already ran, so $TAG holds the operator's choice but $@ is empty and $TAG
+  # is a shell var (not exported). Forwarding it via the env-var slot lets the
+  # re-exec'd script's resolve_tag pick it up without round-tripping through
+  # CLI argv. (Bug #242.)
   exec sudo -H \
-    COLLABHOST_VERSION="${COLLABHOST_VERSION:-}" \
+    COLLABHOST_VERSION="${COLLABHOST_VERSION:-${TAG:-}}" \
     COLLABHOST_INSTALL_BASE_URL="${COLLABHOST_INSTALL_BASE_URL:-}" \
     bash "$0" "$@"
 }
@@ -218,6 +227,7 @@ install -d -m 0750 -o "${SERVICE_USER}" -g "${SERVICE_GROUP}"    "${DATA_ROOT}"
 install -d -m 0750 -o "${SERVICE_USER}" -g "${SERVICE_GROUP}"    "${DATA_DIR}"
 install -d -m 0750 -o "${SERVICE_USER}" -g "${SERVICE_GROUP}"    "${USER_TYPES_DIR}"
 install -d -m 0750 -o "${SERVICE_USER}" -g "${SERVICE_GROUP}"    "${CADDY_STORAGE_DIR}"
+install -d -m 0750 -o "${SERVICE_USER}" -g "${SERVICE_GROUP}"    "${DOTNET_BUNDLE_DIR}"
 install -d -m 0750 -o "${SERVICE_USER}" -g "${SERVICE_GROUP}"    "${LOG_DIR}"
 
 # ---- Install bundle artifacts ------------------------------------------------
@@ -333,6 +343,11 @@ Description=Collabhost
 Documentation=https://github.com/${REPO}
 After=network-online.target
 Wants=network-online.target
+# Rate-limit crash loops. Per systemd.unit(5), StartLimitBurst /
+# StartLimitIntervalSec are [Unit]-section keys; placing them in [Service]
+# silently no-ops with an "Unknown key name" warning in the journal.
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
@@ -346,6 +361,11 @@ Environment="COLLABHOST_DATA_PATH=${DATA_DIR}"
 Environment="COLLABHOST_USER_TYPES_PATH=${USER_TYPES_DIR}"
 Environment="COLLABHOST_LOGS_PATH=${LOG_DIR}"
 Environment="COLLABHOST_PROXY_STORAGE_PATH=${CADDY_STORAGE_DIR}"
+# Single-file .NET hosts extract embedded native deps to \$HOME/.net by
+# default. Our service user has --no-create-home, and ProtectHome=true below
+# would block /home/* anyway. Pin extraction to a writable path under
+# ReadWritePaths so the host doesn't probe \$HOME.
+Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=${DOTNET_BUNDLE_DIR}"
 Environment="DOTNET_ENVIRONMENT=Production"
 Environment="ASPNETCORE_ENVIRONMENT=Production"
 
@@ -360,8 +380,6 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 Restart=on-failure
 RestartSec=5
-StartLimitBurst=5
-StartLimitIntervalSec=60
 
 # Conservative process hygiene. ProtectSystem=strict + the explicit
 # ReadWritePaths is the standard "service can write to its data dirs and

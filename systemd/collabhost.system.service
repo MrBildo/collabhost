@@ -28,6 +28,12 @@ Description=Collabhost
 Documentation=https://github.com/MrBildo/collabhost
 After=network-online.target
 Wants=network-online.target
+# Rate-limit crash loops. Per systemd.unit(5), StartLimitBurst /
+# StartLimitIntervalSec are [Unit]-section keys; placing them in [Service]
+# silently no-ops with an "Unknown key name" warning in the journal. Restart=
+# / RestartSec= below stay in [Service] -- those ARE Service keys.
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
@@ -43,6 +49,13 @@ Environment="COLLABHOST_DATA_PATH=/var/lib/collabhost/data"
 Environment="COLLABHOST_USER_TYPES_PATH=/var/lib/collabhost/user-types"
 Environment="COLLABHOST_LOGS_PATH=/var/log/collabhost"
 Environment="COLLABHOST_PROXY_STORAGE_PATH=/var/lib/collabhost/caddy"
+# Single-file .NET hosts extract embedded native deps to $HOME/.net/... by
+# default. The collabhost system user has --no-create-home, so $HOME points at
+# /home/collabhost which doesn't exist -- and even if it did, ProtectHome=true
+# below makes /home/* invisible to the service. Pin extraction to a path under
+# our existing ReadWritePaths so the host can land its native deps without
+# touching $HOME.
+Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/collabhost/dotnet-bundle"
 # ASP.NET Core looks for appsettings.json next to the binary by default.
 # DOTNET_ENVIRONMENT keeps the production defaults from any dev-only overrides.
 Environment="DOTNET_ENVIRONMENT=Production"
@@ -58,12 +71,11 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 # Restart on crash. RestartSec gives the host a moment to flush stderr / crash
-# logs before systemd respawns. StartLimitBurst=5 / StartLimitIntervalSec=60
-# stop a tight crash loop from spinning forever.
+# logs before systemd respawns. The matching StartLimitBurst /
+# StartLimitIntervalSec live in [Unit] above (systemd's parser rejects them in
+# [Service]).
 Restart=on-failure
 RestartSec=5
-StartLimitBurst=5
-StartLimitIntervalSec=60
 
 # Conservative process hygiene. ProtectSystem=strict + the explicit
 # ReadWritePaths is the standard "service can write to its data dirs and
