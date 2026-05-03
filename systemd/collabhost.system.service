@@ -56,7 +56,15 @@ Environment="COLLABHOST_PROXY_STORAGE_PATH=/var/lib/collabhost/caddy"
 # our existing ReadWritePaths so the host can land its native deps without
 # touching $HOME.
 Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/collabhost/dotnet-bundle"
-# ASP.NET Core looks for appsettings.json next to the binary by default.
+# Card #246 (c2-A): explicit content-root + config-file paths. Without these, the
+# binary's default ContentRoot is AppContext.BaseDirectory (= /opt/collabhost/bin/),
+# which is where the binary lives but NOT where the operator-facing config + Portal
+# assets live. ASPNETCORE_CONTENTROOT pins ContentRoot to /opt/collabhost so wwwroot
+# resolves to /opt/collabhost/wwwroot/ via ASP.NET's {ContentRoot}/wwwroot default,
+# and COLLABHOST_CONFIG_PATH points the explicit AddJsonFile call at the operator-
+# editable canonical location in /etc/collabhost.
+Environment="ASPNETCORE_CONTENTROOT=/opt/collabhost"
+Environment="COLLABHOST_CONFIG_PATH=/etc/collabhost/appsettings.json"
 # DOTNET_ENVIRONMENT keeps the production defaults from any dev-only overrides.
 Environment="DOTNET_ENVIRONMENT=Production"
 Environment="ASPNETCORE_ENVIRONMENT=Production"

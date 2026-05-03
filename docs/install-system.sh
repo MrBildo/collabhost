@@ -317,16 +317,6 @@ fi
 chown root:"${SERVICE_GROUP}" "${APPSETTINGS_DST}"
 chmod 0640                    "${APPSETTINGS_DST}"
 
-# ASP.NET Core resolves appsettings.json relative to ContentRootPath, which
-# Program.cs pins to AppContext.BaseDirectory (the binary's directory, here
-# ${BIN_DIR}). The canonical operator-facing config lives at ${APPSETTINGS_DST}
-# in /etc/collabhost. Symlink it next to the binary so the running process sees
-# operator edits (Proxy:BinaryPath, BaseDomain, etc.) without duplicating the
-# file. Absolute target so the symlink survives any move of the canonical file;
-# -f to overwrite on reinstall. Reaped by `rm -rf /opt/collabhost` on teardown.
-# (Bug #244.)
-ln -sf "${APPSETTINGS_DST}" "${BIN_DIR}/appsettings.json"
-
 # ---- systemd unit ------------------------------------------------------------
 
 # The bundled unit lives in the repo under systemd/collabhost.system.service.
@@ -376,6 +366,11 @@ Environment="COLLABHOST_PROXY_STORAGE_PATH=${CADDY_STORAGE_DIR}"
 # would block /home/* anyway. Pin extraction to a writable path under
 # ReadWritePaths so the host doesn't probe \$HOME.
 Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=${DOTNET_BUNDLE_DIR}"
+# Card #246 (c2-A): pin ContentRoot to the install prefix so wwwroot/ resolves
+# correctly, and load the operator-editable appsettings.json from /etc/collabhost
+# directly (no symlink back into BIN_DIR needed).
+Environment="ASPNETCORE_CONTENTROOT=${INSTALL_PREFIX}"
+Environment="COLLABHOST_CONFIG_PATH=${APPSETTINGS_DST}"
 Environment="DOTNET_ENVIRONMENT=Production"
 Environment="ASPNETCORE_ENVIRONMENT=Production"
 
