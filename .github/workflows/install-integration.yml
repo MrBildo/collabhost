@@ -1006,8 +1006,20 @@ jobs:
       # "Unknown key name" warning visible from the very first boot; #245
       # "WebRootPath was not found" + "Portal reachability check: Missing"
       # visible long before any HTTP probe). A fresh boot should have ZERO
-      # warnings or errors. The 'admin key' grep guard avoids matching the
-      # one-time bootstrap stdout that legitimately contains the word.
+      # warnings or errors.
+      #
+      # Bootstrap filter (card #243 fix-up #2): UserSeedService.LogCritical emits
+      # intentionally at crit: so operators see the generated admin key regardless
+      # of configured log level. The .NET console formatter writes this as a 2-line
+      # block in the journal:
+      #   line 1 (framework header): crit: Collabhost.Api.Authorization.UserSeedService[0]
+      #   line 2 (message body):     Collabhost admin key: <ULID>
+      # The prior grep -v 'admin key' only removed line 2; line 1 escaped the
+      # filter. The awk pre-pass treats the pair as a unit: suppress line 1 when
+      # line 2 is the bootstrap body. A real critical error from UserSeedService
+      # (e.g. DB write failure) would produce a different continuation and surfaces
+      # normally. The "Admin-key bootstrap line" step above validates this path
+      # independently, so suppressing it here avoids double-counting.
       - name: Journal warning scan
         shell: bash
         run: |
@@ -1015,12 +1027,20 @@ jobs:
           JOURNAL="$(sudo journalctl -u collabhost --since '5 min ago' --no-pager 2>&1 || true)"
           # Match Microsoft.Extensions.Logging level prefixes -- warn:, fail:
           # (Error), crit: (Critical) -- plus the systemd "Unknown key name"
-          # diagnostic that #241 emitted. Skip the admin-key bootstrap line
-          # which legitimately contains "key". The grep is line-anchored to
-          # ": " so it doesn't match the timestamp's seconds field or random
-          # log content that happens to contain "warn".
-          OFFENDERS="$(echo "${JOURNAL}" | grep -iE '(^|\s)(warn|fail|crit):\s|unknown key' \
-                       | grep -v 'admin key' || true)"
+          # diagnostic that #241 emitted. The grep is line-anchored to ": " so
+          # it doesn't match the timestamp's seconds field or random log content
+          # that happens to contain "warn".
+          #
+          # awk pre-pass strips the intentional UserSeedService bootstrap 2-line
+          # block (header + "Collabhost admin key:" body) before grep runs.
+          # A real critical from UserSeedService produces a different body line
+          # and falls through to grep normally.
+          OFFENDERS="$(echo "${JOURNAL}" \
+            | awk '/crit:.*UserSeedService/ { hold=$0; skip=1; next }
+                   skip && /Collabhost admin key:/ { skip=0; next }
+                   skip { print hold; skip=0 }
+                   { print }' \
+            | grep -iE '(^|\s)(warn|fail|crit):\s|unknown key' || true)"
           if [[ -n "${OFFENDERS}" ]]; then
             echo "Journal contains warnings/errors on a fresh boot:" >&2
             echo "${OFFENDERS}" >&2
