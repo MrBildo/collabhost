@@ -253,10 +253,22 @@ as unset — the effective value falls through to `appsettings.json`, then to
 the built-in default. This blank-is-unset behavior is Collabhost-specific and
 only applies to the `COLLABHOST_*` variables above.
 
-### 5.5 Running as a service (Linux: systemd user template)
+### 5.5 Running as a service (Linux: systemd)
 
-For a persistent install on Linux, a systemd **user-scope** unit template ships
-in the repository at:
+Linux operators have two service shapes to choose from. Pick based on who owns
+the host:
+
+| Shape | Best for | Layout | Privileges |
+|-------|----------|--------|------------|
+| **User-scope** (`install.sh` + `collabhost.user.service`) | Single-operator homelab; you own the box and your shell. No admin handoff planned. | Everything in `~/.collabhost/`. Service runs as your login user. | None beyond your shell. `loginctl enable-linger` keeps the unit alive across logout. |
+| **System-scope** (`install-system.sh`) | Servers; multi-operator handoff; a "production" install you'd hand to a new admin without explanation. | Canonical `/opt/`, `/etc/`, `/var/lib/` split. Service runs as a dedicated `collabhost` system user. | Root (sudo) at install time and for upgrades. The running service is unprivileged. |
+
+Both ship the same binary and the same config keys. The choice is about
+**filesystem layout and who owns the process**, not features.
+
+#### 5.5.1 User-scope service (default `install.sh` flow)
+
+For a persistent user-scope install, a systemd unit template ships at:
 
 ```
 https://github.com/MrBildo/collabhost/blob/main/systemd/collabhost.user.service
@@ -282,11 +294,109 @@ The template carries commented-out `Environment=` lines for the common
 operator-relevant overrides (`COLLABHOST_DATA_PATH`, `COLLABHOST_PROXY_BASE_DOMAIN`,
 `COLLABHOST_ADMIN_KEY`, ACME provider tokens). See §5.4 for the full reference.
 
-A **system-scope** variant (`systemd/collabhost.system.service`) — running under
-a dedicated `collabhost` system user with `AmbientCapabilities=CAP_NET_BIND_SERVICE`
-and the production `/opt/collabhost` + `/var/lib/collabhost` layout — is planned
-in a follow-up release alongside an `install-system.sh` entry point. This
-section will grow when that lands.
+#### 5.5.2 System-scope service (`install-system.sh`)
+
+Lays the canonical Linux server layout and installs a system-level systemd
+unit running under a dedicated `collabhost` system user:
+
+```sh
+curl -fsSL https://mrbildo.github.io/collabhost/install-system.sh | sudo bash
+```
+
+Or download first and read before running (recommended for a server-class
+install):
+
+```sh
+curl -fsSL https://mrbildo.github.io/collabhost/install-system.sh -o install-system.sh
+less install-system.sh
+sudo bash install-system.sh
+```
+
+Pin to a specific release with `--version vX.Y.Z` or `COLLABHOST_VERSION=vX.Y.Z`.
+
+**What the script creates:**
+
+| Path | Owner | Purpose |
+|------|-------|---------|
+| `/opt/collabhost/bin/collabhost`, `/opt/collabhost/bin/caddy` | root | Binaries (read-only for the service) |
+| `/opt/collabhost/wwwroot/` | root | Portal SPA assets |
+| `/opt/collabhost/INSTALL.md`, `/opt/collabhost/LICENSES/` | root | Documentation |
+| `/etc/collabhost/appsettings.json` | root:collabhost (0640) | Operator-facing config |
+| `/etc/collabhost/appsettings.shipped.json` | root:collabhost (0640) | Smart-merge baseline (do not edit) |
+| `/var/lib/collabhost/data/` | collabhost:collabhost (0750) | SQLite DB + pre-migration backups |
+| `/var/lib/collabhost/user-types/` | collabhost:collabhost (0750) | Operator-authored AppType JSON |
+| `/var/lib/collabhost/caddy/` | collabhost:collabhost (0750) | Caddy CA / account / cert storage |
+| `/var/log/collabhost/` | collabhost:collabhost (0750) | Crash logs |
+| `/etc/systemd/system/collabhost.service` | root | System-scope systemd unit |
+
+The systemd unit sets `AmbientCapabilities=CAP_NET_BIND_SERVICE` so the
+bundled Caddy can bind `:80`/`:443` without root and **without** per-binary
+`setcap`. This is the load-bearing line that keeps the system-install free of
+the "cap stripped on `cp` upgrade" failure mode.
+
+**Verify the install:**
+
+```sh
+systemctl status collabhost
+journalctl -u collabhost --since '5 min ago'
+curl http://localhost:58400/api/v1/status
+```
+
+On a fresh install, capture the admin key (it emits once on first boot — see
+§2):
+
+```sh
+journalctl -u collabhost --since '5 min ago' | grep 'Collabhost admin key:'
+```
+
+**Customize the unit:** do not edit `/etc/systemd/system/collabhost.service`
+directly — `install-system.sh` overwrites it on every upgrade. Instead, drop
+overrides under `/etc/systemd/system/collabhost.service.d/`:
+
+```sh
+sudo systemctl edit collabhost.service     # opens an override editor
+sudo systemctl daemon-reload
+sudo systemctl restart collabhost
+```
+
+The override file you create is preserved across upgrades because systemd
+merges drop-ins on top of the base unit.
+
+**Edit `/etc/collabhost/appsettings.json`** for persistent config changes
+(e.g., `Proxy:BaseDomain`, `Proxy:DnsProvider`). Changes survive upgrades —
+the smart-merge in §8.2 preserves operator edits.
+
+**Upgrade:**
+
+```sh
+sudo bash install-system.sh                # latest
+sudo bash install-system.sh --version v1.2.3  # pinned
+```
+
+The unit is `restart`ed automatically at the end of the upgrade. Data and
+Caddy storage are preserved; binaries, `wwwroot/`, the unit itself, and
+`LICENSES/` are refreshed.
+
+**Uninstall:**
+
+```sh
+sudo systemctl disable --now collabhost
+sudo rm /etc/systemd/system/collabhost.service
+sudo systemctl daemon-reload
+sudo rm -rf /opt/collabhost /etc/collabhost /var/lib/collabhost /var/log/collabhost
+sudo userdel collabhost     # group goes with --user-group convention
+```
+
+**If you already have a `/opt/collabhost/` install from before this script
+existed,** review the script first (`less install-system.sh`) — `install-system.sh`
+will overwrite `/opt/collabhost/bin/collabhost`, `/opt/collabhost/bin/caddy`,
+`/opt/collabhost/wwwroot/`, `/opt/collabhost/INSTALL.md`, `/opt/collabhost/LICENSES/`,
+and `/etc/systemd/system/collabhost.service`. It will smart-merge any existing
+`/etc/collabhost/appsettings.json` (preserving operator edits) and leave
+`/var/lib/collabhost/` untouched. If your hand-rolled install used different
+paths (e.g., a different config dir or data root), consolidate first or stay
+on your hand-rolled layout — `install-system.sh` does not relocate files from
+non-canonical paths.
 
 ---
 
