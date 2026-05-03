@@ -85,9 +85,13 @@ public static class ProxyRegistration
 
         var envListenAddress = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_LISTEN_ADDRESS");
 
+        // Default ":80,:443" — Caddy auto-emits an HTTP->HTTPS redirect server on :80
+        // when both ports are listed, so http:// typos land at the right place. Operators
+        // who can't grant privileged-port binds can override with COLLABHOST_PROXY_LISTEN_ADDRESS=":8080,:8443"
+        // or by editing appsettings.json. Card #217.
         var listenAddress = !string.IsNullOrWhiteSpace(envListenAddress)
             ? envListenAddress
-            : section["ListenAddress"] ?? ":443";
+            : section["ListenAddress"] ?? ":80,:443";
 
         var envCertLifetime = Environment.GetEnvironmentVariable("COLLABHOST_PROXY_CERT_LIFETIME");
 

@@ -359,11 +359,34 @@ public static class ProxyConfigurationBuilder
             {
                 ["srv0"] = new JsonObject
                 {
-                    ["listen"] = new JsonArray { settings.ListenAddress },
+                    ["listen"] = BuildListenArray(settings.ListenAddress),
                     ["routes"] = routes
                 }
             }
         };
+
+    // Parses the comma-separated ListenAddress into a Caddy listen array. Default
+    // ":80,:443" becomes ["":80"", ":443""]. Caddy automatically promotes the :443 entry
+    // into an HTTP->HTTPS-on-:80 redirect using the auto-generated http_redirect server,
+    // so the operator gets http:// typo polish for free with the default. Card #217.
+    internal static JsonArray BuildListenArray(string listenAddress)
+    {
+        var result = new JsonArray();
+
+        if (string.IsNullOrWhiteSpace(listenAddress))
+        {
+            return result;
+        }
+
+        var entries = listenAddress.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (var entry in entries)
+        {
+            result.Add(entry);
+        }
+
+        return result;
+    }
 }
 
 public record RouteEntry

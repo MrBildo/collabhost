@@ -41,6 +41,7 @@ public class SystemStatusProxyStateTests(ApiFixture fixture)
     [InlineData(ProxyState.Failed, "failed")]
     [InlineData(ProxyState.Disabled, "disabled")]
     [InlineData(ProxyState.Stopped, "stopped")]
+    [InlineData(ProxyState.Degraded, "degraded")]
     public async Task GetStatus_AllStates_SurfaceAsLowercase(ProxyState state, string expectedWire)
     {
         var proxyManager = _fixture.Services.GetRequiredService<ProxyManager>();

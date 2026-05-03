@@ -31,7 +31,8 @@ On first launch, Collabhost:
 1. Creates `data/` and `data/backups/` next to the binary (0700 on POSIX).
 2. Creates `collabhost.db` and applies all migrations.
 3. Seeds the admin user and **prints the admin key to stdout**.
-4. Starts the bundled Caddy reverse proxy on `:443`.
+4. Starts the bundled Caddy reverse proxy on `:80` and `:443` (the default
+   `Proxy:ListenAddress` is `:80,:443` — Caddy auto-redirects HTTP to HTTPS).
 5. Listens on `http://localhost:58400` for the dashboard.
 
 Open `http://localhost:58400` in your browser. See §2 to capture the admin key
@@ -226,7 +227,7 @@ Then `.\startup.ps1`.
 | `COLLABHOST_CADDY_PATH`         | `Proxy:BinaryPath` — Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
 | `COLLABHOST_HOSTING_LISTEN_PORT` | `Hosting:ListenPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_PROXY_BASE_DOMAIN`  | `Proxy:BaseDomain` | Domain suffix | `collabhost.lan` |
-| `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec | `:8443` |
+| `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec, comma-separated for multiple ports | `:80,:443` (default) or `:8080,:8443` |
 | `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string | `720h` |
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
@@ -411,11 +412,22 @@ Options:
 - Verify the bundled `caddy` binary is executable (`chmod +x caddy`).
 - Check structured logs for the Caddy process's stderr.
 
-### 9.2 Port 443 already in use
+### 9.2 Port 443 (or 80) already in use
 
-Another proxy or service on the host owns `:443`. Edit
-`Proxy:ListenAddress` in `appsettings.json` to a free port (e.g., `:8443`)
-or set `COLLABHOST_PROXY_LISTEN_ADDRESS`. Remember to include the colon.
+Another proxy or service on the host owns `:80` or `:443` (or both — the default
+`Proxy:ListenAddress` is `:80,:443`). Edit `Proxy:ListenAddress` in
+`appsettings.json` to free ports (e.g., `:8080,:8443`) or set
+`COLLABHOST_PROXY_LISTEN_ADDRESS`. The value is a comma-separated list of Caddy
+listen specs — remember to include the colon and to omit any spaces if shell
+quoting strips them.
+
+If `proxyState` on `/api/v1/status` reports `degraded`, the proxy process is
+alive but routes are not reaching the public listener. The `proxyDetail` block
+on the same response carries the specific error from Caddy (e.g., `bind:
+permission denied` when a privileged port can't be claimed). On Linux,
+`cap_net_bind_service` on the Caddy binary is the standard fix for `:80` /
+`:443`; alternatively switch to `:8080,:8443` and front Collabhost behind another
+proxy or a router NAT rule.
 
 ### 9.3 Port 58400 already in use
 

@@ -19,5 +19,11 @@ public enum ProxyState
     Disabled = 3,
 
     // Proxy app is explicitly not running (operator stopped it via UI / API).
-    Stopped = 4
+    Stopped = 4,
+
+    // Caddy admin API is reachable AND the most recent route sync either failed entirely
+    // or Caddy reported the loaded config rejected. Operator-facing meaning: the proxy
+    // process is alive but routes are not reaching the public listener (e.g., :443 bind
+    // permission denied). Recovers to Running when the next sync succeeds. Card #217.
+    Degraded = 5
 }

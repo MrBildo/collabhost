@@ -111,9 +111,18 @@ public static class ProxyEndpoints
             );
         }
 
+        // Route table reflects proxyState so the frontend can annotate per-row UX (e.g.,
+        // grey out / strike the Portal row's hostname when the public listener isn't bound).
+        // Per-row Enabled stays as operator intent; proxyState is the operational reality. #217.
+        var proxyState = proxy.CurrentState;
+        var proxyStateString = proxyState
+            .ToString()
+            .ToLowerInvariant();
+        var portalReachable = proxyState == ProxyState.Running;
+
         return TypedResults.Ok
         (
-            new RouteListResponse(entries, settings.BaseDomain)
+            new RouteListResponse(entries, settings.BaseDomain, proxyStateString, portalReachable)
         );
     }
 

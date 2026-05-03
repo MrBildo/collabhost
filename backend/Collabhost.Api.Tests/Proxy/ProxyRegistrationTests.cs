@@ -124,11 +124,14 @@ public class ProxyRegistrationTests
     [Fact]
     public void ResolveSettings_ListenAddressEnvVarUnsetConfigUnset_ReturnsHardcodedDefault()
     {
+        // Default changed from ":443" to ":80,:443" in card #217 so Caddy auto-emits the
+        // HTTP->HTTPS redirect server on :80. Operators with custom appsettings keep their
+        // override; only operators relying on the *hardcoded* default see the change.
         Environment.SetEnvironmentVariable("COLLABHOST_PROXY_LISTEN_ADDRESS", null);
 
         var result = ProxyRegistration.ResolveSettings(EmptyConfig());
 
-        result.ListenAddress.ShouldBe(":443");
+        result.ListenAddress.ShouldBe(":80,:443");
     }
 
     [Fact]

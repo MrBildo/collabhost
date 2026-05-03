@@ -68,7 +68,8 @@ public class ProxyManager
 
     // Backing store is int so Interlocked.CompareExchange can operate directly on it.
     // Writes from the field initializer (Starting), StartAsync disabled path (Disabled),
-    // the event handler (Failed / Stopped / Starting), and ProbeAndActivateAsync (CAS from Starting).
+    // the event handler (Failed / Stopped / Starting), ProbeAndActivateAsync (CAS from Starting),
+    // and SyncRoutesAsync (CAS Running<->Degraded on sync failure / recovery, card #217).
     // Reads from /status request threads via CurrentState.
     // Ordering is enforced by Interlocked for CAS and Volatile.Read for the property accessor.
     // Aligned 32-bit reads are atomic in .NET, and Volatile.Read pairs with the Interlocked
@@ -76,7 +77,16 @@ public class ProxyManager
     private int _currentState = (int)ProxyState.Starting;
 
     // Once the post-launch probe fails, disable further sync attempts for this process lifetime.
+    // Distinct from the Degraded state (#217): _proxyDisabled latches when the admin-API probe
+    // never succeeded (or the proxy went Fatal), so further syncs would be pointless. Degraded
+    // is a recoverable state where the admin API IS reachable but route loads are failing -- the
+    // sync loop continues so the next attempt can clear it.
     private volatile bool _proxyDisabled;
+
+    // Latest route-sync outcome, surfaced via /api/v1/status as proxyDetail. Replaced
+    // wholesale on every sync attempt; a successful sync clears the error fields. Reads
+    // are guarded by Volatile.Read to pair with the Volatile.Write on update. Card #217.
+    private SyncOutcome _lastSyncOutcome = SyncOutcome.NeverAttempted;
 
     private IDisposable? _subscription;
     private Task? _processorTask;
@@ -85,6 +95,8 @@ public class ProxyManager
     private bool _disposed;
 
     public ProxyState CurrentState => (ProxyState)Volatile.Read(ref _currentState);
+
+    public SyncOutcome LastSyncOutcome => Volatile.Read(ref _lastSyncOutcome);
 
     public void EnableRoute(string slug)
     {
@@ -211,10 +223,13 @@ public class ProxyManager
 
             var config = ProxyConfigurationBuilder.Build(routeEntries, _settings, _hostingSettings, _portalSettings);
 
-            var success = await _caddyClient.LoadConfigAsync(config, ct);
+            var result = await _caddyClient.LoadConfigAsync(config, ct);
 
-            if (success)
+            if (result.Success)
             {
+                Volatile.Write(ref _lastSyncOutcome, SyncOutcome.Succeeded(DateTime.UtcNow));
+                TryRecoverFromDegraded();
+
                 _logger.LogInformation
                 (
                     "Proxy routes synced -- {RouteCount} app route(s) + self-route",
@@ -223,12 +238,93 @@ public class ProxyManager
             }
             else
             {
-                _logger.LogWarning("Proxy route sync failed -- config load was rejected");
+                var errorDetail = FormatSyncError(result);
+
+                Volatile.Write
+                (
+                    ref _lastSyncOutcome,
+                    SyncOutcome.Failed(DateTime.UtcNow, errorDetail)
+                );
+
+                TryEnterDegraded();
+
+                _logger.LogWarning
+                (
+                    "Proxy route sync failed -- {Error} (proxyState may be 'degraded')",
+                    errorDetail
+                );
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Proxy route sync failed with exception");
+            Volatile.Write
+            (
+                ref _lastSyncOutcome,
+                SyncOutcome.Failed(DateTime.UtcNow, ex.Message)
+            );
+
+            TryEnterDegraded();
+
+            _logger.LogError(ex, "Proxy route sync failed with exception (proxyState may be 'degraded')");
+        }
+    }
+
+    // Format the LoadConfigResult into an operator-readable error string. Caddy's load
+    // response body usually carries a structured JSON error; pass it through verbatim so
+    // the operator sees the real bind/parse/issuer message without us re-encoding it.
+    private static string FormatSyncError(LoadConfigResult result)
+    {
+        var hasBody = !string.IsNullOrWhiteSpace(result.ErrorBody);
+        var hasStatus = result.StatusCode is not null;
+
+        return (hasStatus, hasBody) switch
+        {
+            (true, true) => string.Create
+            (
+                CultureInfo.InvariantCulture,
+                $"Caddy admin API returned {result.StatusCode}: {result.ErrorBody!.Trim()}"
+            ),
+            (false, true) => result.ErrorBody!.Trim(),
+            (true, false) => string.Create
+            (
+                CultureInfo.InvariantCulture,
+                $"Caddy admin API returned {result.StatusCode}"
+            ),
+            _ => "Caddy admin API rejected the route configuration"
+        };
+    }
+
+    // CAS Running -> Degraded. Only transitions out of Running so a Stopping/Failed/Disabled
+    // event can't be overwritten by a sync that lost the race. Card #217.
+    private void TryEnterDegraded()
+    {
+        var previous = (ProxyState)Interlocked.CompareExchange
+        (
+            ref _currentState,
+            (int)ProxyState.Degraded,
+            (int)ProxyState.Running
+        );
+
+        if (previous == ProxyState.Running)
+        {
+            _logger.LogWarning("Proxy entered degraded state -- routes are not reaching the public listener");
+        }
+    }
+
+    // CAS Degraded -> Running. Only transitions out of Degraded so a parallel terminal-state
+    // event keeps its write. Card #217 recovery edge.
+    private void TryRecoverFromDegraded()
+    {
+        var previous = (ProxyState)Interlocked.CompareExchange
+        (
+            ref _currentState,
+            (int)ProxyState.Running,
+            (int)ProxyState.Degraded
+        );
+
+        if (previous == ProxyState.Degraded)
+        {
+            _logger.LogInformation("Proxy recovered from degraded state -- routes are reaching the public listener");
         }
     }
 

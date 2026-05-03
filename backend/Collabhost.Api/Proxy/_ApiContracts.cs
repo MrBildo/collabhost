@@ -5,7 +5,9 @@ namespace Collabhost.Api.Proxy;
 public record RouteListResponse
 (
     List<RouteListEntry> Routes,
-    string BaseDomain
+    string BaseDomain,
+    string ProxyState,
+    bool PortalReachable
 );
 
 public record RouteListEntry
