@@ -1,10 +1,22 @@
 namespace Collabhost.Api.Proxy;
 
+// LoadConfigAsync result. Carries the failure detail (error body + status) when Caddy
+// rejects the config, so ProxyManager can surface a real cause string on /status's
+// proxyDetail.lastSyncError field instead of a generic message. Card #217.
+public record LoadConfigResult(bool Success, int? StatusCode, string? ErrorBody)
+{
+    public static LoadConfigResult Ok() =>
+        new(true, null, null);
+
+    public static LoadConfigResult Failed(int? statusCode, string? errorBody) =>
+        new(false, statusCode, errorBody);
+}
+
 public interface ICaddyClient
 {
     Task<bool> IsReadyAsync(CancellationToken ct = default);
 
-    Task<bool> LoadConfigAsync(JsonObject config, CancellationToken ct = default);
+    Task<LoadConfigResult> LoadConfigAsync(JsonObject config, CancellationToken ct = default);
 
     Task<JsonObject?> GetConfigAsync(CancellationToken ct = default);
 }
@@ -48,7 +60,7 @@ public class CaddyClient
         }
     }
 
-    public async Task<bool> LoadConfigAsync(JsonObject config, CancellationToken ct = default)
+    public async Task<LoadConfigResult> LoadConfigAsync(JsonObject config, CancellationToken ct = default)
     {
         try
         {
@@ -58,7 +70,7 @@ public class CaddyClient
             {
                 _logger.LogInformation("Proxy config loaded successfully");
 
-                return true;
+                return LoadConfigResult.Ok();
             }
 
             var body = await response.Content.ReadAsStringAsync(ct);
@@ -70,19 +82,19 @@ public class CaddyClient
                 body
             );
 
-            return false;
+            return LoadConfigResult.Failed((int)response.StatusCode, body);
         }
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "Failed to load proxy config -- transport error");
 
-            return false;
+            return LoadConfigResult.Failed(null, ex.Message);
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
             _logger.LogError(ex, "Failed to load proxy config -- request timed out");
 
-            return false;
+            return LoadConfigResult.Failed(null, "Request timed out contacting Caddy admin API");
         }
     }
 

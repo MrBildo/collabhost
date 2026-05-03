@@ -63,8 +63,17 @@ function setupDefaults() {
   } as unknown as ReturnType<typeof useReloadProxy>)
 }
 
-function renderWithRoutes(routes: RouteEntry[], baseDomain = 'collab.internal') {
-  const data: RouteListResponse = { routes, baseDomain }
+function renderWithRoutes(
+  routes: RouteEntry[],
+  baseDomain = 'collab.internal',
+  overrides: Partial<Pick<RouteListResponse, 'proxyState' | 'portalReachable'>> = {},
+) {
+  const data: RouteListResponse = {
+    routes,
+    baseDomain,
+    proxyState: overrides.proxyState ?? 'running',
+    portalReachable: overrides.portalReachable ?? true,
+  }
   mockUseRoutes.mockReturnValue({
     data,
     isLoading: false,
@@ -108,5 +117,41 @@ describe('RoutesPage', () => {
     expect(screen.getByRole('button', { name: 'My API' })).toBeInTheDocument()
     // Portal should be plain text only
     expect(screen.queryByRole('button', { name: 'Collabhost Portal' })).toBeNull()
+  })
+
+  test('Portal row domain renders muted with not-reachable annotation when portalReachable is false', () => {
+    renderWithRoutes([makePortalRoute()], 'collab.internal', {
+      proxyState: 'degraded',
+      portalReachable: false,
+    })
+
+    const portalDomainLink = screen.getByTestId('portal-row-domain-unreachable')
+    expect(portalDomainLink).toBeInTheDocument()
+    expect(portalDomainLink).toHaveAttribute('href', 'https://collabhost.collab.internal')
+    expect(portalDomainLink).toHaveStyle({ color: 'var(--wm-text-dim)' })
+    expect(screen.getByText(/not reachable/i)).toBeInTheDocument()
+  })
+
+  test('Portal row domain stays bright when portalReachable is true (running)', () => {
+    renderWithRoutes([makePortalRoute()], 'collab.internal', {
+      proxyState: 'running',
+      portalReachable: true,
+    })
+
+    expect(screen.queryByTestId('portal-row-domain-unreachable')).toBeNull()
+    const domainLink = screen.getByRole('link', { name: 'collabhost.collab.internal' })
+    expect(domainLink).toHaveStyle({ color: 'var(--wm-text-bright)' })
+  })
+
+  test('non-Portal app row is unaffected by portalReachable', () => {
+    renderWithRoutes([makeRoute()], 'collab.internal', {
+      proxyState: 'degraded',
+      portalReachable: false,
+    })
+
+    // The regular app row's domain still renders as the normal bright link
+    expect(screen.queryByTestId('portal-row-domain-unreachable')).toBeNull()
+    const domainLink = screen.getByRole('link', { name: 'my-api.collab.internal' })
+    expect(domainLink).toHaveStyle({ color: 'var(--wm-text-bright)' })
   })
 })

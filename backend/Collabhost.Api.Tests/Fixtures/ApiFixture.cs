@@ -166,8 +166,8 @@ file sealed class FakeCaddyClient : ICaddyClient
     public Task<bool> IsReadyAsync(CancellationToken ct = default) =>
         Task.FromResult(false);
 
-    public Task<bool> LoadConfigAsync(JsonObject config, CancellationToken ct = default) =>
-        Task.FromResult(true);
+    public Task<LoadConfigResult> LoadConfigAsync(JsonObject config, CancellationToken ct = default) =>
+        Task.FromResult(LoadConfigResult.Ok());
 
     public Task<JsonObject?> GetConfigAsync(CancellationToken ct = default) =>
         Task.FromResult<JsonObject?>(null);

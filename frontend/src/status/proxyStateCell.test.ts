@@ -7,6 +7,10 @@ describe('proxyStateColor', () => {
     expect(proxyStateColor('running')).toBe('green')
   })
 
+  test('maps degraded to amber (between healthy and failed)', () => {
+    expect(proxyStateColor('degraded')).toBe('amber')
+  })
+
   test('maps failed to red', () => {
     expect(proxyStateColor('failed')).toBe('red')
   })
@@ -26,7 +30,7 @@ describe('proxyStateColor', () => {
 
 describe('buildProxyStateCell', () => {
   test('returns Proxy label regardless of state', () => {
-    const states: ProxyState[] = ['starting', 'running', 'failed', 'disabled', 'stopped']
+    const states: ProxyState[] = ['starting', 'running', 'degraded', 'failed', 'disabled', 'stopped']
     for (const state of states) {
       expect(buildProxyStateCell(state).label).toBe('Proxy')
     }
@@ -44,6 +48,13 @@ describe('buildProxyStateCell', () => {
     expect(cell.value).toBe('Starting')
     expect(cell.color).toBe('amber')
     expect(cell.detail).toBe('Warming up')
+  })
+
+  test('degraded cell: amber, routes-not-reaching detail', () => {
+    const cell = buildProxyStateCell('degraded')
+    expect(cell.value).toBe('Degraded')
+    expect(cell.color).toBe('amber')
+    expect(cell.detail).toBe('Routes not reaching public listener')
   })
 
   test('failed cell: red, remediation detail', () => {

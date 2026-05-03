@@ -7,6 +7,7 @@ type ProxyStateColor = NonNullable<StatusCell['color']>
 const COLOR_BY_STATE: Record<ProxyState, ProxyStateColor> = {
   starting: 'amber',
   running: 'green',
+  degraded: 'amber',
   failed: 'red',
   disabled: 'amber',
   stopped: 'default',
