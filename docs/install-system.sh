@@ -317,6 +317,16 @@ fi
 chown root:"${SERVICE_GROUP}" "${APPSETTINGS_DST}"
 chmod 0640                    "${APPSETTINGS_DST}"
 
+# ASP.NET Core resolves appsettings.json relative to ContentRootPath, which
+# Program.cs pins to AppContext.BaseDirectory (the binary's directory, here
+# ${BIN_DIR}). The canonical operator-facing config lives at ${APPSETTINGS_DST}
+# in /etc/collabhost. Symlink it next to the binary so the running process sees
+# operator edits (Proxy:BinaryPath, BaseDomain, etc.) without duplicating the
+# file. Absolute target so the symlink survives any move of the canonical file;
+# -f to overwrite on reinstall. Reaped by `rm -rf /opt/collabhost` on teardown.
+# (Bug #244.)
+ln -sf "${APPSETTINGS_DST}" "${BIN_DIR}/appsettings.json"
+
 # ---- systemd unit ------------------------------------------------------------
 
 # The bundled unit lives in the repo under systemd/collabhost.system.service.
