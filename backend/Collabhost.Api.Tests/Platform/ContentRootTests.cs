@@ -66,6 +66,11 @@ public class ContentRootTests
             psi.Environment["COLLABHOST_USER_TYPES_PATH"] = tempUserTypesPath;
             psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
             psi.Environment["DOTNET_ENVIRONMENT"] = "Production";
+            // Bind Kestrel to an OS-allocated ephemeral port. The test only reads the
+            // "Content root path:" startup line; the bound port itself is irrelevant.
+            // A fixed port collides with another Collabhost on the dev box, and with
+            // the Hyper-V/WSL2 excluded TCP port range on Windows hosts. Card #210.
+            psi.Environment["ASPNETCORE_URLS"] = "http://127.0.0.1:0";
 
             using var process = Process.Start(psi);
 
@@ -183,6 +188,11 @@ public class ContentRootTests
             psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
             psi.Environment["DOTNET_ENVIRONMENT"] = "Production";
             psi.Environment["ASPNETCORE_CONTENTROOT"] = envContentRoot;
+            // Bind Kestrel to an OS-allocated ephemeral port. The test only reads the
+            // "Content root path:" startup line; the bound port itself is irrelevant.
+            // A fixed port collides with another Collabhost on the dev box, and with
+            // the Hyper-V/WSL2 excluded TCP port range on Windows hosts. Card #210.
+            psi.Environment["ASPNETCORE_URLS"] = "http://127.0.0.1:0";
 
             using var process = Process.Start(psi);
 
