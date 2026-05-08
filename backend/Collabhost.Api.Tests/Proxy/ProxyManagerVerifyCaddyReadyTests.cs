@@ -13,6 +13,7 @@ using Collabhost.Api.Supervisor.Containment;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
 using Shouldly;
 
@@ -44,49 +45,69 @@ public class ProxyManagerVerifyCaddyReadyTests
     public async Task VerifyCaddyReadyAsync_SlowStart_ReturnsTrueWithinDeadline()
     {
         // Simulate slow-start: caddy returns unhealthy for the first two polls, healthy on the
-        // third; deadline is 5s so success should land in well under a second.
+        // third. With virtual time, two 200ms inter-attempt delays elapse logically before
+        // the third call returns true -- well under the 5s deadline. Asserting in logical
+        // time eliminates the wall-clock flake class that surfaced on PR #154 (card #258).
         var caddy = new ScriptedCaddyClient(readyAfterCalls: 3);
-        var manager = CreateProxyManager(caddy);
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var manager = CreateProxyManager(caddy, clock);
 
-        var start = DateTime.UtcNow;
+        var start = clock.GetUtcNow();
 
-        var result = await manager.VerifyCaddyReadyAsync(CancellationToken.None);
+        var probeTask = manager.VerifyCaddyReadyAsync(CancellationToken.None);
 
-        var elapsed = DateTime.UtcNow - start;
+        await DriveProbeLoopAsync(probeTask, clock);
 
-        result.ShouldBeTrue();
+        var elapsed = clock.GetUtcNow() - start;
+
+        (await probeTask).ShouldBeTrue();
         caddy.CallCount.ShouldBe(3);
-        elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(3));
+        // Two 200ms inter-attempt delays before the third (successful) probe call.
+        elapsed.ShouldBe(TimeSpan.FromMilliseconds(400));
     }
 
     [Fact]
     public async Task VerifyCaddyReadyAsync_NeverReady_ReturnsFalseAfter5s()
     {
+        // Caddy is never ready. The probe loop must exhaust its 5s deadline and return false.
+        // Virtual-time assertion: the deadline check fires when GetUtcNow() >= start + 5s,
+        // which lands at exactly 5s of advanced clock (no wall-clock variance).
         var caddy = new ScriptedCaddyClient(alwaysReady: false);
-        var manager = CreateProxyManager(caddy);
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var manager = CreateProxyManager(caddy, clock);
 
-        var start = DateTime.UtcNow;
+        var start = clock.GetUtcNow();
 
-        var result = await manager.VerifyCaddyReadyAsync(CancellationToken.None);
+        var probeTask = manager.VerifyCaddyReadyAsync(CancellationToken.None);
 
-        var elapsed = DateTime.UtcNow - start;
+        await DriveProbeLoopAsync(probeTask, clock);
 
-        result.ShouldBeFalse();
-        // Deadline is 5s; allow slack for loop overhead.
-        elapsed.ShouldBeInRange(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(7));
+        var elapsed = clock.GetUtcNow() - start;
+
+        (await probeTask).ShouldBeFalse();
+        // Loop predicate keeps iterating while UtcNow remains strictly less than the deadline.
+        // With 200ms virtual-time steps starting at zero, the loop exits the first iteration
+        // where the post-step clock reaches 5s exactly.
+        elapsed.ShouldBe(TimeSpan.FromSeconds(5));
     }
 
     [Fact]
     public async Task VerifyCaddyReadyAsync_CallerCancelled_ReturnsFalseFast()
     {
+        // Caller cancellation tripping mid-probe must cause the probe to return false. Use the
+        // time-provider-aware CTS constructor so the 300ms cancel timer also runs on virtual
+        // time -- consistent with the rest of the file.
         var caddy = new ScriptedCaddyClient(alwaysReady: false);
-        var manager = CreateProxyManager(caddy);
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var manager = CreateProxyManager(caddy, clock);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300), clock);
 
-        var result = await manager.VerifyCaddyReadyAsync(cts.Token);
+        var probeTask = manager.VerifyCaddyReadyAsync(cts.Token);
 
-        result.ShouldBeFalse();
+        await DriveProbeLoopAsync(probeTask, clock);
+
+        (await probeTask).ShouldBeFalse();
     }
 
     [Fact]
@@ -117,18 +138,21 @@ public class ProxyManagerVerifyCaddyReadyTests
         // OCE, the probe must still exhaust its 5s budget and return false (so
         // ProbeAndActivateAsync transitions to Failed + _proxyDisabled). Previously this
         // would bubble OCE into ProbeAndActivateAsync's outer catch and leave the state
-        // at Starting forever.
+        // at Starting forever. Virtual-time variant of the budget-exhaustion assertion.
         var caddy = new OceThenReadyCaddyClient(oceCountBeforeReady: int.MaxValue);
-        var manager = CreateProxyManager(caddy);
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var manager = CreateProxyManager(caddy, clock);
 
-        var start = DateTime.UtcNow;
+        var start = clock.GetUtcNow();
 
-        var result = await manager.VerifyCaddyReadyAsync(CancellationToken.None);
+        var probeTask = manager.VerifyCaddyReadyAsync(CancellationToken.None);
 
-        var elapsed = DateTime.UtcNow - start;
+        await DriveProbeLoopAsync(probeTask, clock);
 
-        result.ShouldBeFalse();
-        elapsed.ShouldBeInRange(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(7));
+        var elapsed = clock.GetUtcNow() - start;
+
+        (await probeTask).ShouldBeFalse();
+        elapsed.ShouldBe(TimeSpan.FromSeconds(5));
     }
 
     [Fact]
@@ -269,7 +293,7 @@ public class ProxyManagerVerifyCaddyReadyTests
         field.SetValue(manager, (int)state);
     }
 
-    private static ProxyManager CreateProxyManager(ICaddyClient caddy)
+    private static ProxyManager CreateProxyManager(ICaddyClient caddy, TimeProvider? timeProvider = null)
     {
         var dbFactory = new UnusedDbContextFactory();
         var cache = new MemoryCache(new MemoryCacheOptions());
@@ -324,7 +348,45 @@ public class ProxyManagerVerifyCaddyReadyTests
             hostingSettings,
             new Collabhost.Api.Portal.PortalSettings { Subdomain = "collabhost" },
             activityEventStore,
+            timeProvider ?? TimeProvider.System,
             NullLogger<ProxyManager>.Instance
+        );
+    }
+
+    // Drives a probe-loop task to completion under a FakeTimeProvider clock by advancing
+    // time in 200ms steps (the probe loop's inter-attempt delay) until the task completes.
+    //
+    // The probe's `await Task.Delay(..., timeProvider, ct)` continuation runs on the thread
+    // pool when the FakeTimeProvider fires its timer. The test thread can't directly observe
+    // that continuation; a short real-wall-clock yield (Task.Delay(1)) gives the runtime a
+    // chance to schedule and run the continuation before the next Advance. The 1ms cost is
+    // bounded by the iteration count, not by virtual time, so this stays deterministic.
+    //
+    // Bounded to 100 iterations (~20s of virtual time, well past the probe's 5s budget) so
+    // a buggy probe loop fails fast instead of hanging the test.
+    private static async Task DriveProbeLoopAsync(Task probeTask, FakeTimeProvider clock)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            // Real-time yield: lets the probe's thread-pool continuation drain before we
+            // Advance again. Required for assertions that depend on the probe having
+            // actually observed the post-advance state (cancellation, deadline expiry).
+            await Task.Delay(1);
+
+            if (probeTask.IsCompleted)
+            {
+                return;
+            }
+
+            clock.Advance(TimeSpan.FromMilliseconds(200));
+        }
+
+        // Final drain after the last advance.
+        await Task.Delay(1);
+
+        probeTask.IsCompleted.ShouldBeTrue
+        (
+            "probe loop did not complete after advancing virtual time well past the 5s budget"
         );
     }
 }

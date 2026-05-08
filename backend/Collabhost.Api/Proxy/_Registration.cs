@@ -2,6 +2,8 @@ using System.Globalization;
 
 using Collabhost.Api.Supervisor;
 
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
 namespace Collabhost.Api.Proxy;
 
 public static class ProxyRegistration
@@ -47,6 +49,13 @@ public static class ProxyRegistration
             services.AddSingleton<ProxyAppSeeder>();
             services.AddSingleton<IProcessArgumentProvider, ProxyArgumentProvider>();
             services.AddSingleton<IProcessEnvironmentProvider, ProxyEnvironmentProvider>();
+
+            // Card #258: ProxyManager's probe loop accepts an injected TimeProvider so
+            // tests can run on virtual time. Production wires the system clock here.
+            // TryAdd so a host that has already registered TimeProvider (or a test
+            // harness that overrides it) wins.
+            services.TryAddSingleton(TimeProvider.System);
+
             services.AddSingleton<ProxyManager>();
             services.AddHostedService(provider => provider.GetRequiredService<ProxyManager>());
 
