@@ -346,36 +346,21 @@ public class ProcessSupervisor
             discoveredProcess = discoveredProcess with { Arguments = augmentedArguments };
         }
 
-        var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
-
         var environmentConfiguration = await _capabilityStore.ResolveAsync<EnvironmentConfiguration>
         (
             "environment-defaults", app, ct
         );
 
-        if (environmentConfiguration?.Variables is not null)
-        {
-            foreach (var (key, value) in environmentConfiguration.Variables)
-            {
-                environmentVariables[key] = value;
-            }
-        }
+        var operatorOverrideKeys = await GetEnvironmentOverrideKeysAsync(app.Id, ct);
 
-        // Allow subsystems to contribute environment variables at start time.
-        // This is how the proxy subsystem flows secrets (e.g. the DNS API token)
-        // from Collabhost's own host process env into the Caddy child without
-        // ever persisting them to the database. Provider contributions win over
-        // capability defaults on key conflict -- the provider is the source of
-        // truth for any key it contributes.
-        foreach (var provider in _environmentProviders)
-        {
-            var contributions = provider.ContributeEnvironment(app.Slug);
-
-            foreach (var (key, value) in contributions)
-            {
-                environmentVariables[key] = value;
-            }
-        }
+        var environmentVariables = MergeEnvironmentVariables
+        (
+            environmentConfiguration?.Variables,
+            operatorOverrideKeys,
+            _environmentProviders,
+            app.Slug,
+            _logger
+        );
 
         var managed = new ManagedProcess(app.Id, app.Slug, app.DisplayName);
 
@@ -1077,5 +1062,110 @@ public class ProcessSupervisor
         GetOrCreateLogBuffer(app.Id).Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, errorMessage));
 
         _processes[appId] = errorProcess;
+    }
+
+    // Returns the set of environment-variable keys the operator explicitly set on
+    // this app's environment-defaults capability override. Used to scope shadow
+    // warnings to operator-opt-in keys -- type-level defaults that happen to share
+    // a key with a provider contribution are not foot-guns, but operator-dashboard
+    // keys silently overridden by the host process env are. (See card #253 / #215.)
+    private async Task<FrozenSet<string>> GetEnvironmentOverrideKeysAsync(Ulid appId, CancellationToken ct)
+    {
+        var overrides = await _appStore.GetOverridesAsync(appId, ct);
+
+        if (!overrides.TryGetValue("environment-defaults", out var capabilityOverride))
+        {
+            return [];
+        }
+
+        JsonNode? root;
+
+        try
+        {
+            root = JsonNode.Parse(capabilityOverride.ConfigurationJson);
+        }
+        catch (JsonException)
+        {
+            // Malformed override JSON shouldn't crash the spawn -- the resolver
+            // will surface the same problem more legibly. Treat as "no override
+            // keys" so the warning system stays quiet on this app.
+            return [];
+        }
+
+        var variables = root?["variables"]?.AsObject();
+
+        if (variables is null || variables.Count == 0)
+        {
+            return [];
+        }
+
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (key, _) in variables)
+        {
+            keys.Add(key);
+        }
+
+        return keys.ToFrozenSet(StringComparer.Ordinal);
+    }
+
+    // Builds the merged environment dictionary the supervisor hands to the runner.
+    // Type-default + operator-override values land first (the resolved capability
+    // config); environment providers then contribute and win on key conflict.
+    //
+    // When a provider's contribution overrides a key the operator explicitly set
+    // via the dashboard with a different value, emit one warning per shadowed
+    // key per spawn. This catches the dual-path-different-values foot-gun: an
+    // operator updates the dashboard but forgets to remove a systemd drop-in
+    // (or shell wrapper) that injects the same env var into the host process.
+    // (Card #253; recon source: card #215 Q3.)
+    internal static Dictionary<string, string> MergeEnvironmentVariables
+    (
+        IDictionary<string, string>? capabilityVariables,
+        FrozenSet<string> operatorOverrideKeys,
+        IReadOnlyList<IProcessEnvironmentProvider> providers,
+        string appSlug,
+        ILogger logger
+    )
+    {
+        var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (capabilityVariables is not null)
+        {
+            foreach (var (key, value) in capabilityVariables)
+            {
+                environmentVariables[key] = value;
+            }
+        }
+
+        // Allow subsystems to contribute environment variables at start time.
+        // This is how the proxy subsystem flows secrets (e.g. the DNS API token)
+        // from Collabhost's own host process env into the Caddy child without
+        // ever persisting them to the database. Provider contributions win over
+        // capability defaults on key conflict -- the provider is the source of
+        // truth for any key it contributes.
+        foreach (var provider in providers)
+        {
+            var contributions = provider.ContributeEnvironment(appSlug);
+
+            foreach (var (key, value) in contributions)
+            {
+                if (operatorOverrideKeys.Contains(key)
+                    && environmentVariables.TryGetValue(key, out var existing)
+                    && !string.Equals(existing, value, StringComparison.Ordinal))
+                {
+                    logger.LogWarning
+                    (
+                        "Environment variable '{Key}' provided by {ProviderName} shadows the capability override value. Provider value used.",
+                        key,
+                        provider.GetType().Name
+                    );
+                }
+
+                environmentVariables[key] = value;
+            }
+        }
+
+        return environmentVariables;
     }
 }
