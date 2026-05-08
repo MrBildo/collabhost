@@ -17,7 +17,12 @@
       "enabled": true
     },
     "environment-defaults": {
-      "variables": {}
+      "variables": {},
+      "schemaOverrides": {
+        "variables": {
+          "helpText": "Passed to Caddy's child process at startup. Use this for runtime secrets (e.g. CLOUDFLARE_API_TOKEN). Not the same as Caddy's {env.NAME} JSON-config substitution syntax -- that's configured in the proxy-config seam."
+        }
+      }
     }
   }
 }
