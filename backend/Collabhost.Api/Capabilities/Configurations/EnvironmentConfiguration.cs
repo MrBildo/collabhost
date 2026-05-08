@@ -12,7 +12,8 @@ public class EnvironmentConfiguration
             "Environment Variables",
             FieldType.KeyValue,
             new FieldEditableAlways(),
-            RequiresRestart: true
+            RequiresRestart: true,
+            HelpText: "Passed to the application's child process at startup. Use this for runtime secrets and configuration (e.g. API tokens, log levels)."
         ),
     ];
 }
