@@ -57,6 +57,13 @@ For real internet-reachable domains, set `Proxy:DnsProvider` (e.g. `"cloudflare"
 
 The shipped Caddy build must include the corresponding `caddy-dns/<provider>` plugin for ACME issuance to work — see `docs/release-process.md`.
 
+**Where to put the DNS API token.** Two paths reach Caddy and both work:
+
+- **Dashboard env-vars editor (recommended).** Open the proxy app's settings page and set `CLOUDFLARE_API_TOKEN` (or whichever name `Proxy:DnsApiTokenEnvVar` resolves to) under **Environment Variables**. Persisted in the Collabhost database; survives upgrades. This is the same mechanism every other managed app uses for its env vars.
+- **Host process env (legacy).** Place the value in Collabhost's host environment — e.g. on Linux/systemd, a drop-in at `~/.config/systemd/user/collabhost.service.d/cloudflare-token.conf` containing `Environment=CLOUDFLARE_API_TOKEN=<value>`. The proxy's `IProcessEnvironmentProvider` reads it from the host env and contributes it to Caddy's child process at spawn time.
+
+Both routes coexist by design. **Host-env contributions win on key conflict** with dashboard values — the platform-internal provider is the source of truth for any key it contributes. If you migrate from a host-env drop-in to the dashboard, remove the drop-in and reload (`systemctl --user daemon-reload && systemctl --user restart collabhost`) so the dashboard value is the only source.
+
 ## Build and Run
 
 ### With Aspire (recommended)
