@@ -1287,6 +1287,21 @@ read from the OS trust store; Firefox uses its own store and requires a
 separate import via `about:preferences#privacy → Certificates → View
 Certificates → Authorities → Import`.
 
+> **Note:** Windows shows a confirmation dialog when adding a CA root to the
+> trust store (PowerShell 7+ targeting `Cert:\CurrentUser\Root`). Click
+> **Yes** when prompted; the dialog displays the cert's subject (e.g.
+> `CN=Collabhost Local Authority - 2026 ECC Root`) and thumbprint, which
+> match the values shown by:
+>
+> ```powershell
+> Get-ChildItem Cert:\CurrentUser\Root |
+>   Where-Object { $_.Subject -like '*Collabhost Local Authority*' }
+> ```
+>
+> The thumbprint cross-reference also lets you verify you're trusting the
+> correct cert (vs. any `Collabhost`-named cert, in case multiple installs
+> left residue).
+
 **Linux (Debian / Ubuntu):**
 
 ```sh
@@ -1364,26 +1379,22 @@ the per-host renewals carry the trust automatically.
 
 ## 10. Uninstall
 
-There is no uninstall script. To remove Collabhost:
+There is no uninstall script. The user-scope teardown shape differs slightly
+between Linux / macOS and Windows; a per-platform recipe follows. For the
+system-scope Linux install (`install-system.sh`), see the **Uninstall** block
+in §5.5.2.
+
+### 10.1 Linux / macOS (user-scope)
 
 ```sh
 rm -rf $HOME/.collabhost
 ```
 
-```powershell
-Remove-Item -Recurse -Force $HOME\.collabhost
-```
+If you set `COLLABHOST_DATA_PATH` or `COLLABHOST_USER_TYPES_PATH` to a path
+outside `$HOME/.collabhost`, delete those locations as well.
 
-If you used `COLLABHOST_DATA_PATH` to move the data directory outside
-`$HOME/.collabhost`, delete that location as well.
-
-Remove the PATH entry from your shell RC file (`~/.bashrc`, `~/.zshrc`,
-`~/.profile`) or User PATH (Windows) manually if you want to clean that up
-too.
-
-On Linux / macOS, a `sed` one-liner removes the installer's two-line PATH
-block (`# Added by collabhost installer` + the `export PATH=...` line below
-it):
+Remove the installer's two-line PATH block (`# Added by collabhost installer`
++ the `export PATH=...` line below it) from your shell RC file:
 
 ```sh
 sed -i '/# Added by collabhost installer/,+1d' ~/.bashrc    # or ~/.zshrc / ~/.profile
@@ -1391,10 +1402,75 @@ sed -i '/# Added by collabhost installer/,+1d' ~/.bashrc    # or ~/.zshrc / ~/.p
 
 (GNU `sed`. On macOS use `sed -i ''` with the same expression.)
 
-On Windows, open **Settings → System → About → Advanced system settings →
-Environment Variables** (or run `SystemPropertiesAdvanced`) and remove the
-`%USERPROFILE%\.collabhost\bin` entry from your **User PATH**. The installer
-does not write to System PATH.
+### 10.2 Windows (user-scope)
+
+Run from a regular (non-admin) PowerShell unless noted otherwise. Several
+steps trigger interactive system dialogs — the per-step note calls those out.
+
+```powershell
+# 1. Stop running processes (no-op if nothing is running).
+Get-Process collabhost,caddy -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# 2. Remove the install directory.
+Remove-Item -Recurse -Force "$HOME\.collabhost"
+
+# 3. Remove %USERPROFILE%\.collabhost\bin from your User PATH.
+[Environment]::SetEnvironmentVariable(
+  'PATH',
+  (([Environment]::GetEnvironmentVariable('PATH','User') -split ';') |
+    Where-Object { $_ -and -not $_.EndsWith('.collabhost\bin') }) -join ';',
+  'User')
+```
+
+Or for step 3, use the GUI: **Settings → System → About → Advanced system
+settings → Environment Variables** (or run `SystemPropertiesAdvanced`) and
+remove the `%USERPROFILE%\.collabhost\bin` entry from your **User PATH**.
+The installer does not write to System PATH.
+
+If you set `COLLABHOST_DATA_PATH` or `COLLABHOST_USER_TYPES_PATH` to a path
+outside `$HOME\.collabhost`, delete those locations as well.
+
+**Hosts file entries (if you added any per §9.10.2).** Manually edit
+`C:\Windows\System32\drivers\etc\hosts` (admin-elevated editor required) and
+remove the lines pointing app subdomains at the Collabhost host.
+
+**CA cert in the user trust store (optional — see §10.3 for whether you
+want to do this).** Removing the cert triggers the same confirmation dialog
+as the import (per §9.11.2's note); click **Yes** when prompted:
+
+```powershell
+# Find the thumbprint first.
+Get-ChildItem Cert:\CurrentUser\Root |
+  Where-Object { $_.Subject -like '*Collabhost Local Authority*' }
+
+# Then remove by thumbprint.
+Remove-Item -Path "Cert:\CurrentUser\Root\<thumbprint>"
+```
+
+If you imported into `Cert:\LocalMachine\Root` instead (admin install per
+§9.11.2), use that path and run from an administrator PowerShell. The
+LocalMachine remove typically does not prompt — Windows treats admin-context
+machine-store edits as already-authorized.
+
+### 10.3 Bundled-Caddy CA storage (deliberately persistent)
+
+> **Note.** Your bundled-Caddy CA storage is **not** removed by the user-scope
+> teardown steps above. This is deliberate — preserving the CA across
+> reinstalls means devices that imported your CA root cert (per §9.11) keep
+> working through reinstall. To wipe the CA too (every LAN device will need
+> to re-trust the freshly generated root on next install), also remove:
+>
+> | Platform | Path |
+> |----------|------|
+> | Linux (user-scope, `Proxy:StoragePath` unset) | `~/.local/share/caddy/` |
+> | macOS (user-scope) | `~/Library/Application Support/caddy/` |
+> | Windows (user-scope) | `%AppData%\Caddy\` |
+> | Linux system-scope | `/var/lib/collabhost/caddy/` (already covered by the §5.5.2 uninstall block) |
+>
+> If you set `Proxy:StoragePath` to a custom location, remove that path
+> instead. See §9.11.1 for the full path table and how the storage layout
+> maps onto the trust artifacts (`pki/authorities/local/root.crt` and the
+> private `root.key`).
 
 ---
 

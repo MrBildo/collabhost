@@ -8,10 +8,9 @@ type ActionBarProps = {
   onStop: () => void
   onRestart: () => void
   onKill: () => void
-  onUpdate: () => void
 }
 
-function ActionBar({ actions, isTransitioning, onStart, onStop, onRestart, onKill, onUpdate }: ActionBarProps) {
+function ActionBar({ actions, isTransitioning, onStart, onStop, onRestart, onKill }: ActionBarProps) {
   return (
     <div className="flex items-center gap-2">
       {actions.canStart && (
@@ -32,11 +31,6 @@ function ActionBar({ actions, isTransitioning, onStart, onStop, onRestart, onKil
       {actions.canKill && (
         <ActionButton variant="warn" size="sm" disabled={isTransitioning} onClick={onKill}>
           Kill
-        </ActionButton>
-      )}
-      {actions.canUpdate && (
-        <ActionButton variant="amber" size="sm" disabled={isTransitioning} onClick={onUpdate}>
-          Update
         </ActionButton>
       )}
     </div>

@@ -151,10 +151,15 @@ public class ConfigurationTools
                     continue;
                 }
 
+                var schemaOverrides = SchemaOverrides.Extract(defaultConfigurationJson);
+
                 var fields = new List<object>();
 
-                foreach (var fieldDescriptor in definition.Schema)
+                foreach (var baseDescriptor in definition.Schema)
                 {
+                    schemaOverrides.TryGetValue(baseDescriptor.Key, out var fieldOverride);
+                    var fieldDescriptor = SchemaOverrides.Apply(baseDescriptor, fieldOverride);
+
                     var value = effectiveValues.GetFieldValue(fieldDescriptor.Key);
                     var defaultValue = defaultValues.GetFieldValue(fieldDescriptor.Key);
 

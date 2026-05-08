@@ -106,8 +106,8 @@ public class TypeStoreTests
     [InlineData("dotnet-app", 8)]
     [InlineData("nodejs-app", 8)]
     [InlineData("static-site", 2)]
-    [InlineData("system-service", 4)]
-    [InlineData("executable", 6)]
+    [InlineData("system-service", 5)]
+    [InlineData("executable", 7)]
     public async Task GetBindings_ReturnsCorrectBindingCount(string slug, int expectedCount)
     {
         var store = CreateTypeStore();

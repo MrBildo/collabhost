@@ -747,3 +747,390 @@ jobs:
               fi
               echo "Admin-key bootstrap line emitted (linux-arm64)."
             '
+
+  # System-scope install (Linux only). Card #243.
+  #
+  # Distinct from install-unix above: that job exercises docs/install.sh (the
+  # user-scope path -- $HOME/.collabhost/bin foreground binary). This job
+  # exercises docs/install-system.sh (the canonical Linux server layout under
+  # /opt/collabhost + systemd unit running as a dedicated `collabhost` system
+  # user). The two install paths share an archive but exercise materially
+  # different surfaces -- privileged-port bind via AmbientCapabilities, the
+  # smart-merge under /etc/collabhost, the env-var-driven ContentRoot contract
+  # (#246 c2-A), the COLLABHOST_CONFIG_PATH override, and the systemd hardening
+  # directives.
+  #
+  # Two layers of validation, mapped to the bug classes that shipped past CI in
+  # PR #147's UAT cascade:
+  #
+  #   Layer 1 -- install + service-start + AmbientCapabilities runtime check.
+  #     Catches #240 (.NET host crash on $HOME under ProtectHome=true), #241
+  #     (StartLimit* in [Service] -> "Unknown key" warning), #242 (--version
+  #     dropped on sudo re-exec). The class: install-script bugs, unit-syntax
+  #     bugs, .NET-host-startup bugs.
+  #
+  #   Layer 2 -- runtime-functional verification. Catches #244 (appsettings.json
+  #     invisible to running binary; service active but proxyState disabled,
+  #     portalReachable false) and #245 (wwwroot invisible to running binary;
+  #     proxy alive but Portal HTML never served). The class: silent-config-
+  #     not-loaded, capability-binding regressions, journal warning regressions.
+  #     "Active (running)" is necessary but not sufficient -- the cascade showed
+  #     a unit can be active while operator-facing functionality is broken.
+  #
+  # Plus teardown verification: walk INSTALL.md §5.5.2's uninstall block
+  # end-to-end, then confirm nothing leaked (Theo's incomplete-teardown lesson).
+  #
+  # Readiness signal: poll the journal for Microsoft.Hosting.Lifetime's
+  # "Now listening on:" line (the standard ASP.NET Core hosting log that fires
+  # when Kestrel is bound and the app is ready to accept requests). Avoids
+  # racing curl against systemctl-start.
+  #
+  # Headless DNS posture: curl --resolve scopes the hostname override to a
+  # single invocation. /etc/hosts mutation would also work but leaves global
+  # state to clean up; --resolve is the lower-friction choice for CI.
+  install-system-scope:
+    name: Install linux-x64 (system-scope)
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TAG: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # Layer 1 -- install + service-start.
+      #
+      # Run the live install-system.sh (the one this branch ships) under sudo.
+      # The script will install the canonical layout, smart-merge appsettings,
+      # install the systemd unit, daemon-reload, and start the service.
+      - name: First install (system-scope)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo bash docs/install-system.sh --version "${TAG}"
+
+      # Layer 1 -- canonical layout verification. Mirrors install-system.sh's
+      # documented contract from INSTALL.md §5.5.2. A regression in any of
+      # these paths breaks the operator's documented uninstall block too.
+      - name: Verify install layout (system-scope)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Binaries (root-owned, world-readable).
+          sudo test -x /opt/collabhost/bin/collabhost
+          sudo test -x /opt/collabhost/bin/caddy
+          # Documentation.
+          sudo test -f /opt/collabhost/INSTALL.md
+          sudo test -d /opt/collabhost/LICENSES
+          # Portal SPA assets -- catches #245's class (wwwroot/ missing).
+          sudo test -d /opt/collabhost/wwwroot
+          sudo test -f /opt/collabhost/wwwroot/index.html
+          # Operator config -- catches #244's class (appsettings.json missing
+          # from where the binary actually reads).
+          sudo test -f /etc/collabhost/appsettings.json
+          sudo test -f /etc/collabhost/appsettings.shipped.json
+          # Service-user-owned data dirs.
+          sudo test -d /var/lib/collabhost/data
+          sudo test -d /var/lib/collabhost/user-types
+          sudo test -d /var/lib/collabhost/caddy
+          sudo test -d /var/lib/collabhost/dotnet-bundle
+          sudo test -d /var/log/collabhost
+          # Systemd unit.
+          sudo test -f /etc/systemd/system/collabhost.service
+          # Service user exists (catches a useradd silent-failure regression).
+          getent passwd collabhost >/dev/null || { echo "Service user 'collabhost' missing." >&2; exit 1; }
+          echo "Install layout verified (system-scope)."
+
+      # Layer 1 -- service active. systemctl is-active prints "active" / "inactive"
+      # / "failed"; failures dump status + recent journal for diagnosis.
+      - name: Service is active
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! sudo systemctl is-active --quiet collabhost; then
+            echo "collabhost.service is not active." >&2
+            sudo systemctl status collabhost --no-pager >&2 || true
+            sudo journalctl -u collabhost --no-pager --since '5 min ago' >&2 || true
+            exit 1
+          fi
+          echo "collabhost.service is active."
+
+      # Wait for the host to be ready before any HTTP probe. "Now listening on:"
+      # is Microsoft.Hosting.Lifetime's bound-and-ready signal -- emitted after
+      # Kestrel binds the listen port. Avoids the curl-vs-systemctl-start race.
+      # 60s ceiling matches the user-scope job's admin-key wait.
+      - name: Wait for ready (Now listening on)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if sudo journalctl -u collabhost --since '5 min ago' --no-pager 2>/dev/null \
+                 | grep -q 'Now listening on:'; then
+              echo "Host is ready."
+              exit 0
+            fi
+            if ! sudo systemctl is-active --quiet collabhost; then
+              echo "Service exited before reaching ready state." >&2
+              sudo systemctl status collabhost --no-pager >&2 || true
+              sudo journalctl -u collabhost --no-pager --since '5 min ago' >&2 || true
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Service did not emit 'Now listening on:' within 60s." >&2
+          sudo journalctl -u collabhost --no-pager --since '5 min ago' >&2 || true
+          exit 1
+
+      # Layer 2 -- /api/v1/status shape. The cascade-killer assertion: a service
+      # can be `active (running)` while proxyState is "disabled" and
+      # portalReachable is false. Before #246 (c2-A), this was exactly the #244
+      # symptom -- the binary couldn't see appsettings.json so the proxy never
+      # bound 80/443. Asserts proxyState=running AND portalReachable=true AND
+      # proxyDetail is null (proxyDetail populated would mean degraded mode).
+      #
+      # Race-condition guard (card #243 fix-up): "Now listening on:" fires when
+      # Kestrel binds -- before ProxyManager completes its first config sync.
+      # The proxy transitions starting -> running (or -> degraded / -> disabled)
+      # asynchronously. Poll until proxyState exits "starting" before asserting,
+      # with a 60s ceiling matching the readiness wait above. A timeout that
+      # expires while still "starting" is a distinct failure mode from a
+      # non-running terminal state.
+      - name: Verify /api/v1/status shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Poll until proxyState leaves the "starting" transient state.
+          PROXY_STATE="starting"
+          for _ in $(seq 1 60); do
+            STATUS_BODY="$(curl -fsSL http://localhost:58400/api/v1/status 2>/dev/null || true)"
+            if [[ -n "${STATUS_BODY}" ]]; then
+              PROXY_STATE="$(echo "${STATUS_BODY}" | jq -r '.proxyState' 2>/dev/null || echo "starting")"
+              if [[ "${PROXY_STATE}" != "starting" ]]; then
+                break
+              fi
+            fi
+            sleep 1
+          done
+          # Capture a fresh snapshot for the assertion output regardless of
+          # whether the poll loop produced a clean response.
+          STATUS_BODY="$(curl -fsSL http://localhost:58400/api/v1/status)"
+          echo "${STATUS_BODY}" | jq .
+          PROXY_STATE="$(echo "${STATUS_BODY}" | jq -r '.proxyState')"
+          PORTAL_REACHABLE="$(echo "${STATUS_BODY}" | jq -r '.portalReachable')"
+          PROXY_DETAIL="$(echo "${STATUS_BODY}" | jq -r '.proxyDetail')"
+          if [[ "${PROXY_STATE}" == "starting" ]]; then
+            echo "proxyState is still 'starting' after 60s -- proxy never stabilized." >&2
+            echo "This is a startup-time regression, not a #244 recurrence." >&2
+            exit 1
+          fi
+          if [[ "${PROXY_STATE}" != "running" ]]; then
+            echo "proxyState is '${PROXY_STATE}', expected 'running'." >&2
+            echo "Card #244 recurrence: the binary likely cannot see appsettings.json" >&2
+            echo "or the proxy failed to bind. Inspect /api/v1/status above." >&2
+            exit 1
+          fi
+          if [[ "${PORTAL_REACHABLE}" != "true" ]]; then
+            echo "portalReachable is '${PORTAL_REACHABLE}', expected 'true'." >&2
+            exit 1
+          fi
+          if [[ "${PROXY_DETAIL}" != "null" ]]; then
+            echo "proxyDetail is populated (proxy is degraded): ${PROXY_DETAIL}" >&2
+            exit 1
+          fi
+          echo "/api/v1/status shape verified (proxyState=running, portalReachable=true)."
+
+      # Layer 2 -- Caddy actually bound 80/443 as the collabhost user (NOT root).
+      # ss -tlnp shows owning user; /proc/<pid>/status confirms UID. Catches
+      # the "Caddy started but the public listener never came up" regression --
+      # /api/v1/status would say "running" only if the proxy reports healthy
+      # already, but a defense-in-depth check on the actual socket ownership
+      # is cheap and catches #214's class (cap_net_bind_service stripped).
+      - name: Caddy bound 80/443 as collabhost user
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Capture the listening sockets owned by caddy on 80/443.
+          # ss -tlnp output: "LISTEN ... 0.0.0.0:443 ... users:(("caddy",pid=NNN,fd=N))"
+          SS_OUT="$(sudo ss -tlnpH '( sport = :80 or sport = :443 )' || true)"
+          echo "${SS_OUT}"
+          if ! echo "${SS_OUT}" | grep -q ':80 '; then
+            echo "Nothing listening on :80." >&2
+            exit 1
+          fi
+          if ! echo "${SS_OUT}" | grep -q ':443 '; then
+            echo "Nothing listening on :443." >&2
+            exit 1
+          fi
+          if ! echo "${SS_OUT}" | grep -q '"caddy"'; then
+            echo ":80 / :443 are bound but not by caddy." >&2
+            exit 1
+          fi
+          # Extract the caddy PID and confirm its real UID is the collabhost user
+          # (not root). cap_net_bind_service via AmbientCapabilities is what
+          # makes this possible; a regression here would fall back to root.
+          CADDY_PID="$(echo "${SS_OUT}" | grep -oP 'pid=\K[0-9]+' | head -n1)"
+          if [[ -z "${CADDY_PID}" ]]; then
+            echo "Could not extract caddy pid from ss output." >&2
+            exit 1
+          fi
+          CADDY_USER="$(ps -o user= -p "${CADDY_PID}" | tr -d ' ')"
+          if [[ "${CADDY_USER}" != "collabhost" ]]; then
+            echo "Caddy is running as '${CADDY_USER}', expected 'collabhost'." >&2
+            exit 1
+          fi
+          echo "Caddy bound 80/443 as 'collabhost' user (pid ${CADDY_PID})."
+
+      # Layer 2 -- Portal HTTPS reachability via the proxy. Headless DNS via
+      # curl --resolve scopes the override to a single invocation -- no
+      # /etc/hosts mutation, no global state to clean up. -k accepts the
+      # internal-CA cert (the CA-trust-import path is INSTALL.md §9.11, out of
+      # scope for CI install verification). Asserts HTTP 200 with a real SPA
+      # shell -- the second of the "two load-bearing assertions" lesson.
+      - name: Portal HTTPS reachability
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORTAL_BODY="$(curl -k -fsSL \
+            --resolve collabhost.collab.internal:443:127.0.0.1 \
+            https://collabhost.collab.internal/)"
+          echo "${PORTAL_BODY}" | head -5
+          if ! echo "${PORTAL_BODY}" | grep -qi '<!doctype html'; then
+            echo "Portal HTTPS reachability check did not return HTML shell." >&2
+            echo "Card #245 recurrence: wwwroot likely missing or unreachable from binary." >&2
+            exit 1
+          fi
+          echo "Portal HTTPS reachability verified (https://collabhost.collab.internal/ -> HTML shell)."
+
+      # Layer 2 -- journal cleanliness. Every cascade layer surfaced as a
+      # journal warning before it surfaced as a runtime symptom (#241
+      # "Unknown key name" warning visible from the very first boot; #245
+      # "WebRootPath was not found" + "Portal reachability check: Missing"
+      # visible long before any HTTP probe). A fresh boot should have ZERO
+      # warnings or errors.
+      #
+      # Bootstrap filter (card #243 fix-up #2): UserSeedService.LogCritical emits
+      # intentionally at crit: so operators see the generated admin key regardless
+      # of configured log level. The .NET console formatter writes this as a 2-line
+      # block in the journal:
+      #   line 1 (framework header): crit: Collabhost.Api.Authorization.UserSeedService[0]
+      #   line 2 (message body):     Collabhost admin key: <ULID>
+      # The prior grep -v 'admin key' only removed line 2; line 1 escaped the
+      # filter. The awk pre-pass treats the pair as a unit: suppress line 1 when
+      # line 2 is the bootstrap body. A real critical error from UserSeedService
+      # (e.g. DB write failure) would produce a different continuation and surfaces
+      # normally. The "Admin-key bootstrap line" step above validates this path
+      # independently, so suppressing it here avoids double-counting.
+      - name: Journal warning scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          JOURNAL="$(sudo journalctl -u collabhost --since '5 min ago' --no-pager 2>&1 || true)"
+          # Match Microsoft.Extensions.Logging level prefixes -- warn:, fail:
+          # (Error), crit: (Critical) -- plus the systemd "Unknown key name"
+          # diagnostic that #241 emitted. The grep is line-anchored to ": " so
+          # it doesn't match the timestamp's seconds field or random log content
+          # that happens to contain "warn".
+          #
+          # awk pre-pass strips the intentional UserSeedService bootstrap 2-line
+          # block (header + "Collabhost admin key:" body) before grep runs.
+          # A real critical from UserSeedService produces a different body line
+          # and falls through to grep normally.
+          OFFENDERS="$(echo "${JOURNAL}" \
+            | awk '/crit:.*UserSeedService/ { hold=$0; skip=1; next }
+                   skip && /Collabhost admin key:/ { skip=0; next }
+                   skip { print hold; skip=0 }
+                   { print }' \
+            | grep -iE '(^|\s)(warn|fail|crit):\s|unknown key' || true)"
+          if [[ -n "${OFFENDERS}" ]]; then
+            echo "Journal contains warnings/errors on a fresh boot:" >&2
+            echo "${OFFENDERS}" >&2
+            echo "Cascade-class regression: every UAT cascade layer surfaced as a" >&2
+            echo "journal warning before becoming a runtime symptom. Inspect above." >&2
+            exit 1
+          fi
+          echo "Journal is clean (no warnings, errors, or unit-syntax issues)."
+
+      # Layer 1 -- --version flag survived sudo re-exec (#242 regression check).
+      # install-system.sh re-execs under sudo when not invoked as root; #242
+      # was that --version got dropped on the re-exec, so the operator's
+      # pinned version was silently ignored. The "First install" step above
+      # passes --version "${TAG}", so a regression would land a different
+      # version's binary. Verify the running binary's version matches TAG.
+      - name: --version flag honored
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_OUT="$(sudo /opt/collabhost/bin/collabhost --version)"
+          echo "${VERSION_OUT}"
+          # Strip the leading "v" off TAG for comparison; the binary may emit
+          # either "Collabhost v1.2.3" or "Collabhost 1.2.3" depending on
+          # whether VersionInfo includes the v-prefix. Match flexibly.
+          TAG_BARE="${TAG#v}"
+          if ! echo "${VERSION_OUT}" | grep -qE "^Collabhost v?${TAG_BARE}$"; then
+            echo "Installed binary version does not match --version ${TAG}." >&2
+            echo "Card #242 recurrence: --version may have been dropped on sudo re-exec." >&2
+            exit 1
+          fi
+          echo "--version flag honored (binary reports ${TAG})."
+
+      # Teardown -- walk INSTALL.md §5.5.2's documented uninstall block
+      # verbatim. Then assert nothing leaked. Theo's incomplete-teardown
+      # lesson means the CI run fails if the documented procedure leaves
+      # state behind -- catches a regression where a future install layout
+      # change adds a new path without updating the uninstall doc.
+      - name: Teardown (per INSTALL.md §5.5.2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo systemctl disable --now collabhost
+          sudo rm /etc/systemd/system/collabhost.service
+          sudo systemctl daemon-reload
+          sudo rm -rf /opt/collabhost /etc/collabhost /var/lib/collabhost /var/log/collabhost
+          sudo userdel collabhost
+          echo "Teardown commands ran without error."
+
+      - name: Verify teardown left nothing behind
+        shell: bash
+        run: |
+          set -euo pipefail
+          FAIL=""
+          # Filesystem paths.
+          for path in \
+              /opt/collabhost \
+              /etc/collabhost \
+              /var/lib/collabhost \
+              /var/log/collabhost \
+              /etc/systemd/system/collabhost.service; do
+            if sudo test -e "${path}"; then
+              echo "Teardown leak: ${path} still exists." >&2
+              FAIL=1
+            fi
+          done
+          # Service user.
+          if getent passwd collabhost >/dev/null 2>&1; then
+            echo "Teardown leak: service user 'collabhost' still exists." >&2
+            FAIL=1
+          fi
+          if getent group collabhost >/dev/null 2>&1; then
+            echo "Teardown leak: service group 'collabhost' still exists." >&2
+            FAIL=1
+          fi
+          # Systemd unit registration. systemctl status returns 4 when the unit
+          # is not loaded (the desired state); 0/3 indicate it's still known.
+          STATUS_RC=0
+          sudo systemctl status collabhost.service --no-pager >/dev/null 2>&1 || STATUS_RC=$?
+          if [[ "${STATUS_RC}" != "4" ]]; then
+            echo "Teardown leak: systemctl still knows about collabhost.service (rc=${STATUS_RC})." >&2
+            FAIL=1
+          fi
+          # Listening ports.
+          if sudo ss -tlnH '( sport = :80 or sport = :443 or sport = :58400 )' | grep -q .; then
+            echo "Teardown leak: 80/443/58400 still bound after uninstall." >&2
+            sudo ss -tlnp '( sport = :80 or sport = :443 or sport = :58400 )' >&2 || true
+            FAIL=1
+          fi
+          if [[ -n "${FAIL}" ]]; then
+            echo "Teardown verification failed -- INSTALL.md §5.5.2 left state behind." >&2
+            exit 1
+          fi
+          echo "Teardown verified -- no filesystem, user, unit, or port leaks."

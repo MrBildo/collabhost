@@ -50,6 +50,9 @@ frontend/.env.*
 frontend/tsconfig.tsbuildinfo
 frontend/src/**/*.js
 
+# Frontend test artifacts
+frontend/junit.xml
+
 # Playwright MCP
 .playwright-mcp/
 

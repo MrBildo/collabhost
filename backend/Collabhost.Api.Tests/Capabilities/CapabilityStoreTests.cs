@@ -239,6 +239,38 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task ResolveAsync_SystemService_EnvironmentDefaults_ReturnsEmptyVariables()
+    {
+        var result = await _capabilityStore.ResolveAsync<EnvironmentConfiguration>
+        (
+            "environment-defaults",
+            "system-service",
+            Ulid.NewUlid(),
+            CancellationToken.None
+        );
+
+        result.ShouldNotBeNull();
+        result.Variables.ShouldNotBeNull();
+        result.Variables.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Executable_EnvironmentDefaults_ReturnsEmptyVariables()
+    {
+        var result = await _capabilityStore.ResolveAsync<EnvironmentConfiguration>
+        (
+            "environment-defaults",
+            "executable",
+            Ulid.NewUlid(),
+            CancellationToken.None
+        );
+
+        result.ShouldNotBeNull();
+        result.Variables.ShouldNotBeNull();
+        result.Variables.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task ResolveAsync_DotNetApp_AutoStart_ReturnsAutoStartConfiguration()
     {
         var result = await _capabilityStore.ResolveAsync<AutoStartConfiguration>
@@ -256,8 +288,8 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
     [InlineData("dotnet-app", 8)]
     [InlineData("nodejs-app", 8)]
     [InlineData("static-site", 2)]
-    [InlineData("system-service", 4)]
-    [InlineData("executable", 6)]
+    [InlineData("system-service", 5)]
+    [InlineData("executable", 7)]
     public async Task ResolveAllJsonAsync_AllTypes_ReturnsCorrectBindingCount
     (
         string appTypeSlug,
