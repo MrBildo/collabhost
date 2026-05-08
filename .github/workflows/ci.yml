@@ -124,6 +124,12 @@ jobs:
       - name: Type check
         run: npx tsc -b
       - name: Test
-        run: npm run test
+        run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=junit.xml
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-test-results
+          path: frontend/junit.xml
       - name: Build
         run: npx vite build
