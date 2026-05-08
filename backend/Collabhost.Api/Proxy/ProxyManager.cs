@@ -27,6 +27,7 @@ public class ProxyManager
     HostingSettings hostingSettings,
     PortalSettings portalSettings,
     ActivityEventStore activityEventStore,
+    TimeProvider timeProvider,
     ILogger<ProxyManager> logger
 ) : IHostedService, IDisposable
 {
@@ -59,6 +60,12 @@ public class ProxyManager
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
+
+    // Injected so the post-launch admin-API probe loop runs on virtual time under test.
+    // Production wires TimeProvider.System; tests wire FakeTimeProvider so the deadline,
+    // inter-attempt delay, and per-attempt timeout are all advanced explicitly. Card #258.
+    private readonly TimeProvider _timeProvider = timeProvider
+        ?? throw new ArgumentNullException(nameof(timeProvider));
 
     private readonly ILogger<ProxyManager> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -332,15 +339,24 @@ public class ProxyManager
     // on success -> ProxyState.Running and route sync is activated.
     // on timeout -> ProxyState.Failed, proxy subsystem disabled for this process lifetime,
     //              and loud error log pointing at COLLABHOST_CADDY_PATH / Proxy:BinaryPath.
+    //
+    // All time work flows through the injected TimeProvider so tests can advance a virtual
+    // clock instead of waiting on wall-clock thread-pool timers. Card #258 -- Windows-CI
+    // flake on the slow-start assertion was caused by Task.Delay accuracy under contention
+    // pushing the assertion past its 3s wall-clock budget.
     internal async Task<bool> VerifyCaddyReadyAsync(CancellationToken ct)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
+        var deadline = _timeProvider.GetUtcNow().AddSeconds(5);
         var perAttemptTimeout = TimeSpan.FromSeconds(1);
 
-        while (DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
+        while (_timeProvider.GetUtcNow() < deadline && !ct.IsCancellationRequested)
         {
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            linkedCts.CancelAfter(perAttemptTimeout);
+            // The per-attempt CTS has its own time-provider-aware delay; linking with the
+            // outer ct gives the same effect as the previous CreateLinkedTokenSource +
+            // CancelAfter combination, but with the per-attempt delay routed through
+            // _timeProvider so virtual time advances trigger the per-attempt timeout under test.
+            using var perAttemptCts = new CancellationTokenSource(perAttemptTimeout, _timeProvider);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, perAttemptCts.Token);
 
             try
             {
@@ -365,7 +381,7 @@ public class ProxyManager
 
             try
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(200), ct);
+                await Task.Delay(TimeSpan.FromMilliseconds(200), _timeProvider, ct);
             }
             catch (OperationCanceledException)
             {

@@ -157,6 +157,7 @@ public class ProxyManagerTests
             new HostingSettings { ListenPort = 58400 },
             new Collabhost.Api.Portal.PortalSettings { Subdomain = "collabhost" },
             activityEventStore,
+            TimeProvider.System,
             NullLogger<ProxyManager>.Instance
         );
     }
