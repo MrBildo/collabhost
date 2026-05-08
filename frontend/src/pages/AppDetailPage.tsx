@@ -251,9 +251,6 @@ function AppDetailPage() {
           onStop={() => stopMutation.mutate(slug)}
           onRestart={() => restartMutation.mutate(slug)}
           onKill={() => killMutation.mutate(slug)}
-          onUpdate={() => {
-            /* TODO: SSE update flow */
-          }}
         />
       </div>
 
