@@ -24,6 +24,9 @@
     },
     "auto-start": {
       "enabled": false
+    },
+    "environment-defaults": {
+      "variables": {}
     }
   }
 }
