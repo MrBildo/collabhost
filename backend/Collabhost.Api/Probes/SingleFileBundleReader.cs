@@ -42,6 +42,18 @@ public static class SingleFileBundleReader
     {
         try
         {
+            // Defense in depth against opening Linux FIFOs / sockets / device
+            // files: stat first, reject zero-length entries before any open()
+            // call. File.OpenRead on a FIFO blocks indefinitely waiting for a
+            // writer; FileInfo.Length stat does not. A real .NET single-file
+            // bundle is megabytes -- the floor here is safe. Card #220 follow-up.
+            var info = new FileInfo(filePath);
+
+            if (info.Length < _bundleSignature.Length + sizeof(long))
+            {
+                return null;
+            }
+
             using var stream = File.OpenRead(filePath);
 
             return TryReadCore(stream);

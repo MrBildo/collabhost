@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 using Collabhost.Api.Probes;
 
 using Shouldly;
@@ -213,6 +215,16 @@ public class ArtifactEvidenceCollectorTests : IDisposable
     [Fact]
     public void Collect_ExecutableSingleExe_FullMatchManualWithBinarySignal()
     {
+        // Linux's executable-AppType rule is "user-execute bit set", not "*.exe
+        // extension". A 2-byte fixture file written without chmod +x will not
+        // trip the Linux branch -- the assertion shape only matches the Windows
+        // branch of ListExecutablesAtRoot. Match the skip pattern already used
+        // by Collect_ExecutableMultipleExes_LikelyMatchManual below.
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
         File.WriteAllBytes(Path.Combine(_tempDir, "myapp.exe"), [0x4d, 0x5a]);
 
         var evidence = ArtifactEvidenceCollector.Collect(_tempDir, "executable");
@@ -261,6 +273,14 @@ public class ArtifactEvidenceCollectorTests : IDisposable
     [Fact]
     public void Collect_ExecutableThatLooksLikeDotnet_SetsIsManagedDotnetTrue()
     {
+        // Same Linux skip rationale as Collect_ExecutableSingleExe_*: this
+        // fixture exercises the Windows .exe-extension branch of
+        // ListExecutablesAtRoot, which Linux does not reach.
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
         // pdb-pair next to the .exe is the cheapest "this is .NET" signal.
         File.WriteAllBytes(Path.Combine(_tempDir, "myapp.exe"), [0x4d, 0x5a]);
         File.WriteAllBytes(Path.Combine(_tempDir, "myapp.pdb"), [0x42, 0x53, 0x4a, 0x42]);
@@ -293,5 +313,62 @@ public class ArtifactEvidenceCollectorTests : IDisposable
 
         evidence.Fitness.ShouldBe(AppTypeFitness.NotApplicable);
         evidence.SuggestedStrategy.ShouldBe(SuggestedStrategies.Manual);
+    }
+
+    // Regression for the Linux-only hang that took down PR #162's first CI:
+    // /tmp on Linux during a dotnet-test run contains clr-debug-pipe-* FIFOs
+    // (extensionless, executable bit set). The pre-fix bundle-detection path
+    // identified them as candidate binaries and called File.OpenRead, which
+    // blocks indefinitely on a FIFO without a writer. The fix gates extensionless
+    // candidates on FileInfo.Length > 0 (FIFOs/sockets stat as zero-length).
+    // This test creates a FIFO via mkfifo and asserts Collect terminates.
+    [Fact]
+    public async Task Collect_DirectoryContainingFifo_DoesNotHang()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var fifoPath = Path.Combine(_tempDir, "fake-binary");
+
+        using var mkfifo = Process.Start
+        (
+            new ProcessStartInfo
+            {
+                FileName = "mkfifo",
+                ArgumentList = { fifoPath },
+                RedirectStandardError = true,
+                UseShellExecute = false
+            }
+        );
+
+        if (mkfifo is null)
+        {
+            return;
+        }
+
+        using var mkfifoExitCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await mkfifo.WaitForExitAsync(mkfifoExitCts.Token);
+
+        if (mkfifo.ExitCode != 0)
+        {
+            return;
+        }
+
+        // 10s ceiling -- way over the expected ~1ms but well under the GitHub
+        // Actions step timeout. If the bug returns the WaitAsync throws before
+        // CI cancels the whole job.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        var collectTask = Task.Run
+        (
+            () => ArtifactEvidenceCollector.Collect(_tempDir, "dotnet-app"),
+            cts.Token
+        );
+
+        var evidence = await collectTask.WaitAsync(cts.Token);
+
+        evidence.Fitness.ShouldBe(AppTypeFitness.NotApplicable);
     }
 }

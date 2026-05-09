@@ -453,13 +453,30 @@ public static class ArtifactEvidenceCollector
 
     private static readonly string[] _alternateStaticEntries = ["index.htm", "default.html"];
 
+    // Returns true only when the path is a regular file with the user-execute
+    // bit set. The Length filter excludes Linux FIFOs, sockets, and device
+    // files -- they stat as zero length. Without that filter, the /tmp
+    // directory on a Linux CI runner contains clr-debug-pipe FIFOs from the
+    // test host (extensionless, executable bits set); a downstream File.OpenRead
+    // on a FIFO blocks waiting for a writer, which is what hung the Linux leg
+    // of card 220. A real single-file bundle is megabytes, so the Length floor
+    // is safe for binary detection. Test fixtures writing tiny .exe files are
+    // routed through the Windows .exe-only branch and do not pass through here.
     private static bool HasExecutableBit(string path)
     {
         try
         {
             var info = new FileInfo(path);
 
-            return (info.UnixFileMode & UnixFileMode.UserExecute) == UnixFileMode.UserExecute;
+            if ((info.UnixFileMode & UnixFileMode.UserExecute) != UnixFileMode.UserExecute)
+            {
+                return false;
+            }
+
+            // Pipes, sockets, devices, and zero-length files cannot be a
+            // single-file bundle -- gate them out before any caller calls
+            // File.OpenRead on the path.
+            return info.Length > 0;
         }
         catch (IOException)
         {
