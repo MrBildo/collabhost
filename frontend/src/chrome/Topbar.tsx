@@ -1,4 +1,5 @@
 import { LogoMark } from '@/chrome/LogoMark'
+import { LogoutButton } from '@/chrome/LogoutButton'
 import { UserIndicator } from '@/chrome/UserIndicator'
 import { useCurrentUser } from '@/hooks/use-current-user'
 import { cn } from '@/lib/cn'
@@ -52,8 +53,9 @@ function Topbar() {
         </div>
 
         {/* Right side: user identity */}
-        <div className="ml-auto flex items-center gap-4">
+        <div className="ml-auto flex items-center gap-2">
           <UserIndicator />
+          <LogoutButton />
         </div>
       </div>
     </nav>
