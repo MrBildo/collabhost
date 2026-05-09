@@ -5,6 +5,9 @@ namespace Collabhost.Api.Probes;
 
 public static class ProbeCurator
 {
+    // Original signature retained for tests that don't care about AppType-aware
+    // filtering. Equivalent to passing appTypeSlug=null which means "render
+    // anything we have raw data for" (the pre-card-#220 behavior).
     public static List<ProbeEntry> Curate
     (
         RawDotnetData? dotnet,
@@ -12,28 +15,129 @@ public static class ProbeCurator
         RawTypeScriptData? typeScript,
         string? projectRoot,
         string artifactDirectory
+    ) => Curate
+    (
+        appTypeSlug: null,
+        evidence: null,
+        dotnet,
+        node,
+        typeScript,
+        staticSite: null,
+        executable: null,
+        projectRoot,
+        artifactDirectory
+    );
+
+    public static List<ProbeEntry> Curate
+    (
+        string? appTypeSlug,
+        ArtifactEvidence? evidence,
+        RawDotnetData? dotnet,
+        RawNodeData? node,
+        RawTypeScriptData? typeScript,
+        RawStaticSiteData? staticSite,
+        RawExecutableData? executable,
+        string? projectRoot,
+        string artifactDirectory
     )
     {
         var results = new List<ProbeEntry>();
 
-        if (dotnet is not null)
+        // AppType-aware filter: emit only the panel families the operator's chosen
+        // AppType cares about. Card #220 §3.5. When appTypeSlug is null we keep
+        // the legacy "extract everything, render everything" behavior.
+        var allowDotnet = appTypeSlug is null
+            || string.Equals(appTypeSlug, "dotnet-app", StringComparison.Ordinal)
+            || string.Equals(appTypeSlug, "executable", StringComparison.Ordinal);
+
+        var allowNode = appTypeSlug is null
+            || string.Equals(appTypeSlug, "nodejs-app", StringComparison.Ordinal);
+
+        var allowStatic = appTypeSlug is null
+            || string.Equals(appTypeSlug, "static-site", StringComparison.Ordinal);
+
+        var allowExecutable = appTypeSlug is null
+            || string.Equals(appTypeSlug, "executable", StringComparison.Ordinal);
+
+        // Soft-nudge: when AppType is `executable` AND the directory looks like
+        // .NET, emit ONLY the executable panel (with IsManagedDotnet=true so the
+        // frontend renders the "consider re-registering" hint). Bill ruling 2:
+        // single panel + nudge, NOT side-by-side.
+        var executableLooksDotnet = string.Equals(appTypeSlug, "executable", StringComparison.Ordinal)
+            && executable?.IsManagedDotnet == true;
+
+        if (executableLooksDotnet)
+        {
+            CurateExecutable(executable!, results);
+
+            return results;
+        }
+
+        if (allowDotnet && dotnet is not null
+            && !string.Equals(appTypeSlug, "executable", StringComparison.Ordinal))
         {
             CurateDotnet(dotnet, results);
         }
 
-        if (node?.PackageJson is not null)
+        if (allowNode && node?.PackageJson is not null)
         {
             CurateNode(node, results);
             CurateReact(node.PackageJson, projectRoot, artifactDirectory, results);
         }
 
-        if (typeScript is not null)
+        if (allowNode && typeScript is not null)
         {
             CurateTypeScript(typeScript, results);
         }
 
+        if (allowStatic && staticSite is not null)
+        {
+            CurateStaticSite(staticSite, results);
+        }
+
+        if (allowExecutable && executable is not null)
+        {
+            CurateExecutable(executable, results);
+        }
+
+        _ = evidence;
+
         return results;
     }
+
+    private static void CurateStaticSite(RawStaticSiteData data, List<ProbeEntry> results) =>
+        results.Add
+        (
+            new ProbeEntry
+            (
+                "static-site",
+                "Static Site",
+                new StaticSiteData
+                (
+                    data.HasIndexHtml,
+                    data.HtmlFileCount,
+                    data.TotalAssetBytes,
+                    data.HasNestedAssets
+                )
+            )
+        );
+
+    private static void CurateExecutable(RawExecutableData data, List<ProbeEntry> results) =>
+        results.Add
+        (
+            new ProbeEntry
+            (
+                "executable",
+                "Executable",
+                new ExecutableData
+                (
+                    data.BinaryName,
+                    data.BinarySizeBytes,
+                    data.CandidateBinaryCount,
+                    data.IsManagedDotnet
+                )
+            )
+        );
 
     private static void CurateDotnet(RawDotnetData dotnet, List<ProbeEntry> results)
     {

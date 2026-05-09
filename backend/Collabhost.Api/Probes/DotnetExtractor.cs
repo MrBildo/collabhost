@@ -4,7 +4,10 @@ namespace Collabhost.Api.Probes;
 
 public static class DotnetExtractor
 {
-    public static RawDotnetData? Extract(string artifactDirectory)
+    public static RawDotnetData? Extract(string artifactDirectory) =>
+        Extract(artifactDirectory, evidence: null);
+
+    public static RawDotnetData? Extract(string artifactDirectory, ArtifactEvidence? evidence)
     {
         if (!Directory.Exists(artifactDirectory))
         {
@@ -24,30 +27,127 @@ public static class DotnetExtractor
         // No runtimeconfig.json in root -- check if this is a .NET project directory
         var csprojFile = FindCsproj(artifactDirectory);
 
-        if (csprojFile is null)
+        if (csprojFile is not null)
+        {
+            // Search build output directories for runtimeconfig.json
+            var buildOutputConfig = FindRuntimeConfigInBuildOutput(artifactDirectory);
+
+            if (buildOutputConfig is not null)
+            {
+                var runtimeConfig = ParseRuntimeConfig(buildOutputConfig);
+                var depsJson = ParseDepsJson(Path.GetDirectoryName(buildOutputConfig)!);
+
+                return new RawDotnetData(runtimeConfig, depsJson);
+            }
+
+            // Fallback: parse the .csproj for TargetFramework to produce minimal runtime data
+            var tfmFromProject = ParseTargetFrameworkFromCsproj(csprojFile);
+
+            if (tfmFromProject is not null)
+            {
+                var minimalConfig = new RawRuntimeConfig(tfmFromProject, [], [], []);
+
+                return new RawDotnetData(minimalConfig, null);
+            }
+
+            return null;
+        }
+
+        // Self-contained single-file publish: no runtimeconfig.json, no csproj.
+        // Fall back to the bundle reader if the evidence collector says so.
+        // Card #220 -- Bill ruling 3: degraded fallback when format parsing fails.
+        return evidence is not null && HasSingleFileBinarySignal(evidence)
+            ? ExtractFromSingleFileBinary(artifactDirectory, evidence)
+            : null;
+    }
+
+    internal static RawDotnetData? ExtractFromSingleFileBinary(string artifactDirectory, ArtifactEvidence evidence)
+    {
+        var binaryName = FindSingleFileBinaryName(evidence);
+
+        if (binaryName is null)
         {
             return null;
         }
 
-        // Search build output directories for runtimeconfig.json
-        var buildOutputConfig = FindRuntimeConfigInBuildOutput(artifactDirectory);
+        var binaryPath = Path.Combine(artifactDirectory, binaryName);
 
-        if (buildOutputConfig is not null)
+        if (!File.Exists(binaryPath))
         {
-            var runtimeConfig = ParseRuntimeConfig(buildOutputConfig);
-            var depsJson = ParseDepsJson(Path.GetDirectoryName(buildOutputConfig)!);
-
-            return new RawDotnetData(runtimeConfig, depsJson);
+            // Evidence said yes, file system disagrees -- emit a minimal record
+            // so the curator still surfaces a panel acknowledging this is .NET.
+            return new RawDotnetData
+            (
+                new RawRuntimeConfig(null, [], [], new Dictionary<string, JsonElement>(StringComparer.Ordinal)),
+                null
+            );
         }
 
-        // Fallback: parse the .csproj for TargetFramework to produce minimal runtime data
-        var tfmFromProject = ParseTargetFrameworkFromCsproj(csprojFile);
+        var probe = SingleFileBundleReader.TryRead(binaryPath);
 
-        if (tfmFromProject is not null)
+        if (probe is null)
         {
-            var minimalConfig = new RawRuntimeConfig(tfmFromProject, [], [], []);
+            // Evidence pointed at .NET (pdb-pair or staticwebassets manifest) but
+            // the binary itself isn't a recognizable single-file bundle. Could be
+            // a future bundle format or a stripped binary -- return a minimal
+            // record so the panel renders with TFM=null per Bill ruling 3.
+            return new RawDotnetData
+            (
+                new RawRuntimeConfig(null, [], [], new Dictionary<string, JsonElement>(StringComparer.Ordinal)),
+                null
+            );
+        }
 
-            return new RawDotnetData(minimalConfig, null);
+        var includedFrameworks = new List<RawFrameworkReference>();
+
+        if (probe.RuntimeVersion is not null)
+        {
+            includedFrameworks.Add
+            (
+                new RawFrameworkReference("Microsoft.NETCore.App", probe.RuntimeVersion)
+            );
+
+            if (probe.IsAspNetCore == true)
+            {
+                includedFrameworks.Add
+                (
+                    new RawFrameworkReference("Microsoft.AspNetCore.App", probe.RuntimeVersion)
+                );
+            }
+        }
+
+        var minimalRuntimeConfig = new RawRuntimeConfig
+        (
+            probe.Tfm,
+            [],
+            includedFrameworks,
+            new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        );
+
+        return new RawDotnetData(minimalRuntimeConfig, null);
+    }
+
+    private static bool HasSingleFileBinarySignal(ArtifactEvidence evidence)
+    {
+        foreach (var signal in evidence.Signals)
+        {
+            if (string.Equals(signal.Kind, EvidenceSignalKinds.SingleFileBinary, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? FindSingleFileBinaryName(ArtifactEvidence evidence)
+    {
+        foreach (var signal in evidence.Signals)
+        {
+            if (string.Equals(signal.Kind, EvidenceSignalKinds.SingleFileBinary, StringComparison.Ordinal))
+            {
+                return signal.Path;
+            }
         }
 
         return null;
