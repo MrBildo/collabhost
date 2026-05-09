@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import { DotnetDependenciesPanel } from './DotnetDependenciesPanel'
 import { DotnetRuntimePanel } from './DotnetRuntimePanel'
+import { ExecutablePanel } from './ExecutablePanel'
 import { NodePanel } from './NodePanel'
 import { ReactPanel } from './ReactPanel'
+import { StaticSitePanel } from './StaticSitePanel'
 import { TypeScriptPanel } from './TypeScriptPanel'
 import { PROBE_PANELS } from './probe-registry'
 
@@ -27,11 +29,19 @@ describe('PROBE_PANELS', () => {
     expect(PROBE_PANELS.typescript).toBe(TypeScriptPanel)
   })
 
+  test('maps static-site to StaticSitePanel', () => {
+    expect(PROBE_PANELS['static-site']).toBe(StaticSitePanel)
+  })
+
+  test('maps executable to ExecutablePanel', () => {
+    expect(PROBE_PANELS.executable).toBe(ExecutablePanel)
+  })
+
   test('returns undefined for unknown type', () => {
     expect(PROBE_PANELS.python).toBeUndefined()
   })
 
-  test('contains exactly five known panel types', () => {
-    expect(Object.keys(PROBE_PANELS)).toHaveLength(5)
+  test('contains exactly seven known panel types', () => {
+    expect(Object.keys(PROBE_PANELS)).toHaveLength(7)
   })
 })

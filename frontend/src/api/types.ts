@@ -56,12 +56,36 @@ type TypeScriptProbe = {
   module: string | null
 }
 
+type StaticSiteProbe = {
+  hasIndexHtml: boolean
+  htmlFileCount: number
+  // Capped at 200MB on the backend; renders as "200 MB+" when at cap.
+  totalAssetBytes: number
+  // True when the directory uses a recognized nested-asset convention
+  // (wwwroot/, assets/, _next/, _astro/, _app/, static/).
+  hasNestedAssets: boolean
+}
+
+type ExecutableProbe = {
+  binaryName: string
+  binarySizeBytes: number
+  // > 1 means multiple .exe candidates were found at the artifact root.
+  candidateBinaryCount: number
+  // Soft-nudge channel: when true, the binary looks like a self-contained
+  // .NET single-file publish. The panel surfaces a hint suggesting the
+  // operator re-register as `dotnet-app` to enable health-check,
+  // environment-defaults, etc. (Bill ruling #2 on card #220.)
+  isManagedDotnet: boolean
+}
+
 type ProbeEntry =
   | { type: 'dotnet-runtime'; label: string; data: DotnetRuntimeProbe }
   | { type: 'dotnet-dependencies'; label: string; data: DotnetDependenciesProbe }
   | { type: 'node'; label: string; data: NodeProbe }
   | { type: 'react'; label: string; data: ReactProbe }
   | { type: 'typescript'; label: string; data: TypeScriptProbe }
+  | { type: 'static-site'; label: string; data: StaticSiteProbe }
+  | { type: 'executable'; label: string; data: ExecutableProbe }
   | { type: string; label: string; data: Record<string, unknown> }
 
 type FieldType = 'text' | 'number' | 'boolean' | 'select' | 'directory' | 'keyValue' | 'keyvalue'
@@ -380,8 +404,16 @@ type SystemStatus = {
 
 // --- Filesystem ---
 
+// Free-string literal at the API boundary (Bill ruling #1 on card #220):
+// `notApplicable` is intentionally NOT a member of the backend's
+// `DiscoveryStrategy` enum -- that enum represents process-discovery
+// strategies for runnable apps. `notApplicable` fires for app types that
+// don't go through process discovery at all (`static-site`) or for
+// `executable` directories with zero candidate binaries.
+type SuggestedStrategy = 'dotNetRuntimeConfiguration' | 'dotNetProject' | 'packageJson' | 'manual' | 'notApplicable'
+
 type DetectStrategyResponse = {
-  suggestedStrategy: string
+  suggestedStrategy: SuggestedStrategy
   evidence: string[]
 }
 
@@ -411,6 +443,8 @@ export type {
   NodeProbe,
   ReactProbe,
   TypeScriptProbe,
+  StaticSiteProbe,
+  ExecutableProbe,
   FieldType,
   FieldEditable,
   FieldOption,
@@ -447,6 +481,7 @@ export type {
   ProxyState,
   ProxyDetail,
   DetectStrategyResponse,
+  SuggestedStrategy,
   FilesystemBrowseResponse,
   DirectoryEntry,
 }
