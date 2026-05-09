@@ -126,6 +126,7 @@ public static class DashboardEndpoints
 
         var items = events.Select(e => new DashboardEventResponse
         (
+            Id: e.Id.ToString(null, CultureInfo.InvariantCulture),
             Timestamp: e.Timestamp,
             Message: FormatEventMessage(e),
             AppSlug: e.AppSlug,

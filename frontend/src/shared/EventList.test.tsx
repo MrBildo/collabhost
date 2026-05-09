@@ -4,8 +4,12 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'
 import { EventList } from './EventList'
 
+let _eventCounter = 0
+
 function makeEvent(overrides: Partial<DashboardEvent> = {}): DashboardEvent {
+  _eventCounter += 1
   return {
+    id: `01TESTEVENT0000000000000${_eventCounter.toString().padStart(2, '0')}`,
     timestamp: '2026-04-07T12:00:00Z',
     message: 'started',
     appSlug: 'my-api',

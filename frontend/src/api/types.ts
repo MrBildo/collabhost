@@ -267,6 +267,7 @@ type DashboardEventsResponse = {
 }
 
 type DashboardEvent = {
+  id: string
   timestamp: string
   message: string
   appSlug: string | null
