@@ -15,6 +15,14 @@ namespace Collabhost.Api.Platform;
 // Under Aspire or `dotnet run`, ASPNETCORE_URLS wins for Kestrel and ListenPort still governs
 // the Caddy dial -- if an operator pins one and forgets the other, the dashboard's self-route
 // silently 502s with no obvious cause. Card #165 -- soft warning, not fatal.
+//
+// Hosting:ListenAddress (card #218) is intentionally NOT cross-validated here. The validator's
+// concern is "Caddy can dial Kestrel through the loopback self-route." Caddy always dials
+// localhost:{ListenPort}; Kestrel reports listening URLs as 127.0.0.1/[::1] when bound to
+// "localhost" (the default), so address-comparison would require name->IP normalization plus
+// 0.0.0.0/[::]-includes-loopback handling. The valid headless posture is ListenAddress=0.0.0.0,
+// which still includes loopback -- so address divergence is not itself a foot-gun. Port
+// divergence is.
 public static class ListenPortValidator
 {
     // Pure-function entry point: takes the configured ListenPort and the listening addresses

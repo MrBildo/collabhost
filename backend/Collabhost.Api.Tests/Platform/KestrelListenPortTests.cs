@@ -38,6 +38,35 @@ public class KestrelListenPortTests
     }
 
     [Fact]
+    public async Task Startup_NoAspNetCoreUrls_HostingListenAddressOverride_BindsToConfiguredAddress()
+    {
+        // Card #218: COLLABHOST_HOSTING_LISTEN_ADDRESS should flow through to Kestrel's
+        // UseUrls. Use 127.0.0.1 (loopback IPv4) rather than 0.0.0.0 because 0.0.0.0 requires
+        // admin privileges to bind on Windows in some configurations (firewall acl), and the
+        // assertion we care about is "the configured address is what Kestrel reports binding"
+        // -- which 127.0.0.1 covers cleanly.
+        var port = GetFreePort();
+
+        var listeningAddress = await StartAndReadListeningAddressAsync
+        (
+            env: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["COLLABHOST_HOSTING_LISTEN_PORT"] = port.ToString(CultureInfo.InvariantCulture),
+                ["COLLABHOST_HOSTING_LISTEN_ADDRESS"] = "127.0.0.1"
+            }
+        );
+
+        listeningAddress.ShouldNotBeNullOrWhiteSpace();
+
+        listeningAddress!
+            .ShouldBe
+            (
+                $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}",
+                $"Kestrel should have bound to Hosting:ListenAddress override (127.0.0.1), not the default localhost. observed='{listeningAddress}'"
+            );
+    }
+
+    [Fact]
     public async Task Startup_AspNetCoreUrlsSet_RespectsEnvOverride()
     {
         var port = GetFreePort();

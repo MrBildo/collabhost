@@ -1,5 +1,3 @@
-using System.Globalization;
-
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
@@ -74,12 +72,19 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 // (env > appsettings.json > default). Dev-only effect -- .Local.json does not ship to production.
 builder.Configuration.AddEnvironmentVariables();
 
-// Bind Kestrel to Hosting:ListenPort for the installed-binary path. In dev, launchSettings.json
-// (applicationUrl) and under Aspire, ASPNETCORE_URLS set the "urls" configuration key before
-// this point -- those win. In production there is no launchSettings.json and no
-// ASPNETCORE_URLS, so Kestrel would otherwise fall through to its default :5000 while Caddy
-// dials localhost:{Hosting:ListenPort} and every reverse_proxy hop returns 502. Use ListenPort
-// as the fallback dial/listen target so Caddy and Kestrel cannot disagree on port.
+// Bind Kestrel to Hosting:ListenAddress + Hosting:ListenPort for the installed-binary path.
+// In dev, launchSettings.json (applicationUrl) and under Aspire, ASPNETCORE_URLS set the
+// "urls" configuration key before this point -- those win. In production there is no
+// launchSettings.json and no ASPNETCORE_URLS, so Kestrel would otherwise fall through to its
+// default :5000 while Caddy dials localhost:{Hosting:ListenPort} and every reverse_proxy hop
+// returns 502 (#176). Use ListenAddress + ListenPort as the fallback dial/listen target so
+// Caddy and Kestrel cannot disagree on port.
+//
+// ListenAddress defaults to "localhost" so the canonical posture is unchanged: edge TLS
+// terminates at Caddy on :443 and the API stays loopback-only. Headless-server installs
+// that reach the API directly (no DNS for *.collab.internal, no CA trust for the bundled
+// internal CA) can set ListenAddress=0.0.0.0 to expose every interface, or pin it to a
+// specific NIC IP. Card #218.
 //
 // No added log line here: Microsoft.Hosting.Lifetime already writes "Now listening on: <url>"
 // at Info, which the operator sees on stdout in production and which the KestrelListenPort
@@ -94,12 +99,7 @@ if (string.IsNullOrWhiteSpace(configuredUrls))
 {
     var resolvedHosting = HostingRegistration.ResolveSettings(builder.Configuration);
 
-    var selfUrl = string.Format
-    (
-        CultureInfo.InvariantCulture,
-        "http://localhost:{0}",
-        resolvedHosting.ListenPort
-    );
+    var selfUrl = HostingUrlBuilder.Build(resolvedHosting.ListenAddress, resolvedHosting.ListenPort);
 
     builder.WebHost.UseUrls(selfUrl);
 }

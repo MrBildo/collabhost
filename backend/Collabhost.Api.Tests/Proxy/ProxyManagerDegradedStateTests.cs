@@ -214,7 +214,7 @@ public class ProxyManagerDegradedStateTests : IAsyncLifetime
             AdminPort = 2019
         };
 
-        var hostingSettings = new HostingSettings { ListenPort = 58400 };
+        var hostingSettings = new HostingSettings { ListenAddress = "localhost", ListenPort = 58400 };
 
         var typeStore = new TypeStore
         (
