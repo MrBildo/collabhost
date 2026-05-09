@@ -228,6 +228,7 @@ Then `.\startup.ps1`.
 | `COLLABHOST_DATA_PATH`          | SQLite DB parent directory | Absolute directory path | `/srv/collabhost/data` |
 | `COLLABHOST_USER_TYPES_PATH`    | `TypeStore:UserTypesDirectory` | Absolute directory path | `/srv/collabhost/user-types` |
 | `COLLABHOST_CADDY_PATH`         | `Proxy:BinaryPath` — Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
+| `COLLABHOST_HOSTING_LISTEN_ADDRESS` | `Hosting:ListenAddress` — interface Kestrel binds to. Default `localhost` (loopback only). Set `0.0.0.0` to accept connections on every interface; pin to a specific NIC IP to scope by interface. See §5.5.3. | Hostname, IPv4, or IPv6 address | `0.0.0.0` |
 | `COLLABHOST_HOSTING_LISTEN_PORT` | `Hosting:ListenPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_PROXY_BASE_DOMAIN`  | `Proxy:BaseDomain` | Domain suffix | `collabhost.lan` |
 | `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec, comma-separated for multiple ports | `:80,:443` (default) or `:8080,:8443` |
@@ -470,6 +471,63 @@ post-install verification beyond what the wrapper itself reports. If a
 bundled installer for either platform proves valuable, it would land in a
 later release; for now, the foreground-launch path (§1) plus the wrapper of
 your choice is the supported shape.
+
+#### 5.5.3 Headless deployment — reaching the dashboard from another device
+
+By default, the Collabhost API binds **loopback only** (`Hosting:ListenAddress`
+defaults to `localhost`). On a workstation install this is the right posture:
+TLS terminates at the bundled Caddy on `:443`, and operators reach the
+dashboard at `http://localhost:58400` from the same machine that runs
+Collabhost. Nothing else on the network can talk to the API directly.
+
+On a headless server (no monitor, accessed over SSH), `http://localhost:58400`
+from a different device on the LAN does not work — the API is not listening
+on the LAN-facing interface. Two paths exist; pick based on whether you want
+TLS-terminated dashboard access or direct API access.
+
+**Path A — canonical: Caddy on `:443` with the bundled internal CA.** This is
+the default routing posture. Caddy listens on `:80` and `:443` (`Proxy:ListenAddress`)
+and terminates TLS for `<slug>.collab.internal`. To reach the dashboard from
+another device:
+
+1. **DNS for `*.collab.internal`** — non-public TLD, won't resolve over public
+   DNS. Add a `hosts` entry per device, or a wildcard record on a LAN DNS
+   server. See §9.10.2 for both shapes.
+2. **CA trust for the bundled internal CA** — browsers do not trust Caddy's
+   internal-CA root by default. Import the root cert on each device that
+   reaches the dashboard. See §9.11 for the per-OS walkthrough.
+3. **Privileged port `:443`** — the host must let Caddy bind. The system-scope
+   install (§5.5.2) handles this by construction; user-scope needs `setcap`.
+   See §9.10.1.
+4. **Host firewall** — if `ufw` / `firewalld` is enabled, allow inbound `:443`.
+   See §9.10.3.
+
+**Path B — escape hatch: bind the API to a non-loopback interface.** If you
+own the TLS-termination story already (an upstream reverse proxy, a different
+TLS certificate posture, or a tunnel), or you accept plain HTTP on a trusted
+LAN, set `Hosting:ListenAddress` to expose the API directly:
+
+```sh
+# /etc/collabhost/appsettings.json (system-scope) or your wrapper script
+COLLABHOST_HOSTING_LISTEN_ADDRESS=0.0.0.0   # listen on every interface
+COLLABHOST_HOSTING_LISTEN_ADDRESS=192.168.1.10   # pin to a specific NIC IP
+```
+
+The dashboard is then reachable at `http://<host-ip>:58400` from any device
+on the LAN. Two consequences:
+
+- **No TLS.** The API endpoint is plain HTTP. Admin keys traverse the network
+  unencrypted. Acceptable on a trusted, isolated LAN; inappropriate over an
+  untrusted network without a VPN, SSH tunnel, or upstream TLS terminator.
+- **Caddy still runs.** The proxy is the front door for **app routes**
+  (`<slug>.collab.internal` -> the apps you register). Setting
+  `Hosting:ListenAddress` only changes where the **dashboard / API** binds;
+  Caddy continues to serve app traffic on `:80`/`:443` exactly as before.
+
+Path A is the canonical homelab shape; Path B is the operator-knows-best
+escape hatch. Most installs that start with Path B end up adding Path A's
+Caddy/DNS/CA story later as the LAN grows — there is nothing wrong with
+starting at Path B and migrating.
 
 ### 5.6 App-directory layout convention
 

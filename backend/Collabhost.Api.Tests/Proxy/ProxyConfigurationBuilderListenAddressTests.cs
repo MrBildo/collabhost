@@ -15,7 +15,7 @@ namespace Collabhost.Api.Tests.Proxy;
 // out. Card #217.
 public class ProxyConfigurationBuilderListenAddressTests
 {
-    private static readonly HostingSettings _hosting = new() { ListenPort = 58400 };
+    private static readonly HostingSettings _hosting = new() { ListenAddress = "localhost", ListenPort = 58400 };
     private static readonly PortalSettings _portal = new() { Subdomain = "collabhost" };
 
     [Fact]
