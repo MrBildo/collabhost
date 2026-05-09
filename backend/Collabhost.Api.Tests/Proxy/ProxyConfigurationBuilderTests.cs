@@ -24,6 +24,7 @@ public class ProxyConfigurationBuilderTests
 
     private static readonly HostingSettings _defaultHosting = new()
     {
+        ListenAddress = "localhost",
         ListenPort = 58400
     };
 
@@ -261,7 +262,7 @@ public class ProxyConfigurationBuilderTests
             AdminPort = 2019
         };
 
-        var hosting = new HostingSettings { ListenPort = 9000 };
+        var hosting = new HostingSettings { ListenAddress = "localhost", ListenPort = 9000 };
 
         var routes = new List<RouteEntry>
         {

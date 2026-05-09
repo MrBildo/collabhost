@@ -125,4 +125,99 @@ public class HostingRegistrationTests
             Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_PORT", null);
         }
     }
+
+    // --- COLLABHOST_HOSTING_LISTEN_ADDRESS (card #218) ---
+
+    [Fact]
+    public void ResolveSettings_ListenAddressEnvVarSet_WinsOverConfig()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_ADDRESS", "0.0.0.0");
+
+        try
+        {
+            var config = ConfigWithHosting(("ListenAddress", "127.0.0.1"));
+
+            var result = HostingRegistration.ResolveSettings(config);
+
+            result.ListenAddress.ShouldBe("0.0.0.0");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_ADDRESS", null);
+        }
+    }
+
+    [Fact]
+    public void ResolveSettings_ListenAddressEnvVarUnset_FallsBackToConfig()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_ADDRESS", null);
+
+        var config = ConfigWithHosting(("ListenAddress", "192.168.1.10"));
+
+        var result = HostingRegistration.ResolveSettings(config);
+
+        result.ListenAddress.ShouldBe("192.168.1.10");
+    }
+
+    [Fact]
+    public void ResolveSettings_ListenAddressEnvVarUnsetConfigUnset_ReturnsHardcodedDefault()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_ADDRESS", null);
+
+        var result = HostingRegistration.ResolveSettings(EmptyConfig());
+
+        // Backward-compat default: existing v1.0.x installs that do not have ListenAddress
+        // in their merged appsettings.json continue to bind loopback-only.
+        result.ListenAddress.ShouldBe("localhost");
+    }
+
+    [Fact]
+    public void ResolveSettings_ListenAddressEnvVarWhitespace_FallsBackToConfig()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_ADDRESS", "   ");
+
+        try
+        {
+            var config = ConfigWithHosting(("ListenAddress", "127.0.0.1"));
+
+            var result = HostingRegistration.ResolveSettings(config);
+
+            result.ListenAddress.ShouldBe("127.0.0.1");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_ADDRESS", null);
+        }
+    }
+
+    [Fact]
+    public void ResolveSettings_ListenAddressConfigWhitespace_FallsBackToDefault()
+    {
+        Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_ADDRESS", null);
+
+        var config = ConfigWithHosting(("ListenAddress", "   "));
+
+        var result = HostingRegistration.ResolveSettings(config);
+
+        result.ListenAddress.ShouldBe("localhost");
+    }
+
+    [Fact]
+    public void ResolveSettings_ListenAddressEnvVarTrimsSurroundingWhitespace()
+    {
+        // A wrapper script with inadvertent whitespace ("  0.0.0.0 ") should still resolve
+        // to a usable Kestrel bind address.
+        Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_ADDRESS", "  0.0.0.0 ");
+
+        try
+        {
+            var result = HostingRegistration.ResolveSettings(EmptyConfig());
+
+            result.ListenAddress.ShouldBe("0.0.0.0");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("COLLABHOST_HOSTING_LISTEN_ADDRESS", null);
+        }
+    }
 }

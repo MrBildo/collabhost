@@ -154,7 +154,7 @@ public class ProxyManagerTests
                 CertLifetime = "168h",
                 AdminPort = 2019
             },
-            new HostingSettings { ListenPort = 58400 },
+            new HostingSettings { ListenAddress = "localhost", ListenPort = 58400 },
             new Collabhost.Api.Portal.PortalSettings { Subdomain = "collabhost" },
             activityEventStore,
             TimeProvider.System,

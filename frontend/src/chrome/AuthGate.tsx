@@ -1,7 +1,8 @@
 import { ActionButton } from '@/actions/ActionButton'
 import { LogoMark } from '@/chrome/LogoMark'
 import { useAuth } from '@/hooks/use-auth'
-import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 type AuthGateProps = {
@@ -10,8 +11,24 @@ type AuthGateProps = {
 
 function AuthGate({ children }: AuthGateProps) {
   const { isAuthenticated, login } = useAuth()
+  const queryClient = useQueryClient()
   const [key, setKey] = useState('')
   const [error, setError] = useState('')
+  const wasAuthenticatedRef = useRef(isAuthenticated)
+
+  // Clear server-state cache when auth transitions from authenticated to
+  // unauthenticated. Covers both explicit logout and 401-driven session expiry
+  // — neither path should leave the previous user's cached data in memory for
+  // the next session to read. Per-app slug-keyed children (AppDetailPage) also
+  // need the SSE log-stream connection to die; it's tied to the AuthGate
+  // children subtree, which is unmounted by the `if (!isAuthenticated)` branch
+  // below.
+  useEffect(() => {
+    if (wasAuthenticatedRef.current && !isAuthenticated) {
+      queryClient.clear()
+    }
+    wasAuthenticatedRef.current = isAuthenticated
+  }, [isAuthenticated, queryClient])
 
   if (isAuthenticated) {
     return <>{children}</>

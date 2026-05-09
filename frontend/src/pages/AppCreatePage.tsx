@@ -83,8 +83,23 @@ function AppCreatePage() {
     if (!detectQuery.data || strategyLockedRef.current) return
 
     const { suggestedStrategy, evidence } = detectQuery.data
-    // Don't auto-fill if the suggestion is manual -- keep whatever default is set
+
+    // 'manual': keep whatever default the schema set; no hint to surface.
     if (suggestedStrategy === 'manual') return
+
+    // 'notApplicable': the app type doesn't go through process discovery
+    // (e.g. static-site) or the directory has zero candidate binaries
+    // (executable with no .exe at root). Don't auto-fill any form field --
+    // surface evidence as a hint so the operator can see what was detected
+    // without having a phantom strategy applied. (Bill ruling #1 on card
+    // #220: notApplicable is a free-string literal, not a strategy enum
+    // value.)
+    if (suggestedStrategy === 'notApplicable') {
+      if (evidence.length > 0) {
+        setStrategyHint(`Detected: ${evidence.join(', ')}`)
+      }
+      return
+    }
 
     setFormValues((prev) => ({
       ...prev,

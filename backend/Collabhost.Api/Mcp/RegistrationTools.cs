@@ -5,6 +5,7 @@ using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
@@ -435,11 +436,11 @@ public class RegistrationTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Analyzes a directory to determine what Collabhost can auto-detect for a given app type. For dotnet-app, checks for .runtimeconfig.json (published output) or .csproj (source project). For nodejs-app, checks for package.json with a start script. Returns the detected strategy name and evidence files found. Use this after choosing an app type and install directory, before calling register_app, to understand what configuration Collabhost will auto-discover vs. what must be specified manually.")]
+    [Description("Analyzes a directory and reports evidence relevant to the chosen app type -- runtime configs, project files, single-file binaries, package manifests, static-site entry points, or executables. Returns a strategy hint plus the list of evidence files found. The 'notApplicable' strategy is returned for app types that don't go through process discovery (static-site, executable directories with no clear binary). Use this after choosing an app type and install directory, before calling register_app, to understand what configuration Collabhost will auto-discover vs. what must be specified manually.")]
     public static CallToolResult DetectStrategy
     (
         [Description("Absolute filesystem path to analyze.")] string path,
-        [Description("App type slug (e.g., 'dotnet-app', 'nodejs-app'). Use list_app_types to see valid values.")] string appTypeSlug
+        [Description("App type slug (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable'). Use list_app_types to see valid values.")] string appTypeSlug
     )
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -479,12 +480,19 @@ public class RegistrationTools
             );
         }
 
-        var (strategy, evidence) = DetectStrategyForAppType(fullPath, appTypeSlug);
+        var evidence = ArtifactEvidenceCollector.Collect(fullPath, appTypeSlug);
+
+        var paths = new List<string>(evidence.Signals.Count);
+
+        foreach (var signal in evidence.Signals)
+        {
+            paths.Add(signal.Path);
+        }
 
         var result = new
         {
-            strategy,
-            evidenceFiles = evidence
+            strategy = evidence.SuggestedStrategy,
+            evidenceFiles = paths
         };
 
         return McpResponseFormatter.Success(McpResponseFormatter.ToJson(result));
@@ -548,69 +556,6 @@ public class RegistrationTools
                     .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
                         .Select(d => (object)new { name = d.Name, path = d.FullName })
         ];
-    }
-
-    private static (string Strategy, List<string> Evidence) DetectStrategyForAppType
-    (
-        string directory,
-        string appTypeSlug
-    )
-    {
-        if (string.Equals(appTypeSlug, "dotnet-app", StringComparison.Ordinal))
-        {
-            var runtimeConfigs = Directory.GetFiles(directory, "*.runtimeconfig.json");
-
-            if (runtimeConfigs.Length > 0)
-            {
-                return
-                (
-                    DiscoveryStrategy.DotNetRuntimeConfiguration.ToCamelCase(),
-                    [.. runtimeConfigs.Select(f => Path.GetFileName(f))]
-                );
-            }
-
-            var projects = Directory.GetFiles(directory, "*.csproj");
-
-            if (projects.Length > 0)
-            {
-                return
-                (
-                    DiscoveryStrategy.DotNetProject.ToCamelCase(),
-                    [.. projects.Select(f => Path.GetFileName(f))]
-                );
-            }
-
-            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
-        }
-
-        if (string.Equals(appTypeSlug, "nodejs-app", StringComparison.Ordinal))
-        {
-            var packageJsonPath = Path.Combine(directory, "package.json");
-
-            if (File.Exists(packageJsonPath))
-            {
-                try
-                {
-                    using var document = JsonDocument.Parse(File.ReadAllText(packageJsonPath));
-
-                    if (document.RootElement.TryGetProperty("scripts", out var scripts)
-                        && scripts.TryGetProperty("start", out _))
-                    {
-                        return (DiscoveryStrategy.PackageJson.ToCamelCase(), ["package.json"]);
-                    }
-                }
-                catch (JsonException)
-                {
-                    // Malformed package.json -- fall through to Manual
-                }
-
-                return (DiscoveryStrategy.Manual.ToCamelCase(), ["package.json"]);
-            }
-
-            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
-        }
-
-        return (DiscoveryStrategy.Manual.ToCamelCase(), []);
     }
 }
 #pragma warning restore MA0011

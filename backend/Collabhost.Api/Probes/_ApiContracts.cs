@@ -60,3 +60,28 @@ public record TypeScriptData
     string? Target,
     string? Module
 );
+
+// --- Static Site ---
+
+public record StaticSiteData
+(
+    bool HasIndexHtml,
+    int HtmlFileCount,
+    long TotalAssetBytes,
+    bool HasNestedAssets
+);
+
+// --- Executable ---
+//
+// IsManagedDotnet is the soft-nudge channel for the executable-detected-as-.NET
+// case (Bill ruling 2 on card #220). When true, the operator registered the app
+// as `executable` but the directory contents look like a self-contained .NET
+// publish -- the panel surfaces a "consider re-registering as dotnet-app"
+// hint. Single panel only -- NOT side-by-side with dotnet-runtime.
+public record ExecutableData
+(
+    string BinaryName,
+    long BinarySizeBytes,
+    int CandidateBinaryCount,
+    bool IsManagedDotnet
+);

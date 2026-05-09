@@ -1,6 +1,6 @@
 using System.Security;
 
-using Collabhost.Api.Registry;
+using Collabhost.Api.Probes;
 using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.Filesystem;
@@ -156,72 +156,15 @@ public static class FilesystemEndpoints
             );
         }
 
-        var (strategy, evidence) = DetectStrategyForAppType(fullPath, appTypeSlug);
+        var evidence = ArtifactEvidenceCollector.Collect(fullPath, appTypeSlug);
 
-        return TypedResults.Ok(new DetectStrategyResponse(strategy, evidence));
-    }
+        var paths = new List<string>(evidence.Signals.Count);
 
-    private static (string Strategy, List<string> Evidence) DetectStrategyForAppType
-    (
-        string directory,
-        string appTypeSlug
-    )
-    {
-        if (string.Equals(appTypeSlug, "dotnet-app", StringComparison.Ordinal))
+        foreach (var signal in evidence.Signals)
         {
-            // Prefer runtime config (published output) over project file (source)
-            var runtimeConfigs = Directory.GetFiles(directory, "*.runtimeconfig.json");
-
-            if (runtimeConfigs.Length > 0)
-            {
-                return
-                (
-                    DiscoveryStrategy.DotNetRuntimeConfiguration.ToCamelCase(),
-                    [.. runtimeConfigs.Select(f => Path.GetFileName(f))]
-                );
-            }
-
-            var projects = Directory.GetFiles(directory, "*.csproj");
-
-            if (projects.Length > 0)
-            {
-                return
-                (
-                    DiscoveryStrategy.DotNetProject.ToCamelCase(),
-                    [.. projects.Select(f => Path.GetFileName(f))]
-                );
-            }
-
-            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
+            paths.Add(signal.Path);
         }
 
-        if (string.Equals(appTypeSlug, "nodejs-app", StringComparison.Ordinal))
-        {
-            var packageJsonPath = Path.Combine(directory, "package.json");
-
-            if (File.Exists(packageJsonPath))
-            {
-                try
-                {
-                    using var document = JsonDocument.Parse(File.ReadAllText(packageJsonPath));
-
-                    if (document.RootElement.TryGetProperty("scripts", out var scripts)
-                        && scripts.TryGetProperty("start", out _))
-                    {
-                        return (DiscoveryStrategy.PackageJson.ToCamelCase(), ["package.json"]);
-                    }
-                }
-                catch (JsonException)
-                {
-                    // Malformed package.json -- fall through to Manual
-                }
-
-                return (DiscoveryStrategy.Manual.ToCamelCase(), ["package.json"]);
-            }
-
-            return (DiscoveryStrategy.Manual.ToCamelCase(), []);
-        }
-
-        return (DiscoveryStrategy.Manual.ToCamelCase(), []);
+        return TypedResults.Ok(new DetectStrategyResponse(evidence.SuggestedStrategy, paths));
     }
 }

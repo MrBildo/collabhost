@@ -20,6 +20,7 @@ public record DashboardStats
 
 public record DashboardEventResponse
 (
+    string Id,
     DateTime Timestamp,
     string Message,
     string? AppSlug,

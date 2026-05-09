@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  formatBytes,
   formatEnumLabel,
   formatMemory,
   formatProxyState,
@@ -109,6 +110,37 @@ describe('formatMemory', () => {
 
   test('formats gigabytes', () => {
     expect(formatMemory(2048)).toBe('2.0 GB')
+  })
+})
+
+describe('formatBytes', () => {
+  test('returns -- for null', () => {
+    expect(formatBytes(null)).toBe('--')
+  })
+
+  test('returns -- for undefined', () => {
+    expect(formatBytes(undefined)).toBe('--')
+  })
+
+  test('formats bytes under 1 KB', () => {
+    expect(formatBytes(0)).toBe('0 B')
+    expect(formatBytes(512)).toBe('512 B')
+    expect(formatBytes(1023)).toBe('1023 B')
+  })
+
+  test('formats kilobytes', () => {
+    expect(formatBytes(1024)).toBe('1.0 KB')
+    expect(formatBytes(1024 * 512)).toBe('512.0 KB')
+  })
+
+  test('formats megabytes', () => {
+    expect(formatBytes(1024 * 1024)).toBe('1.0 MB')
+    expect(formatBytes(1024 * 1024 * 5)).toBe('5.0 MB')
+  })
+
+  test('formats gigabytes', () => {
+    expect(formatBytes(1024 * 1024 * 1024)).toBe('1.00 GB')
+    expect(formatBytes(1024 * 1024 * 1024 * 2.5)).toBe('2.50 GB')
   })
 })
 

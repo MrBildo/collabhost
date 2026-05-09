@@ -57,7 +57,8 @@ public class ProbeService
         var probes = RunProbesForDirectory
         (
             artifactConfiguration.Location,
-            artifactConfiguration.ProjectRoot
+            artifactConfiguration.ProjectRoot,
+            app.AppTypeSlug
         );
 
         _cache.Set($"probe:{appId}", probes, _probeCacheDuration);
@@ -95,19 +96,50 @@ public class ProbeService
     public void InvalidateProbeCache(Ulid appId) =>
         _cache.Remove($"probe:{appId}");
 
+    // Pre-card-#220 entry point retained for tests that don't supply an AppType.
+    // The new entry point routes through the evidence collector so detection and
+    // curation share the same view of the directory.
     internal static List<ProbeEntry> RunProbesForDirectory
     (
         string artifactDirectory,
         string? projectRoot
+    ) => RunProbesForDirectory(artifactDirectory, projectRoot, appTypeSlug: null);
+
+    internal static List<ProbeEntry> RunProbesForDirectory
+    (
+        string artifactDirectory,
+        string? projectRoot,
+        string? appTypeSlug
     )
     {
-        var dotnet = DotnetExtractor.Extract(artifactDirectory);
+        var evidence = appTypeSlug is null
+            ? null
+            : ArtifactEvidenceCollector.Collect(artifactDirectory, appTypeSlug);
+
+        var dotnet = DotnetExtractor.Extract(artifactDirectory, evidence);
         var node = NodeExtractor.Extract(projectRoot, artifactDirectory);
 
         var typeScript = node?.PackageJson is not null
             ? TypeScriptExtractor.Extract(node.PackageJson, projectRoot, artifactDirectory)
             : TypeScriptExtractor.Extract(null, projectRoot, artifactDirectory);
 
-        return ProbeCurator.Curate(dotnet, node, typeScript, projectRoot, artifactDirectory);
+        var staticSite = StaticSiteExtractor.Extract(artifactDirectory);
+
+        var executable = evidence is not null
+            ? ExecutableExtractor.Extract(artifactDirectory, evidence)
+            : null;
+
+        return ProbeCurator.Curate
+        (
+            appTypeSlug,
+            evidence,
+            dotnet,
+            node,
+            typeScript,
+            staticSite,
+            executable,
+            projectRoot,
+            artifactDirectory
+        );
     }
 }

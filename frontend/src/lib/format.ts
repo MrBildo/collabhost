@@ -80,6 +80,19 @@ function formatMemory(mb: number | null | undefined): string {
 }
 
 /**
+ * Formats a byte count for human display. Uses 1024-base units (KiB-style
+ * thresholds) but renders with the conventional KB/MB/GB suffix used
+ * throughout Collabhost's operator-facing surfaces.
+ */
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null) return '--'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+/**
  * Derives a URL-safe slug from a display name.
  * Rules match backend Slug validation: lowercase alphanumeric + hyphens,
  * must start/end with alphanumeric, max 63 chars.
@@ -153,6 +166,7 @@ export {
   formatDateTime,
   formatTimestamp,
   formatMemory,
+  formatBytes,
   toSlug,
   formatRole,
   formatDate,
