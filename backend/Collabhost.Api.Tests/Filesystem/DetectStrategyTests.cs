@@ -237,6 +237,32 @@ public class DetectStrategyTests : IDisposable
     }
 
     [Fact]
+    public async Task DetectStrategy_StaticSiteEmptyDirectory_ReturnsNotApplicable()
+    {
+        // static-site doesn't go through process discovery, so the strategy field
+        // carries the free-string literal "notApplicable" -- card #220 Bill ruling 1.
+        var encoded = Uri.EscapeDataString(_tempDirectory);
+
+        using var request = new HttpRequestMessage
+        (
+            HttpMethod.Get,
+            $"/api/v1/filesystem/detect-strategy?path={encoded}&appTypeSlug=static-site"
+        );
+
+        request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+
+        doc.RootElement.GetProperty("suggestedStrategy").GetString()
+            .ShouldBe("notApplicable");
+    }
+
+    [Fact]
     public async Task DetectStrategy_UnknownAppType_ReturnsManual()
     {
         var encoded = Uri.EscapeDataString(_tempDirectory);
@@ -244,7 +270,7 @@ public class DetectStrategyTests : IDisposable
         using var request = new HttpRequestMessage
         (
             HttpMethod.Get,
-            $"/api/v1/filesystem/detect-strategy?path={encoded}&appTypeSlug=static-site"
+            $"/api/v1/filesystem/detect-strategy?path={encoded}&appTypeSlug=fake-type"
         );
 
         request.Headers.Add("X-User-Key", ApiFixture.AdminKey);

@@ -62,3 +62,23 @@ public record RawTsConfig
     string? Target,
     string? Module
 );
+
+// --- Static Site Raw Data ---
+
+public record RawStaticSiteData
+(
+    bool HasIndexHtml,
+    int HtmlFileCount,
+    long TotalAssetBytes,
+    bool HasNestedAssets
+);
+
+// --- Executable Raw Data ---
+
+public record RawExecutableData
+(
+    string BinaryName,
+    long BinarySizeBytes,
+    int CandidateBinaryCount,
+    bool IsManagedDotnet
+);
