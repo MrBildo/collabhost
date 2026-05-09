@@ -74,8 +74,7 @@ function EventList({ events, className }: EventListProps) {
             const msgColor = SEVERITY_STYLES[event.severity]
             return (
               <div
-                // biome-ignore lint/suspicious/noArrayIndexKey: events lack unique IDs
-                key={i}
+                key={event.id}
                 className="flex items-center gap-3 px-3.5 py-2"
                 style={{
                   borderBottom: i < chronological.length - 1 ? '1px solid var(--wm-border-subtle)' : undefined,
