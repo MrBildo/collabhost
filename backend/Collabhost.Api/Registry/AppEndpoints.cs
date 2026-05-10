@@ -5,10 +5,12 @@ using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.HealthChecks;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Shared;
 using Collabhost.Api.Supervisor;
+using Collabhost.Api.Supervisor.Resources;
 
 namespace Collabhost.Api.Registry;
 
@@ -125,6 +127,8 @@ public static class AppEndpoints
         ProxyManager proxy,
         ProxySettings proxySettings,
         ProbeService probeService,
+        IProcessResourceCache resourceCache,
+        IHealthCheckExecutor healthCheckExecutor,
         CancellationToken ct
     )
     {
@@ -221,6 +225,42 @@ public static class AppEndpoints
 
         var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug);
 
+        // Health status -- pulled from the executor's cache. Null when the capability
+        // is not bound for this app type, when the process is not running, or when
+        // no probe has run yet. The frontend renders null as "--".
+        string? healthStatus = null;
+
+        if (process is not null && process.IsRunning && hasProcess)
+        {
+            var healthResult = healthCheckExecutor.GetLatest(app.Id);
+
+            if (healthResult is not null)
+            {
+                healthStatus = healthResult.Status.ToApiString();
+            }
+        }
+
+        // Resources -- pulled from the resource sampler's cache. Null when the
+        // process is not running or no snapshot has been taken yet (sampler runs on
+        // a 5-second cadence). Note that CpuPercent is null on the very first sample
+        // for a PID; MemoryMb and HandleCount are populated on the first sample.
+        AppResources? resources = null;
+
+        if (process is not null && process.IsRunning)
+        {
+            var snapshot = resourceCache.GetLatest(app.Id);
+
+            if (snapshot is not null)
+            {
+                resources = new AppResources
+                (
+                    snapshot.CpuPercent,
+                    snapshot.MemoryMb,
+                    snapshot.HandleCount
+                );
+            }
+        }
+
         var detail = new AppDetail
         (
             app.Id.ToString(),
@@ -241,9 +281,9 @@ public static class AppEndpoints
             autoStartValue,
             domain,
             routeEnabled,
-            null,
+            healthStatus,
             probes,
-            null,
+            resources,
             route,
             actions
         );
