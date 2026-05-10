@@ -32,7 +32,11 @@ public static class AppTypeEndpoints
     {
         var types = typeStore.ListTypes();
 
+        // Internal types (e.g. system-service) are loaded into TypeStore for
+        // subsystems like ProxyAppSeeder to resolve by slug, but must not
+        // appear in the operator-facing picker.
         var items = types
+            .Where(t => !t.IsInternal)
             .Select
             (
                 t => new AppTypeListItem

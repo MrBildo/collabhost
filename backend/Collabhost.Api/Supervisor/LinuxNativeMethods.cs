@@ -6,6 +6,7 @@ namespace Collabhost.Api.Supervisor;
 [SupportedOSPlatform("linux")]
 internal static partial class LinuxNativeMethods
 {
+    public const int SIGHUP = 1;
     public const int SIGTERM = 15;
     public const int SIGKILL = 9;
     public const int ESRCH = 3;

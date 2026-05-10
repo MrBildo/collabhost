@@ -250,25 +250,173 @@ Operator-relevant framework-standard variables (not Collabhost-specific):
 |----------|---------|
 | `ASPNETCORE_ENVIRONMENT` | Standard .NET env var. Keep unset or `Production` for production installs. |
 | `Logging__LogLevel__Default` | Standard ASP.NET Core log-level knob. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Standard OpenTelemetry OTLP endpoint (no-op when empty). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Standard OpenTelemetry OTLP endpoint. No-op when empty. See §5.4.1 for forwarding telemetry to an external collector. |
 
 Setting a blank / whitespace value for any `COLLABHOST_*` variable is treated
 as unset — the effective value falls through to `appsettings.json`, then to
 the built-in default. This blank-is-unset behavior is Collabhost-specific and
 only applies to the `COLLABHOST_*` variables above.
 
+#### 5.4.1 Pointing OpenTelemetry at an external collector
+
+Collabhost ships with OpenTelemetry instrumentation wired in (traces, metrics,
+and logs) but **no exporter is active by default** in a published install.
+Telemetry is collected in-process and discarded unless an OTLP endpoint is
+configured. To forward it somewhere — a managed observability provider
+(Honeycomb, Grafana Cloud, Datadog, New Relic, etc.) or a local collector
+(Jaeger, the OpenTelemetry Collector, Aspire dashboard) — set the standard
+OTel SDK env vars on the running process.
+
+The load-bearing variable is `OTEL_EXPORTER_OTLP_ENDPOINT`. When it's set to
+a non-empty value, Collabhost activates the OTLP exporter at startup; when
+unset or blank, the exporter is a no-op. The other variables in the table
+below are picked up by the OpenTelemetry .NET SDK directly — Collabhost does
+not parse or validate them, so any value that the SDK accepts will work.
+
+| Variable | Purpose |
+|----------|---------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint URL. Activates the exporter when non-empty. Example: `https://api.honeycomb.io:443`. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Comma-separated `key=value` pairs. The standard place to put an API key for managed providers. Example: `x-honeycomb-team=YOUR_KEY`. |
+| `OTEL_SERVICE_NAME` | Service name attached to spans/metrics/logs. Defaults to the assembly name; set this if multiple Collabhost instances report to the same backend. Example: `collabhost-prod`. |
+| `OTEL_RESOURCE_ATTRIBUTES` | Comma-separated `key=value` resource attributes. Useful for tagging environment, host, region. Example: `deployment.environment=prod,host.name=homelab`. |
+
+The OTel SDK supports many more env vars (timeouts, protocol selection,
+compression, certificate paths). The four above are the operator-relevant
+floor. Refer to the
+[OpenTelemetry SDK environment variable spec](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/configuration/sdk-environment-variables.md)
+for the full list.
+
+**Worked example — Honeycomb.** [Honeycomb](https://www.honeycomb.io/)
+accepts OTLP/HTTP on its public endpoint with an API key in
+`OTEL_EXPORTER_OTLP_HEADERS`:
+
+```text
+OTEL_EXPORTER_OTLP_ENDPOINT  = https://api.honeycomb.io:443
+OTEL_EXPORTER_OTLP_HEADERS   = x-honeycomb-team=YOUR_API_KEY
+OTEL_SERVICE_NAME            = collabhost
+OTEL_RESOURCE_ATTRIBUTES     = deployment.environment=prod
+```
+
+(For a local collector instead, point `OTEL_EXPORTER_OTLP_ENDPOINT` at your
+collector — e.g. `http://localhost:4317` for OTLP/gRPC against a Jaeger
+all-in-one container or the OpenTelemetry Collector. The export-side knobs
+are the same; only the endpoint changes.)
+
+How to set these depends on which install shape you're running.
+
+**Linux user-scope (`install.sh` / `collabhost.user.service`).** Either
+add the lines to your startup wrapper alongside the other `COLLABHOST_*`
+exports (§5.2) or, if you're running under the bundled user-scope systemd
+template, drop them into the unit's drop-in directory:
+
+```sh
+mkdir -p ~/.config/systemd/user/collabhost.service.d
+cat > ~/.config/systemd/user/collabhost.service.d/otel.conf <<'EOF'
+[Service]
+Environment="OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io:443"
+Environment="OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY"
+Environment="OTEL_SERVICE_NAME=collabhost"
+Environment="OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod"
+EOF
+systemctl --user daemon-reload
+systemctl --user restart collabhost.service
+```
+
+**Linux system-scope (`install-system.sh`).** Add a drop-in under
+`/etc/systemd/system/collabhost.service.d/` (do not edit
+`/etc/systemd/system/collabhost.service` directly — see §5.5.2 for why):
+
+```sh
+sudo systemctl edit collabhost.service
+# In the editor, add:
+#   [Service]
+#   Environment="OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io:443"
+#   Environment="OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY"
+#   Environment="OTEL_SERVICE_NAME=collabhost"
+#   Environment="OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod"
+sudo systemctl daemon-reload
+sudo systemctl restart collabhost.service
+```
+
+The drop-in is preserved across upgrades because systemd merges drop-ins on
+top of the base unit (§5.5.2).
+
+**Windows user-scope (`install.ps1`).** Set the variables in your startup
+wrapper (§5.3):
+
+```powershell
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'https://api.honeycomb.io:443'
+$env:OTEL_EXPORTER_OTLP_HEADERS  = 'x-honeycomb-team=YOUR_API_KEY'
+$env:OTEL_SERVICE_NAME           = 'collabhost'
+$env:OTEL_RESOURCE_ATTRIBUTES    = 'deployment.environment=prod'
+
+& .\collabhost.exe
+```
+
+For a permanent user-level setting outside the wrapper, use
+`[Environment]::SetEnvironmentVariable(...)` with the `'User'` target — the
+variables apply to subsequent PowerShell sessions and to processes launched
+from File Explorer:
+
+```powershell
+[Environment]::SetEnvironmentVariable('OTEL_EXPORTER_OTLP_ENDPOINT', 'https://api.honeycomb.io:443', 'User')
+[Environment]::SetEnvironmentVariable('OTEL_EXPORTER_OTLP_HEADERS',  'x-honeycomb-team=YOUR_API_KEY', 'User')
+[Environment]::SetEnvironmentVariable('OTEL_SERVICE_NAME',           'collabhost',                   'User')
+[Environment]::SetEnvironmentVariable('OTEL_RESOURCE_ATTRIBUTES',    'deployment.environment=prod',  'User')
+```
+
+**Windows system-scope (`install-system.ps1`).** The Windows Service Control
+Manager stores per-service environment variables in the registry, in a
+`REG_MULTI_SZ` value named `Environment` under the service's registry key.
+Edit it from elevated PowerShell:
+
+```powershell
+# Elevated PowerShell. Service must be stopped before the edit takes effect
+# on the next start.
+Stop-Service Collabhost
+
+$key = 'HKLM:\SYSTEM\CurrentControlSet\Services\Collabhost'
+$values = @(
+    'OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io:443'
+    'OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY'
+    'OTEL_SERVICE_NAME=collabhost'
+    'OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod'
+)
+New-ItemProperty -Path $key -Name 'Environment' -PropertyType MultiString -Value $values -Force | Out-Null
+
+Start-Service Collabhost
+```
+
+To inspect the current value: `(Get-ItemProperty $key).Environment`. To
+remove the override entirely: `Remove-ItemProperty -Path $key -Name 'Environment'`.
+
+The `Environment` registry value is read by the SCM at service-start time
+and pushed into the service process's environment block — restart the service
+for changes to take effect. `sc.exe config Collabhost ...` does **not**
+expose a flag for environment variables (the `obj=` / `start=` / `binPath=`
+knobs are the only fields it manages); the registry edit above is the
+canonical mechanism.
+
+This override survives `install-system.ps1 -Version vX.Y.Z` upgrades — the
+upgrade re-applies `sc.exe config` (idempotent for the SCM-managed knobs)
+but does not touch the `Environment` registry value. Plain `-Uninstall`
+removes the service registration and the entire registry key with it; if
+you want to keep your OTel configuration across uninstall-then-reinstall,
+copy the value out first.
+
 ### 5.5 Running as a service
 
-Three service-wrapper shapes ship in v1: two on Linux (covered by Collabhost
-itself) and an operator-driven path on Windows / macOS (no shipped template,
-documented as a worked recipe). On Linux, pick based on who owns the host:
+Four service-wrapper shapes ship in v1: two on Linux, one on Windows, and an
+operator-driven path on macOS (no shipped template, documented as a worked
+recipe). On Linux and Windows, pick based on who owns the host:
 
-| Shape | Best for | Layout | Privileges |
-|-------|----------|--------|------------|
-| **User-scope** (`install.sh` + `collabhost.user.service`) | Single-operator homelab; you own the box and your shell. No admin handoff planned. | Everything in `~/.collabhost/`. Service runs as your login user. | None beyond your shell. `loginctl enable-linger` keeps the unit alive across logout. |
-| **System-scope** (`install-system.sh`) | Servers; multi-operator handoff; a "production" install you'd hand to a new admin without explanation. | Canonical `/opt/`, `/etc/`, `/var/lib/` split. Service runs as a dedicated `collabhost` system user. | Root (sudo) at install time and for upgrades. The running service is unprivileged. |
+| Shape | Platform | Best for | Layout | Privileges |
+|-------|----------|----------|--------|------------|
+| **Linux user-scope** (`install.sh` + `collabhost.user.service`) | Linux | Single-operator homelab; you own the box and your shell. No admin handoff planned. | Everything in `~/.collabhost/`. Service runs as your login user. | None beyond your shell. `loginctl enable-linger` keeps the unit alive across logout. |
+| **Linux system-scope** (`install-system.sh`) | Linux | Servers; multi-operator handoff; a "production" install you'd hand to a new admin without explanation. | Canonical `/opt/`, `/etc/`, `/var/lib/` split. Service runs as a dedicated `collabhost` system user. | Root (sudo) at install time and for upgrades. The running service is unprivileged. |
+| **Windows system-scope** (`install-system.ps1`) | Windows | Workstations or servers where you want the service running across logout/reboot. The standard Windows shape. | `%ProgramFiles%\Collabhost\` (binaries) + `%ProgramData%\Collabhost\` (data/config/logs). Service runs as `LocalSystem`. | Administrator-elevated PowerShell at install time and for upgrades. |
 
-Both ship the same binary and the same config keys. The choice is about
+All shapes ship the same binary and the same config keys. The choice is about
 **filesystem layout and who owns the process**, not features.
 
 #### 5.5.1 User-scope service (default `install.sh` flow)
@@ -403,40 +551,16 @@ paths (e.g., a different config dir or data root), consolidate first or stay
 on your hand-rolled layout — `install-system.sh` does not relocate files from
 non-canonical paths.
 
-#### 5.5.3 Windows and macOS service equivalents
+#### 5.5.3 Service equivalents (legacy / macOS)
 
-Collabhost does not ship a bundled service installer for Windows or macOS in
-v1 — the binary runs cleanly in the foreground on both platforms, and the
-service-wrapper layer is an explicit gap. Operators who want boot-survival on
-those platforms drive a host-native service manager directly. Two known-good
-shapes:
+For Windows operators on v1.3 and later, the canonical path is
+`install-system.ps1` (§5.5.4). The NSSM-based recipe was the
+operator-driven shape on v1.2 and earlier; it still works against the
+foreground binary if you have an existing rollout.
 
-**Windows — NSSM (Non-Sucking Service Manager).** NSSM wraps any console binary
-as a Windows service with restart-on-crash, stdout/stderr redirection, and a
-configurable startup user. It is the de facto standard for hosting non-service
-binaries on Windows.
-
-```powershell
-# Install NSSM (chocolatey: choco install nssm; or download from nssm.cc).
-nssm install Collabhost "C:\Users\you\.collabhost\bin\collabhost.exe"
-nssm set Collabhost AppDirectory "C:\Users\you\.collabhost\bin"
-nssm set Collabhost Start SERVICE_AUTO_START
-# Optional: redirect output for inspection / log aggregation.
-nssm set Collabhost AppStdout "C:\Users\you\.collabhost\bin\collabhost.log"
-nssm set Collabhost AppStderr "C:\Users\you\.collabhost\bin\collabhost.log"
-nssm set Collabhost AppRotateFiles 1
-nssm start Collabhost
-```
-
-The first-boot admin key (§2) lands in the redirected log file — search for
-`Collabhost admin key:` (case-sensitive). If the service was installed
-post-first-boot, the key was already emitted by the foreground run that
-seeded the database.
-
-Privileged-port bind (`:80` / `:443`) on Windows requires either running the
-service as `LocalSystem` (NSSM default) or granting the running account port
-ownership via `netsh http add urlacl`. The bundled Caddy uses the standard
-Windows socket APIs, so no extra capability shim applies.
+For macOS, Collabhost does not ship a bundled service installer — the binary
+runs cleanly in the foreground (§1), and operators who want boot-survival
+drive `launchd` directly:
 
 **macOS — launchd.** Drop a property-list at
 `~/Library/LaunchAgents/dev.collabhost.plist` (per-user; service starts on
@@ -466,13 +590,170 @@ Then `launchctl load ~/Library/LaunchAgents/dev.collabhost.plist`. Privileged
 ports on macOS are unrestricted for processes launched by `launchd` regardless
 of user, so binding `:443` "just works" without a capability dance.
 
-Both wrappers are operator-authored — no Collabhost-shipped template, no
+The macOS wrapper is operator-authored — no Collabhost-shipped template, no
 post-install verification beyond what the wrapper itself reports. If a
-bundled installer for either platform proves valuable, it would land in a
-later release; for now, the foreground-launch path (§1) plus the wrapper of
-your choice is the supported shape.
+bundled installer for macOS proves valuable, it would land in a later
+release; for now, the foreground-launch path (§1) plus a hand-rolled
+`launchd` plist is the supported shape.
 
-#### 5.5.3 Headless deployment — reaching the dashboard from another device
+#### 5.5.4 System-scope service on Windows (`install-system.ps1`)
+
+Lays the canonical Windows server layout and registers Collabhost as a
+Windows Service running under `LocalSystem`. Requires an
+administrator-elevated PowerShell.
+
+```powershell
+# Run from an elevated PowerShell:
+iwr -UseBasicParsing https://mrbildo.github.io/collabhost/install-system.ps1 | iex
+```
+
+Or download first and read before running (recommended for a server-class
+install):
+
+```powershell
+# Elevated PowerShell:
+iwr -UseBasicParsing https://mrbildo.github.io/collabhost/install-system.ps1 -OutFile install-system.ps1
+notepad install-system.ps1
+.\install-system.ps1
+```
+
+Pin to a specific release with `-Version vX.Y.Z` or
+`$env:COLLABHOST_VERSION = 'vX.Y.Z'`.
+
+`install-system.ps1` hard-fails if PowerShell isn't elevated (it does
+**not** prompt UAC and re-launch — that path doesn't compose cleanly with
+`iwr | iex`). If you see the elevation message, right-click PowerShell and
+"Run as administrator" before re-running.
+
+**What the script creates:**
+
+| Path | Owner | Purpose |
+|------|-------|---------|
+| `%ProgramFiles%\Collabhost\bin\collabhost.exe`, `caddy.exe` | SYSTEM | Binaries (read-only for the service) |
+| `%ProgramFiles%\Collabhost\wwwroot\` | SYSTEM | Portal SPA assets |
+| `%ProgramFiles%\Collabhost\INSTALL.md`, `LICENSES\` | SYSTEM | Documentation |
+| `%ProgramData%\Collabhost\config\appsettings.json` | service account R/W | Operator-facing config |
+| `%ProgramData%\Collabhost\config\appsettings.shipped.json` | service account R | Smart-merge baseline (do not edit) |
+| `%ProgramData%\Collabhost\data\` | service account R/W | SQLite DB + pre-migration backups |
+| `%ProgramData%\Collabhost\user-types\` | service account R/W | Operator-authored AppType JSON |
+| `%ProgramData%\Collabhost\caddy\` | service account R/W | Caddy CA / account / cert storage |
+| `%ProgramData%\Collabhost\logs\` | service account R/W | Crash logs |
+
+The service is registered with name `Collabhost`, startup type
+`Automatic (Delayed Start)`, dependency on `Tcpip` (so the network stack
+is up before the service starts), and `LocalSystem` as the security
+principal. `LocalSystem` is the most-privileged service account on Windows
+and binds privileged ports (`:80` / `:443`) without any explicit URL ACL —
+this is the Windows analog of Linux's `AmbientCapabilities=CAP_NET_BIND_SERVICE`
+on the system unit. (See §9.10.1 for the privileged-port topic.)
+
+Crash-recovery is wired via `sc.exe failure`: the service auto-restarts
+after the first and second failures (5-second delay each); the third
+failure takes no action so the operator can inspect the crash log without
+fighting an infinite restart loop. The failure counter resets every 24
+hours.
+
+**Verify the install:**
+
+```powershell
+sc.exe query Collabhost
+curl http://localhost:58400/api/v1/status
+```
+
+On a fresh install, capture the admin key (it emits once on first boot — see
+§2). Under the Windows Service the key surfaces in the Application event
+log:
+
+```powershell
+Get-WinEvent -LogName Application -MaxEvents 200 |
+  Where-Object { $_.ProviderName -like 'collabhost*' -and $_.Message -match 'Collabhost admin key:' } |
+  Select-Object -First 1 -ExpandProperty Message
+```
+
+If the event log doesn't carry the line, the crash log under
+`%ProgramData%\Collabhost\logs\` is the secondary surface — the
+admin-key emit is also persisted there on first boot.
+
+**Customize the service:** do not edit the registration directly. The
+canonical knobs are:
+
+- **`appsettings.json` at `%ProgramData%\Collabhost\config\appsettings.json`**
+  — persistent operator config (`Proxy:BaseDomain`, `Proxy:DnsProvider`,
+  `Hosting:ListenAddress`, etc.). Changes survive upgrades; the smart-merge
+  in §8.2 preserves operator edits.
+- **`sc.exe config Collabhost ...`** — service-level knobs (binary path,
+  startup type, dependencies, account). For example, to switch from
+  `LocalSystem` to a less-privileged account, see the next item.
+- **Registry under `HKLM\SYSTEM\CurrentControlSet\Services\Collabhost\`**
+  — the SCM stores configuration here. Edit only if you know exactly what
+  you're doing.
+
+The service-config block has no static reference file (the SCM persists it
+in the registry, not on disk), so there's no equivalent of systemd's
+`/etc/systemd/system/collabhost.service.d/override.conf`. To swap to a
+non-`LocalSystem` account (e.g., `NT AUTHORITY\NETWORK SERVICE` or a
+dedicated local account), grant URL ACL ownership for the privileged
+listeners first:
+
+```powershell
+# Grant the new principal the right to bind :80 and :443:
+netsh http add urlacl url=http://+:80/  user="NT AUTHORITY\NETWORK SERVICE"
+netsh http add urlacl url=https://+:443/ user="NT AUTHORITY\NETWORK SERVICE"
+
+# Switch the service account:
+sc.exe config Collabhost obj= "NT AUTHORITY\NETWORK SERVICE"
+
+# Grant the principal write access on the data dirs (filesystem ACLs are
+# separate from URL ACLs):
+icacls "%ProgramData%\Collabhost"     /grant "NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M" /T
+Restart-Service Collabhost
+```
+
+`LocalSystem` is the v1.3 default and the path of least friction. Switching
+to a less-privileged principal is operator territory; the URL ACL recipe
+above is the load-bearing piece (without it, Caddy can't bind `:443`).
+
+**Upgrade:**
+
+```powershell
+.\install-system.ps1                        # latest
+.\install-system.ps1 -Version v1.2.3        # pinned
+```
+
+The script stops the service before overwriting the binary (Windows holds
+an exclusive lock on a running EXE — file replacement otherwise fails with
+"The process cannot access the file..."), then re-applies the `sc.exe`
+configuration (idempotent), runs the smart-merge against
+`appsettings.json`, and restarts the service. Data and Caddy storage are
+preserved; binaries, `wwwroot/`, `LICENSES/`, and the service registration
+are refreshed.
+
+**Uninstall:**
+
+```powershell
+.\install-system.ps1 -Uninstall              # preserves %ProgramData%\Collabhost\data\
+.\install-system.ps1 -Uninstall -PurgeData   # also clears the operator database
+```
+
+Equivalent manual recipe (if the script isn't available):
+
+```powershell
+# Elevated PowerShell:
+Stop-Service  Collabhost
+sc.exe delete Collabhost
+Remove-Item -Recurse -Force "$env:ProgramFiles\Collabhost"
+Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\config"
+Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\logs"
+Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\caddy"
+Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\user-types"
+# Optional: clear the operator database too.
+Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\data"
+```
+
+The script's `-Uninstall` switch and the recipe above are equivalent in
+effect — pick whichever fits your operations workflow.
+
+#### 5.5.5 Headless deployment — reaching the dashboard from another device
 
 By default, the Collabhost API binds **loopback only** (`Hosting:ListenAddress`
 defaults to `localhost`). On a workstation install this is the right posture:
@@ -1031,8 +1312,10 @@ Collabhost writes a crash log to disk on startup failure or unhandled exception.
 Look in:
 
 ```
-~/.collabhost/data/logs/         (Linux / macOS)
-%USERPROFILE%\.collabhost\data\logs\   (Windows)
+~/.collabhost/data/logs/                 (Linux / macOS, install.sh)
+/var/log/collabhost/                     (Linux, install-system.sh)
+%USERPROFILE%\.collabhost\data\logs\     (Windows, install.ps1)
+%ProgramData%\Collabhost\logs\           (Windows, install-system.ps1)
 ```
 
 Each crash produces a `collabhost-crash-<utc-timestamp>.log` file containing the
@@ -1181,6 +1464,41 @@ the dashboard System page for the same information rendered.
   step, switch to the system-scope install or change `Proxy:ListenAddress`
   to non-privileged ports (`:8080,:8443`) and front Collabhost behind an
   upstream proxy or router NAT rule that owns `:443`.
+
+- **Windows system-scope install (§5.5.4):** by construction, the service
+  runs as `LocalSystem`, which binds privileged ports without an explicit
+  URL ACL. If you see `permission denied` after switching the service
+  account away from `LocalSystem`, you need a URL ACL grant for the new
+  principal:
+
+  ```powershell
+  # Elevated PowerShell:
+  netsh http add urlacl url=http://+:80/  user="<account>"
+  netsh http add urlacl url=https://+:443/ user="<account>"
+  Restart-Service Collabhost
+  ```
+
+  Replace `<account>` with the principal you assigned via `sc.exe config
+  Collabhost obj= ...` (e.g., `NT AUTHORITY\NETWORK SERVICE`,
+  `NT SERVICE\Collabhost`, or a domain account). To inspect existing ACLs,
+  use `netsh http show urlacl`. Reverting the URL ACLs is symmetric:
+  `netsh http delete urlacl url=http://+:80/`.
+
+- **Windows user-scope install (§5.5.1):** the foreground binary inherits
+  the operator's account, which can bind privileged ports if the operator
+  is local admin. For a non-admin operator, the same `netsh http add
+  urlacl` recipe applies.
+
+**Service status check (Windows system-scope):**
+
+```powershell
+sc.exe query Collabhost
+Get-Service Collabhost
+Get-WinEvent -LogName Application -MaxEvents 50 |
+  Where-Object { $_.ProviderName -like 'collabhost*' }
+```
+
+Crash logs persist to `%ProgramData%\Collabhost\logs\` — see §9.7.
 
 #### 9.10.2 Layer 2 — DNS
 
@@ -1432,6 +1750,52 @@ rotates (uncommon — operator-driven via Caddy storage manipulation, not
 a routine event). Day-to-day per-host certificates are short-lived and
 auto-renewed by Caddy without operator action; once the root is trusted,
 the per-host renewals carry the trust automatically.
+
+### 9.12 User-type changes are not picked up (Linux)
+
+Collabhost watches the user-types directory (the path resolved from
+`COLLABHOST_USER_TYPES_PATH` or `TypeStore:UserTypesDirectory`, see §5.4)
+with a `FileSystemWatcher` and reloads the type catalog when files change.
+The watcher works on local filesystems but has known gaps:
+
+- **Network filesystems** (NFS, SMB / CIFS) — change notifications either
+  do not propagate or arrive on a long delay, depending on mount options
+  and the server implementation.
+- **Container overlay mounts** (Docker, Podman) — bind-mounts from the
+  host into a container can mask the inotify events the watcher relies on.
+
+When `aspire add my-app --type custom-type` (or any other path that adds,
+edits, or removes a JSON file under the user-types directory) does not
+show up in the dashboard within a few seconds, send Collabhost a `SIGHUP`
+to force a reload:
+
+```sh
+# Find the running PID. systemd user-unit or system-unit:
+pgrep -f collabhost
+# Or, if you launched from a wrapper script:
+ps -ef | grep collabhost
+
+# Force an immediate user-type reload:
+kill -HUP <pid>
+```
+
+Collabhost logs the reload trigger and the resulting type counts at
+`info` level:
+
+```
+TypeStore reload triggered by SIGHUP
+TypeStore reloaded: 5 built-in + 2 user types, 7 bindings
+```
+
+If the new type still does not appear after the SIGHUP, validation failed
+on one of the JSON files. Validation errors land in the same log stream
+at `warning` level, naming the offending file and field path; fix the
+JSON and SIGHUP again.
+
+`SIGHUP` is Linux-only. Windows operators with a similarly stuck watcher
+should restart the service (`Restart-Service Collabhost` for the
+system-scope service shape, §5.5.4); user types are re-read on every
+process start.
 
 ---
 

@@ -102,6 +102,92 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-check
 
+  systemd-unit-drift:
+    name: Systemd unit drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Lint systemd unit vs install-system.sh heredoc
+        run: bash tools/lint-systemd-unit-drift.sh
+
+  publish-tag-regex:
+    name: Publish tag regex
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      # Exercise publish.yml's "Parse tag" regex against representative inputs.
+      # Card #251 extended the original ^vX.Y.Z$ to accept SemVer 2.0 §9
+      # pre-release identifiers (vX.Y.Z[-pre.release.ids]). This guard pins
+      # the acceptance set so a future regex tweak that breaks rc / beta tags
+      # cannot reach a release-time tag push without failing CI first.
+      #
+      # Two-part check:
+      #   1. The expected regex literal appears verbatim in publish.yml (drift
+      #      detector).
+      #   2. The expected regex actually accepts / rejects the documented
+      #      acceptance set.
+      - name: Verify regex acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Single source of truth for the regex under test. Must match the
+          # literal in .github/workflows/publish.yml's "Parse tag" step.
+          EXPECTED_REGEX='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+
+          # Drift detector: fail if publish.yml's regex literal no longer
+          # matches what this guard tests.
+          if ! grep -Fq "=~ ${EXPECTED_REGEX}" .github/workflows/publish.yml; then
+            echo "Drift: publish.yml does not contain the expected regex literal." >&2
+            echo "  Expected: =~ ${EXPECTED_REGEX}" >&2
+            echo "If you intentionally changed the regex, update EXPECTED_REGEX in this job." >&2
+            exit 1
+          fi
+          echo "Regex literal in publish.yml matches expected: ${EXPECTED_REGEX}"
+
+          accept() {
+            local tag="$1"
+            if [[ ! "${tag}" =~ ${EXPECTED_REGEX} ]]; then
+              echo "  FAIL: '${tag}' was rejected but should have been accepted" >&2
+              return 1
+            fi
+            echo "  ok (accepted): ${tag}"
+          }
+
+          reject() {
+            local tag="$1"
+            if [[ "${tag}" =~ ${EXPECTED_REGEX} ]]; then
+              echo "  FAIL: '${tag}' was accepted but should have been rejected" >&2
+              return 1
+            fi
+            echo "  ok (rejected): ${tag}"
+          }
+
+          FAILED=0
+
+          echo "--- Acceptance cases (must match) ---"
+          accept "v1.2.0"           || FAILED=1   # clean release
+          accept "v1.2.1-rc1"       || FAILED=1   # single pre-release id
+          accept "v2.0.0-beta.3"    || FAILED=1   # dotted pre-release id
+          accept "v0.1.0-alpha"     || FAILED=1   # alpha
+          accept "v1.0.0-rc.1.2"    || FAILED=1   # multi-segment pre-release
+
+          echo "--- Rejection cases (must NOT match) ---"
+          reject "1.2.0"            || FAILED=1   # missing v prefix
+          reject "v1.2"             || FAILED=1   # missing patch
+          reject "v1.2.0+build1"    || FAILED=1   # build metadata not accepted
+          reject "v1.2.0-"          || FAILED=1   # empty pre-release
+          reject "v1.2.0-rc 1"      || FAILED=1   # space in pre-release
+          reject ""                 || FAILED=1
+
+          if [[ "${FAILED}" -ne 0 ]]; then
+            echo "publish.yml tag regex acceptance check failed." >&2
+            exit 1
+          fi
+          echo "All cases pass."
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest

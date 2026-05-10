@@ -37,7 +37,7 @@ public class StartupPreflightTests : IDisposable
     {
         Directory.Exists(_rootDirectory).ShouldBeFalse();
 
-        var result = StartupPreflight.Validate(_rootDirectory);
+        var result = StartupPreflight.Validate(_rootDirectory, AppContext.BaseDirectory);
 
         result.Success.ShouldBeTrue();
         Directory.Exists(_rootDirectory).ShouldBeTrue();
@@ -46,7 +46,7 @@ public class StartupPreflightTests : IDisposable
     [Fact]
     public void Validate_CreatesBackupsSubdirectory_Succeeds()
     {
-        var result = StartupPreflight.Validate(_rootDirectory);
+        var result = StartupPreflight.Validate(_rootDirectory, AppContext.BaseDirectory);
 
         result.Success.ShouldBeTrue();
         result.BackupsDirectory.ShouldNotBeNull();
@@ -57,7 +57,7 @@ public class StartupPreflightTests : IDisposable
     [Fact]
     public void Validate_ReturnsResolvedDataDirectoryOnSuccess()
     {
-        var result = StartupPreflight.Validate(_rootDirectory);
+        var result = StartupPreflight.Validate(_rootDirectory, AppContext.BaseDirectory);
 
         result.Success.ShouldBeTrue();
         result.DataDirectory.ShouldBe(_rootDirectory);
@@ -68,7 +68,7 @@ public class StartupPreflightTests : IDisposable
     {
         Directory.CreateDirectory(_rootDirectory);
 
-        var result = StartupPreflight.Validate(_rootDirectory);
+        var result = StartupPreflight.Validate(_rootDirectory, AppContext.BaseDirectory);
 
         result.Success.ShouldBeTrue();
     }
@@ -76,7 +76,7 @@ public class StartupPreflightTests : IDisposable
     [Fact]
     public void Validate_DoesNotLeaveSentinelFileBehind()
     {
-        var result = StartupPreflight.Validate(_rootDirectory);
+        var result = StartupPreflight.Validate(_rootDirectory, AppContext.BaseDirectory);
 
         result.Success.ShouldBeTrue();
 
@@ -94,7 +94,7 @@ public class StartupPreflightTests : IDisposable
 
         try
         {
-            var result = StartupPreflight.Validate(_rootDirectory);
+            var result = StartupPreflight.Validate(_rootDirectory, AppContext.BaseDirectory);
 
             result.Success.ShouldBeFalse();
             result.FailureSummary.ShouldNotBeNullOrWhiteSpace();
@@ -108,14 +108,57 @@ public class StartupPreflightTests : IDisposable
 
     [Fact]
     public void Validate_ThrowsOnEmptyDataDirectory() =>
-        Should.Throw<ArgumentException>(() => StartupPreflight.Validate(string.Empty));
+        Should.Throw<ArgumentException>(() => StartupPreflight.Validate(string.Empty, AppContext.BaseDirectory));
+
+    [Fact]
+    public void Validate_ThrowsOnEmptyContentRoot() =>
+        Should.Throw<ArgumentException>(() => StartupPreflight.Validate(_rootDirectory, string.Empty));
+
+    [Fact]
+    public void Validate_MissingContentRoot_Fails()
+    {
+        // Card #247: the packaging-sanity check now anchors on the ContentRootPath instead
+        // of AppContext.BaseDirectory. A non-existent content root must surface as a fail
+        // result with a recovery hint -- this is what an operator sees if a system-install
+        // layout points ASPNETCORE_CONTENTROOT at a path that the unit didn't create.
+        var bogusContentRoot = Path.Combine(Path.GetTempPath(), $"collabhost-bogus-{Guid.NewGuid():N}");
+
+        Directory.Exists(bogusContentRoot).ShouldBeFalse();
+
+        var result = StartupPreflight.Validate(_rootDirectory, bogusContentRoot);
+
+        result.Success.ShouldBeFalse();
+        result.FailureSummary.ShouldNotBeNull();
+        result.FailureSummary.ShouldContain("content root");
+        result.FailureDetails.ShouldContain(detail => detail.Value == bogusContentRoot);
+    }
+
+    [Fact]
+    public void Validate_CustomContentRoot_Succeeds()
+    {
+        // Card #247: validate the env-var-set posture (system-install layout) where the
+        // host's ContentRootPath diverges from AppContext.BaseDirectory.
+        var contentRoot = Path.Combine(Path.GetTempPath(), $"collabhost-cr-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(contentRoot);
+
+        try
+        {
+            var result = StartupPreflight.Validate(_rootDirectory, contentRoot);
+
+            result.Success.ShouldBeTrue();
+        }
+        finally
+        {
+            Directory.Delete(contentRoot, recursive: true);
+        }
+    }
 
     [Fact]
     public void Validate_CreatesMissingUserTypesDirectory_FlagsAsCreated()
     {
         var userTypesDir = Path.Combine(_rootDirectory, "user-types");
 
-        var result = StartupPreflight.Validate(_rootDirectory, userTypesDir);
+        var result = StartupPreflight.Validate(_rootDirectory, AppContext.BaseDirectory, userTypesDir);
 
         result.Success.ShouldBeTrue();
         result.UserTypesDirectory.ShouldBe(userTypesDir);
@@ -129,7 +172,7 @@ public class StartupPreflightTests : IDisposable
         var userTypesDir = Path.Combine(_rootDirectory, "user-types");
         Directory.CreateDirectory(userTypesDir);
 
-        var result = StartupPreflight.Validate(_rootDirectory, userTypesDir);
+        var result = StartupPreflight.Validate(_rootDirectory, AppContext.BaseDirectory, userTypesDir);
 
         result.Success.ShouldBeTrue();
         result.UserTypesDirectoryCreated.ShouldBeFalse();
@@ -138,7 +181,7 @@ public class StartupPreflightTests : IDisposable
     [Fact]
     public void Validate_NullUserTypesDirectory_SkipsUserTypesCheck()
     {
-        var result = StartupPreflight.Validate(_rootDirectory, userTypesDirectory: null);
+        var result = StartupPreflight.Validate(_rootDirectory, AppContext.BaseDirectory, userTypesDirectory: null);
 
         result.Success.ShouldBeTrue();
         result.UserTypesDirectory.ShouldBeNull();

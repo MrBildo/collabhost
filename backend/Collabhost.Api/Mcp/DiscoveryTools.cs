@@ -56,19 +56,16 @@ public class DiscoveryTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Returns system hostname, Collabhost version, and uptime. Use this to identify the host and verify the platform version. This tool does not require any apps to be registered.")]
+    [Description("Returns system hostname, Collabhost version, and uptime in seconds. Use this to identify the host and verify the platform version. This tool does not require any apps to be registered. Format the uptime locally if a human-readable form is needed.")]
     public CallToolResult GetSystemStatus()
     {
         var uptimeSeconds = Math.Round((DateTime.UtcNow - _startTime.UtcStartedAt).TotalSeconds, 1);
-
-        var uptimeFormatted = FormatUptime(uptimeSeconds);
 
         var result = new
         {
             hostname = Environment.MachineName,
             version = VersionInfo.Current,
-            uptimeSeconds,
-            uptimeFormatted
+            uptimeSeconds
         };
 
         return McpResponseFormatter.Success(McpResponseFormatter.ToJson(result));
@@ -85,8 +82,8 @@ public class DiscoveryTools
     [Description("Lists all registered applications with their current status, type, and route URL. Use this to discover app slugs before calling other app-specific tools. The 'status' filter narrows results to apps in a specific state.")]
     public async Task<CallToolResult> ListAppsAsync
     (
-        [Description("Filter by app status. Valid values: running, stopped, crashed, backoff, fatal. If omitted, returns all apps.")] string? status,
-        CancellationToken ct
+        [Description("Filter by app status. Valid values: running, stopped, crashed, backoff, fatal. If omitted, returns all apps.")] string? status = null,
+        CancellationToken ct = default
     )
     {
         var apps = await _appStore.ListAsync(ct);
@@ -259,6 +256,14 @@ public class DiscoveryTools
 
         foreach (var appType in appTypes)
         {
+            // Internal types (e.g. system-service) are platform-managed and not
+            // intended for agent registration. Filter consistently with the
+            // REST /api/v1/app-types endpoint.
+            if (appType.IsInternal)
+            {
+                continue;
+            }
+
             var bindings = _typeStore.GetBindings(appType.Slug);
             var capabilities = bindings?.Keys.ToList() ?? [];
 
@@ -322,17 +327,4 @@ public class DiscoveryTools
             : hasRouting && routeEnabled
                 ? ProcessState.Running
                 : ProcessState.Stopped;
-
-    private static string FormatUptime(double uptimeSeconds)
-    {
-        var ts = TimeSpan.FromSeconds(uptimeSeconds);
-
-        return ts.TotalDays >= 1
-            ? string.Create(CultureInfo.InvariantCulture, $"{(int)ts.TotalDays}d {ts.Hours}h {ts.Minutes}m")
-            : ts.TotalHours >= 1
-                ? string.Create(CultureInfo.InvariantCulture, $"{ts.Hours}h {ts.Minutes}m {ts.Seconds}s")
-                : ts.TotalMinutes >= 1
-                    ? string.Create(CultureInfo.InvariantCulture, $"{ts.Minutes}m {ts.Seconds}s")
-                    : string.Create(CultureInfo.InvariantCulture, $"{ts.Seconds}s");
-    }
 }

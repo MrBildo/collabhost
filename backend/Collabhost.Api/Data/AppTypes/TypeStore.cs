@@ -11,6 +11,7 @@ public class TypeStore
     IEventBus<TypeStoreReloadedEvent> eventBus,
     TypeStoreSettings settings,
     ProxySettings proxySettings,
+    IHostEnvironment hostEnvironment,
     ILogger<TypeStore> logger
 ) : IDisposable
 {
@@ -22,6 +23,9 @@ public class TypeStore
 
     private readonly ProxySettings _proxySettings = proxySettings
         ?? throw new ArgumentNullException(nameof(proxySettings));
+
+    private readonly IHostEnvironment _hostEnvironment = hostEnvironment
+        ?? throw new ArgumentNullException(nameof(hostEnvironment));
 
     private readonly ILogger<TypeStore> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -235,7 +239,7 @@ public class TypeStore
 
             try
             {
-                await ReloadAsync(cancellationToken);
+                await ReloadAsync("FSW", cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -248,9 +252,16 @@ public class TypeStore
         }
     }
 
-    private Task ReloadAsync(CancellationToken cancellationToken)
+    // Public so external triggers (FSW debounce loop, SIGHUP handler on Linux) can request a reload.
+    // The 'triggerSource' string is purely an operator-facing log marker -- "FSW" for the file watcher,
+    // "SIGHUP" for the Linux signal handler, "manual" for direct callers.
+    public Task ReloadAsync(string triggerSource, CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrEmpty(triggerSource);
+
         cancellationToken.ThrowIfCancellationRequested();
+
+        _logger.LogInformation("TypeStore reload triggered by {TriggerSource}", triggerSource);
 
         var userTypesDirectory = ResolveUserTypesDirectory();
         var userSources = ApplyTokens(ReadUserTypesDirectory(userTypesDirectory));
@@ -330,14 +341,8 @@ public class TypeStore
         return Task.CompletedTask;
     }
 
-    private string ResolveUserTypesDirectory()
-    {
-        var configuredPath = _settings.UserTypesDirectory;
-
-        return Path.IsPathRooted(configuredPath)
-            ? configuredPath
-            : Path.Combine(AppContext.BaseDirectory, configuredPath);
-    }
+    private string ResolveUserTypesDirectory() =>
+        TypeStoreRegistration.ResolveEffectiveUserTypesDirectory(_settings, _hostEnvironment.ContentRootPath);
 
     private static List<(string FileName, string Json)> ReadUserTypesDirectory(string directoryPath)
     {
@@ -419,12 +424,16 @@ public class TypeStore
                     ? descriptionElement.GetString()
                     : null;
 
+            var isInternal = root.TryGetProperty("isInternal", out var isInternalElement)
+                && isInternalElement.ValueKind == JsonValueKind.True;
+
             var typeDefinition = new AppType
             {
                 Slug = slug,
                 DisplayName = displayName,
                 Description = description,
-                IsBuiltIn = isBuiltIn
+                IsBuiltIn = isBuiltIn,
+                IsInternal = isInternal
             };
 
             types.Add(typeDefinition);

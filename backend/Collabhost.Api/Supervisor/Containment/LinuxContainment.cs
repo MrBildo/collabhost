@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
 
@@ -8,6 +9,7 @@ public class LinuxContainment : IProcessContainment, IDisposable
 {
     private readonly bool _cgroupAvailable;
     private readonly string? _cgroupBasePath;
+    private readonly bool _setprivAvailable;
     private readonly ILogger<LinuxContainment> _logger;
 
     public LinuxContainment(ILogger<LinuxContainment> logger)
@@ -15,6 +17,7 @@ public class LinuxContainment : IProcessContainment, IDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         (_cgroupAvailable, _cgroupBasePath) = ProbeCgroupV2();
+        _setprivAvailable = ProbeSetpriv();
 
         if (_cgroupAvailable)
         {
@@ -23,6 +26,25 @@ public class LinuxContainment : IProcessContainment, IDisposable
                 "Linux process containment: cgroup v2 available at '{BasePath}'",
                 _cgroupBasePath
             );
+
+            if (_setprivAvailable)
+            {
+                _logger.LogInformation
+                (
+                    "Linux orphan-kill watcher: setpriv --pdeathsig available -- " +
+                    "managed cgroups will be killed atomically when the supervisor exits abruptly"
+                );
+            }
+            else
+            {
+                _logger.LogWarning
+                (
+                    "Linux orphan-kill watcher: setpriv --pdeathsig not available. " +
+                    "Graceful shutdown still kills cgroups; abrupt supervisor termination " +
+                    "(SIGKILL) will leave managed processes as orphans until the next boot's " +
+                    "stale-cgroup sweep"
+                );
+            }
 
             CleanupStaleCgroups();
         }
@@ -51,7 +73,11 @@ public class LinuxContainment : IProcessContainment, IDisposable
 
             _logger.LogDebug("Created cgroup container at '{Path}'", cgroupPath);
 
-            return new CgroupContainmentHandle(cgroupPath, _logger);
+            var watcher = _setprivAvailable
+                ? StartOrphanKillWatcher(cgroupPath)
+                : null;
+
+            return new CgroupContainmentHandle(cgroupPath, watcher, _logger);
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
         {
@@ -59,6 +85,128 @@ public class LinuxContainment : IProcessContainment, IDisposable
             (
                 exception,
                 "Failed to create cgroup directory '{Path}'",
+                cgroupPath
+            );
+
+            return null;
+        }
+    }
+
+    private Process? StartOrphanKillWatcher(string cgroupPath)
+    {
+        // Spawn a tiny bash watcher whose only job is to write "1" to cgroup.kill
+        // when its parent (this process, the supervisor) dies abruptly.
+        //
+        // Mechanism:
+        //   1. setpriv --pdeathsig SIGTERM -- the kernel sends SIGTERM to this process
+        //      as soon as its immediate parent dies, including on parent SIGKILL.
+        //   2. The bash trap on SIGTERM writes "1" to <cgroup>/cgroup.kill, which
+        //      atomically SIGKILLs every member of the cgroup (workload + descendants).
+        //   3. The watcher itself joins the cgroup via cgroup.procs, so the cgroup.kill
+        //      write also kills the watcher -- no leftover process.
+        //
+        // On graceful shutdown, the supervisor calls IContainmentHandle.Terminate(),
+        // which writes cgroup.kill directly. The watcher receives SIGKILL (not SIGTERM)
+        // along with the workload; its trap does not fire and is not needed. The
+        // watcher is purely an abrupt-death contingency.
+        var killPath = Path.Combine(cgroupPath, "cgroup.kill");
+        var procsPath = Path.Combine(cgroupPath, "cgroup.procs");
+
+        // Bash script: trap SIGTERM, write to cgroup.kill, then sleep forever.
+        // Critical: bash signal handlers do not preempt foreground commands. A bare
+        // `sleep 86400` would block bash from reading the signal until the sleep
+        // returns. Backgrounding `sleep` and `wait`-ing on it makes bash interrupt
+        // the wait when the signal arrives, fire the trap immediately, and exit.
+        // The trap writes "1" to cgroup.kill which atomically SIGKILLs every member
+        // of the cgroup -- including this bash, the workload, and all descendants.
+        var script = $"trap 'echo 1 > {killPath}; exit 0' SIGTERM; while :; do sleep 86400 & wait $!; done";
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "setpriv",
+                ArgumentList =
+                {
+                    "--pdeathsig",
+                    "SIGTERM",
+                    "bash",
+                    "-c",
+                    script
+                },
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            var watcher = Process.Start(startInfo);
+
+            if (watcher is null)
+            {
+                _logger.LogWarning("Failed to start orphan-kill watcher for '{Path}'", cgroupPath);
+
+                return null;
+            }
+
+            // Drain stdout/stderr so the redirected pipes do not fill and block bash.
+            // The watcher should never emit output, but a stuck pipe would deadlock the trap.
+            watcher.OutputDataReceived += (_, _) => { };
+            watcher.ErrorDataReceived += (_, _) => { };
+            watcher.BeginOutputReadLine();
+            watcher.BeginErrorReadLine();
+
+            // Move the watcher into the workload's cgroup so cgroup.kill catches it too.
+            try
+            {
+                File.WriteAllText
+                (
+                    procsPath,
+                    watcher.Id.ToString(CultureInfo.InvariantCulture)
+                );
+
+                _logger.LogDebug
+                (
+                    "Started orphan-kill watcher (PID {Pid}) for cgroup '{Path}'",
+                    watcher.Id,
+                    cgroupPath
+                );
+
+                return watcher;
+            }
+            catch (IOException exception)
+            {
+                _logger.LogWarning
+                (
+                    exception,
+                    "Failed to assign watcher PID {Pid} to cgroup '{Path}' -- killing watcher",
+                    watcher.Id,
+                    cgroupPath
+                );
+
+                try
+                {
+                    if (!watcher.HasExited)
+                    {
+                        LinuxNativeMethods.Kill(watcher.Id, LinuxNativeMethods.SIGKILL);
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // Process already exited
+                }
+
+                watcher.Dispose();
+
+                return null;
+            }
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            _logger.LogWarning
+            (
+                exception,
+                "Failed to launch orphan-kill watcher for '{Path}'",
                 cgroupPath
             );
 
@@ -154,6 +302,43 @@ public class LinuxContainment : IProcessContainment, IDisposable
         }
     }
 
+    private static bool ProbeSetpriv()
+    {
+        // setpriv(1) from util-linux is required for the orphan-kill watcher.
+        // It supports --pdeathsig which calls prctl(PR_SET_PDEATHSIG, ...) before
+        // exec'ing the wrapped command. This is present on virtually every Linux
+        // distribution including minimal containers and WSL2 (same util-linux
+        // package as setsid).
+        try
+        {
+            using var probe = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "setpriv",
+                    Arguments = "--help",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+
+            probe.Start();
+            probe.WaitForExit(TimeSpan.FromSeconds(5));
+
+            // Confirm the --pdeathsig option is available (older util-linux may lack it).
+            var helpText = probe.StandardOutput.ReadToEnd() + probe.StandardError.ReadToEnd();
+
+            return helpText.Contains("--pdeathsig", StringComparison.Ordinal);
+        }
+        catch
+        {
+            // File not found, permission denied, etc.
+            return false;
+        }
+    }
+
     private static (bool Available, string? BasePath) ProbeCgroupV2()
     {
         // cgroup v2 unified hierarchy indicator
@@ -218,10 +403,11 @@ public class LinuxContainment : IProcessContainment, IDisposable
     }
 
     // No subclasses expected -- cgroup v2 filesystem-based containment handle
-    private sealed class CgroupContainmentHandle(string cgroupPath, ILogger logger)
+    private sealed class CgroupContainmentHandle(string cgroupPath, Process? watcher, ILogger logger)
         : IContainmentHandle
     {
         private readonly string _cgroupPath = cgroupPath;
+        private readonly Process? _watcher = watcher;
         private readonly ILogger _logger = logger;
 
         public bool AssignProcess(int processId)
@@ -286,6 +472,35 @@ public class LinuxContainment : IProcessContainment, IDisposable
 
         public void Dispose()
         {
+            // The watcher is in the cgroup. If Terminate() was called, cgroup.kill
+            // already SIGKILL'd it. If Dispose is called without Terminate (e.g. the
+            // workload exited cleanly on its own and only the watcher remains),
+            // explicitly kill the watcher so the cgroup empties.
+            //
+            // We must wait for the kernel to fully reap the watcher before attempting
+            // rmdir -- the cgroup keeps the PID listed in cgroup.procs until the
+            // process is reaped, and rmdir on a non-empty cgroup returns EBUSY.
+            if (_watcher is not null)
+            {
+                try
+                {
+                    if (!_watcher.HasExited)
+                    {
+                        LinuxNativeMethods.Kill(_watcher.Id, LinuxNativeMethods.SIGKILL);
+
+                        // WaitForExit blocks until the kernel has reaped the process.
+                        // 5s is a generous bound for a SIGKILL'd bash on idle WSL2.
+                        _watcher.WaitForExit(5000);
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // Process already exited / handle disposed
+                }
+
+                _watcher.Dispose();
+            }
+
             try
             {
                 // rmdir succeeds only when the cgroup has no member processes --

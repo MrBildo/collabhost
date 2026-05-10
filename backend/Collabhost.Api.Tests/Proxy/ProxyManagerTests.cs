@@ -7,6 +7,7 @@ using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 using Collabhost.Api.Supervisor.Containment;
+using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.EntityFrameworkCore;
 
@@ -129,6 +130,7 @@ public class ProxyManagerTests
             new Collabhost.Api.Events.EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-notexist") },
             new ProxySettings { BaseDomain = "collab.internal", BinaryPath = "caddy", ListenAddress = ":443", CertLifetime = "168h" },
+            new StubHostEnvironment(),
             NullLogger<TypeStore>.Instance
         );
         var capabilityStore = new CapabilityStore(typeStore, appStore, NullLogger<CapabilityStore>.Instance);

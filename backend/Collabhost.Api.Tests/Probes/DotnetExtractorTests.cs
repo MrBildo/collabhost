@@ -335,4 +335,101 @@ public class DotnetExtractorTests : IDisposable
         result.RuntimeConfig.ShouldNotBeNull();
         result.RuntimeConfig.Tfm.ShouldBe("net10.0");
     }
+
+    // Card #260 -- publish/ is closest to deployment, must outrank bin/.
+    [Fact]
+    public void Extract_ProjectDirectory_PrefersPublishOverBinDebug()
+    {
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "MyApp.csproj"),
+            """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>"""
+        );
+
+        var debugDir = Path.Combine(_tempDir, "bin", "Debug", "net10.0");
+        Directory.CreateDirectory(debugDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(debugDir, "MyApp.runtimeconfig.json"),
+            """{"runtimeOptions":{"tfm":"net10.0","frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0-DEBUG"}]}}"""
+        );
+
+        var publishDir = Path.Combine(_tempDir, "publish");
+        Directory.CreateDirectory(publishDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(publishDir, "MyApp.runtimeconfig.json"),
+            """{"runtimeOptions":{"tfm":"net10.0","frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0-PUBLISH"}]}}"""
+        );
+
+        var result = DotnetExtractor.Extract(_tempDir);
+
+        result.ShouldNotBeNull();
+        result.RuntimeConfig.ShouldNotBeNull();
+        result.RuntimeConfig.Frameworks[0].Version.ShouldBe("10.0.0-PUBLISH");
+    }
+
+    [Fact]
+    public void Extract_ProjectDirectory_PrefersPublishOverBinRelease()
+    {
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "MyApp.csproj"),
+            """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>"""
+        );
+
+        var releaseDir = Path.Combine(_tempDir, "bin", "Release", "net10.0");
+        Directory.CreateDirectory(releaseDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(releaseDir, "MyApp.runtimeconfig.json"),
+            """{"runtimeOptions":{"tfm":"net10.0","frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0-RELEASE"}]}}"""
+        );
+
+        var publishDir = Path.Combine(_tempDir, "publish");
+        Directory.CreateDirectory(publishDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(publishDir, "MyApp.runtimeconfig.json"),
+            """{"runtimeOptions":{"tfm":"net10.0","frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0-PUBLISH"}]}}"""
+        );
+
+        var result = DotnetExtractor.Extract(_tempDir);
+
+        result.ShouldNotBeNull();
+        result.RuntimeConfig.ShouldNotBeNull();
+        result.RuntimeConfig.Frameworks[0].Version.ShouldBe("10.0.0-PUBLISH");
+    }
+
+    [Fact]
+    public void Extract_ProjectDirectory_PublishWithTfmSubdirectory_Found()
+    {
+        // dotnet publish without -o emits to bin/<config>/<tfm>/publish/, but
+        // some operators copy that nested layout up to the project root as
+        // publish/<tfm>/. Walk one level deep to find the runtimeconfig.
+        File.WriteAllText
+        (
+            Path.Combine(_tempDir, "MyApp.csproj"),
+            """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>"""
+        );
+
+        var publishTfmDir = Path.Combine(_tempDir, "publish", "net10.0");
+        Directory.CreateDirectory(publishTfmDir);
+
+        File.WriteAllText
+        (
+            Path.Combine(publishTfmDir, "MyApp.runtimeconfig.json"),
+            """{"runtimeOptions":{"tfm":"net10.0","frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0-PUBLISH"}]}}"""
+        );
+
+        var result = DotnetExtractor.Extract(_tempDir);
+
+        result.ShouldNotBeNull();
+        result.RuntimeConfig.ShouldNotBeNull();
+        result.RuntimeConfig.Frameworks[0].Version.ShouldBe("10.0.0-PUBLISH");
+    }
 }

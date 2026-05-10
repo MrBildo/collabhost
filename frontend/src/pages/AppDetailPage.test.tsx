@@ -71,7 +71,7 @@ function makeAppDetail(overrides: Partial<AppDetail> = {}): AppDetail {
     probes: [],
     resources: null,
     route: null,
-    actions: { canStart: false, canStop: true, canRestart: true, canKill: true, canUpdate: false },
+    actions: { canStart: false, canStop: true, canRestart: true, canKill: true },
     ...overrides,
   }
 }

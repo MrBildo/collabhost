@@ -105,13 +105,40 @@ if (string.IsNullOrWhiteSpace(configuredUrls))
     builder.WebHost.UseUrls(selfUrl);
 }
 
+// Service-aware Windows lifetime. UseWindowsService() inspects the host environment and
+// only swaps in WindowsServiceLifetime when WindowsServiceHelpers.IsWindowsService() returns
+// true -- which means the binary was launched by the Windows Service Control Manager and not
+// by a shell, Aspire, dotnet run, or any non-Windows OS. On Linux, macOS, dev (Aspire +
+// launchSettings), Windows-from-shell, and integration tests the call is a no-op and the
+// default console lifetime stays in effect. Card #237 Q4.
+//
+// Wiring it here (before AddServiceDefaults / DI registration) lets WindowsServiceLifetime
+// register the Windows Event Log logging provider before any logger-factory consumer captures
+// the LoggerProvider snapshot. The package is platform-neutral; the WindowsServiceLifetime
+// type itself is platform-conditional internally.
+builder.Host.UseWindowsService(options =>
+{
+    // The default service name is the assembly name (Collabhost.Api in dev, collabhost in
+    // single-file publish). Pin it to the human-readable display name install-system.ps1
+    // registers ("Collabhost") so the Windows Event Log provider's source name matches the
+    // SCM service name -- otherwise operators would see two different identifiers across
+    // sc.exe query and Get-WinEvent.
+    options.ServiceName = "Collabhost";
+});
+
 // Aspire service defaults
 builder.AddServiceDefaults();
 
 // Startup phase 2 -- Environment preflight. Runs before DI is built and before any hosted
 // service wires itself up. A halt here means we never touch the DB.
-var (_, resolvedDataDir) = DataRegistration.ResolveConnectionString(builder.Configuration);
-var effectiveDataDir = resolvedDataDir ?? Path.Combine(AppContext.BaseDirectory, "data");
+//
+// ContentRootPath is the unified anchor for relative-path resolution after card #247
+// (BaseDirectory call-site alignment): every site that previously composed against
+// AppContext.BaseDirectory now flows from builder.Environment.ContentRootPath. With
+// ASPNETCORE_CONTENTROOT unset, ContentRootPath == AppContext.BaseDirectory, so behavior
+// is preserved on platforms not driving the change.
+var (_, resolvedDataDir) = DataRegistration.ResolveConnectionString(builder.Configuration, builder.Environment.ContentRootPath);
+var effectiveDataDir = resolvedDataDir ?? Path.Combine(builder.Environment.ContentRootPath, "data");
 
 // Crash log directory + retention. Resolved before any preflight so a preflight failure
 // can still write a crash file. Default is {DataDir}/logs/. Card #162.
@@ -148,12 +175,22 @@ AppDomain.CurrentDomain.UnhandledException += (_, e) =>
 // Resolve TypeStore settings once so preflight and DI registration use the same values
 // without reading the env var twice (LOW-3).
 var typeStoreSettings = TypeStoreRegistration.ResolveSettings(builder.Configuration);
-var effectiveUserTypesDir = TypeStoreRegistration.ResolveEffectiveUserTypesDirectory(typeStoreSettings);
+var effectiveUserTypesDir = TypeStoreRegistration.ResolveEffectiveUserTypesDirectory
+(
+    typeStoreSettings,
+    builder.Environment.ContentRootPath
+);
 
 using (var preflightLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole()))
 {
     var preflightLogger = preflightLoggerFactory.CreateLogger("StartupPreflight");
-    var preflightResult = StartupPreflight.Validate(effectiveDataDir, effectiveUserTypesDir, preflightLogger);
+    var preflightResult = StartupPreflight.Validate
+    (
+        effectiveDataDir,
+        builder.Environment.ContentRootPath,
+        effectiveUserTypesDir,
+        preflightLogger
+    );
 
     if (!preflightResult.Success)
     {
@@ -194,7 +231,7 @@ builder.Services.AddPlatform();
 builder.Services.AddHosting(builder.Configuration);
 
 // Database
-builder.Services.AddDataAccess(builder.Configuration);
+builder.Services.AddDataAccess(builder.Configuration, builder.Environment.ContentRootPath);
 
 // Memory cache
 builder.Services.AddMemoryCache();

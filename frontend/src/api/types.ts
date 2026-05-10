@@ -168,7 +168,6 @@ type AppActions = {
   canStop: boolean
   canRestart: boolean
   canKill: boolean
-  canUpdate: boolean
 }
 
 // --- App Settings ---

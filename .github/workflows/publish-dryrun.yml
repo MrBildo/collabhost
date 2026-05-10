@@ -28,6 +28,7 @@ on:
       - '.github/workflows/publish-dryrun.yml'
       - 'docs/install.sh'
       - 'docs/install.ps1'
+      - 'docs/install-system.ps1'
       - 'caddy.version'
       - 'caddy-plugins.txt'
       - 'xcaddy.version'
