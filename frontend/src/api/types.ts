@@ -254,11 +254,6 @@ type DashboardStats = {
   fatal: number
   issues: number
   issuesSummary: string | null
-  uptimePercent24h: number | null
-  incidentsThisWeek: number
-  memoryUsedMb: number | null
-  memoryTotalMb: number | null
-  requestsPerMinute: number | null
   appTypes: number
 }
 

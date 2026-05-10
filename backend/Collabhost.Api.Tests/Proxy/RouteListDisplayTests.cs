@@ -105,8 +105,8 @@ public class RouteListDisplayTests(ApiFixture fixture)
             route.ShouldNotBeNull("nodejs-app should appear in the route list");
             route.Value.GetProperty("target").GetString().ShouldBe
             (
-                "Not Running",
-                "a stopped process app's target should be 'Not Running', not the internal string 'not-running'"
+                "not-running",
+                "a stopped process app's target should be 'not-running' per CLAUDE.md lowercase status strings convention"
             );
         }
         finally
