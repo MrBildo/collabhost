@@ -28,7 +28,12 @@ public static class DashboardEndpoints
     )
     {
         var apps = await store.ListAsync(ct);
-        var appTypes = typeStore.ListTypes();
+
+        // Match the operator-facing picker: internal types like system-service are
+        // hidden by /api/v1/app-types so the dashboard tile reflects the same set.
+        var appTypes = typeStore.ListTypes()
+            .Where(t => !t.IsInternal)
+                .ToList();
 
         var running = 0;
         var stopped = 0;

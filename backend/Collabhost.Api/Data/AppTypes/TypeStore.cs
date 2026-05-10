@@ -419,12 +419,16 @@ public class TypeStore
                     ? descriptionElement.GetString()
                     : null;
 
+            var isInternal = root.TryGetProperty("isInternal", out var isInternalElement)
+                && isInternalElement.ValueKind == JsonValueKind.True;
+
             var typeDefinition = new AppType
             {
                 Slug = slug,
                 DisplayName = displayName,
                 Description = description,
-                IsBuiltIn = isBuiltIn
+                IsBuiltIn = isBuiltIn,
+                IsInternal = isInternal
             };
 
             types.Add(typeDefinition);

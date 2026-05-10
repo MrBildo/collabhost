@@ -2,6 +2,7 @@
   "slug": "system-service",
   "displayName": "System Service",
   "description": "Infrastructure process with no routing or port injection",
+  "isInternal": true,
   "bindings": {
     "artifact": {
       "location": ""
