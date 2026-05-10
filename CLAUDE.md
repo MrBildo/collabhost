@@ -40,7 +40,7 @@ The domain entity `App` keeps its short form despite the `dotnet-dev` no-abbrevi
 #### Authorization
 
 - Header-based: `X-User-Key` (ULID).
-- Three role types: `Administrator`, `HumanUser`, `AgentUser`.
+- Two role types: `Administrator`, `Agent`.
 - No ASP.NET authentication middleware — auth check is custom logic invoked early in the pipeline.
 - Admin key auto-generated on first run if not configured (`Auth:AdminKey` setting).
 - Endpoints that need to return 403 use `Results.StatusCode(403)` directly — `TypedResults.Forbid()` returns a `ForbidHttpResult` that wants a registered authentication scheme and will throw at runtime.
