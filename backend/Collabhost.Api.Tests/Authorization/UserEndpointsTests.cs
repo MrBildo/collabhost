@@ -215,5 +215,7 @@ public class UserEndpointsTests(ApiFixture fixture)
         me.GetProperty("role").GetString().ShouldBe("administrator");
         me.GetProperty("id").GetString().ShouldNotBeNullOrEmpty();
         me.GetProperty("name").GetString().ShouldNotBeNullOrEmpty();
+        me.GetProperty("isActive").GetBoolean().ShouldBeTrue();
+        me.GetProperty("createdAt").GetDateTime().ShouldBeLessThanOrEqualTo(DateTime.UtcNow);
     }
 }

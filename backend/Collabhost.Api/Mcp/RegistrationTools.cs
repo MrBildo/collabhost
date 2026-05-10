@@ -65,7 +65,7 @@ public class RegistrationTools
         [Description("Display name for the application (e.g., 'My API Server').")] string name,
         [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'system-service').")] string appTypeSlug,
         [Description("Absolute path to the application's directory on the host filesystem.")] string installDirectory,
-        [Description("Optional JSON object with additional registration settings specific to the app type. Example: {\"process\":{\"workingDirectory\":\"/app\",\"executablePath\":\"./myapp\"}}")] string? settings,
+        [Description("Optional JSON object with additional registration settings specific to the app type. Example: {\"process\":{\"command\":\"./myapp\",\"arguments\":\"--port 5000\",\"discoveryStrategy\":\"Manual\"}}. Valid process keys: command, arguments, workingDirectory, discoveryStrategy, shutdownTimeoutSeconds, startupGracePeriodSeconds, maxStartupRetries.")] string? settings,
         CancellationToken ct
     )
     {

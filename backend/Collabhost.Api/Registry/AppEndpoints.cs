@@ -218,7 +218,13 @@ public static class AppEndpoints
                     ? "file-server"
                     : "not-running";
 
-            route = new AppRoute(domain, target, true);
+            // TLS posture is derived from the proxy's configured listen surface (Card
+            // #263 item 1.3). Today this evaluates to true on every supported install
+            // (default ListenAddress = ":80,:443"); deriving makes the response honest
+            // if an operator ever pins ListenAddress to plain :80.
+            var tls = ProxyConfigurationBuilder.HasTlsListener(proxySettings.ListenAddress);
+
+            route = new AppRoute(domain, target, tls);
         }
 
         var actions = BuildActions(hasProcess, hasRouting, status);
@@ -1066,8 +1072,7 @@ public static class AppEndpoints
             CanStart(hasProcess, hasRouting, status),
             CanStop(hasProcess, hasRouting, status),
             hasProcess && status == ProcessState.Running,
-            hasProcess && status is ProcessState.Running or ProcessState.Starting or ProcessState.Restarting,
-            false
+            hasProcess && status is ProcessState.Running or ProcessState.Starting or ProcessState.Restarting
         );
 
     private static List<SettingsSection> BuildSettingsSections

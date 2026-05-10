@@ -407,6 +407,32 @@ public static class ProxyConfigurationBuilder
 
         return result;
     }
+
+    // Derives whether the proxy's configured listen surface includes a TLS-capable
+    // listener. Caddy auto-enables TLS for any non-:80 listen entry; the conservative
+    // and accurate signal is "the listen list contains :443" (the canonical HTTPS port).
+    // Other operator-chosen TLS ports would not match this; the surface this feeds
+    // (App Detail Route card) is documenting the canonical posture, so :443 is the
+    // right anchor. Card #263 item 1.3.
+    public static bool HasTlsListener(string listenAddress)
+    {
+        if (string.IsNullOrWhiteSpace(listenAddress))
+        {
+            return false;
+        }
+
+        var entries = listenAddress.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (var entry in entries)
+        {
+            if (entry.EndsWith(":443", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 public record RouteEntry

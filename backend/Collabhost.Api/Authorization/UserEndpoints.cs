@@ -210,7 +210,9 @@ public static class UserEndpoints
             (
                 currentUser.UserId.ToString(),
                 currentUser.User.Name,
-                currentUser.Role.ToString().ToLowerInvariant()
+                currentUser.Role.ToString().ToLowerInvariant(),
+                currentUser.User.IsActive,
+                currentUser.User.CreatedAt
             )
         );
 }
@@ -219,4 +221,4 @@ public static class UserEndpoints
 
 internal record CreateUserRequest(string Name, UserRole Role);
 
-internal record MeResponse(string Id, string Name, string Role);
+internal record MeResponse(string Id, string Name, string Role, bool IsActive, DateTime CreatedAt);

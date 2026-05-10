@@ -96,7 +96,7 @@ If no Caddy binary is configured, everything else still works (app management, p
 
 ## Features
 
-**Built-in MCP server** — A Model Context Protocol endpoint at `/mcp` exposes the operator surface as tools. 18 tools across discovery, lifecycle, configuration, registration, and activity. Agents register apps, start and stop processes, tail logs, update settings, and browse the host filesystem — programmatically, over Streamable HTTP. Role-aware: administrators see everything, agents see 16 of 18 tools (everything except `delete_app` and `list_events`). See [For Agents](#for-agents) for setup.
+**Built-in MCP server** — A Model Context Protocol endpoint at `/mcp` exposes the operator surface as tools. 18 tools across discovery, lifecycle, configuration, registration, and activity. Agents register apps, start and stop processes, tail logs, update settings, and browse the host filesystem — programmatically, over Streamable HTTP. Role-aware: administrators see everything, agents see 17 of 18 tools (everything except `delete_app`). See [For Agents](#for-agents) for setup.
 
 **Operator dashboard** — Real-time stats, app table with inline actions, live activity feed, and streaming log viewers. Everything an operator needs on one screen. The War Machine design system — dark, monospace, industrial — is built for density and quick action.
 
