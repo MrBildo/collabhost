@@ -88,6 +88,15 @@ public class SighupReloadService
         // to mean "reload" while Collabhost is running, not "shut down."
         context.Cancel = true;
 
+        TriggerReload();
+    }
+
+    // Extracted from OnSighup so unit tests can exercise the reload path without delivering a
+    // real signal to the test host (which would race with xunit's own signal handling and the
+    // dotnet test host's lifetime management). The signal handler is exercised end-to-end at
+    // dispatch via the build-and-publish smoke test.
+    internal void TriggerReload()
+    {
         // Capture the lifetime cancellation outside the async continuation so the handler does
         // not touch instance state after Dispose. The signal callback runs on a thread-pool
         // thread; fire-and-forget the reload so the signal-delivery thread is never blocked.
