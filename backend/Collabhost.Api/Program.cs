@@ -105,6 +105,27 @@ if (string.IsNullOrWhiteSpace(configuredUrls))
     builder.WebHost.UseUrls(selfUrl);
 }
 
+// Service-aware Windows lifetime. UseWindowsService() inspects the host environment and
+// only swaps in WindowsServiceLifetime when WindowsServiceHelpers.IsWindowsService() returns
+// true -- which means the binary was launched by the Windows Service Control Manager and not
+// by a shell, Aspire, dotnet run, or any non-Windows OS. On Linux, macOS, dev (Aspire +
+// launchSettings), Windows-from-shell, and integration tests the call is a no-op and the
+// default console lifetime stays in effect. Card #237 Q4.
+//
+// Wiring it here (before AddServiceDefaults / DI registration) lets WindowsServiceLifetime
+// register the Windows Event Log logging provider before any logger-factory consumer captures
+// the LoggerProvider snapshot. The package is platform-neutral; the WindowsServiceLifetime
+// type itself is platform-conditional internally.
+builder.Host.UseWindowsService(options =>
+{
+    // The default service name is the assembly name (Collabhost.Api in dev, collabhost in
+    // single-file publish). Pin it to the human-readable display name install-system.ps1
+    // registers ("Collabhost") so the Windows Event Log provider's source name matches the
+    // SCM service name -- otherwise operators would see two different identifiers across
+    // sc.exe query and Get-WinEvent.
+    options.ServiceName = "Collabhost";
+});
+
 // Aspire service defaults
 builder.AddServiceDefaults();
 
