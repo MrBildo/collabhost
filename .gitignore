@@ -62,6 +62,7 @@ tools/*
 !tools/build-caddy.ps1
 !tools/build-caddy.sh
 !tools/generate-ids.cs
+!tools/lint-systemd-unit-drift.sh
 
 # OS files
 Thumbs.db
