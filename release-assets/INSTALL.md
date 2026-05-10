@@ -250,12 +250,159 @@ Operator-relevant framework-standard variables (not Collabhost-specific):
 |----------|---------|
 | `ASPNETCORE_ENVIRONMENT` | Standard .NET env var. Keep unset or `Production` for production installs. |
 | `Logging__LogLevel__Default` | Standard ASP.NET Core log-level knob. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Standard OpenTelemetry OTLP endpoint (no-op when empty). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Standard OpenTelemetry OTLP endpoint. No-op when empty. See §5.4.1 for forwarding telemetry to an external collector. |
 
 Setting a blank / whitespace value for any `COLLABHOST_*` variable is treated
 as unset — the effective value falls through to `appsettings.json`, then to
 the built-in default. This blank-is-unset behavior is Collabhost-specific and
 only applies to the `COLLABHOST_*` variables above.
+
+#### 5.4.1 Pointing OpenTelemetry at an external collector
+
+Collabhost ships with OpenTelemetry instrumentation wired in (traces, metrics,
+and logs) but **no exporter is active by default** in a published install.
+Telemetry is collected in-process and discarded unless an OTLP endpoint is
+configured. To forward it somewhere — a managed observability provider
+(Honeycomb, Grafana Cloud, Datadog, New Relic, etc.) or a local collector
+(Jaeger, the OpenTelemetry Collector, Aspire dashboard) — set the standard
+OTel SDK env vars on the running process.
+
+The load-bearing variable is `OTEL_EXPORTER_OTLP_ENDPOINT`. When it's set to
+a non-empty value, Collabhost activates the OTLP exporter at startup; when
+unset or blank, the exporter is a no-op. The other variables in the table
+below are picked up by the OpenTelemetry .NET SDK directly — Collabhost does
+not parse or validate them, so any value that the SDK accepts will work.
+
+| Variable | Purpose |
+|----------|---------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint URL. Activates the exporter when non-empty. Example: `https://api.honeycomb.io:443`. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Comma-separated `key=value` pairs. The standard place to put an API key for managed providers. Example: `x-honeycomb-team=YOUR_KEY`. |
+| `OTEL_SERVICE_NAME` | Service name attached to spans/metrics/logs. Defaults to the assembly name; set this if multiple Collabhost instances report to the same backend. Example: `collabhost-prod`. |
+| `OTEL_RESOURCE_ATTRIBUTES` | Comma-separated `key=value` resource attributes. Useful for tagging environment, host, region. Example: `deployment.environment=prod,host.name=homelab`. |
+
+The OTel SDK supports many more env vars (timeouts, protocol selection,
+compression, certificate paths). The four above are the operator-relevant
+floor. Refer to the
+[OpenTelemetry SDK environment variable spec](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/configuration/sdk-environment-variables.md)
+for the full list.
+
+**Worked example — Honeycomb.** [Honeycomb](https://www.honeycomb.io/)
+accepts OTLP/HTTP on its public endpoint with an API key in
+`OTEL_EXPORTER_OTLP_HEADERS`:
+
+```text
+OTEL_EXPORTER_OTLP_ENDPOINT  = https://api.honeycomb.io:443
+OTEL_EXPORTER_OTLP_HEADERS   = x-honeycomb-team=YOUR_API_KEY
+OTEL_SERVICE_NAME            = collabhost
+OTEL_RESOURCE_ATTRIBUTES     = deployment.environment=prod
+```
+
+(For a local collector instead, point `OTEL_EXPORTER_OTLP_ENDPOINT` at your
+collector — e.g. `http://localhost:4317` for OTLP/gRPC against a Jaeger
+all-in-one container or the OpenTelemetry Collector. The export-side knobs
+are the same; only the endpoint changes.)
+
+How to set these depends on which install shape you're running.
+
+**Linux user-scope (`install.sh` / `collabhost.user.service`).** Either
+add the lines to your startup wrapper alongside the other `COLLABHOST_*`
+exports (§5.2) or, if you're running under the bundled user-scope systemd
+template, drop them into the unit's drop-in directory:
+
+```sh
+mkdir -p ~/.config/systemd/user/collabhost.service.d
+cat > ~/.config/systemd/user/collabhost.service.d/otel.conf <<'EOF'
+[Service]
+Environment="OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io:443"
+Environment="OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY"
+Environment="OTEL_SERVICE_NAME=collabhost"
+Environment="OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod"
+EOF
+systemctl --user daemon-reload
+systemctl --user restart collabhost.service
+```
+
+**Linux system-scope (`install-system.sh`).** Add a drop-in under
+`/etc/systemd/system/collabhost.service.d/` (do not edit
+`/etc/systemd/system/collabhost.service` directly — see §5.5.2 for why):
+
+```sh
+sudo systemctl edit collabhost.service
+# In the editor, add:
+#   [Service]
+#   Environment="OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io:443"
+#   Environment="OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY"
+#   Environment="OTEL_SERVICE_NAME=collabhost"
+#   Environment="OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod"
+sudo systemctl daemon-reload
+sudo systemctl restart collabhost.service
+```
+
+The drop-in is preserved across upgrades because systemd merges drop-ins on
+top of the base unit (§5.5.2).
+
+**Windows user-scope (`install.ps1`).** Set the variables in your startup
+wrapper (§5.3):
+
+```powershell
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'https://api.honeycomb.io:443'
+$env:OTEL_EXPORTER_OTLP_HEADERS  = 'x-honeycomb-team=YOUR_API_KEY'
+$env:OTEL_SERVICE_NAME           = 'collabhost'
+$env:OTEL_RESOURCE_ATTRIBUTES    = 'deployment.environment=prod'
+
+& .\collabhost.exe
+```
+
+For a permanent user-level setting outside the wrapper, use
+`[Environment]::SetEnvironmentVariable(...)` with the `'User'` target — the
+variables apply to subsequent PowerShell sessions and to processes launched
+from File Explorer:
+
+```powershell
+[Environment]::SetEnvironmentVariable('OTEL_EXPORTER_OTLP_ENDPOINT', 'https://api.honeycomb.io:443', 'User')
+[Environment]::SetEnvironmentVariable('OTEL_EXPORTER_OTLP_HEADERS',  'x-honeycomb-team=YOUR_API_KEY', 'User')
+[Environment]::SetEnvironmentVariable('OTEL_SERVICE_NAME',           'collabhost',                   'User')
+[Environment]::SetEnvironmentVariable('OTEL_RESOURCE_ATTRIBUTES',    'deployment.environment=prod',  'User')
+```
+
+**Windows system-scope (`install-system.ps1`).** The Windows Service Control
+Manager stores per-service environment variables in the registry, in a
+`REG_MULTI_SZ` value named `Environment` under the service's registry key.
+Edit it from elevated PowerShell:
+
+```powershell
+# Elevated PowerShell. Service must be stopped before the edit takes effect
+# on the next start.
+Stop-Service Collabhost
+
+$key = 'HKLM:\SYSTEM\CurrentControlSet\Services\Collabhost'
+$values = @(
+    'OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io:443'
+    'OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY'
+    'OTEL_SERVICE_NAME=collabhost'
+    'OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod'
+)
+New-ItemProperty -Path $key -Name 'Environment' -PropertyType MultiString -Value $values -Force | Out-Null
+
+Start-Service Collabhost
+```
+
+To inspect the current value: `(Get-ItemProperty $key).Environment`. To
+remove the override entirely: `Remove-ItemProperty -Path $key -Name 'Environment'`.
+
+The `Environment` registry value is read by the SCM at service-start time
+and pushed into the service process's environment block — restart the service
+for changes to take effect. `sc.exe config Collabhost ...` does **not**
+expose a flag for environment variables (the `obj=` / `start=` / `binPath=`
+knobs are the only fields it manages); the registry edit above is the
+canonical mechanism.
+
+This override survives `install-system.ps1 -Version vX.Y.Z` upgrades — the
+upgrade re-applies `sc.exe config` (idempotent for the SCM-managed knobs)
+but does not touch the `Environment` registry value. Plain `-Uninstall`
+removes the service registration and the entire registry key with it; if
+you want to keep your OTel configuration across uninstall-then-reinstall,
+copy the value out first.
 
 ### 5.5 Running as a service
 
