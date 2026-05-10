@@ -74,10 +74,18 @@ public static class TypeStoreRegistration
     }
 
     // Resolves the effective user-types directory the TypeStore will scan. Relative paths are
-    // composed against AppContext.BaseDirectory to match TypeStore.ResolveUserTypesDirectory.
+    // composed against the host's ContentRootPath to match TypeStore.ResolveUserTypesDirectory.
     // Used by StartupPreflight so preflight and the runtime resolve to the same path.
-    public static string ResolveEffectiveUserTypesDirectory(TypeStoreSettings settings) =>
-        Path.IsPathRooted(settings.UserTypesDirectory)
+    //
+    // ContentRootPath unifies path semantics with card #246 (c2-A): when ASPNETCORE_CONTENTROOT
+    // is set, user types load relative to that; when unset, ContentRootPath equals
+    // AppContext.BaseDirectory (the binary dir) and behavior is preserved.
+    public static string ResolveEffectiveUserTypesDirectory(TypeStoreSettings settings, string contentRootPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentRootPath);
+
+        return Path.IsPathRooted(settings.UserTypesDirectory)
             ? settings.UserTypesDirectory
-            : Path.Combine(AppContext.BaseDirectory, settings.UserTypesDirectory);
+            : Path.Combine(contentRootPath, settings.UserTypesDirectory);
+    }
 }

@@ -3,6 +3,7 @@ using System.Globalization;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Proxy;
+using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -55,6 +56,7 @@ public class TypeStoreUserTypeTests : IDisposable
             new EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = _userTypesDirectory },
             _defaultProxySettings,
+            new StubHostEnvironment(),
             NullLogger<TypeStore>.Instance
         );
 
@@ -64,6 +66,7 @@ public class TypeStoreUserTypeTests : IDisposable
             eventBus,
             new TypeStoreSettings { UserTypesDirectory = _userTypesDirectory },
             _defaultProxySettings,
+            new StubHostEnvironment(),
             NullLogger<TypeStore>.Instance
         );
 

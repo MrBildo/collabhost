@@ -19,6 +19,12 @@ public class DataRegistrationTests
             .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal) { [key] = value })
             .Build();
 
+    // The four "anchored to ContentRoot" tests below intentionally use AppContext.BaseDirectory
+    // as the content root. Behaviorally, this asserts the env-var-unset posture (Aspire dev,
+    // Windows installer, Linux user-scope) where ContentRootPath equals AppContext.BaseDirectory
+    // -- exactly the path #246 (c2-A) preserves. The "EnvVarSet_AnchorsRelativeToContentRoot"
+    // test below exercises the other posture: a custom ContentRoot drives the resolution.
+
     [Fact]
     public void ResolveConnectionString_EnvVarSet_WinsOverConfig()
     {
@@ -30,7 +36,7 @@ public class DataRegistrationTests
         {
             var config = ConfigWith("ConnectionStrings:Host", "Data Source=./other/collabhost.db");
 
-            var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config);
+            var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config, AppContext.BaseDirectory);
 
             connectionString.ShouldBe($"Data Source={Path.Combine(dataPath, "collabhost.db")}");
             dataDir.ShouldBe(dataPath);
@@ -48,17 +54,17 @@ public class DataRegistrationTests
 
         var config = ConfigWith("ConnectionStrings:Host", "Data Source=/custom/path/collabhost.db");
 
-        var (connectionString, _) = DataRegistration.ResolveConnectionString(config);
+        var (connectionString, _) = DataRegistration.ResolveConnectionString(config, AppContext.BaseDirectory);
 
         connectionString.ShouldBe("Data Source=/custom/path/collabhost.db");
     }
 
     [Fact]
-    public void ResolveConnectionString_EnvVarUnsetConfigUnset_AnchorsHardcodedDefaultToBaseDirectory()
+    public void ResolveConnectionString_EnvVarUnsetConfigUnset_AnchorsHardcodedDefaultToContentRoot()
     {
         Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", null);
 
-        var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(EmptyConfig());
+        var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(EmptyConfig(), AppContext.BaseDirectory);
 
         var expectedDbFile = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "./data/collabhost.db"));
 
@@ -75,7 +81,7 @@ public class DataRegistrationTests
         {
             var config = ConfigWith("ConnectionStrings:Host", "Data Source=./data/collabhost.db");
 
-            var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config);
+            var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config, AppContext.BaseDirectory);
 
             var expectedDbFile = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "./data/collabhost.db"));
 
@@ -99,7 +105,7 @@ public class DataRegistrationTests
             "Data Source=./data/collabhost.db;Cache=Shared;Mode=ReadWriteCreate"
         );
 
-        var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config);
+        var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config, AppContext.BaseDirectory);
 
         var expectedDbFile = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "./data/collabhost.db"));
 
@@ -107,6 +113,34 @@ public class DataRegistrationTests
         connectionString.ShouldContain("Cache=Shared");
         connectionString.ShouldContain("Mode=ReadWriteCreate");
         dataDir.ShouldBe(Path.GetDirectoryName(expectedDbFile));
+    }
+
+    [Fact]
+    public void ResolveConnectionString_CustomContentRoot_AnchorsRelativeDataSourceToContentRoot()
+    {
+        // Card #247: when ASPNETCORE_CONTENTROOT diverges from AppContext.BaseDirectory
+        // (system-install layout), the relative connection string must anchor to the host's
+        // ContentRootPath, NOT to the binary directory.
+        Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", null);
+
+        var customContentRoot = Path.Combine(Path.GetTempPath(), $"collabhost-cr-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(customContentRoot);
+
+        try
+        {
+            var config = ConfigWith("ConnectionStrings:Host", "Data Source=./data/collabhost.db");
+
+            var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config, customContentRoot);
+
+            var expectedDbFile = Path.GetFullPath(Path.Combine(customContentRoot, "./data/collabhost.db"));
+
+            connectionString.ShouldBe($"Data Source={expectedDbFile}");
+            dataDir.ShouldBe(Path.GetDirectoryName(expectedDbFile));
+        }
+        finally
+        {
+            Directory.Delete(customContentRoot, recursive: true);
+        }
     }
 
     [Fact]
@@ -156,9 +190,17 @@ public class DataRegistrationTests
         var absoluteDb = Path.Combine(Path.GetTempPath(), "custom-collabhost.db");
         var config = ConfigWith("ConnectionStrings:Host", $"Data Source={absoluteDb}");
 
-        var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config);
+        var (connectionString, dataDir) = DataRegistration.ResolveConnectionString(config, AppContext.BaseDirectory);
 
         connectionString.ShouldBe($"Data Source={absoluteDb}");
         dataDir.ShouldBe(Path.GetDirectoryName(absoluteDb));
     }
+
+    [Fact]
+    public void ResolveConnectionString_NullContentRoot_Throws() =>
+        Should.Throw<ArgumentException>(() => DataRegistration.ResolveConnectionString(EmptyConfig(), null!));
+
+    [Fact]
+    public void ResolveConnectionString_WhitespaceContentRoot_Throws() =>
+        Should.Throw<ArgumentException>(() => DataRegistration.ResolveConnectionString(EmptyConfig(), "  "));
 }

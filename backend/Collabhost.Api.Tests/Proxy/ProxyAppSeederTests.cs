@@ -4,6 +4,7 @@ using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
+using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -86,6 +87,7 @@ public class ProxyAppSeederAtomicityTests : IAsyncLifetime
                 ListenAddress = ":443",
                 CertLifetime = "168h"
             },
+            new StubHostEnvironment(),
             NullLogger<TypeStore>.Instance
         );
 

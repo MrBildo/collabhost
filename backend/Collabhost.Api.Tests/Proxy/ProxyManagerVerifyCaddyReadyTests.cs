@@ -9,6 +9,7 @@ using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 using Collabhost.Api.Supervisor.Containment;
+using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -315,6 +316,7 @@ public class ProxyManagerVerifyCaddyReadyTests
             new Collabhost.Api.Events.EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-notexist") },
             settings,
+            new StubHostEnvironment(),
             NullLogger<TypeStore>.Instance
         );
 

@@ -7,11 +7,13 @@ public static class StartupPreflight
     public static PreflightResult Validate
     (
         string dataDirectory,
+        string contentRootPath,
         string? userTypesDirectory = null,
         ILogger? logger = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentRootPath);
 
         // (1) Data directory exists and is writable. Create if missing.
         if (!TryEnsureDirectory(dataDirectory, out var dataDirError))
@@ -60,15 +62,17 @@ public static class StartupPreflight
             );
         }
 
-        // (3) AppContext.BaseDirectory is readable. Packaging sanity check.
-        var baseDir = AppContext.BaseDirectory;
-
-        if (!Directory.Exists(baseDir))
+        // (3) Host content root is readable. Packaging / installation sanity check.
+        // Under card #246 (c2-A), ContentRootPath is the unified anchor for path resolution:
+        // when ASPNETCORE_CONTENTROOT is set, it points at the system-install config root
+        // (e.g. /etc/collabhost/); when unset, it equals AppContext.BaseDirectory (the binary
+        // dir). Either way, "the place from which other paths resolve" is what we sanity-check.
+        if (!Directory.Exists(contentRootPath))
         {
             return PreflightResult.Fail
             (
-                summary: "base directory not accessible",
-                details: [("Path", baseDir)],
+                summary: "content root not accessible",
+                details: [("Path", contentRootPath)],
                 recoverySteps: ["This indicates a corrupt installation; reinstall Collabhost."]
             );
         }

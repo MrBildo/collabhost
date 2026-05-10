@@ -11,6 +11,7 @@ public class TypeStore
     IEventBus<TypeStoreReloadedEvent> eventBus,
     TypeStoreSettings settings,
     ProxySettings proxySettings,
+    IHostEnvironment hostEnvironment,
     ILogger<TypeStore> logger
 ) : IDisposable
 {
@@ -22,6 +23,9 @@ public class TypeStore
 
     private readonly ProxySettings _proxySettings = proxySettings
         ?? throw new ArgumentNullException(nameof(proxySettings));
+
+    private readonly IHostEnvironment _hostEnvironment = hostEnvironment
+        ?? throw new ArgumentNullException(nameof(hostEnvironment));
 
     private readonly ILogger<TypeStore> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -330,14 +334,8 @@ public class TypeStore
         return Task.CompletedTask;
     }
 
-    private string ResolveUserTypesDirectory()
-    {
-        var configuredPath = _settings.UserTypesDirectory;
-
-        return Path.IsPathRooted(configuredPath)
-            ? configuredPath
-            : Path.Combine(AppContext.BaseDirectory, configuredPath);
-    }
+    private string ResolveUserTypesDirectory() =>
+        TypeStoreRegistration.ResolveEffectiveUserTypesDirectory(_settings, _hostEnvironment.ContentRootPath);
 
     private static List<(string FileName, string Json)> ReadUserTypesDirectory(string directoryPath)
     {
