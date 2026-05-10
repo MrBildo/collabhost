@@ -1751,6 +1751,52 @@ a routine event). Day-to-day per-host certificates are short-lived and
 auto-renewed by Caddy without operator action; once the root is trusted,
 the per-host renewals carry the trust automatically.
 
+### 9.12 User-type changes are not picked up (Linux)
+
+Collabhost watches the user-types directory (the path resolved from
+`COLLABHOST_USER_TYPES_PATH` or `TypeStore:UserTypesDirectory`, see §5.4)
+with a `FileSystemWatcher` and reloads the type catalog when files change.
+The watcher works on local filesystems but has known gaps:
+
+- **Network filesystems** (NFS, SMB / CIFS) — change notifications either
+  do not propagate or arrive on a long delay, depending on mount options
+  and the server implementation.
+- **Container overlay mounts** (Docker, Podman) — bind-mounts from the
+  host into a container can mask the inotify events the watcher relies on.
+
+When `aspire add my-app --type custom-type` (or any other path that adds,
+edits, or removes a JSON file under the user-types directory) does not
+show up in the dashboard within a few seconds, send Collabhost a `SIGHUP`
+to force a reload:
+
+```sh
+# Find the running PID. systemd user-unit or system-unit:
+pgrep -f collabhost
+# Or, if you launched from a wrapper script:
+ps -ef | grep collabhost
+
+# Force an immediate user-type reload:
+kill -HUP <pid>
+```
+
+Collabhost logs the reload trigger and the resulting type counts at
+`info` level:
+
+```
+TypeStore reload triggered by SIGHUP
+TypeStore reloaded: 5 built-in + 2 user types, 7 bindings
+```
+
+If the new type still does not appear after the SIGHUP, validation failed
+on one of the JSON files. Validation errors land in the same log stream
+at `warning` level, naming the offending file and field path; fix the
+JSON and SIGHUP again.
+
+`SIGHUP` is Linux-only. Windows operators with a similarly stuck watcher
+should restart the service (`Restart-Service Collabhost` for the
+system-scope service shape, §5.5.4); user types are re-read on every
+process start.
+
 ---
 
 ## 10. Uninstall

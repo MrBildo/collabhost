@@ -239,7 +239,7 @@ public class TypeStore
 
             try
             {
-                await ReloadAsync(cancellationToken);
+                await ReloadAsync("FSW", cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -252,9 +252,16 @@ public class TypeStore
         }
     }
 
-    private Task ReloadAsync(CancellationToken cancellationToken)
+    // Public so external triggers (FSW debounce loop, SIGHUP handler on Linux) can request a reload.
+    // The 'triggerSource' string is purely an operator-facing log marker -- "FSW" for the file watcher,
+    // "SIGHUP" for the Linux signal handler, "manual" for direct callers.
+    public Task ReloadAsync(string triggerSource, CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrEmpty(triggerSource);
+
         cancellationToken.ThrowIfCancellationRequested();
+
+        _logger.LogInformation("TypeStore reload triggered by {TriggerSource}", triggerSource);
 
         var userTypesDirectory = ResolveUserTypesDirectory();
         var userSources = ApplyTokens(ReadUserTypesDirectory(userTypesDirectory));
