@@ -315,6 +315,133 @@ public class ArtifactEvidenceCollectorTests : IDisposable
         evidence.SuggestedStrategy.ShouldBe(SuggestedStrategies.Manual);
     }
 
+    // --- executable (Linux-only positive coverage, card #261) ----------------
+
+    // The Windows-leg tests above use the `*.exe` extension which hits the
+    // Windows branch of ListExecutablesAtRoot. Linux uses the user-execute
+    // bit instead. These tests exercise the Linux branch with real files
+    // and real exec bits via File.SetUnixFileMode.
+
+    [Fact]
+    public void Collect_ExecutableSingleExecutableBit_FullMatchManualWithBinarySignal()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var binary = Path.Combine(_tempDir, "myapp");
+        File.WriteAllBytes(binary, [0x7f, 0x45, 0x4c, 0x46]); // ELF magic
+        File.SetUnixFileMode
+        (
+            binary,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+        );
+
+        var evidence = ArtifactEvidenceCollector.Collect(_tempDir, "executable");
+
+        evidence.Fitness.ShouldBe(AppTypeFitness.FullMatch);
+        evidence.SuggestedStrategy.ShouldBe(SuggestedStrategies.Manual);
+        evidence.RuntimeFamily.ShouldBe(RuntimeFamilies.Executable);
+
+        var signal = evidence.Signals.ShouldHaveSingleItem();
+
+        signal.Kind.ShouldBe(EvidenceSignalKinds.BinaryAtRoot);
+        signal.Attributes!["count"].ShouldBe("1");
+        signal.Attributes!["binaryName"].ShouldBe("myapp");
+        signal.Attributes!["isManagedDotnet"].ShouldBe("false");
+    }
+
+    [Fact]
+    public void Collect_ExecutableMultipleExecutableBits_LikelyMatchManual()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        foreach (var name in new[] { "myapp", "myapp-cli" })
+        {
+            var path = Path.Combine(_tempDir, name);
+            File.WriteAllBytes(path, [0x7f, 0x45, 0x4c, 0x46]);
+            File.SetUnixFileMode
+            (
+                path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            );
+        }
+
+        var evidence = ArtifactEvidenceCollector.Collect(_tempDir, "executable");
+
+        evidence.Fitness.ShouldBe(AppTypeFitness.LikelyMatch);
+        evidence.SuggestedStrategy.ShouldBe(SuggestedStrategies.Manual);
+        evidence.RuntimeFamily.ShouldBe(RuntimeFamilies.Executable);
+
+        var signal = evidence.Signals.ShouldHaveSingleItem();
+
+        signal.Kind.ShouldBe(EvidenceSignalKinds.BinaryAtRoot);
+        signal.Attributes!["count"].ShouldBe("2");
+    }
+
+    [Fact]
+    public void Collect_ExecutableNoExecutableBitSet_NotApplicable()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // Files exist but no user-execute bit. Operator pointed at the wrong
+        // directory; collector should say so (NotApplicable) rather than
+        // misclassify as a runnable executable.
+        var nonExec = Path.Combine(_tempDir, "myapp");
+        File.WriteAllBytes(nonExec, [0x7f, 0x45, 0x4c, 0x46]);
+        File.SetUnixFileMode
+        (
+            nonExec,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite
+        );
+
+        var evidence = ArtifactEvidenceCollector.Collect(_tempDir, "executable");
+
+        evidence.Fitness.ShouldBe(AppTypeFitness.NotApplicable);
+        evidence.SuggestedStrategy.ShouldBe(SuggestedStrategies.NotApplicable);
+        evidence.RuntimeFamily.ShouldBe(RuntimeFamilies.Executable);
+        evidence.Signals.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Collect_ExecutableLinuxLooksLikeDotnet_SetsIsManagedDotnetTrue()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // pdb-next-to-binary is the cheapest .NET tell. Linux self-contained
+        // publishes drop a bare-name binary (no .exe) plus a sibling .pdb.
+        var binary = Path.Combine(_tempDir, "myapp");
+        File.WriteAllBytes(binary, [0x7f, 0x45, 0x4c, 0x46]);
+        File.SetUnixFileMode
+        (
+            binary,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+        );
+
+        File.WriteAllBytes(Path.Combine(_tempDir, "myapp.pdb"), [0x42, 0x53, 0x4a, 0x42]);
+
+        var evidence = ArtifactEvidenceCollector.Collect(_tempDir, "executable");
+
+        evidence.Fitness.ShouldBe(AppTypeFitness.FullMatch);
+        evidence.RuntimeFamily.ShouldBe(RuntimeFamilies.Executable);
+
+        var signal = evidence.Signals.ShouldHaveSingleItem();
+
+        signal.Kind.ShouldBe(EvidenceSignalKinds.BinaryAtRoot);
+        signal.Attributes!["binaryName"].ShouldBe("myapp");
+        signal.Attributes!["isManagedDotnet"].ShouldBe("true");
+    }
+
     // Regression for the Linux-only hang that took down PR #162's first CI:
     // /tmp on Linux during a dotnet-test run contains clr-debug-pipe-* FIFOs
     // (extensionless, executable bit set). The pre-fix bundle-detection path

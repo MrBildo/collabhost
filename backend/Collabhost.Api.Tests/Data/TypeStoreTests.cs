@@ -103,6 +103,37 @@ public class TypeStoreTests
     }
 
     [Theory]
+    [InlineData("dotnet-app", false)]
+    [InlineData("nodejs-app", false)]
+    [InlineData("static-site", false)]
+    [InlineData("executable", false)]
+    [InlineData("system-service", true)]
+    public async Task LoadAsync_SetsIsInternalFromJson(string slug, bool expected)
+    {
+        var store = CreateTypeStore();
+
+        await store.LoadAsync();
+
+        var type = store.GetBySlug(slug);
+
+        type.ShouldNotBeNull();
+        type.IsInternal.ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task GetBySlug_ResolvesInternalTypes()
+    {
+        // ProxyAppSeeder relies on this -- internal types are loaded into the
+        // store and resolvable by slug, even though they are filtered from
+        // operator-facing list endpoints.
+        var store = CreateTypeStore();
+
+        await store.LoadAsync();
+
+        store.GetBySlug("system-service").ShouldNotBeNull();
+    }
+
+    [Theory]
     [InlineData("dotnet-app", 8)]
     [InlineData("nodejs-app", 8)]
     [InlineData("static-site", 2)]

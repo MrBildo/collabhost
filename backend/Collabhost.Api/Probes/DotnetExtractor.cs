@@ -183,7 +183,44 @@ public static class DotnetExtractor
 
     private static string? FindRuntimeConfigInBuildOutput(string projectDirectory)
     {
-        // Check bin/Debug/*/ and bin/Release/*/ for runtimeconfig.json
+        // Search order: publish/ (deployment-closest, when operator ran
+        // `dotnet publish -o publish` next to a checked-in source tree) >
+        // bin/Release/<tfm>/ > bin/Debug/<tfm>/. First match wins. The
+        // published artifact is typically the one the operator deploys, so
+        // its runtime version is the operationally relevant one when both
+        // are present. (Card #260.)
+        var publishDir = Path.Combine(projectDirectory, "publish");
+
+        if (Directory.Exists(publishDir))
+        {
+            // Operators run `dotnet publish -o publish` (flat) or the publish
+            // emits a tfm-keyed subdirectory. Check flat first, then walk one
+            // level for tfm subdirectories before falling back to bin/.
+            var publishResult = FindRuntimeConfig(publishDir);
+
+            if (publishResult is not null)
+            {
+                return publishResult;
+            }
+
+            try
+            {
+                foreach (var subDir in Directory.GetDirectories(publishDir))
+                {
+                    var nested = FindRuntimeConfig(subDir);
+
+                    if (nested is not null)
+                    {
+                        return nested;
+                    }
+                }
+            }
+            catch (IOException)
+            {
+                // Fall through to bin/ search.
+            }
+        }
+
         var binDir = Path.Combine(projectDirectory, "bin");
 
         if (!Directory.Exists(binDir))
@@ -193,7 +230,9 @@ public static class DotnetExtractor
 
         try
         {
-            foreach (var configuration in new[] { "Debug", "Release" })
+            // Release before Debug -- the published configuration is the
+            // operationally relevant one when both are present.
+            foreach (var configuration in new[] { "Release", "Debug" })
             {
                 var configDir = Path.Combine(binDir, configuration);
 

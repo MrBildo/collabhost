@@ -256,6 +256,14 @@ public class DiscoveryTools
 
         foreach (var appType in appTypes)
         {
+            // Internal types (e.g. system-service) are platform-managed and not
+            // intended for agent registration. Filter consistently with the
+            // REST /api/v1/app-types endpoint.
+            if (appType.IsInternal)
+            {
+                continue;
+            }
+
             var bindings = _typeStore.GetBindings(appType.Slug);
             var capabilities = bindings?.Keys.ToList() ?? [];
 
