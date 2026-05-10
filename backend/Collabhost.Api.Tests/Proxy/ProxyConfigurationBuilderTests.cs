@@ -632,4 +632,18 @@ public class ProxyConfigurationBuilderTests
 
     private static JsonArray? GetRoutes(JsonObject config) =>
         config["apps"]?["http"]?["servers"]?["srv0"]?["routes"]?.AsArray();
+
+    // -------- HasTlsListener (Card #263 item 1.3) --------
+
+    [Theory]
+    [InlineData(":443", true)]
+    [InlineData(":80,:443", true)]
+    [InlineData(" :80 , :443 ", true)]
+    [InlineData("0.0.0.0:443", true)]
+    [InlineData(":80", false)]
+    [InlineData(":8080", false)]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    public void HasTlsListener_VariousAddresses_ReturnsExpected(string listenAddress, bool expected) =>
+        ProxyConfigurationBuilder.HasTlsListener(listenAddress).ShouldBe(expected);
 }

@@ -61,8 +61,7 @@ public record AppActions
     bool CanStart,
     bool CanStop,
     bool CanRestart,
-    bool CanKill,
-    bool CanUpdate
+    bool CanKill
 );
 
 // --- App Settings ---
