@@ -345,7 +345,8 @@ After=network-online.target
 Wants=network-online.target
 # Rate-limit crash loops. Per systemd.unit(5), StartLimitBurst /
 # StartLimitIntervalSec are [Unit]-section keys; placing them in [Service]
-# silently no-ops with an "Unknown key name" warning in the journal.
+# silently no-ops with an "Unknown key name" warning in the journal. Restart=
+# / RestartSec= below stay in [Service] -- those ARE Service keys.
 StartLimitBurst=5
 StartLimitIntervalSec=60
 
@@ -356,39 +357,55 @@ Group=${SERVICE_GROUP}
 WorkingDirectory=${INSTALL_PREFIX}
 ExecStart=${BIN_DIR}/collabhost
 
-# Point Collabhost at the canonical system layout.
+# Point Collabhost at the canonical system layout. Each path matches what
+# install-system.sh creates and chowns. See INSTALL.md §5.4 for the full
+# environment-variable reference.
 Environment="COLLABHOST_DATA_PATH=${DATA_DIR}"
 Environment="COLLABHOST_USER_TYPES_PATH=${USER_TYPES_DIR}"
 Environment="COLLABHOST_LOGS_PATH=${LOG_DIR}"
 Environment="COLLABHOST_PROXY_STORAGE_PATH=${CADDY_STORAGE_DIR}"
-# Single-file .NET hosts extract embedded native deps to \$HOME/.net by
-# default. Our service user has --no-create-home, and ProtectHome=true below
-# would block /home/* anyway. Pin extraction to a writable path under
-# ReadWritePaths so the host doesn't probe \$HOME.
+# Single-file .NET hosts extract embedded native deps to \$HOME/.net/... by
+# default. The collabhost system user has --no-create-home, so \$HOME points at
+# /home/collabhost which doesn't exist -- and even if it did, ProtectHome=true
+# below makes /home/* invisible to the service. Pin extraction to a path under
+# our existing ReadWritePaths so the host can land its native deps without
+# touching \$HOME.
 Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=${DOTNET_BUNDLE_DIR}"
-# Card #246 (c2-A): pin ContentRoot to the install prefix so wwwroot/ resolves
-# correctly, and load the operator-editable appsettings.json from /etc/collabhost
-# directly (no symlink back into BIN_DIR needed).
+# Card #246 (c2-A): explicit content-root + config-file paths. Without these, the
+# binary's default ContentRoot is AppContext.BaseDirectory (= /opt/collabhost/bin/),
+# which is where the binary lives but NOT where the operator-facing config + Portal
+# assets live. ASPNETCORE_CONTENTROOT pins ContentRoot to /opt/collabhost so wwwroot
+# resolves to /opt/collabhost/wwwroot/ via ASP.NET's {ContentRoot}/wwwroot default,
+# and COLLABHOST_CONFIG_PATH points the explicit AddJsonFile call at the operator-
+# editable canonical location in /etc/collabhost.
 Environment="ASPNETCORE_CONTENTROOT=${INSTALL_PREFIX}"
 Environment="COLLABHOST_CONFIG_PATH=${APPSETTINGS_DST}"
+# DOTNET_ENVIRONMENT keeps the production defaults from any dev-only overrides.
 Environment="DOTNET_ENVIRONMENT=Production"
 Environment="ASPNETCORE_ENVIRONMENT=Production"
 
 # Privileged-port bind without root, without per-binary setcap. The kernel
 # grants cap_net_bind_service to the process tree, which the bundled Caddy
-# child inherits. This is the load-bearing line that closes card #214: Caddy
-# never needs setcap on the binary itself, so a 'cp' upgrade cannot strip an
-# xattr (because there is no xattr). CapabilityBoundingSet caps the upper
-# bound so other code paths cannot accidentally request more.
+# child inherits (CapabilityBoundingSet caps the upper bound so other code
+# paths cannot accidentally request more). This is the load-bearing line that
+# closes card #214: Caddy never needs setcap on the binary itself, so a \`cp\`
+# upgrade cannot strip the xattr (because there is no xattr).
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
+# Restart on crash. RestartSec gives the host a moment to flush stderr / crash
+# logs before systemd respawns. The matching StartLimitBurst /
+# StartLimitIntervalSec live in [Unit] above (systemd's parser rejects them in
+# [Service]).
 Restart=on-failure
 RestartSec=5
 
 # Conservative process hygiene. ProtectSystem=strict + the explicit
 # ReadWritePaths is the standard "service can write to its data dirs and
-# nothing else" shape.
+# nothing else" shape. PrivateTmp keeps stray /tmp files isolated. Add
+# additional hardening directives in a drop-in override if your deployment
+# allows (NoNewPrivileges, ProtectKernelTunables, etc. are standard
+# candidates).
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true

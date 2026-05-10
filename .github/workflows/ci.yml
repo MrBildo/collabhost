@@ -102,6 +102,15 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-check
 
+  systemd-unit-drift:
+    name: Systemd unit drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Lint systemd unit vs install-system.sh heredoc
+        run: bash tools/lint-systemd-unit-drift.sh
+
   publish-tag-regex:
     name: Publish tag regex
     runs-on: ubuntu-latest
