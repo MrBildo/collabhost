@@ -272,6 +272,11 @@ public class ProcessSupervisor
         return process;
     }
 
+    // Snapshot of all currently-tracked processes. The returned collection is a copy --
+    // callers that iterate while a process starts, stops, or restarts will not see
+    // their iteration corrupted, but they may see a stale entry for a single tick.
+    public IReadOnlyCollection<ManagedProcess> GetProcesses() => [.. _processes.Values];
+
     public RingBuffer<LogEntry> GetOrCreateLogBuffer(Ulid appId) =>
         _logBuffers.GetOrAdd(appId, _ => new RingBuffer<LogEntry>(1000));
 

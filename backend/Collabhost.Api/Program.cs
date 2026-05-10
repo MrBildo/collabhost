@@ -6,6 +6,7 @@ using Collabhost.Api.Data;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Filesystem;
+using Collabhost.Api.HealthChecks;
 using Collabhost.Api.Installation;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
@@ -213,6 +214,7 @@ builder.Services.AddSupervisor();
 builder.Services.AddProxy(builder.Configuration);
 builder.Services.AddPortal(builder.Configuration);
 builder.Services.AddProbes();
+builder.Services.AddHealthCheckExecutor();
 
 // MCP
 builder.Services.AddMcp();
