@@ -71,11 +71,6 @@ function makeStats(overrides: Partial<DashboardStats> = {}): DashboardStats {
     fatal: 0,
     issues: 0,
     issuesSummary: null,
-    uptimePercent24h: null,
-    incidentsThisWeek: 0,
-    memoryUsedMb: null,
-    memoryTotalMb: null,
-    requestsPerMinute: null,
     appTypes: 0,
     ...overrides,
   }

@@ -3,7 +3,6 @@ import { useApps, useStartApp, useStopApp } from '@/hooks/use-apps'
 import { useDashboardEvents, useDashboardStats } from '@/hooks/use-dashboard'
 import { useSystemStatus } from '@/hooks/use-system-status'
 import { POLL_INTERVALS } from '@/lib/constants'
-import { formatMemory } from '@/lib/format'
 import { formatActionError } from '@/lib/format-action-error'
 import { ROUTES } from '@/lib/routes'
 import { EmptyState } from '@/shared/EmptyState'
@@ -44,23 +43,6 @@ function DashboardPage() {
           value: stats.issues,
           detail: stats.issuesSummary ?? undefined,
           color: stats.issues > 0 ? ('red' as const) : ('default' as const),
-        },
-        {
-          label: '24h Uptime',
-          value: stats.uptimePercent24h != null ? `${stats.uptimePercent24h}%` : '--',
-          detail: `${stats.incidentsThisWeek} incidents this week`,
-          color: stats.uptimePercent24h != null ? ('amber' as const) : ('default' as const),
-        },
-        {
-          label: 'Memory',
-          value: formatMemory(stats.memoryUsedMb),
-          detail: stats.memoryTotalMb != null ? `of ${formatMemory(stats.memoryTotalMb)}` : undefined,
-        },
-        {
-          label: 'Req/min',
-          value: stats.requestsPerMinute ?? '--',
-          detail: 'across all apps',
-          color: stats.requestsPerMinute != null ? ('amber' as const) : ('default' as const),
         },
       ]
     : []
