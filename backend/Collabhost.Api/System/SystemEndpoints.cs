@@ -9,8 +9,6 @@ namespace Collabhost.Api.Platform;
 
 public static class SystemEndpoints
 {
-    private static readonly DateTime _startedAt = DateTime.UtcNow;
-
     public static void Map(IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/v1").WithTags("System");
@@ -21,12 +19,13 @@ public static class SystemEndpoints
 
     private static Ok<SystemStatus> GetStatus
     (
+        IApplicationStartTime startTime,
         ProxyManager proxyManager,
         PortalSettings portalSettings,
         ProxySettings proxySettings
     )
     {
-        var uptimeSeconds = Math.Max(0, (DateTime.UtcNow - _startedAt).TotalSeconds);
+        var uptimeSeconds = (DateTime.UtcNow - startTime.UtcStartedAt).TotalSeconds;
 
         // Enum name is lowercased at the boundary; internal code stays type-safe.
         var currentState = proxyManager.CurrentState;

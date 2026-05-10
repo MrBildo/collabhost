@@ -7,6 +7,7 @@ public static class PlatformRegistration
         public IServiceCollection AddPlatform()
         {
             services.AddSingleton<IBootVersionWriter, BootVersionWriter>();
+            services.AddSingleton<IApplicationStartTime, ApplicationStartTime>();
 
             return services;
         }

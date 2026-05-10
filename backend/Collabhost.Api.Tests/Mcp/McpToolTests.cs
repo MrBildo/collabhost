@@ -6,6 +6,7 @@ using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Mcp;
+using Collabhost.Api.Platform;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
@@ -73,6 +74,7 @@ public class McpToolTests(ApiFixture fixture)
 
     private DiscoveryTools CreateDiscoveryTools()
     {
+        var startTime = _services.GetRequiredService<IApplicationStartTime>();
         var appStore = _services.GetRequiredService<AppStore>();
         var typeStore = _services.GetRequiredService<TypeStore>();
         var supervisor = _services.GetRequiredService<ProcessSupervisor>();
@@ -80,7 +82,7 @@ public class McpToolTests(ApiFixture fixture)
         var proxySettings = _services.GetRequiredService<ProxySettings>();
         var probeService = _services.GetRequiredService<ProbeService>();
 
-        return new DiscoveryTools(appStore, typeStore, supervisor, proxy, proxySettings, probeService);
+        return new DiscoveryTools(startTime, appStore, typeStore, supervisor, proxy, proxySettings, probeService);
     }
 
     private LifecycleTools CreateLifecycleTools()
@@ -376,6 +378,48 @@ public class McpToolTests(ApiFixture fixture)
         var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    // -------- Discovery: get_system_status uptime --------
+
+    [Fact]
+    public void GetSystemStatus_UptimeSeconds_IsNonNegative()
+    {
+        // Validates that IApplicationStartTime eliminates the 0 / -0 race. Card #222.
+        var tools = CreateDiscoveryTools();
+
+        var result = tools.GetSystemStatus();
+
+        (result.IsError ?? false).ShouldBeFalse();
+
+        var text = GetFirstText(result);
+        var json = JsonDocument.Parse(text);
+
+        var uptimeSeconds = json.RootElement.GetProperty("uptimeSeconds").GetDouble();
+
+        uptimeSeconds.ShouldBeGreaterThanOrEqualTo(0.0, "uptimeSeconds must not be negative");
+    }
+
+    [Fact]
+    public async Task GetSystemStatus_UptimeSeconds_AgreesWithStatusEndpointWithinOneSec()
+    {
+        // MCP tool and REST endpoint share IApplicationStartTime, so their uptimeSeconds
+        // values should agree within a tight tolerance (1s covers the round-trip delta).
+        var tools = CreateDiscoveryTools();
+
+        var mcpResult = tools.GetSystemStatus();
+        using var httpResponse = await _client.GetAsync(new Uri("/api/v1/status", UriKind.Relative));
+
+        httpResponse.IsSuccessStatusCode.ShouldBeTrue();
+
+        var mcpText = GetFirstText(mcpResult);
+        var mcpJson = JsonDocument.Parse(mcpText);
+        var mcpUptime = mcpJson.RootElement.GetProperty("uptimeSeconds").GetDouble();
+
+        var httpJson = await httpResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var httpUptime = httpJson.GetProperty("uptimeSeconds").GetDouble();
+
+        Math.Abs(httpUptime - mcpUptime).ShouldBeLessThan(1.0, "MCP and REST uptimeSeconds should agree within 1 second");
     }
 
     private static string GetFirstText(CallToolResult result) =>

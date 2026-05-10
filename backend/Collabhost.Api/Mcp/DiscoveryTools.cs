@@ -18,6 +18,7 @@ namespace Collabhost.Api.Mcp;
 [McpServerToolType]
 public class DiscoveryTools
 (
+    IApplicationStartTime startTime,
     AppStore appStore,
     TypeStore typeStore,
     ProcessSupervisor supervisor,
@@ -26,6 +27,9 @@ public class DiscoveryTools
     ProbeService probeService
 )
 {
+    private readonly IApplicationStartTime _startTime = startTime
+        ?? throw new ArgumentNullException(nameof(startTime));
+
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
 
@@ -44,8 +48,6 @@ public class DiscoveryTools
     private readonly ProbeService _probeService = probeService
         ?? throw new ArgumentNullException(nameof(probeService));
 
-    private static readonly DateTime _startedAt = DateTime.UtcNow;
-
     [McpServerTool
     (
         Name = "get_system_status",
@@ -55,9 +57,9 @@ public class DiscoveryTools
         OpenWorld = false
     )]
     [Description("Returns system hostname, Collabhost version, and uptime. Use this to identify the host and verify the platform version. This tool does not require any apps to be registered.")]
-    public static CallToolResult GetSystemStatus()
+    public CallToolResult GetSystemStatus()
     {
-        var uptimeSeconds = Math.Round((DateTime.UtcNow - _startedAt).TotalSeconds, 1);
+        var uptimeSeconds = Math.Round((DateTime.UtcNow - _startTime.UtcStartedAt).TotalSeconds, 1);
 
         var uptimeFormatted = FormatUptime(uptimeSeconds);
 
