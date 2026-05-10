@@ -89,7 +89,7 @@ public static class ProxyEndpoints
             var target = routingConfiguration.ServeMode == ServeMode.ReverseProxy
                 ? process?.Port is not null
                     ? $"localhost:{process.Port.Value.ToString(CultureInfo.InvariantCulture)}"
-                    : "Not Running"
+                    : "not-running"
                 : "Static Files";
 
             entries.Add

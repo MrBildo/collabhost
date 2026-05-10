@@ -1001,7 +1001,7 @@ public static class AppEndpoints
         return TypedResults.NoContent();
     }
 
-    private static ProcessState ResolveStatus
+    internal static ProcessState ResolveStatus
     (
         bool hasProcess,
         ManagedProcess? process,

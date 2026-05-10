@@ -42,24 +42,10 @@ public static class DashboardEndpoints
             var process = supervisor.GetProcess(app.Id);
             var hasProcess = typeStore.HasBinding(app.AppTypeSlug, "process");
             var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
+            var routeEnabled = hasRouting && proxy.IsRouteEnabled(app.Slug);
 
-            if (!hasProcess && !hasRouting)
-            {
-                stopped++;
-                continue;
-            }
-
-            ProcessState state;
-
-            if (hasProcess)
-            {
-                state = process?.State ?? ProcessState.Stopped;
-            }
-            else
-            {
-                // Routing-only: route enabled = running
-                state = proxy.IsRouteEnabled(app.Slug) ? ProcessState.Running : ProcessState.Stopped;
-            }
+            // Use the same resolver as AppEndpoints so both strips agree on what "running" means.
+            var state = AppEndpoints.ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
 
             switch (state)
             {
@@ -103,11 +89,6 @@ public static class DashboardEndpoints
             fatal,
             issues,
             issuesSummary,
-            null,
-            0,
-            null,
-            null,
-            null,
             appTypes.Count
         );
 

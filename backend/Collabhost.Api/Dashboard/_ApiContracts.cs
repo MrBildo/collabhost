@@ -10,11 +10,6 @@ public record DashboardStats
     int Fatal,
     int Issues,
     string? IssuesSummary,
-    double? UptimePercent24h,
-    int IncidentsThisWeek,
-    double? MemoryUsedMb,
-    double? MemoryTotalMb,
-    double? RequestsPerMinute,
     int AppTypes
 );
 
