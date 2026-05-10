@@ -5,6 +5,7 @@ using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
+using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,7 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
             new EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-test-notexist") },
             new ProxySettings { BaseDomain = "collab.internal", BinaryPath = "caddy", ListenAddress = ":443", CertLifetime = "168h" },
+            new StubHostEnvironment(),
             NullLogger<TypeStore>.Instance
         );
 

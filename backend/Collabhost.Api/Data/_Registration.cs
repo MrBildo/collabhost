@@ -6,9 +6,9 @@ public static class DataRegistration
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddDataAccess(IConfiguration configuration)
+        public IServiceCollection AddDataAccess(IConfiguration configuration, string contentRootPath)
         {
-            var (connectionString, dataDir) = ResolveConnectionString(configuration);
+            var (connectionString, dataDir) = ResolveConnectionString(configuration, contentRootPath);
 
             // Ensure the data directory exists on first boot
             if (!string.IsNullOrEmpty(dataDir))
@@ -33,8 +33,14 @@ public static class DataRegistration
     }
 
     // Internal visibility for unit tests
-    internal static (string ConnectionString, string? DataDir) ResolveConnectionString(IConfiguration configuration)
+    internal static (string ConnectionString, string? DataDir) ResolveConnectionString
+    (
+        IConfiguration configuration,
+        string contentRootPath
+    )
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentRootPath);
+
         // COLLABHOST_DATA_PATH: env var wins over appsettings, then hardcoded default
         var dataPath = Environment.GetEnvironmentVariable("COLLABHOST_DATA_PATH");
 
@@ -48,13 +54,17 @@ public static class DataRegistration
         var configuredConnectionString = configuration.GetConnectionString("Host")
             ?? "Data Source=./data/collabhost.db";
 
-        // Anchor a relative DataSource to AppContext.BaseDirectory (the binary dir). SQLite opens
-        // relative paths against the process CWD, and the host's content root no longer follows
-        // CWD after card #164 -- without this anchor, the installed shipped connection string
+        // Anchor a relative DataSource to the host's ContentRootPath. SQLite opens relative
+        // paths against the process CWD, and the host's content root no longer follows CWD
+        // after card #164 -- without this anchor, the installed shipped connection string
         // `./data/collabhost.db` would still land in whatever directory the operator launched
         // from, and the dataDir returned here (used by preflight + migrations) would disagree
         // with where SQLite actually put the file.
-        var normalizedConnectionString = NormalizeRelativeDataSource(configuredConnectionString);
+        //
+        // ContentRootPath unifies path semantics with card #246 (c2-A): when ASPNETCORE_CONTENTROOT
+        // is set (system-install layout), data lands relative to that; when unset, ContentRootPath
+        // equals AppContext.BaseDirectory (the binary dir) and behavior is preserved.
+        var normalizedConnectionString = NormalizeRelativeDataSource(configuredConnectionString, contentRootPath);
 
         var configuredDataDir = new SqliteConnectionStringBuilder(normalizedConnectionString).DataSource is { } src
             ? Path.GetDirectoryName(src)
@@ -76,7 +86,7 @@ public static class DataRegistration
         command.ExecuteScalar();
     }
 
-    private static string NormalizeRelativeDataSource(string connectionString)
+    private static string NormalizeRelativeDataSource(string connectionString, string contentRootPath)
     {
         var builder = new SqliteConnectionStringBuilder(connectionString);
 
@@ -85,7 +95,7 @@ public static class DataRegistration
             return connectionString;
         }
 
-        builder.DataSource = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, builder.DataSource));
+        builder.DataSource = Path.GetFullPath(Path.Combine(contentRootPath, builder.DataSource));
 
         return builder.ConnectionString;
     }

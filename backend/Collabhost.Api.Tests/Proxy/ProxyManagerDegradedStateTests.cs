@@ -11,6 +11,7 @@ using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 using Collabhost.Api.Supervisor.Containment;
+using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -221,6 +222,7 @@ public class ProxyManagerDegradedStateTests : IAsyncLifetime
             new EventBus<TypeStoreReloadedEvent>(),
             new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-degraded-test-notexist") },
             settings,
+            new StubHostEnvironment(),
             NullLogger<TypeStore>.Instance
         );
 

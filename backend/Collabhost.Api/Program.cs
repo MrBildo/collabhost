@@ -110,8 +110,14 @@ builder.AddServiceDefaults();
 
 // Startup phase 2 -- Environment preflight. Runs before DI is built and before any hosted
 // service wires itself up. A halt here means we never touch the DB.
-var (_, resolvedDataDir) = DataRegistration.ResolveConnectionString(builder.Configuration);
-var effectiveDataDir = resolvedDataDir ?? Path.Combine(AppContext.BaseDirectory, "data");
+//
+// ContentRootPath is the unified anchor for relative-path resolution after card #247
+// (BaseDirectory call-site alignment): every site that previously composed against
+// AppContext.BaseDirectory now flows from builder.Environment.ContentRootPath. With
+// ASPNETCORE_CONTENTROOT unset, ContentRootPath == AppContext.BaseDirectory, so behavior
+// is preserved on platforms not driving the change.
+var (_, resolvedDataDir) = DataRegistration.ResolveConnectionString(builder.Configuration, builder.Environment.ContentRootPath);
+var effectiveDataDir = resolvedDataDir ?? Path.Combine(builder.Environment.ContentRootPath, "data");
 
 // Crash log directory + retention. Resolved before any preflight so a preflight failure
 // can still write a crash file. Default is {DataDir}/logs/. Card #162.
@@ -148,12 +154,22 @@ AppDomain.CurrentDomain.UnhandledException += (_, e) =>
 // Resolve TypeStore settings once so preflight and DI registration use the same values
 // without reading the env var twice (LOW-3).
 var typeStoreSettings = TypeStoreRegistration.ResolveSettings(builder.Configuration);
-var effectiveUserTypesDir = TypeStoreRegistration.ResolveEffectiveUserTypesDirectory(typeStoreSettings);
+var effectiveUserTypesDir = TypeStoreRegistration.ResolveEffectiveUserTypesDirectory
+(
+    typeStoreSettings,
+    builder.Environment.ContentRootPath
+);
 
 using (var preflightLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole()))
 {
     var preflightLogger = preflightLoggerFactory.CreateLogger("StartupPreflight");
-    var preflightResult = StartupPreflight.Validate(effectiveDataDir, effectiveUserTypesDir, preflightLogger);
+    var preflightResult = StartupPreflight.Validate
+    (
+        effectiveDataDir,
+        builder.Environment.ContentRootPath,
+        effectiveUserTypesDir,
+        preflightLogger
+    );
 
     if (!preflightResult.Success)
     {
@@ -194,7 +210,7 @@ builder.Services.AddPlatform();
 builder.Services.AddHosting(builder.Configuration);
 
 // Database
-builder.Services.AddDataAccess(builder.Configuration);
+builder.Services.AddDataAccess(builder.Configuration, builder.Environment.ContentRootPath);
 
 // Memory cache
 builder.Services.AddMemoryCache();
