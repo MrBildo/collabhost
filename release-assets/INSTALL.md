@@ -660,7 +660,17 @@ hours.
 ```powershell
 sc.exe query Collabhost
 curl http://localhost:58400/api/v1/status
+
+# Dashboard reachability check -- exercises the canonical layout split.
+# This is the load-bearing assertion: it confirms wwwroot/, appsettings.json,
+# and the operator-facing data directories all resolved correctly under SCM
+# launch (not just the API listener). See §3 for trusting the bundled CA.
+curl -k https://collabhost.collab.internal/
 ```
+
+The dashboard response should be HTTP 200 with a body starting with
+`<!DOCTYPE html>`. If you see HTTP 401, the SPA shell middleware didn't pick
+up `wwwroot/` — check §9.10 for diagnosis.
 
 On a fresh install, capture the admin key (it emits once on first boot — see
 §2). Under the Windows Service the key surfaces in the Application event
