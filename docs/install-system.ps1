@@ -710,6 +710,53 @@ try
         throw "sc.exe failure $ServiceName failed with exit code $LASTEXITCODE."
     }
 
+    # ---- Service-scoped environment variables ------------------------------
+
+    # Point the binary at the canonical Windows system layout. Each path mirrors
+    # what install-system.sh sets in the systemd unit's [Service] block (lines
+    # 363-385 of that script) -- this is the Windows analog of the Linux
+    # Environment="..." directives. The SCM reads these at service start and
+    # injects them into the binary's process environment before ExecStart.
+    #
+    # Card #246 (c2-A) baked the system-scope contract: when ASPNETCORE_CONTENTROOT
+    # is set, the binary resolves ContentRoot to %ProgramFiles%\Collabhost so
+    # wwwroot/ resolves correctly; COLLABHOST_CONFIG_PATH points the explicit
+    # AddJsonFile call at %ProgramData%\Collabhost\config\appsettings.json. The
+    # operator-facing path env vars (DATA, USER_TYPES, LOGS, PROXY_STORAGE)
+    # override the shipped appsettings.json defaults so SQLite, user-types,
+    # crash logs, and Caddy storage land under %ProgramData% (where uninstall
+    # preserves them) rather than ContentRoot-relative under %ProgramFiles%.
+    #
+    # ASPNETCORE_ENVIRONMENT / DOTNET_ENVIRONMENT=Production guard against
+    # machine-scoped Development overrides leaking into the service.
+    #
+    # Shape: REG_MULTI_SZ value named "Environment" under the service key. The
+    # SCM honors this convention on Win10+/Server 2016+. Card #277.
+    $ServiceRegistryKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    $ServiceEnvVars = @(
+        "ASPNETCORE_CONTENTROOT=$InstallPrefix",
+        "COLLABHOST_CONFIG_PATH=$AppSettingsPath",
+        "COLLABHOST_DATA_PATH=$DataDir",
+        "COLLABHOST_USER_TYPES_PATH=$UserTypesDir",
+        "COLLABHOST_LOGS_PATH=$LogDir",
+        "COLLABHOST_PROXY_STORAGE_PATH=$CaddyStorageDir",
+        'ASPNETCORE_ENVIRONMENT=Production',
+        'DOTNET_ENVIRONMENT=Production'
+    )
+
+    Write-Host 'Setting service environment variables...'
+    # Set-ItemProperty on a missing value creates it; on an existing value
+    # replaces it. PropertyType MultiString = REG_MULTI_SZ. Idempotent across
+    # reinstalls -- if the v1.3.0 set ever grows (e.g. a new path var lands in
+    # v1.4), the next install replaces the value with the new set rather than
+    # appending.
+    Set-ItemProperty `
+        -LiteralPath $ServiceRegistryKey `
+        -Name        'Environment' `
+        -Value       $ServiceEnvVars `
+        -Type        MultiString `
+        -ErrorAction Stop
+
     # ---- Start service -----------------------------------------------------
 
     Write-Host "Starting $ServiceName..."
