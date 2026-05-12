@@ -126,6 +126,7 @@ Returns JSON including a `proxyState` field. Values:
 |-------|---------|
 | `starting` | Caddy launch is in progress (transient, first few seconds of boot). |
 | `running`  | Caddy is up and reachable. Normal healthy state. |
+| `degraded` | Caddy is alive but routes are not reaching the public listener. See §9.2. |
 | `failed`   | Caddy did not come up within the startup probe deadline. See §9 Troubleshooting. |
 | `disabled` | Caddy binary could not be resolved at startup. See §5 (`COLLABHOST_CADDY_PATH`). |
 | `stopped`  | Caddy was started and has since stopped (e.g., crash post-boot). |
@@ -137,8 +138,9 @@ line beneath the state label:
 |-------|-----------------|-----------------------|
 | `starting` | amber  | `Warming up` |
 | `running`  | green  | (none) |
+| `degraded` | amber  | `Routes not reaching public listener` |
 | `failed`   | red    | `Check logs, restart Collabhost` |
-| `disabled` | amber  | `Install Caddy or set COLLABHOST_CADDY_PATH` |
+| `disabled` | amber  | `Re-run the installer or set COLLABHOST_CADDY_PATH` |
 | `stopped`  | gray   | `Proxy app stopped` |
 
 The JSON `proxyState` value is the contract; the color and detail text are
@@ -235,7 +237,7 @@ Then `.\startup.ps1`.
 | `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string | `720h` |
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
-| `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. | URL (no trailing slash) | `http://localhost:9000/releases/v0.1.0` |
+| `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. | URL (no trailing slash) | `http://localhost:9000/releases/v1.3.0` |
 
 **Caddy binary resolution — two-tier precedence (highest first):**
 
@@ -658,7 +660,17 @@ hours.
 ```powershell
 sc.exe query Collabhost
 curl http://localhost:58400/api/v1/status
+
+# Dashboard reachability check -- exercises the canonical layout split.
+# This is the load-bearing assertion: it confirms wwwroot/, appsettings.json,
+# and the operator-facing data directories all resolved correctly under SCM
+# launch (not just the API listener). See §3 for trusting the bundled CA.
+curl -k https://collabhost.collab.internal/
 ```
+
+The dashboard response should be HTTP 200 with a body starting with
+`<!DOCTYPE html>`. If you see HTTP 401, the SPA shell middleware didn't pick
+up `wwwroot/` — check §9.10 for diagnosis.
 
 On a fresh install, capture the admin key (it emits once on first boot — see
 §2). Under the Windows Service the key surfaces in the Application event
@@ -895,13 +907,12 @@ Three positive signals confirm a working install:
 collabhost --version
 ```
 
-Should print:
+Should print `Collabhost <version>` matching the release you installed —
+for example:
 
 ```
-Collabhost 0.1.0
+Collabhost 1.3.0
 ```
-
-(The version number matches the release you installed.)
 
 ### 7.2 Status endpoint
 
@@ -1015,7 +1026,7 @@ On the first launch of a new binary against an existing database:
    data/backups/collabhost.db.bak-{yyyyMMddTHHmmssZ}-pre-v{fromSemver}-to-v{toSemver}
    ```
 
-   Example: `collabhost.db.bak-20260420T143022Z-pre-v0.1.0-to-v0.2.0`.
+   Example: `collabhost.db.bak-20260420T143022Z-pre-v1.2.0-to-v1.3.0`.
 3. Migrations apply. On success, Collabhost records the new version as the
    last-booted version and proceeds with boot.
 4. On failure, Collabhost halts with a structured stderr block pointing at
@@ -1349,7 +1360,7 @@ like:
 Collabhost startup failed: migration failed
 
 Details:
-  - Backup created at: /home/user/.collabhost/bin/data/backups/collabhost.db.bak-20260420T143022Z-pre-v0.1.0-to-v0.2.0
+  - Backup created at: /home/user/.collabhost/bin/data/backups/collabhost.db.bak-20260420T143022Z-pre-v1.2.0-to-v1.3.0
   - Migration attempted: AddActivityEvents
   - Exception: System.Data.SqliteException: SQLITE_ERROR: no such column: Foo
 
@@ -1368,14 +1379,14 @@ Steps:
 3. Copy the most recent backup over the live DB:
 
    ```sh
-   cp backups/collabhost.db.bak-20260420T143022Z-pre-v0.1.0-to-v0.2.0 collabhost.db
+   cp backups/collabhost.db.bak-20260420T143022Z-pre-v1.2.0-to-v1.3.0 collabhost.db
    ```
 
    ```powershell
-   Copy-Item backups\collabhost.db.bak-20260420T143022Z-pre-v0.1.0-to-v0.2.0 collabhost.db -Force
+   Copy-Item backups\collabhost.db.bak-20260420T143022Z-pre-v1.2.0-to-v1.3.0 collabhost.db -Force
    ```
 4. Re-install the previous version (rerun `install.sh` / `install.ps1` with
-   `--version v0.1.0` / `-Version v0.1.0`).
+   `--version v1.2.0` / `-Version v1.2.0`).
 5. Boot against the restored DB to confirm service is healthy.
 6. File an issue with the stderr block and the migration name.
 
@@ -1406,7 +1417,7 @@ the exit-code taxonomy on startup failure:
 Any code outside this table is unexpected — please file an issue with the
 stderr block.
 
-**Stability note:** specific codes are informational in v0.1.0 and may be
+**Stability note:** specific codes are informational in v1.x and may be
 refined across minor versions until the first operator writes automation
 that depends on them. If you are building such automation, open an issue so
 the contract can be frozen.
@@ -1903,19 +1914,19 @@ the checksum against the release's `checksums.txt`.
 
 ```sh
 # Linux
-sha256sum -c collabhost-0.1.0-linux-x64.tar.gz.sha256
+sha256sum -c collabhost-1.3.0-linux-x64.tar.gz.sha256
 ```
 
 ```sh
 # macOS
-shasum -a 256 -c collabhost-0.1.0-osx-arm64.tar.gz.sha256
+shasum -a 256 -c collabhost-1.3.0-osx-arm64.tar.gz.sha256
 ```
 
 ```powershell
 # Windows
-$expected = (Get-Content checksums.txt | Select-String 'collabhost-0.1.0-win-x64.zip$').Line -split '\s+' | Select-Object -First 1
+$expected = (Get-Content checksums.txt | Select-String 'collabhost-1.3.0-win-x64.zip$').Line -split '\s+' | Select-Object -First 1
 if (-not $expected) { throw 'Checksum line not found for this archive.' }
-$actual   = (Get-FileHash -Algorithm SHA256 collabhost-0.1.0-win-x64.zip).Hash.ToLower()
+$actual   = (Get-FileHash -Algorithm SHA256 collabhost-1.3.0-win-x64.zip).Hash.ToLower()
 if ($expected -ne $actual) { throw 'Checksum mismatch.' } else { 'OK' }
 ```
 
