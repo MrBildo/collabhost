@@ -15,8 +15,24 @@ public class RoutingConfiguration
     // "/config.json::Cache-Control" -> "no-cache"). Flattened (not nested) so
     // it reuses the existing string->string KeyValue field and keeps MergeJson
     // semantics identical to the env-var map. Card #308.
-    public IDictionary<string, string> ResponseHeaders { get; set; } =
-        new Dictionary<string, string>(StringComparer.Ordinal);
+    //
+    // The explicit setter normalizes JSON null → empty dictionary so that an
+    // override containing {"responseHeaders":null} — which passes ValidateEdits
+    // (null is not a JsonObject) and flows through MergeJson's else-branch —
+    // never reaches consumers as a null reference. Without the guard,
+    // ProxyManager.LoadRoutableAppsAsync would NRE on .Count, breaking proxy
+    // sync for every app in that pass.
+    // IDE0032: cannot use auto-property -- the setter normalizes JSON null to an
+    // empty dictionary, which an auto-property cannot express.
+#pragma warning disable IDE0032
+    private IDictionary<string, string> _responseHeaders = new Dictionary<string, string>(StringComparer.Ordinal);
+#pragma warning restore IDE0032
+
+    public IDictionary<string, string> ResponseHeaders
+    {
+        get => _responseHeaders;
+        set => _responseHeaders = value ?? new Dictionary<string, string>(StringComparer.Ordinal);
+    }
 
     public static IReadOnlyList<FieldDescriptor> Schema =>
     [

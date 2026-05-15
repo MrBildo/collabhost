@@ -460,6 +460,39 @@ public class CapabilityResolverTests
     }
 
     [Fact]
+    public void Resolve_RoutingWithExplicitNullResponseHeaders_NormalizesToEmpty()
+    {
+        // Regression guard for the NRE introduced by Card #308.
+        //
+        // An operator-crafted PUT /api/v1/apps/{slug}/settings with body
+        // {"routing":{"responseHeaders":null}} passes ValidateEdits (JSON null
+        // is not a JsonObject, so the KeyValue guard does not fire), flows
+        // through MergeJson's else-branch writing defaults["responseHeaders"]=null,
+        // and STJ deserializes the explicit null over the POCO initializer.
+        //
+        // Without the null-normalizing setter, ResponseHeaders would be null and
+        // ProxyManager.LoadRoutableAppsAsync would NRE on .Count, breaking proxy
+        // sync for every app in that pass.
+        //
+        // The fix: RoutingConfiguration.ResponseHeaders setter normalizes null
+        // to an empty Dictionary at the resolve boundary so no consumer can
+        // receive a null reference regardless of the deserialized JSON.
+        var defaults = """{"domainPattern":"{slug}.{baseDomain}","serveMode":"FileServer","spaFallback":false,"responseHeaders":{"/config.json::Cache-Control":"no-cache"}}""";
+        var overrideWithNull = """{"responseHeaders":null}""";
+
+        var resolved = CapabilityResolver.Resolve<RoutingConfiguration>(defaults, overrideWithNull);
+
+        // Must not throw -- the old code would NRE here.
+        resolved.ResponseHeaders.ShouldNotBeNull();
+
+        // Explicit null is normalized to empty (not the seed default -- the
+        // override explicitly cleared it). Byte-identical pre-#308 subroute
+        // shape is the downstream consequence: ProxyManager will produce null
+        // responseHeaders → BuildFileServerRoute emits vars+file_server only.
+        resolved.ResponseHeaders.Count.ShouldBe(0);
+    }
+
+    [Fact]
     public void ResolveDomain_ReplacesSlugAndBaseDomain()
     {
         var result = CapabilityResolver.ResolveDomain("{slug}.{baseDomain}", "my-app", "test.internal");
