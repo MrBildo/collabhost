@@ -211,8 +211,10 @@ download_and_verify() {
 # Inputs: TMP_DIR, ARCHIVE.
 # Output: EXTRACT_DIR (global).
 # Extracts the archive into TMP_DIR/extract and verifies layout. The archive is
-# flat -- eight items sit at the archive root (seven files/dirs plus wwwroot/),
-# no wrapping directory. Exits non-zero on layout surprise.
+# flat -- the contract entries (collabhost, caddy, appsettings.json, INSTALL.md,
+# LICENSES/, wwwroot/) sit at the archive root, no wrapping directory. See
+# INSTALL.md section 4 for the operator-facing listing. Exits non-zero on layout
+# surprise.
 extract_archive() {
   EXTRACT_DIR="${TMP_DIR}/extract"
   mkdir -p "${EXTRACT_DIR}"

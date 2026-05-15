@@ -70,10 +70,11 @@ Then launch it:
 collabhost
 ```
 
-On first run, Collabhost seeds an administrator account and prints the API key to stdout:
+On first run, Collabhost seeds an administrator account and emits the API key once as a critical-level log line:
 
 ```
-[Collabhost] Admin key: 01JRSB8XH7D4Z2K9N0MFQPTVCW
+crit: Collabhost.Api.Authorization.UserSeedService[0]
+      Collabhost admin key: 01JRSB8XH7D4Z2K9N0MFQPTVCW
 ```
 
 Copy that key, open the dashboard at `http://localhost:58400`, and paste it into the API key prompt. You're in.
