@@ -321,6 +321,103 @@ describe('SchemaField', () => {
     })
   })
 
+  describe('keyvalue key-pattern wiring (#308)', () => {
+    const HEADER_PATTERN_SRC = "^/[^\\s:]+::[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
+    const HEADER_MESSAGE =
+      'Keys must be "<path>::<HeaderName>" -- a path starting with \'/\' (no spaces or colons), \'::\', then a valid HTTP header name (e.g. "/config.json::Cache-Control").'
+    const ENV_MESSAGE =
+      'Keys must start with a letter or underscore, and contain only letters, digits, and underscores.'
+
+    test('passes a declared keyPattern down so header-shaped keys validate', async () => {
+      const user = userEvent.setup()
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="Response Headers"
+          type="keyvalue"
+          value={{}}
+          defaultValue={{}}
+          editable={EDITABLE_ALWAYS}
+          keyPattern={HEADER_PATTERN_SRC}
+          keyPatternMessage={HEADER_MESSAGE}
+          isEditing={true}
+          onChange={vi.fn()}
+        />,
+      )
+
+      await user.type(screen.getByLabelText('New entry key'), 'Cache-Control')
+      expect(screen.getByText(HEADER_MESSAGE)).toBeInTheDocument()
+      expect(screen.getByLabelText('Add entry')).toBeDisabled()
+    })
+
+    test('null keyPattern falls back to the env-var default (no regression)', async () => {
+      const user = userEvent.setup()
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="Environment Variables"
+          type="keyvalue"
+          value={{}}
+          defaultValue={{}}
+          editable={EDITABLE_ALWAYS}
+          keyPattern={null}
+          keyPatternMessage={null}
+          isEditing={true}
+          onChange={vi.fn()}
+        />,
+      )
+
+      await user.type(screen.getByLabelText('New entry key'), '/config.json::Cache-Control')
+      expect(screen.getByText(ENV_MESSAGE)).toBeInTheDocument()
+      expect(screen.getByLabelText('Add entry')).toBeDisabled()
+    })
+
+    test('absent keyPattern (env-var fields) keeps the env-var contract', async () => {
+      const user = userEvent.setup()
+      const onChange = vi.fn()
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="Environment Variables"
+          type="keyvalue"
+          value={{}}
+          defaultValue={{}}
+          editable={EDITABLE_ALWAYS}
+          isEditing={true}
+          onChange={onChange}
+        />,
+      )
+
+      await user.type(screen.getByLabelText('New entry key'), 'GOOD_VAR')
+      await user.type(screen.getByLabelText('New entry value'), 'x')
+      await user.click(screen.getByLabelText('Add entry'))
+      expect(onChange).toHaveBeenCalledWith({ GOOD_VAR: 'x' })
+    })
+
+    test('a malformed keyPattern degrades to the env-var default rather than crashing', async () => {
+      const user = userEvent.setup()
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="Response Headers"
+          type="keyvalue"
+          value={{}}
+          defaultValue={{}}
+          editable={EDITABLE_ALWAYS}
+          keyPattern={'[invalid('}
+          keyPatternMessage={'should not surface'}
+          isEditing={true}
+          onChange={vi.fn()}
+        />,
+      )
+
+      // Falls back to env-var regex: a POSIX key is accepted, a header key is not.
+      await user.type(screen.getByLabelText('New entry key'), '/x::Y')
+      expect(screen.getByText(ENV_MESSAGE)).toBeInTheDocument()
+      expect(screen.queryByText('should not surface')).not.toBeInTheDocument()
+    })
+  })
+
   describe('override badge', () => {
     test('shows override badge when value differs from default', () => {
       render(

@@ -116,6 +116,95 @@ public class SettingsSchemaOverrideTests(ApiFixture fixture)
         }
     }
 
+    // ----- Card #308: per-field key-pattern hint on the settings DTO -----
+
+    [Fact]
+    public async Task GetSettings_StaticSite_ResponseHeadersFieldCarriesKeyPatternHintAndSeededDefault()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var slug = $"test-308-headers-{suffix}";
+
+        try
+        {
+            await CreateAppAsync(slug, "static-site");
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{slug}/settings");
+            request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            using var response = await _client.SendAsync(request);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var body = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(body);
+
+            var routingSection = FindSection(document.RootElement, "routing");
+            routingSection.ShouldNotBeNull();
+
+            var responseHeadersField = FindField(routingSection.Value, "responseHeaders");
+            responseHeadersField.ShouldNotBeNull();
+
+            responseHeadersField.Value.GetProperty("type").GetString().ShouldBe("keyvalue");
+
+            // The key-pattern hint is present and is the server-authoritative pattern.
+            var keyPattern = responseHeadersField.Value.GetProperty("keyPattern").GetString();
+            keyPattern.ShouldNotBeNull();
+            keyPattern.ShouldBe(@"^/[^\s:]+::[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
+
+            var keyPatternMessage = responseHeadersField.Value.GetProperty("keyPatternMessage").GetString();
+            keyPatternMessage.ShouldNotBeNull();
+            keyPatternMessage.ShouldContain("<path>::<HeaderName>");
+
+            // The seeded default ships the Collaboard config.json rule with zero operator action.
+            var defaultValue = responseHeadersField.Value.GetProperty("defaultValue");
+            defaultValue.GetProperty("/config.json::Cache-Control").GetString().ShouldBe("no-cache");
+        }
+        finally
+        {
+            await DeleteAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task GetSettings_EnvironmentVariablesField_HasNoKeyPatternHint()
+    {
+        // The absent-hint contract: env-var KeyValue fields declare no
+        // KeyPattern, so the DTO carries keyPattern=null. The frontend reads
+        // null-or-absent as "keep the env-var default" -- existing fields
+        // byte-for-byte unaffected.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var slug = $"test-308-envkey-{suffix}";
+
+        try
+        {
+            await CreateAppAsync(slug, "dotnet-app");
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{slug}/settings");
+            request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            using var response = await _client.SendAsync(request);
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var body = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(body);
+
+            var envSection = FindSection(document.RootElement, "environment-defaults");
+            envSection.ShouldNotBeNull();
+
+            var variablesField = FindField(envSection.Value, "variables");
+            variablesField.ShouldNotBeNull();
+
+            // keyPattern is present-but-null (absent-hint contract).
+            variablesField.Value.GetProperty("keyPattern").ValueKind.ShouldBe(JsonValueKind.Null);
+            variablesField.Value.GetProperty("keyPatternMessage").ValueKind.ShouldBe(JsonValueKind.Null);
+        }
+        finally
+        {
+            await DeleteAppAsync(slug);
+        }
+    }
+
     private async Task CreateAppAsync(string slug, string appTypeSlug)
     {
         var payload = new

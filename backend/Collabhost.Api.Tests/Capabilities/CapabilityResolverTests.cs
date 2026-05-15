@@ -312,6 +312,186 @@ public class CapabilityResolverTests
         errors[0].ShouldContain("Invalid key");
     }
 
+    // ----- Card #308: per-field key-pattern (responseHeaders) -----
+
+    [Theory]
+    [InlineData("/config.json::Cache-Control")]
+    [InlineData("/index.html::X-Frame-Options")]
+    [InlineData("/a/b/c.json::Cache-Control")]
+    [InlineData("/config.json::X-Custom.Header_1")]
+    [InlineData("/file::ETag")]
+    public void ValidateEdits_ValidResponseHeaderKey_ReturnsNoError(string key)
+    {
+        var overrides = new JsonObject
+        {
+            ["responseHeaders"] = new JsonObject { [key] = "no-cache" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, false);
+
+        errors.Count.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("config.json::Cache-Control")]      // no leading slash
+    [InlineData("/config.json:Cache-Control")]       // single colon, not "::"
+    [InlineData("/config.json::Cache Control")]      // space in header name
+    [InlineData("/config.json::")]                   // empty header name
+    [InlineData("::Cache-Control")]                  // empty path
+    [InlineData("/with:colon::Cache-Control")]       // colon in path
+    [InlineData("/config.json::Cache\"Control")]     // invalid header char
+    [InlineData("Cache-Control")]                    // env-var-shaped key rejected here
+    public void ValidateEdits_InvalidResponseHeaderKey_ReturnsError(string key)
+    {
+        var overrides = new JsonObject
+        {
+            ["responseHeaders"] = new JsonObject { [key] = "no-cache" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("Invalid key");
+        errors[0].ShouldContain(key);
+        // The operator-facing message is the responseHeaders message, not the env-var one.
+        errors[0].ShouldContain("<path>::<HeaderName>");
+    }
+
+    [Fact]
+    public void ValidateEdits_ResponseHeaderKeys_ValidatedDuringRegistration()
+    {
+        var overrides = new JsonObject
+        {
+            ["responseHeaders"] = new JsonObject { ["bad-key"] = "no-cache" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, true);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("Invalid key");
+    }
+
+    [Fact]
+    public void ValidateEdits_EnvironmentVariableField_BehaviorUnchangedByKeyPatternAddition()
+    {
+        // Regression: the env-var field declares no KeyPattern, so it must keep
+        // the exact pre-#308 POSIX-identifier contract and message. A
+        // header-shaped key (valid for responseHeaders) must still be rejected
+        // for env vars; a valid env key must still pass.
+        var headerShaped = new JsonObject
+        {
+            ["variables"] = new JsonObject { ["/config.json::Cache-Control"] = "no-cache" }
+        };
+
+        var headerErrors = CapabilityResolver.ValidateEdits("environment-defaults", headerShaped, false);
+
+        headerErrors.Count.ShouldBe(1);
+        headerErrors[0].ShouldContain("Invalid key");
+        headerErrors[0].ShouldContain("start with a letter or underscore");
+
+        var validEnv = new JsonObject
+        {
+            ["variables"] = new JsonObject { ["NODE_ENV"] = "production" }
+        };
+
+        CapabilityResolver.ValidateEdits("environment-defaults", validEnv, false).Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void MergeJson_ResponseHeadersFlatMap_MergesAtKeyLevelLikeEnvVars()
+    {
+        // §6.4 merge-safety: the flattened responseHeaders map merges
+        // identically to the env-var map -- override keys add/replace, default
+        // keys survive. This is why the flattened shape needs no new merge
+        // semantics.
+        var defaults = """{"responseHeaders":{"/config.json::Cache-Control":"no-cache"}}""";
+        var overrides = """{"responseHeaders":{"/manifest.json::Cache-Control":"max-age=3600"}}""";
+
+        var result = CapabilityResolver.MergeJson(defaults, overrides);
+
+        var merged = JsonNode.Parse(result)!.AsObject()["responseHeaders"]!.AsObject();
+
+        merged["/config.json::Cache-Control"]!.GetValue<string>().ShouldBe("no-cache");
+        merged["/manifest.json::Cache-Control"]!.GetValue<string>().ShouldBe("max-age=3600");
+    }
+
+    [Fact]
+    public void MergeJson_ResponseHeadersOverride_ReplacesSameKey()
+    {
+        var defaults = """{"responseHeaders":{"/config.json::Cache-Control":"no-cache"}}""";
+        var overrides = """{"responseHeaders":{"/config.json::Cache-Control":"no-store"}}""";
+
+        var result = CapabilityResolver.MergeJson(defaults, overrides);
+
+        var merged = JsonNode.Parse(result)!.AsObject()["responseHeaders"]!.AsObject();
+
+        merged["/config.json::Cache-Control"]!.GetValue<string>().ShouldBe("no-store");
+    }
+
+    [Fact]
+    public void Resolve_RoutingWithSeededResponseHeaders_DeserializesDefault()
+    {
+        // An existing v1.0.x app whose stored routing config lacks
+        // responseHeaders still deserializes; the new default arrives from the
+        // (updated) default JSON via the existing additive-property path.
+        var defaults = """
+            {"domainPattern":"{slug}.{baseDomain}","serveMode":"FileServer","spaFallback":false,"responseHeaders":{"/config.json::Cache-Control":"no-cache"}}
+            """;
+        var legacyOverride = """{"spaFallback":true}""";
+
+        var resolved = CapabilityResolver.Resolve<RoutingConfiguration>(defaults, legacyOverride);
+
+        resolved.SpaFallback.ShouldBeTrue();
+        resolved.ResponseHeaders.ShouldContainKey("/config.json::Cache-Control");
+        resolved.ResponseHeaders["/config.json::Cache-Control"].ShouldBe("no-cache");
+    }
+
+    [Fact]
+    public void Resolve_RoutingWithoutResponseHeaders_LeavesEmptyMap()
+    {
+        // The pre-#308 default JSON (no responseHeaders key) deserializes with
+        // the C# default empty map -- no deserialization break.
+        var defaults = """{"domainPattern":"{slug}.{baseDomain}","serveMode":"FileServer","spaFallback":false}""";
+
+        var resolved = CapabilityResolver.Resolve<RoutingConfiguration>(defaults, null);
+
+        resolved.ResponseHeaders.ShouldNotBeNull();
+        resolved.ResponseHeaders.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Resolve_RoutingWithExplicitNullResponseHeaders_NormalizesToEmpty()
+    {
+        // Regression guard for the NRE introduced by Card #308.
+        //
+        // An operator-crafted PUT /api/v1/apps/{slug}/settings with body
+        // {"routing":{"responseHeaders":null}} passes ValidateEdits (JSON null
+        // is not a JsonObject, so the KeyValue guard does not fire), flows
+        // through MergeJson's else-branch writing defaults["responseHeaders"]=null,
+        // and STJ deserializes the explicit null over the POCO initializer.
+        //
+        // Without the null-normalizing setter, ResponseHeaders would be null and
+        // ProxyManager.LoadRoutableAppsAsync would NRE on .Count, breaking proxy
+        // sync for every app in that pass.
+        //
+        // The fix: RoutingConfiguration.ResponseHeaders setter normalizes null
+        // to an empty Dictionary at the resolve boundary so no consumer can
+        // receive a null reference regardless of the deserialized JSON.
+        var defaults = """{"domainPattern":"{slug}.{baseDomain}","serveMode":"FileServer","spaFallback":false,"responseHeaders":{"/config.json::Cache-Control":"no-cache"}}""";
+        var overrideWithNull = """{"responseHeaders":null}""";
+
+        var resolved = CapabilityResolver.Resolve<RoutingConfiguration>(defaults, overrideWithNull);
+
+        // Must not throw -- the old code would NRE here.
+        resolved.ResponseHeaders.ShouldNotBeNull();
+
+        // Explicit null is normalized to empty (not the seed default -- the
+        // override explicitly cleared it). Byte-identical pre-#308 subroute
+        // shape is the downstream consequence: ProxyManager will produce null
+        // responseHeaders → BuildFileServerRoute emits vars+file_server only.
+        resolved.ResponseHeaders.Count.ShouldBe(0);
+    }
+
     [Fact]
     public void ResolveDomain_ReplacesSlugAndBaseDomain()
     {

@@ -198,6 +198,11 @@ type SettingsField = {
   options?: FieldOption[]
   helpText?: string
   unit?: string
+  // Card #308: server-authoritative key-validation contract for keyvalue fields.
+  // Regex source string (no delimiters/flags) the field's keys must satisfy, plus
+  // the operator-facing message shown on failure. null/absent => the env-var default.
+  keyPattern?: string | null
+  keyPatternMessage?: string | null
 }
 
 type UpdateSettingsRequest = {

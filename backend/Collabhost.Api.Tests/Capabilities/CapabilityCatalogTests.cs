@@ -105,6 +105,7 @@ public class CapabilityCatalogTests
     [InlineData("routing", "domainPattern", true)]
     [InlineData("routing", "serveMode", true)]
     [InlineData("routing", "spaFallback", true)]
+    [InlineData("routing", "responseHeaders", true)]
     [InlineData("artifact", "location", true)]
     [InlineData("environment-defaults", "variables", true)]
     [InlineData("health-check", "endpoint", false)]
