@@ -22,10 +22,25 @@ type SchemaFieldProps = {
   options?: FieldOption[]
   helpText?: string
   unit?: string
+  // Card #308: server-authoritative key-validation contract for keyvalue fields.
+  keyPattern?: string | null
+  keyPatternMessage?: string | null
   error?: string
   isEditing: boolean
   onChange: (value: unknown) => void
   className?: string
+}
+
+// Compile the server-supplied key-validation regex. Defensive: a malformed
+// pattern degrades to "no client-side mirror" (env-var default) rather than
+// crashing the settings page — the server remains the authoritative gate. (#308)
+function compileKeyPattern(source: string | null | undefined): RegExp | undefined {
+  if (typeof source !== 'string' || source === '') return undefined
+  try {
+    return new RegExp(source)
+  } catch {
+    return undefined
+  }
 }
 
 function isOverridden(value: unknown, defaultValue: unknown): boolean {
@@ -59,12 +74,20 @@ function SchemaField({
   options,
   helpText,
   unit,
+  keyPattern,
+  keyPatternMessage,
   error,
   isEditing,
   onChange,
   className,
 }: SchemaFieldProps) {
   const isKeyValue = type === 'keyValue' || type === 'keyvalue'
+  const compiledKeyPattern = compileKeyPattern(keyPattern)
+  // The pattern and its message are a pair. If no pattern is in effect (absent,
+  // null, or a malformed source that failed to compile), the message must also
+  // fall back to the env-var default — never ship a custom message with the
+  // env-var regex, or the operator sees a mismatched explanation. (#308)
+  const keyPatternMessageValue = compiledKeyPattern ? (keyPatternMessage ?? undefined) : undefined
   const isLocked = editable.mode === 'locked'
   const isDerived = editable.mode === 'derived'
   const isReadOnly = isLocked || isDerived
@@ -90,7 +113,13 @@ function SchemaField({
       const kvValue = (value as Record<string, string>) ?? {}
       return (
         <FormField label={label} helpText={helpText} error={error} badges={badges} className={className}>
-          <KeyValueField value={kvValue} onChange={onChange} disabled />
+          <KeyValueField
+            value={kvValue}
+            onChange={onChange}
+            disabled
+            keyPattern={compiledKeyPattern}
+            keyPatternMessage={keyPatternMessageValue}
+          />
         </FormField>
       )
     }
@@ -115,7 +144,17 @@ function SchemaField({
   // Edit mode -- render the appropriate field component
   return (
     <FormField label={label} htmlFor={fieldId} helpText={helpText} error={error} badges={badges} className={className}>
-      {renderEditField(type, fieldId, value, options, unit, !!error, onChange)}
+      {renderEditField(
+        type,
+        fieldId,
+        value,
+        options,
+        unit,
+        !!error,
+        onChange,
+        compiledKeyPattern,
+        keyPatternMessageValue,
+      )}
     </FormField>
   )
 }
@@ -128,6 +167,8 @@ function renderEditField(
   unit: string | undefined,
   hasError: boolean,
   onChange: (value: unknown) => void,
+  keyPattern: RegExp | undefined,
+  keyPatternMessage: string | undefined,
 ): React.ReactNode {
   switch (type) {
     case 'text':
@@ -181,7 +222,14 @@ function renderEditField(
 
     case 'keyValue':
     case 'keyvalue':
-      return <KeyValueField value={(value as Record<string, string>) ?? {}} onChange={onChange} />
+      return (
+        <KeyValueField
+          value={(value as Record<string, string>) ?? {}}
+          onChange={onChange}
+          keyPattern={keyPattern}
+          keyPatternMessage={keyPatternMessage}
+        />
+      )
   }
 }
 

@@ -314,6 +314,8 @@ function AppSettingsPage() {
                 options={field.options}
                 helpText={field.helpText}
                 unit={field.unit}
+                keyPattern={field.keyPattern}
+                keyPatternMessage={field.keyPatternMessage}
                 error={fieldErrors[section.key]?.[field.key]}
                 isEditing={isEditing}
                 onChange={(val) => handleFieldChange(section.key, field.key, val)}
