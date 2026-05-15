@@ -9,7 +9,10 @@
     "routing": {
       "domainPattern": "{slug}.{baseDomain}",
       "serveMode": "FileServer",
-      "spaFallback": false
+      "spaFallback": false,
+      "responseHeaders": {
+        "/config.json::Cache-Control": "no-cache"
+      }
     }
   }
 }

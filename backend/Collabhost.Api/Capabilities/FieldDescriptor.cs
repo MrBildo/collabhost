@@ -11,7 +11,15 @@ public record FieldDescriptor
     string? HelpText = null,
     string? Unit = null,
     IReadOnlyList<FieldOption>? Options = null,
-    FieldDependency? DependsOn = null
+    FieldDependency? DependsOn = null,
+    // KeyValue-only. The regex a key must satisfy plus the operator-facing
+    // message when it does not. Absent => consumers (server validation and the
+    // frontend KeyValueField) fall back to the environment-variable key
+    // contract. This is the frontend mirror of a server-authoritative rule,
+    // not frontend-only trust: CapabilityResolver.ValidateEdits enforces the
+    // same pattern server-side. Card #308.
+    string? KeyPattern = null,
+    string? KeyPatternMessage = null
 );
 
 public record FieldOption(string Value, string Label);

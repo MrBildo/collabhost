@@ -317,6 +317,284 @@ public class ProxyConfigurationBuilderTests
         handler["status_code"]!.GetValue<string>().ShouldBe("503");
     }
 
+    // ----- Card #308: per-path response-header control on static-site -----
+
+    [Fact]
+    public void Build_FileServerRoute_NoResponseHeaders_ShapeUnchanged()
+    {
+        // Migration-safe default: null ResponseHeaders emits the identical
+        // pre-#308 subroute shape (vars root + file_server, count 2). This is
+        // the invariant that keeps every existing file-server route untouched.
+        var routes = new List<RouteEntry>
+        {
+            new("docs", DefaultDomain("docs"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true, ResponseHeaders: null)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+        subrouteHandlers.Count.ShouldBe(2);
+        subrouteHandlers[1]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("file_server");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_EmptyResponseHeaders_ShapeUnchanged()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new("docs", DefaultDomain("docs"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true, ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal))
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+        subrouteHandlers.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_ConfigJsonNoCache_EmitsPathScopedHeadersHandlerAtIndex1()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "portal",
+                DefaultDomain("portal"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: "/srv/portal",
+                Enabled: true,
+                ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["/config.json::Cache-Control"] = "no-cache"
+                }
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        // 0 = vars root, 1 = headers handler, 2 = file_server
+        subrouteHandlers.Count.ShouldBe(3);
+        subrouteHandlers[0]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("vars");
+        subrouteHandlers[2]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("file_server");
+
+        var headerEntry = subrouteHandlers[1]!;
+
+        // Path-scoped match, never blanket.
+        headerEntry["match"]![0]!["path"]![0]!.GetValue<string>().ShouldBe("/config.json");
+
+        var headerHandler = headerEntry["handle"]![0]!;
+        headerHandler["handler"]!.GetValue<string>().ShouldBe("headers");
+        headerHandler["response"]!["set"]!["Cache-Control"]![0]!.GetValue<string>().ShouldBe("no-cache");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_HeaderHandlerBeforeSpaRewriteAndFileServer()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "spa",
+                DefaultDomain("spa"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: true,
+                ArtifactDirectory: "/srv/spa",
+                Enabled: true,
+                ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["/config.json::Cache-Control"] = "no-cache"
+                }
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        // 0 = vars root, 1 = headers, 2 = SPA rewrite, 3 = file_server
+        subrouteHandlers.Count.ShouldBe(4);
+        subrouteHandlers[1]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("headers");
+        subrouteHandlers[2]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("rewrite");
+        subrouteHandlers[3]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("file_server");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_HashedAsset_GetsNoCacheControl()
+    {
+        // The path match is scoped: only /config.json gets the header. A
+        // content-hashed asset must not receive Cache-Control (it caches
+        // forever). Proven by the single path-scoped match -- there is no
+        // blanket handler.
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "portal",
+                DefaultDomain("portal"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: "/srv/portal",
+                Enabled: true,
+                ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["/config.json::Cache-Control"] = "no-cache"
+                }
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        var headerEntries = HeaderHandlerEntries(subrouteHandlers);
+
+        headerEntries.Count.ShouldBe(1);
+        headerEntries[0]!["match"]![0]!["path"]![0]!.GetValue<string>().ShouldBe("/config.json");
+        // The single headers handler is path-scoped, never blanket.
+        headerEntries[0]!["match"].ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_MultipleHeadersSamePath_GroupedIntoOneHandler()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "portal",
+                DefaultDomain("portal"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: "/srv/portal",
+                Enabled: true,
+                ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["/config.json::Cache-Control"] = "no-cache",
+                    ["/config.json::X-Config-Source"] = "collabhost"
+                }
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        var headerEntries = HeaderHandlerEntries(subrouteHandlers);
+
+        headerEntries.Count.ShouldBe(1);
+
+        var set = headerEntries[0]!["handle"]![0]!["response"]!["set"]!.AsObject();
+        set["Cache-Control"]![0]!.GetValue<string>().ShouldBe("no-cache");
+        set["X-Config-Source"]![0]!.GetValue<string>().ShouldBe("collabhost");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_HeadersForDistinctPaths_EmitsOneHandlerPerPath()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "portal",
+                DefaultDomain("portal"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: "/srv/portal",
+                Enabled: true,
+                ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["/config.json::Cache-Control"] = "no-cache",
+                    ["/manifest.json::Cache-Control"] = "max-age=3600"
+                }
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        var headerEntries = HeaderHandlerEntries(subrouteHandlers);
+
+        headerEntries.Count.ShouldBe(2);
+        // Deterministic ordinal-by-path ordering.
+        headerEntries[0]!["match"]![0]!["path"]![0]!.GetValue<string>().ShouldBe("/config.json");
+        headerEntries[1]!["match"]![0]!["path"]![0]!.GetValue<string>().ShouldBe("/manifest.json");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_MalformedHeaderKey_SkippedDefensively()
+    {
+        // ValidateEdits is the authoritative gate; the builder must still never
+        // emit invalid Caddy config for a legacy/seed key that slips through.
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "portal",
+                DefaultDomain("portal"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: "/srv/portal",
+                Enabled: true,
+                ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["no-separator-here"] = "value",
+                    ["relative/path::Cache-Control"] = "no-cache",
+                    ["/config.json::Cache-Control"] = "no-cache"
+                }
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        var headerEntries = HeaderHandlerEntries(subrouteHandlers);
+
+        // Only the well-formed /config.json rule survives.
+        headerEntries.Count.ShouldBe(1);
+        headerEntries[0]!["match"]![0]!["path"]![0]!.GetValue<string>().ShouldBe("/config.json");
+    }
+
+    [Fact]
+    public void Build_ReverseProxyRoute_ResponseHeadersIgnored()
+    {
+        // ResponseHeaders is a file-server concept (schema DependsOn
+        // serveMode=FileServer). A reverse-proxy route must not grow a headers
+        // handler even if the slot is populated.
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "api",
+                DefaultDomain("api"),
+                ServeMode.ReverseProxy,
+                Port: 5000,
+                SpaFallback: false,
+                ArtifactDirectory: null,
+                Enabled: true,
+                ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["/config.json::Cache-Control"] = "no-cache"
+                }
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+        handler["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+    }
+
     [Fact]
     public void Build_InternalBranch_CertLifetime_ReflectedInTlsConfig()
     {
@@ -632,6 +910,31 @@ public class ProxyConfigurationBuilderTests
 
     private static JsonArray? GetRoutes(JsonObject config) =>
         config["apps"]?["http"]?["servers"]?["srv0"]?["routes"]?.AsArray();
+
+    // Card #308: materialize the `headers`-handler subroute entries via an
+    // explicit loop. Avoids LINQ-over-JsonNode (MA0002 wants a comparer) and
+    // Shouldly expression-tree predicate overloads (CS8072/CS8122 on ?. / is).
+    private static List<JsonNode> HeaderHandlerEntries(JsonArray subrouteHandlers)
+    {
+        var entries = new List<JsonNode>();
+
+        foreach (var handler in subrouteHandlers)
+        {
+            if (handler is null)
+            {
+                continue;
+            }
+
+            var name = handler["handle"]?[0]?["handler"]?.GetValue<string>();
+
+            if (string.Equals(name, "headers", StringComparison.Ordinal))
+            {
+                entries.Add(handler);
+            }
+        }
+
+        return entries;
+    }
 
     // -------- HasTlsListener (Card #263 item 1.3) --------
 

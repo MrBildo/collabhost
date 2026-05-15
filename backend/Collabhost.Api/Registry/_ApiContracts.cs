@@ -94,7 +94,14 @@ public record SettingsField
     bool RequiresRestart = false,
     List<FieldOption>? Options = null,
     string? HelpText = null,
-    string? Unit = null
+    string? Unit = null,
+    // KeyValue-only. The regex a key must satisfy plus the operator-facing
+    // message. Absent => the frontend keeps its existing env-var key default
+    // (so every existing env-var KeyValue field is byte-for-byte unaffected).
+    // Server-authoritative: CapabilityResolver.ValidateEdits enforces the same
+    // pattern; this carries it to the frontend as a mirror. Card #308.
+    string? KeyPattern = null,
+    string? KeyPatternMessage = null
 );
 
 // --- Action Result ---

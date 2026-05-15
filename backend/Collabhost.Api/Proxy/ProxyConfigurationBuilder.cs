@@ -226,6 +226,18 @@ public static class ProxyConfigurationBuilder
             BuildFileServerRootHandler(route)
         };
 
+        // Path-matched response-header handlers. Caddy's `headers` handler is a
+        // deferred response-header mutation, non-terminal -- it must be
+        // encountered in the route chain before the response is committed.
+        // Insert after the `vars` root and before the SPA rewrite + file_server
+        // so the header is registered while the request still falls through to
+        // the responder. The `path` match scopes each rule to its declared
+        // path; unmatched files keep Caddy's default behavior. Card #308.
+        foreach (var headerHandler in BuildResponseHeaderHandlers(route.ResponseHeaders))
+        {
+            subrouteHandlers.Add(headerHandler);
+        }
+
         if (route.SpaFallback)
         {
             subrouteHandlers.Add(BuildSpaFallbackHandler());
@@ -276,6 +288,93 @@ public static class ProxyConfigurationBuilder
                 }
             }
         };
+
+    // Builds one path-matched `headers` handler per declared path. The
+    // RouteEntry carries flattened "<path>::<HeaderName>" keys; rules are
+    // grouped by path so a path with several headers yields one handler with
+    // several `response.set` entries (tighter config, fewer chain hops).
+    // Ordering is deterministic (ordinal by path, then by header name) so the
+    // emitted config is stable across syncs and asserts cleanly in tests.
+    // Malformed keys are skipped defensively -- ValidateEdits is the
+    // authoritative gate, but a seed or legacy override should never produce
+    // an invalid Caddy config.
+    private static List<JsonObject> BuildResponseHeaderHandlers
+    (
+        IReadOnlyDictionary<string, string>? responseHeaders
+    )
+    {
+        var handlers = new List<JsonObject>();
+
+        if (responseHeaders is null || responseHeaders.Count == 0)
+        {
+            return handlers;
+        }
+
+        var byPath = new SortedDictionary<string, SortedDictionary<string, string>>(StringComparer.Ordinal);
+
+        foreach (var (compoundKey, value) in responseHeaders)
+        {
+            var separatorIndex = compoundKey.IndexOf("::", StringComparison.Ordinal);
+
+            if (separatorIndex <= 0 || separatorIndex + 2 >= compoundKey.Length)
+            {
+                continue;
+            }
+
+            var path = compoundKey[..separatorIndex];
+            var headerName = compoundKey[(separatorIndex + 2)..];
+
+            if (!path.StartsWith('/'))
+            {
+                continue;
+            }
+
+            if (!byPath.TryGetValue(path, out var headers))
+            {
+                headers = new SortedDictionary<string, string>(StringComparer.Ordinal);
+                byPath[path] = headers;
+            }
+
+            headers[headerName] = value;
+        }
+
+        foreach (var (path, headers) in byPath)
+        {
+            var set = new JsonObject();
+
+            foreach (var (headerName, value) in headers)
+            {
+                set[headerName] = new JsonArray { value };
+            }
+
+            handlers.Add
+            (
+                new JsonObject
+                {
+                    ["match"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["path"] = new JsonArray { path }
+                        }
+                    },
+                    ["handle"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["handler"] = "headers",
+                            ["response"] = new JsonObject
+                            {
+                                ["set"] = set
+                            }
+                        }
+                    }
+                }
+            );
+        }
+
+        return handlers;
+    }
 
     private static JsonObject BuildSpaFallbackHandler() =>
         new()
@@ -443,5 +542,10 @@ public record RouteEntry
     int? Port,
     bool SpaFallback,
     string? ArtifactDirectory,
-    bool Enabled
+    bool Enabled,
+    // Flattened per-path response-header rules ("<path>::<HeaderName>" ->
+    // value). Null or empty = no header handlers emitted (the file-server
+    // subroute shape is identical to before this field existed -- the
+    // migration-safe default). File-server routes only. Card #308.
+    IReadOnlyDictionary<string, string>? ResponseHeaders = null
 );
