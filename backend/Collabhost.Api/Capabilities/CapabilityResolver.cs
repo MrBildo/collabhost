@@ -12,6 +12,28 @@ public static partial class CapabilityResolver
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.None, 100)]
     private static partial Regex EnvironmentVariableKeyPattern { get; }
 
+    // Flattened per-path response-header key contract for the static-site routing
+    // capability (Card #308). Key shape is "<path>::<HeaderName>":
+    //   - path: starts with '/', one-or-more non-whitespace non-colon chars
+    //     (forbidding ':' in the path keeps the '::' separator unambiguous so
+    //     the builder can split deterministically -- static file paths do not
+    //     use ':' in practice).
+    //   - "::" literal separator.
+    //   - HeaderName: an RFC 7230 field-name token (1*tchar).
+    // The string form is surfaced to the frontend via the settings-field DTO
+    // (FieldDescriptor.KeyPattern); the compiled form below is the
+    // server-authoritative enforcement in ValidateEdits.
+    public const string ResponseHeaderKeyPatternString =
+        @"^/[^\s:]+::[!#$%&'*+.^_`|~0-9A-Za-z-]+$";
+
+    public const string ResponseHeaderKeyPatternMessage =
+        "Keys must be \"<path>::<HeaderName>\" -- a path starting with '/' "
+        + "(no spaces or colons), '::', then a valid HTTP header name "
+        + "(e.g. \"/config.json::Cache-Control\").";
+
+    [GeneratedRegex(ResponseHeaderKeyPatternString, RegexOptions.None, 100)]
+    private static partial Regex ResponseHeaderKeyPattern { get; }
+
     public static T Resolve<T>(string defaultConfigurationJson, string? overrideConfigurationJson)
         where T : class
     {
@@ -61,6 +83,19 @@ public static partial class CapabilityResolver
             .Replace("{slug}", slug, StringComparison.OrdinalIgnoreCase)
             .Replace("{baseDomain}", baseDomain, StringComparison.OrdinalIgnoreCase);
 
+    // Maps a schema-declared key-pattern string to its precompiled regex.
+    // KeyPattern is set only by trusted server-side schema code (FieldDescriptor
+    // in *Configuration.Schema), never by operator input, so the canonical
+    // patterns are a closed set. The fallback compiles with a bounded timeout
+    // as defense-in-depth for a future schema pattern that forgets to register
+    // here -- it never sees untrusted input.
+    private static Regex ResolveKeyPattern(string patternString) =>
+        patternString switch
+        {
+            ResponseHeaderKeyPatternString => ResponseHeaderKeyPattern,
+            _ => new Regex(patternString, RegexOptions.None, TimeSpan.FromMilliseconds(100))
+        };
+
     public static IReadOnlyList<string> ValidateEdits
     (
         string capabilitySlug,
@@ -102,17 +137,32 @@ public static partial class CapabilityResolver
                 errors.Add($"{capabilitySlug}.{property.Key}: {derived.Reason}");
             }
 
-            // Validate key-value field keys (e.g. environment variables must be valid POSIX identifiers)
+            // Validate key-value field keys against the field's declared key
+            // pattern. Absent KeyPattern => the environment-variable contract
+            // (valid POSIX identifiers) -- byte-identical to the prior
+            // behavior, so existing env-var fields are unaffected. A field
+            // that declares a KeyPattern (e.g. routing.responseHeaders) is
+            // validated against that pattern with its own operator-facing
+            // message. The DTO mirror of this rule is FieldDescriptor.KeyPattern.
             if (field.Type == FieldType.KeyValue && property.Value is JsonObject keyValueObject)
             {
+                var keyPattern = field.KeyPattern is null
+                    ? EnvironmentVariableKeyPattern
+                    : ResolveKeyPattern(field.KeyPattern);
+
+                var keyPatternMessage = field.KeyPattern is null
+                    ? "Keys must start with a letter or underscore and contain only letters, digits, and underscores."
+                    : field.KeyPatternMessage
+                        ?? "Key does not match the required pattern.";
+
                 foreach (var entry in keyValueObject)
                 {
-                    if (!EnvironmentVariableKeyPattern.IsMatch(entry.Key))
+                    if (!keyPattern.IsMatch(entry.Key))
                     {
                         errors.Add
                         (
                             $"{capabilitySlug}.{property.Key}: Invalid key '{entry.Key}'. "
-                            + "Keys must start with a letter or underscore and contain only letters, digits, and underscores."
+                            + keyPatternMessage
                         );
                     }
                 }

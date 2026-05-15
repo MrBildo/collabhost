@@ -1180,7 +1180,9 @@ public static class AppEndpoints
                             .Select(o => new FieldOption(o.Value.ToCamelCase(), o.Label))
                                 .ToList(),
                         fieldDescriptor.HelpText,
-                        fieldDescriptor.Unit
+                        fieldDescriptor.Unit,
+                        fieldDescriptor.KeyPattern,
+                        fieldDescriptor.KeyPatternMessage
                     )
                 );
             }

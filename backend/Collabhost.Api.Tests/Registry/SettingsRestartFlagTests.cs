@@ -68,6 +68,7 @@ public class SettingsRestartFlagTests(ApiFixture fixture)
                 "routing.domainPattern",
                 "routing.serveMode",
                 "routing.spaFallback",
+                "routing.responseHeaders",
                 "artifact.location",
                 "environment-defaults.variables",
             };

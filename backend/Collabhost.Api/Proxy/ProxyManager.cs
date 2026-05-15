@@ -600,6 +600,7 @@ public class ProxyManager
             }
 
             string? artifactDirectory = null;
+            IReadOnlyDictionary<string, string>? responseHeaders = null;
 
             if (routingConfiguration.ServeMode == ServeMode.FileServer)
             {
@@ -622,6 +623,10 @@ public class ProxyManager
 
                     continue;
                 }
+
+                responseHeaders = routingConfiguration.ResponseHeaders.Count > 0
+                    ? new Dictionary<string, string>(routingConfiguration.ResponseHeaders, StringComparer.Ordinal)
+                    : null;
             }
 
             var enabled = IsRouteEnabled(app.Slug);
@@ -647,7 +652,8 @@ public class ProxyManager
                     port,
                     routingConfiguration.SpaFallback,
                     artifactDirectory,
-                    enabled
+                    enabled,
+                    responseHeaders
                 )
             );
         }
