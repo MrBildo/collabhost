@@ -230,11 +230,15 @@ Then `.\startup.ps1`.
 | `COLLABHOST_DATA_PATH`          | SQLite DB parent directory | Absolute directory path | `/srv/collabhost/data` |
 | `COLLABHOST_USER_TYPES_PATH`    | `TypeStore:UserTypesDirectory` | Absolute directory path | `/srv/collabhost/user-types` |
 | `COLLABHOST_CADDY_PATH`         | `Proxy:BinaryPath` — Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
-| `COLLABHOST_HOSTING_LISTEN_ADDRESS` | `Hosting:ListenAddress` — interface Kestrel binds to. Default `localhost` (loopback only). Set `0.0.0.0` to accept connections on every interface; pin to a specific NIC IP to scope by interface. See §5.5.3. | Hostname, IPv4, or IPv6 address | `0.0.0.0` |
+| `COLLABHOST_HOSTING_LISTEN_ADDRESS` | `Hosting:ListenAddress` — interface Kestrel binds to. Default `localhost` (loopback only). Set `0.0.0.0` to accept connections on every interface; pin to a specific NIC IP to scope by interface. See §5.5.5. | Hostname, IPv4, or IPv6 address | `0.0.0.0` |
 | `COLLABHOST_HOSTING_LISTEN_PORT` | `Hosting:ListenPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_PROXY_BASE_DOMAIN`  | `Proxy:BaseDomain` | Domain suffix | `collabhost.lan` |
 | `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec, comma-separated for multiple ports | `:80,:443` (default) or `:8080,:8443` |
 | `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string | `720h` |
+| `COLLABHOST_PROXY_DNS_PROVIDER`  | `Proxy:DnsProvider` — ACME DNS-01 provider for real Let's Encrypt certs (e.g. `cloudflare`). Unset by default → Caddy uses the internal CA. Enables the DNS-01 issuer when set. See §8.4. | Caddy DNS-provider module name | `cloudflare` |
+| `COLLABHOST_PROXY_DNS_API_TOKEN_ENV_VAR` | `Proxy:DnsApiTokenEnvVar` — the **name** of another host environment variable that holds the DNS provider's API token. Not the token value itself: Collabhost emits `{env.<this-name>}` into Caddy's config, and Caddy reads the named variable from its process environment at issue time. Default `CLOUDFLARE_API_TOKEN`. See §8.4. | Env-var name (not the token) | `CLOUDFLARE_API_TOKEN` |
+| `COLLABHOST_PROXY_STORAGE_PATH`  | `Proxy:StoragePath` — root directory for Caddy's CA, account keys, and per-host certificates. Unset by default → user-scope resolves to Caddy's XDG default `~/.local/share/caddy/`; the system-scope unit sets `/var/lib/collabhost/caddy/`. Drives the CA-trust artifacts in §9.11.1. | Absolute directory path | `/var/lib/collabhost/caddy` |
+| `COLLABHOST_LOGS_PATH`          | `Diagnostics:CrashLogs:Directory` — crash-log output directory. Unset by default → `{data-directory}/logs/` (i.e. `data/logs/` next to the binary, or the per-shape logs path in §9.7). See §9.7. | Absolute directory path | `/var/log/collabhost` |
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
 | `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. | URL (no trailing slash) | `http://localhost:9000/releases/v1.3.0` |
@@ -999,8 +1003,9 @@ To upgrade Collabhost, re-run the install script. The installer is
 - `appsettings.json` — your persistent configuration file. Smart-merged with
   the new shipped file on each upgrade so operator edits survive while new
   shipped defaults are picked up automatically (see §8.2).
-- Caddy storage directory (default `~/.local/share/caddy/` for user-scope,
-  `/var/lib/collabhost/caddy/` for system-scope) — your CA root, account
+- Caddy storage directory (`Proxy:StoragePath` — see the §5.4 row for the
+  per-scope default; user-scope resolves to `~/.local/share/caddy/`,
+  system-scope to `/var/lib/collabhost/caddy/`) — your CA root, account
   keys, and per-host certificates carry across the upgrade so operator-trusted
   trust-store imports (see §9.11) keep working.
 
@@ -1105,34 +1110,53 @@ The migration shape:
    ```
 
    Copy the entire directory, not just `collabhost.db` — the `backups/`
-   subdirectory holds your pre-migration backups (see §8.1) and the Caddy
-   storage directory (configurable via `Proxy:StoragePath`, default
-   `data/caddy/` for user-scope or `/var/lib/collabhost/caddy/` for
-   system-scope) holds the proxy's CA, account, and certificate state. Lose
-   that and your operator-trusted CA changes; every device on the LAN has
-   to re-import a freshly generated root.
+   subdirectory holds your pre-migration backups (see §8.1).
 
-4. **Verify the hash on the new host.**
+4. **Transfer the Caddy storage directory separately.** The proxy's CA
+   root, account keys, and per-host certificates do **not** live inside
+   `data/` on a default user-scope install — they sit at whatever
+   `Proxy:StoragePath` resolves to. Per the §5.4 row, user-scope resolves to
+   Caddy's XDG default `~/.local/share/caddy/` (a path *outside* the
+   `data/` tree, so the step-3 `rsync` does not pick it up); system-scope
+   resolves to `/var/lib/collabhost/caddy/`. Copy this directory across in
+   its own transfer:
+
+   ```sh
+   # User-scope source → user-scope target (default Proxy:StoragePath):
+   rsync -av ~/.local/share/caddy/ newhost:~/.local/share/caddy/
+
+   # System-scope source → system-scope target:
+   sudo rsync -av /var/lib/collabhost/caddy/ newhost:/var/lib/collabhost/caddy/
+   ```
+
+   If you set `Proxy:StoragePath` to a custom location, copy that path
+   instead. Skip this step and your operator-trusted CA changes on the new
+   host — every device on the LAN that imported the old root (see §9.11)
+   has to re-import a freshly generated one.
+
+5. **Verify the hash on the new host.**
 
    ```sh
    sha256sum ~/.collabhost/bin/data/collabhost.db   # must match step 2
    ```
 
-5. **Install Collabhost on the new host at the matching scope.** A
+6. **Install Collabhost on the new host at the matching scope.** A
    user-scope source migrates cleanly to a user-scope target via `install.sh`;
    a system-scope source migrates to a system-scope target via
    `install-system.sh`. Cross-scope migrations (user → system or vice versa)
    require relocating the data directory into the new layout's expected path
    (`/var/lib/collabhost/data/` for system-scope) and matching the file
-   ownership (`collabhost:collabhost` for the system service user).
+   ownership (`collabhost:collabhost` for the system service user). The Caddy
+   storage directory relocates the same way — into the target scope's
+   `Proxy:StoragePath` (see §5.4) with matching ownership.
 
-6. **Start Collabhost on the new host.** First boot against an existing
+7. **Start Collabhost on the new host.** First boot against an existing
    database runs the standard upgrade path (§8.1) — pre-migration backup if
    the new binary has pending schema migrations, then migrate, then proceed.
    A version-matched migration (same Collabhost version on both hosts) skips
    the migration step and boots directly.
 
-7. **Verify the install (§7).** Version, status endpoint, dashboard load.
+8. **Verify the install (§7).** Version, status endpoint, dashboard load.
    Your existing admin key continues to work — the user table moves with
    the database, and the admin row's key is what authenticates you.
 
@@ -1196,9 +1220,16 @@ change as a small migration, not a setting flip.
    update the router-side dnsmasq override (or per-host `hosts` entries)
    to map `*.<new-domain>` to the host IP.
 3. **Update `appsettings.json`.** Set `Proxy:BaseDomain` to the new value;
-   if switching to LE, set `Proxy:DnsProvider` and arrange for the
-   provider's API token in the process environment (see the systemd unit
-   templates under `systemd/` for the env-var injection pattern).
+   if switching to LE, set `Proxy:DnsProvider` and `Proxy:DnsApiTokenEnvVar`
+   (see the §5.4 rows), then arrange for the provider's API token in the
+   process environment. `Proxy:DnsApiTokenEnvVar` is the *name* of a host
+   environment variable Caddy reads at issue time — set that named variable
+   to the actual token in your startup wrapper (§5.2 / §5.3) or your
+   service unit's environment. The bundled systemd unit templates carry a
+   commented-out `Environment=` example for this; if you do not have a
+   local copy, the templates are at
+   `https://github.com/MrBildo/collabhost/blob/main/systemd/collabhost.user.service`
+   and `.../collabhost.system.service`.
 4. **Restart Collabhost.** Caddy regenerates routes on next sync;
    certificates are issued (or re-loaded from cache) on the first request
    to each new hostname.
@@ -1336,9 +1367,12 @@ prunes older ones automatically.
 
 The crash log directory is configurable:
 
-- Environment variable: `COLLABHOST_LOGS_PATH=/some/other/dir`.
-- Appsetting: `"Diagnostics": { "CrashLogs": { "Directory": "..." } }`.
-- Retention count: `"Diagnostics": { "CrashLogs": { "Retention": 25 } }`.
+- Directory override: `COLLABHOST_LOGS_PATH` (env) or
+  `Diagnostics:CrashLogs:Directory` (appsetting) — see the §5.4 row for the
+  shape and the unset-default behavior (the per-shape paths listed above are
+  what the unset default resolves to).
+- Retention count: `"Diagnostics": { "CrashLogs": { "Retention": 25 } }`
+  (default 10).
 
 If you need stdout + stderr captured as well (e.g., for an issue report),
 redirect the process output:
@@ -1633,14 +1667,18 @@ this once per device that will reach the dashboard.
 
 #### 9.11.1 Where the root cert lives
 
-Caddy stores its CA material under whatever `Proxy:StoragePath` resolves to.
-The root certificate sits at:
+Caddy stores its CA material under whatever `Proxy:StoragePath` resolves to
+(see the §5.4 row for the canonical per-scope default and the unset-default
+behavior). The root certificate sits at:
 
 ```
 <Proxy:StoragePath>/pki/authorities/local/root.crt
 ```
 
-For the default install paths:
+The table below maps the resolved `Proxy:StoragePath` onto the root-cert
+path for each default install shape (including the per-OS Caddy defaults
+for macOS and Windows, which the §5.4 row summarizes as "Caddy's XDG
+default"):
 
 | Install shape | `Proxy:StoragePath` | Root cert path |
 |---------------|---------------------|----------------|
