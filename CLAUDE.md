@@ -445,6 +445,28 @@ See `v2-architecture.md` § Deferred Features for full list. Key items:
 - Real-time push for dashboard (log streaming ships via SSE; dashboard stats and routes still poll)
 - Action error feedback for failed mutations (card #101)
 
+## Standard Hosting / Service Model
+
+This is the committed reference for "correct" hosted-app behavior — the rubric every hosting-touching change in Collabhost is checked against, and the shared page the Cross-Project Coordination section (below) holds all three projects to.
+
+A well-behaved standard Linux service:
+
+1. **Writable location is a told input, not a discovery.** Configured. Never derived from cwd / binary dir / `$HOME`.
+2. **The documented config mechanism actually works.** "Told where to write" is vacuous if the documented knob is inert.
+3. **Read-only deployment is assumed.** Starts clean when the whole install tree is read-only and only a granted state dir is writable.
+4. **Misconfiguration fails loud and early.** Never silent fallback; never silently-ignored override.
+
+**Platform clause (qualified):** for a platform that supervises hosted apps in-process — the model Collabhost chose, NOT the only standard answer (one systemd unit per app with its own `StateDirectory=` is the other) — the platform gives each hosted app a writable location inside its own `ReadWritePaths` and tells the app where it is.
+
+## Cross-Project Coordination
+
+The failure class behind three production rollbacks (#322) was one shape repeated at every layer: local correctness verified in isolation; nobody held the change against the eventual production install and an objective standard. The fix is **one accountable system, not a four-ceremony program** — a four-ceremony program has the failure mode of the thing it fixes (nobody sustains it; #322 proved a card system existed and the defect sat in the wrong lane for three sessions anyway). Only the load-bearing mechanism survives:
+
+- **One rubric.** The Standard Hosting / Service Model section above is the shared page all three projects (Collabhost, Collaboard, the install runbook) are checked against. "Correct" is no longer each team's local sense of it — it is one page, checked mechanically.
+- **One owner.** The cross-project coordinator (Nolan@Collabhost, Cora@Collaboard) holds one standing question on every hosting-touching change: *"held against the standard and the eventual production install: does this follow the model, or are we writing code to avoid configuring something?"* The install-fidelity firewall structurally prevents the install-closest person from owning this, so the role is named explicitly.
+- **Tripwire A.** A new workaround block in the install runbook is a platform/app **defect-by-default**, owned to root — not a permanent fixture. When the runbook hand-compensates for app/platform behavior, that compensation is a bug the coordinator drives to root.
+- **Tripwire B (Nolan↔Cora protocol).** A confirmed correctness/contract defect is triaged by what it IS, not the lane it was filed in. Severity is owned by the standard, not by filing convenience. The receiving-side PM re-triages and surfaces to the owning-side PM (#218 is its first live exercise).
+
 ## Relationship to Other Projects
 
 | Project | Path | Relationship |
@@ -470,6 +492,7 @@ See `v2-architecture.md` § Deferred Features for full list. Key items:
 6. **Never dismiss observed issues as "pre-existing."** Investigate, link to an existing card, or file a new card.
 7. **UAT feedback accumulation.** During UAT, the operator gives feedback one item at a time, batched by recipient agent. Do NOT dispatch fixes until the operator explicitly says to dispatch — there may be more items to add.
 8. **Build verification reads FULL output.** Always run `dotnet build Collabhost.slnx --no-incremental` and read the FULL output — not just the summary line. Surface ALL warnings from ANY source.
+9. **Fix-in-place when you're already in there.** A bot working a surface that finds a defect, gap, or required doc follow-up directly related to the work in hand **fixes it in the same PR, without ceremony** — no card, no defer. The scope judgment is the lever: the default is not "is this strictly my assigned task?" but **"am I already in here, and is this directly related to what I'm touching?"** — if yes, fix it. A code change that needs a doc follow-up includes the doc change. Surfacing a card remains correct **only** for genuinely out-of-scope issues (a different surface, or expansion into unrelated territory) — those are still surfaced, never suppressed. Guardrails: (a) no opportunistic or unrelated refactors — "directly related to the surface in hand," applied conservatively; (b) disclose every fix-along in the PR body + dispatch report. Why: today ~2 cards are surfaced for every 1 fixed, so the board only accumulates and confirmed fixes rot in Backlog (the #218 / Cora cycle). The aim is the inverse — in-scope work fixed in place at zero card cost — **not a target ratio**.
 
 ## Git, Paths, and Context Window
 
