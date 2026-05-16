@@ -23,6 +23,7 @@ public class ProcessSupervisor
     IEnumerable<IProcessArgumentProvider> argumentProviders,
     IEnumerable<IProcessEnvironmentProvider> environmentProviders,
     HostedAppBundleDirectory hostedAppBundleDirectory,
+    HostedAppWorkingDirectory hostedAppWorkingDirectory,
     ActivityEventStore activityEventStore,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
@@ -53,6 +54,9 @@ public class ProcessSupervisor
 
     private readonly HostedAppBundleDirectory _hostedAppBundleDirectory = hostedAppBundleDirectory
         ?? throw new ArgumentNullException(nameof(hostedAppBundleDirectory));
+
+    private readonly HostedAppWorkingDirectory _hostedAppWorkingDirectory = hostedAppWorkingDirectory
+        ?? throw new ArgumentNullException(nameof(hostedAppWorkingDirectory));
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
@@ -298,6 +302,11 @@ public class ProcessSupervisor
         // provisioned at start for hosted dotnet-apps. Slug-keyed and isolated,
         // so a non-dotnet app simply has no dir to remove. (#313.)
         _hostedAppBundleDirectory.Reap(appSlug);
+
+        // Same posture for the per-app sandbox-writable runtime working dir.
+        // Slug-keyed and isolated -- an app that never had its cwd redirected
+        // simply has no dir to remove. (#316.)
+        _hostedAppWorkingDirectory.Reap(appSlug);
     }
 
     private async Task<ManagedProcess> StartAppInternalAsync(Ulid appId, CancellationToken ct)
@@ -358,6 +367,26 @@ public class ProcessSupervisor
         if (!string.Equals(augmentedArguments, discoveredProcess.Arguments, StringComparison.Ordinal))
         {
             discoveredProcess = discoveredProcess with { Arguments = augmentedArguments };
+        }
+
+        // Redirect the hosted child's runtime cwd to a sandbox-writable per-app
+        // dir for the published dotnet-app shape, so a relative
+        // Directory.CreateDirectory("./data/") (Collaboard's SQLite default)
+        // lands on a writable filesystem instead of the read-only artifact
+        // location under the system-scope hardened unit. The artifact location
+        // stayed the discovery anchor above (runtimeconfig/dll were found
+        // there); the redirect absolutizes the bare dll argument against it so
+        // `dotnet <dll>` still resolves once cwd moves. Gated + operator-pin
+        // escape hatch -- no behavior change for anything working today. (#316.)
+        if (HostedDotnetWorkingDirectoryRedirect.ShouldRedirect(app.AppTypeSlug, processConfiguration, out _))
+        {
+            var writableWorkingDirectory = _hostedAppWorkingDirectory.EnsureFor(app.Slug);
+
+            discoveredProcess = HostedDotnetWorkingDirectoryRedirect.Redirect
+            (
+                discoveredProcess,
+                writableWorkingDirectory
+            );
         }
 
         var environmentConfiguration = await _capabilityStore.ResolveAsync<EnvironmentConfiguration>
