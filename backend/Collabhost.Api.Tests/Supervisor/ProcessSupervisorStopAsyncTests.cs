@@ -114,7 +114,6 @@ public class ProcessSupervisorStopAsyncTests
             argumentProviders: [],
             environmentProviders: [],
             new HostedAppBundleDirectory(Path.GetTempPath(), NullLogger<HostedAppBundleDirectory>.Instance),
-            new HostedAppWorkingDirectory(Path.GetTempPath(), NullLogger<HostedAppWorkingDirectory>.Instance),
             activityEventStore,
             NullLogger<ProcessSupervisor>.Instance
         );

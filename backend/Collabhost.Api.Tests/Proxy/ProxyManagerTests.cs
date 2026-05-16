@@ -139,8 +139,7 @@ public class ProxyManagerTests
         var eventBus = new Collabhost.Api.Events.EventBus<Collabhost.Api.Events.ProcessStateChangedEvent>();
         var activityEventStore = new ActivityEventStore(dbFactory, NullLogger<ActivityEventStore>.Instance);
         var bundleDirectory = new HostedAppBundleDirectory(Path.GetTempPath(), NullLogger<HostedAppBundleDirectory>.Instance);
-        var workingDirectory = new HostedAppWorkingDirectory(Path.GetTempPath(), NullLogger<HostedAppWorkingDirectory>.Instance);
-        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, capabilityStore, typeStore, eventBus, [], [], bundleDirectory, workingDirectory, activityEventStore, NullLogger<ProcessSupervisor>.Instance);
+        var supervisor = new ProcessSupervisor(runner, new NullContainment(), appStore, capabilityStore, typeStore, eventBus, [], [], bundleDirectory, activityEventStore, NullLogger<ProcessSupervisor>.Instance);
 
         return new ProxyManager
         (
