@@ -9,9 +9,20 @@ public static class SupervisorRegistration
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddSupervisor()
+        public IServiceCollection AddSupervisor(string dataDirectory)
         {
             services.AddSingleton<PortAllocator>();
+
+            // Per-app single-file bundle-extraction dir lives under the resolved
+            // data root (same root install-system.sh L60-62 grants for Collabhost's
+            // own binary, already inside the unit's ReadWritePaths). dataDirectory
+            // is the canonical resolve-once value from Program.cs -- not re-derived
+            // here, so all install scopes (system / user / Windows) stay correct. (#313.)
+            services.AddSingleton(provider => new HostedAppBundleDirectory
+            (
+                dataDirectory,
+                provider.GetRequiredService<ILogger<HostedAppBundleDirectory>>()
+            ));
 
             if (OperatingSystem.IsWindows())
             {
