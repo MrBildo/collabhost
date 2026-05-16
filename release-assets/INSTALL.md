@@ -263,6 +263,8 @@ as unset — the effective value falls through to `appsettings.json`, then to
 the built-in default. This blank-is-unset behavior is Collabhost-specific and
 only applies to the `COLLABHOST_*` variables above.
 
+**Collabhost self-binary bundle extraction (`DOTNET_BUNDLE_EXTRACT_BASE_DIR`).** Collabhost ships as a self-contained single-file binary. On every cold start the .NET host extracts embedded native libraries to a writable directory. The system-scope installer (`install-system.sh`) sets `DOTNET_BUNDLE_EXTRACT_BASE_DIR` to `${DATA_ROOT}/dotnet-bundle` (i.e. `/var/lib/collabhost/dotnet-bundle`) in the systemd unit — under `DATA_ROOT` so the unit's existing `ReadWritePaths` already covers it and a full teardown (`rm -rf /var/lib/collabhost`) reaps it automatically. No operator action is required on a standard system-scope install.
+
 **Hosted single-file dotnet-app bundle extraction (auto-provisioned).** A
 self-contained single-file `dotnet publish` app must extract its embedded
 native libraries to a writable directory on every cold start. For every hosted
