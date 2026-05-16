@@ -425,6 +425,7 @@ Currently-active named agents on Collabhost, with workspaces under `.agents/agen
 |-------|------|-----------|
 | **Remy** | Backend lead | .NET, subsystem architecture, proxy, supervisor |
 | **Dana** | Frontend lead | React, War Machine design system, UX |
+| **Iris** | Frontend reviewer | JS/TS language & runtime depth (async/SSE, closures, bundle/build); second set of eyes — Dana leads |
 | **Marcus** | Backend advisor | Architecture review, domain modeling |
 | **Kai** | Code reviewer | Simplification, challenging assumptions |
 | **Nolan** | Coordinator | Dispatch, triage, session handoffs, board curation |
