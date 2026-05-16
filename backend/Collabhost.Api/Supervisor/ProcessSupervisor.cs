@@ -22,6 +22,7 @@ public class ProcessSupervisor
     IEventBus<ProcessStateChangedEvent> eventBus,
     IEnumerable<IProcessArgumentProvider> argumentProviders,
     IEnumerable<IProcessEnvironmentProvider> environmentProviders,
+    HostedAppBundleDirectory hostedAppBundleDirectory,
     ActivityEventStore activityEventStore,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
@@ -49,6 +50,9 @@ public class ProcessSupervisor
 
     private readonly IProcessEnvironmentProvider[] _environmentProviders =
         [.. (environmentProviders ?? throw new ArgumentNullException(nameof(environmentProviders)))];
+
+    private readonly HostedAppBundleDirectory _hostedAppBundleDirectory = hostedAppBundleDirectory
+        ?? throw new ArgumentNullException(nameof(hostedAppBundleDirectory));
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
@@ -280,7 +284,7 @@ public class ProcessSupervisor
     public RingBuffer<LogEntry> GetOrCreateLogBuffer(Ulid appId) =>
         _logBuffers.GetOrAdd(appId, _ => new RingBuffer<LogEntry>(1000));
 
-    public void CleanupDeletedApp(Ulid appId)
+    public void CleanupDeletedApp(Ulid appId, string appSlug)
     {
         _logBuffers.TryRemove(appId, out _);
         _restartPolicies.TryRemove(appId, out _);
@@ -289,6 +293,11 @@ public class ProcessSupervisor
         {
             process.Dispose();
         }
+
+        // Best-effort reap of the per-app single-file bundle-extraction dir
+        // provisioned at start for hosted dotnet-apps. Slug-keyed and isolated,
+        // so a non-dotnet app simply has no dir to remove. (#313.)
+        _hostedAppBundleDirectory.Reap(appSlug);
     }
 
     private async Task<ManagedProcess> StartAppInternalAsync(Ulid appId, CancellationToken ct)
@@ -358,9 +367,24 @@ public class ProcessSupervisor
 
         var operatorOverrideKeys = await GetEnvironmentOverrideKeysAsync(app.Id, ct);
 
+        var capabilityVariables = environmentConfiguration?.Variables;
+
+        // Provision a sandbox-writable single-file bundle-extraction dir for hosted
+        // dotnet-apps by construction. Injected into the capability-variables tier
+        // (not as an IProcessEnvironmentProvider) and gated on the operator not
+        // having pinned the variable -- so an explicit operator override wins
+        // silently, while the platform default is always present otherwise. (#313.)
+        if (HostedDotnetBundleEnvironment.ShouldProvision(app.AppTypeSlug, operatorOverrideKeys, out _))
+        {
+            var bundleDirectory = _hostedAppBundleDirectory.EnsureFor(app.Slug);
+
+            capabilityVariables ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            capabilityVariables[HostedDotnetBundleEnvironment.BundleExtractBaseDirVariable] = bundleDirectory;
+        }
+
         var environmentVariables = MergeEnvironmentVariables
         (
-            environmentConfiguration?.Variables,
+            capabilityVariables,
             operatorOverrideKeys,
             _environmentProviders,
             app.Slug,
@@ -641,6 +665,13 @@ public class ProcessSupervisor
         var cancellation = new CancellationTokenSource();
         process.SetRestartDelayCancellation(cancellation);
 
+        // Capture the token, not the source. CancelPendingRestart() disposes the source
+        // (operator stop / process replace); a closure that reads cancellation.Token after
+        // disposal throws ObjectDisposedException, which masks the real failure as
+        // "Failed to retry startup". A CancellationToken value stays valid post-dispose --
+        // a cancelled token simply trips the OperationCanceledException catch below. (#312)
+        var token = cancellation.Token;
+
         // Startup retry is intentionally fire-and-forget from a synchronous event callback (Exited event).
         // The task is self-contained with full error handling and the CancellationTokenSource
         // is tracked on ManagedProcess for cancellation on operator stop.
@@ -651,7 +682,7 @@ public class ProcessSupervisor
             {
                 try
                 {
-                    await Task.Delay(delay, cancellation.Token);
+                    await Task.Delay(delay, token);
 
                     // Remove the old process BEFORE disposing it -- dispose invalidates
                     // the semaphore, so we must not hold its lock during disposal.
@@ -659,7 +690,7 @@ public class ProcessSupervisor
 
                     stale?.Dispose();
 
-                    await StartAppInternalAsync(appId, cancellation.Token);
+                    await StartAppInternalAsync(appId, token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -672,7 +703,7 @@ public class ProcessSupervisor
                     _logger.LogError(exception, "Failed to retry startup for '{DisplayName}'", process.DisplayName);
                 }
             },
-            cancellation.Token
+            token
         );
 #pragma warning restore VSTHRD110, MA0134
     }
@@ -834,6 +865,13 @@ public class ProcessSupervisor
         var cancellation = new CancellationTokenSource();
         process.SetRestartDelayCancellation(cancellation);
 
+        // Capture the token, not the source. CancelPendingRestart() disposes the source
+        // (operator stop / process replace); a closure that reads cancellation.Token after
+        // disposal throws ObjectDisposedException, which masks the real failure as
+        // "Failed to restart". A CancellationToken value stays valid post-dispose --
+        // a cancelled token simply trips the OperationCanceledException catch below. (#312)
+        var token = cancellation.Token;
+
         // Restart is intentionally fire-and-forget from a synchronous event callback (Exited event).
         // The task is self-contained with full error handling and the CancellationTokenSource
         // is tracked on ManagedProcess for cancellation on operator stop.
@@ -844,7 +882,7 @@ public class ProcessSupervisor
             {
                 try
                 {
-                    await Task.Delay(delay, cancellation.Token);
+                    await Task.Delay(delay, token);
 
                     // Remove the old process BEFORE disposing it -- dispose invalidates
                     // the semaphore, so we must not hold its lock during disposal.
@@ -852,7 +890,7 @@ public class ProcessSupervisor
 
                     stale?.Dispose();
 
-                    await StartAppInternalAsync(appId, cancellation.Token);
+                    await StartAppInternalAsync(appId, token);
 
                     try
                     {
@@ -889,7 +927,7 @@ public class ProcessSupervisor
                     _logger.LogError(exception, "Failed to restart '{DisplayName}'", process.DisplayName);
                 }
             },
-            cancellation.Token
+            token
         );
 #pragma warning restore VSTHRD110, MA0134
     }

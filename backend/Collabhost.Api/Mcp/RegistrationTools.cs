@@ -330,7 +330,7 @@ public class RegistrationTools
 
         await _appStore.DeleteAppAsync(app.Id, ct);
 
-        _supervisor.CleanupDeletedApp(app.Id);
+        _supervisor.CleanupDeletedApp(app.Id, appSlug);
 
         try
         {

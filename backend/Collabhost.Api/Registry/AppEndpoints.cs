@@ -1028,7 +1028,7 @@ public static class AppEndpoints
 
         await store.DeleteAppAsync(app.Id, ct);
 
-        supervisor.CleanupDeletedApp(app.Id);
+        supervisor.CleanupDeletedApp(app.Id, appSlug);
 
         await activityEventStore.RecordAsync
         (

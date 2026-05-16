@@ -263,6 +263,20 @@ as unset — the effective value falls through to `appsettings.json`, then to
 the built-in default. This blank-is-unset behavior is Collabhost-specific and
 only applies to the `COLLABHOST_*` variables above.
 
+**Hosted single-file dotnet-app bundle extraction (auto-provisioned).** A
+self-contained single-file `dotnet publish` app must extract its embedded
+native libraries to a writable directory on every cold start. For every hosted
+**dotnet-app**, Collabhost provisions a per-app extraction directory at
+`{data-directory}/app-bundles/<app-slug>/` (under the same data root as
+`COLLABHOST_DATA_PATH`, so the system-scope unit's existing writable paths
+cover it) and points the app's `DOTNET_BUNDLE_EXTRACT_BASE_DIR` there
+automatically. This is created lazily by the running service on first start,
+removed when the app is deleted, and requires no operator action on any install
+scope. To override it for a specific app — for example, to point a large
+single-file app at a faster disk — set `DOTNET_BUNDLE_EXTRACT_BASE_DIR` in that
+app's environment variables on the dashboard; an operator-set value always wins
+over the auto-provisioned default.
+
 #### 5.4.1 Pointing OpenTelemetry at an external collector
 
 Collabhost ships with OpenTelemetry instrumentation wired in (traces, metrics,
