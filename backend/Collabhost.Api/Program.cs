@@ -244,7 +244,7 @@ builder.Services.AddTypeStore(typeStoreSettings);
 
 // Subsystems
 builder.Services.AddActivityLog();
-builder.Services.AddRegistry();
+builder.Services.AddRegistry(effectiveDataDir);
 builder.Services.AddCapabilities();
 builder.Services.AddEventBus();
 builder.Services.AddSupervisor(effectiveDataDir);

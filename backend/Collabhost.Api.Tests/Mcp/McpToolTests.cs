@@ -81,8 +81,9 @@ public class McpToolTests(ApiFixture fixture)
         var proxy = _services.GetRequiredService<ProxyManager>();
         var proxySettings = _services.GetRequiredService<ProxySettings>();
         var probeService = _services.GetRequiredService<ProbeService>();
+        var dataPathResolver = _services.GetRequiredService<AppDataPathResolver>();
 
-        return new DiscoveryTools(startTime, appStore, typeStore, supervisor, proxy, proxySettings, probeService);
+        return new DiscoveryTools(startTime, appStore, typeStore, supervisor, proxy, proxySettings, probeService, dataPathResolver);
     }
 
     private LifecycleTools CreateLifecycleTools()
@@ -125,13 +126,14 @@ public class McpToolTests(ApiFixture fixture)
         var supervisor = _services.GetRequiredService<ProcessSupervisor>();
         var proxy = _services.GetRequiredService<ProxyManager>();
         var activityEventStore = _services.GetRequiredService<ActivityEventStore>();
+        var dataPathResolver = _services.GetRequiredService<AppDataPathResolver>();
         var logger = _services.GetRequiredService<ILogger<RegistrationTools>>();
 
         // ICurrentUser is scoped -- create a scope to resolve it
         using var scope = _services.CreateScope();
         var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
 
-        return new RegistrationTools(appStore, typeStore, supervisor, proxy, currentUser, activityEventStore, logger);
+        return new RegistrationTools(appStore, typeStore, supervisor, proxy, currentUser, activityEventStore, dataPathResolver, logger);
     }
 
     // -------- Discovery: list_apps --------

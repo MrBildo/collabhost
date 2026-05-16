@@ -47,7 +47,12 @@ public record AppDetail
     List<ProbeEntry> Probes,
     AppResources? Resources,
     AppRoute? Route,
-    AppActions Actions
+    AppActions Actions,
+    // Per-app writable data path (#326 / #322 decision E1). Absolute path,
+    // runtime-derived from COLLABHOST_DATA_PATH, never persisted. The operator
+    // points the app's writable config (e.g. a SQLite connection string) at
+    // this path so it lands inside the system-scope unit's ReadWritePaths.
+    string WritableDataPath
 );
 
 public record AppTypeDetailRef(string Slug, string DisplayName);
@@ -140,7 +145,11 @@ public record CreateAppRequest
     Dictionary<string, Dictionary<string, JsonElement>>? Values
 );
 
-public record CreateAppResponse(string Id);
+// WritableDataPath (#326 / #322 decision E1): the per-app writable data path,
+// surfaced on the registration response so the operator can configure the
+// app's writable state location (absolute, inside ReadWritePaths) without
+// deriving it by hand. Absolute path, runtime-derived, never persisted.
+public record CreateAppResponse(string Id, string WritableDataPath);
 
 // --- Update Settings ---
 
