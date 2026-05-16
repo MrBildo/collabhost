@@ -434,7 +434,7 @@ Agents sign commits with `Co-Authored-By: {Name} <{name}@collabot.dev>`.
 
 ## Dispatch Tracking
 
-All sub-agent dispatches are logged in `.agents/agents/nolan/DISPATCH_LOG.md` with pre-dispatch token estimates vs. actual consumption. This is mandatory — Nolan must update the log for every dispatch, every session. The log drives model selection calibration and task sizing over time.
+All sub-agent dispatches are logged in the **project-scoped** dispatch log `.agents/DISPATCH_LOG.md` — the canonical single source of truth (the project owns it; Nolan maintains it — per the `agent-workspace` skill, *not* a bot-workspace file). Pre-dispatch token estimates vs. actual consumption are recorded for every dispatch, every session. This is mandatory. The log drives model-selection calibration and task sizing over time. **Dispatch IDs are session-scoped, not a single global monotonic counter** (the counter was reset per-arc historically; the same ID recurs across sessions) — always cite a dispatch as "Session N #ID", never "#ID" alone. Older entries are archived alongside it: `.agents/dispatch-log-sessions-1-24.md` and `.agents/dispatch-log-sessions-25-38.md`.
 
 ## Deferred Features
 
