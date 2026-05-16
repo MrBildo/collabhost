@@ -641,6 +641,13 @@ public class ProcessSupervisor
         var cancellation = new CancellationTokenSource();
         process.SetRestartDelayCancellation(cancellation);
 
+        // Capture the token, not the source. CancelPendingRestart() disposes the source
+        // (operator stop / process replace); a closure that reads cancellation.Token after
+        // disposal throws ObjectDisposedException, which masks the real failure as
+        // "Failed to retry startup". A CancellationToken value stays valid post-dispose --
+        // a cancelled token simply trips the OperationCanceledException catch below. (#312)
+        var token = cancellation.Token;
+
         // Startup retry is intentionally fire-and-forget from a synchronous event callback (Exited event).
         // The task is self-contained with full error handling and the CancellationTokenSource
         // is tracked on ManagedProcess for cancellation on operator stop.
@@ -651,7 +658,7 @@ public class ProcessSupervisor
             {
                 try
                 {
-                    await Task.Delay(delay, cancellation.Token);
+                    await Task.Delay(delay, token);
 
                     // Remove the old process BEFORE disposing it -- dispose invalidates
                     // the semaphore, so we must not hold its lock during disposal.
@@ -659,7 +666,7 @@ public class ProcessSupervisor
 
                     stale?.Dispose();
 
-                    await StartAppInternalAsync(appId, cancellation.Token);
+                    await StartAppInternalAsync(appId, token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -672,7 +679,7 @@ public class ProcessSupervisor
                     _logger.LogError(exception, "Failed to retry startup for '{DisplayName}'", process.DisplayName);
                 }
             },
-            cancellation.Token
+            token
         );
 #pragma warning restore VSTHRD110, MA0134
     }
@@ -834,6 +841,13 @@ public class ProcessSupervisor
         var cancellation = new CancellationTokenSource();
         process.SetRestartDelayCancellation(cancellation);
 
+        // Capture the token, not the source. CancelPendingRestart() disposes the source
+        // (operator stop / process replace); a closure that reads cancellation.Token after
+        // disposal throws ObjectDisposedException, which masks the real failure as
+        // "Failed to restart". A CancellationToken value stays valid post-dispose --
+        // a cancelled token simply trips the OperationCanceledException catch below. (#312)
+        var token = cancellation.Token;
+
         // Restart is intentionally fire-and-forget from a synchronous event callback (Exited event).
         // The task is self-contained with full error handling and the CancellationTokenSource
         // is tracked on ManagedProcess for cancellation on operator stop.
@@ -844,7 +858,7 @@ public class ProcessSupervisor
             {
                 try
                 {
-                    await Task.Delay(delay, cancellation.Token);
+                    await Task.Delay(delay, token);
 
                     // Remove the old process BEFORE disposing it -- dispose invalidates
                     // the semaphore, so we must not hold its lock during disposal.
@@ -852,7 +866,7 @@ public class ProcessSupervisor
 
                     stale?.Dispose();
 
-                    await StartAppInternalAsync(appId, cancellation.Token);
+                    await StartAppInternalAsync(appId, token);
 
                     try
                     {
@@ -889,7 +903,7 @@ public class ProcessSupervisor
                     _logger.LogError(exception, "Failed to restart '{DisplayName}'", process.DisplayName);
                 }
             },
-            cancellation.Token
+            token
         );
 #pragma warning restore VSTHRD110, MA0134
     }
