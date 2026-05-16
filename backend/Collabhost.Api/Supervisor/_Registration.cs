@@ -24,6 +24,17 @@ public static class SupervisorRegistration
                 provider.GetRequiredService<ILogger<HostedAppBundleDirectory>>()
             ));
 
+            // Per-app sandbox-writable runtime working directory, the cwd
+            // analogue of the bundle dir above (#316 / Axis B). Same data root
+            // (already inside the unit's ReadWritePaths), same resolve-once
+            // dataDirectory from Program.cs -- NOT re-derived here, so all
+            // install scopes stay correct.
+            services.AddSingleton(provider => new HostedAppWorkingDirectory
+            (
+                dataDirectory,
+                provider.GetRequiredService<ILogger<HostedAppWorkingDirectory>>()
+            ));
+
             if (OperatingSystem.IsWindows())
             {
                 services.AddSingleton<IManagedProcessRunner, WindowsProcessRunner>();
