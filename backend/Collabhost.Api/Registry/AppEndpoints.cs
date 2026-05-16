@@ -129,6 +129,7 @@ public static class AppEndpoints
         ProbeService probeService,
         IProcessResourceCache resourceCache,
         IHealthCheckExecutor healthCheckExecutor,
+        AppDataPathResolver dataPathResolver,
         CancellationToken ct
     )
     {
@@ -291,7 +292,8 @@ public static class AppEndpoints
             probes,
             resources,
             route,
-            actions
+            actions,
+            dataPathResolver.ResolveFor(app.Slug)
         );
 
         return TypedResults.Ok(detail);
@@ -811,6 +813,7 @@ public static class AppEndpoints
         ProxyManager proxy,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
+        AppDataPathResolver dataPathResolver,
         CancellationToken ct
     )
     {
@@ -971,7 +974,7 @@ public static class AppEndpoints
         return TypedResults.Created
         (
             $"/api/v1/apps/{app.Slug}",
-            new CreateAppResponse(app.Id.ToString())
+            new CreateAppResponse(app.Id.ToString(), dataPathResolver.ResolveFor(app.Slug))
         );
     }
 

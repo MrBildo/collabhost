@@ -27,6 +27,7 @@ public class RegistrationTools
     ProxyManager proxy,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
+    AppDataPathResolver dataPathResolver,
     ILogger<RegistrationTools> logger
 )
 {
@@ -48,6 +49,9 @@ public class RegistrationTools
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
 
+    private readonly AppDataPathResolver _dataPathResolver = dataPathResolver
+        ?? throw new ArgumentNullException(nameof(dataPathResolver));
+
     private readonly ILogger<RegistrationTools> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
@@ -59,7 +63,7 @@ public class RegistrationTools
         Idempotent = false,
         OpenWorld = false
     )]
-    [Description("Registers a new application on the platform. Requires an app type slug, a display name, and an install directory. The app is created in 'stopped' status and must be started separately with start_app. Workflow: call list_app_types to discover valid types and their registration schemas. Optionally call browse_filesystem to find the install directory and detect_strategy to check what Collabhost can auto-detect.")]
+    [Description("Registers a new application on the platform. Requires an app type slug, a display name, and an install directory. The app is created in 'stopped' status and must be started separately with start_app. The response includes 'writableDataPath' -- a platform-provisioned absolute directory inside Collabhost's writable data root; configure any app that writes to disk (e.g. a SQLite connection string) to write there rather than into its install directory, which may be read-only under a hardened deployment. Workflow: call list_app_types to discover valid types and their registration schemas. Optionally call browse_filesystem to find the install directory and detect_strategy to check what Collabhost can auto-detect.")]
     public async Task<CallToolResult> RegisterAppAsync
     (
         [Description("Display name for the application (e.g., 'My API Server').")] string name,
@@ -267,7 +271,13 @@ public class RegistrationTools
         (
             McpResponseFormatter.ToJson
             (
-                new { slug = app.Slug, id = app.Id.ToString(), status = "stopped" }
+                new
+                {
+                    slug = app.Slug,
+                    id = app.Id.ToString(),
+                    status = "stopped",
+                    writableDataPath = _dataPathResolver.ResolveFor(app.Slug)
+                }
             )
         );
     }

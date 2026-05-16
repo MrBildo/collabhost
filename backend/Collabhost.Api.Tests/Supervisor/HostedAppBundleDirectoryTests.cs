@@ -89,16 +89,39 @@ public class HostedAppBundleDirectoryTests
     }
 
     [Fact]
-    public void ShouldProvision_DotnetAppWithoutOperatorOverride_ProvisionsTrue()
+    public void ShouldProvision_SelfExtractingDotnetAppWithoutOperatorOverride_ProvisionsTrue()
     {
         var provision = HostedDotnetBundleEnvironment.ShouldProvision
         (
             "dotnet-app",
             OverrideKeys(),
+            selfExtracts: true,
             out var operatorPinned
         );
 
         provision.ShouldBeTrue();
+        operatorPinned.ShouldBeFalse();
+    }
+
+    // The production mis-fire the narrowed gate closes (#322 decision 3): a
+    // hosted dotnet-app whose artifact is a framework-dependent / non-single-
+    // file publish does NO self-extraction at all. The original two-clause gate
+    // fabricated an unused bundle dir + injected an inert env var for it (it did
+    // exactly this in the only production install, a non-single-file v1.12.1
+    // app). With the discriminator, a non-self-extracting dotnet-app does not
+    // provision regardless of operator-override state.
+    [Fact]
+    public void ShouldProvision_NonSelfExtractingDotnetApp_DoesNotProvision()
+    {
+        var provision = HostedDotnetBundleEnvironment.ShouldProvision
+        (
+            "dotnet-app",
+            OverrideKeys(),
+            selfExtracts: false,
+            out var operatorPinned
+        );
+
+        provision.ShouldBeFalse();
         operatorPinned.ShouldBeFalse();
     }
 
@@ -109,6 +132,7 @@ public class HostedAppBundleDirectoryTests
         (
             "dotnet-app",
             OverrideKeys("DOTNET_BUNDLE_EXTRACT_BASE_DIR"),
+            selfExtracts: true,
             out var operatorPinned
         );
 
@@ -127,6 +151,7 @@ public class HostedAppBundleDirectoryTests
         (
             appTypeSlug,
             OverrideKeys(),
+            selfExtracts: true,
             out _
         );
 
@@ -155,6 +180,7 @@ public class HostedAppBundleDirectoryTests
         (
             "dotnet-app",
             overrideKeys,
+            selfExtracts: true,
             out _
         );
 
@@ -170,6 +196,62 @@ public class HostedAppBundleDirectoryTests
         );
 
         merged["DOTNET_BUNDLE_EXTRACT_BASE_DIR"].ShouldBe(operatorValue);
+    }
+
+    // ---- ArtifactSelfExtracts: the self-extraction discriminator ------------
+
+    // A framework-dependent / non-single-file publish has a root
+    // *.runtimeconfig.json beside loose *.dll -- ArtifactEvidenceCollector
+    // returns a RuntimeConfig signal, NOT a SingleFileBinary signal. This is
+    // the exact production mis-fire shape (v1.12.1): it does no self-extraction
+    // and must not provision a bundle dir.
+    [Fact]
+    public void ArtifactSelfExtracts_NonSingleFilePublish_IsFalse()
+    {
+        var dir = CreateScratchDataRoot();
+
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "Collaboard.Api.runtimeconfig.json"), "{}");
+            File.WriteAllText(Path.Combine(dir, "Collaboard.Api.dll"), "stub");
+
+            HostedDotnetBundleEnvironment.ArtifactSelfExtracts(dir).ShouldBeFalse();
+        }
+        finally
+        {
+            Cleanup(dir);
+        }
+    }
+
+    // A self-contained single-file publish has NO root *.runtimeconfig.json and
+    // NO *.csproj -- the collector falls through to single-file detection. The
+    // cheapest cross-platform single-file signal is a pdb next to a same-stem
+    // binary (TryDetectPdbPair). This shape DOES self-extract and must provision.
+    [Fact]
+    public void ArtifactSelfExtracts_SingleFilePublish_IsTrue()
+    {
+        var dir = CreateScratchDataRoot();
+
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "Collaboard.Api.pdb"), "stub");
+            File.WriteAllText(Path.Combine(dir, "Collaboard.Api.exe"), "stub");
+
+            HostedDotnetBundleEnvironment.ArtifactSelfExtracts(dir).ShouldBeTrue();
+        }
+        finally
+        {
+            Cleanup(dir);
+        }
+    }
+
+    [Fact]
+    public void ArtifactSelfExtracts_NonexistentOrEmptyLocation_IsFalse()
+    {
+        HostedDotnetBundleEnvironment.ArtifactSelfExtracts("").ShouldBeFalse();
+        HostedDotnetBundleEnvironment
+            .ArtifactSelfExtracts(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")))
+            .ShouldBeFalse();
     }
 
     // Builds an operator-override key set without tripping CA1861 (inline array
