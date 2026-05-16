@@ -842,16 +842,95 @@ escape hatch. Most installs that start with Path B end up adding Path A's
 Caddy/DNS/CA story later as the LAN grows — there is nothing wrong with
 starting at Path B and migrating.
 
-### 5.6 App-directory layout convention
+### 5.6 App-directory layout: read-only artifacts vs. writable data
 
-Collabhost does not enforce a layout for the apps it manages. The path you
-pass during registration is what Collabhost reads; any directory that the
-Collabhost process can see and (where applicable) execute is fair game. That
-flexibility is intentional — operators with existing conventions should not
-have to relocate their artifacts to satisfy a platform opinion.
+There are two distinct paths in play for any app you host, and conflating
+them is the single most common production failure on a hardened system-scope
+install. Keep them separate:
 
-That said, three conventions are common enough that picking one up-front
-saves rework when a second or third app shows up:
+1. **The artifact path** you register — the binary, the publish output, the
+   static document root. Collabhost only needs to *read* (and, for
+   `dotnet-app` / `nodejs-app` / `executable`, *execute*) this. **Under the
+   system-scope unit it is read-only at runtime.**
+2. **The writable data path** — anywhere the app itself writes (a SQLite
+   file, a cache, uploaded files). This must **not** be inside the artifact
+   tree on a system-scope install. Collabhost provisions a per-app writable
+   path for you; point the app's config at it.
+
+#### The artifact tree is read-only under system-scope hardening
+
+The system-scope systemd unit (§5.5.2) runs with `ProtectSystem=strict`. Only
+the paths in the unit's `ReadWritePaths` are writable — that set is the
+platform data root (`COLLABHOST_DATA_PATH`, default `/var/lib/collabhost/data`),
+the Caddy storage, and the log directory. **`/srv`, `/opt`, and a home
+directory are not in it.** An app you register under `/srv/<slug>/` runs fine,
+but any attempt it makes to write *into* that tree (a database file next to
+the binary, a `data/` subdirectory beside it) fails at runtime with a
+permission error — even though the directory looks writable from a shell,
+because the restriction is imposed on the service process, not the filesystem.
+
+This is why **app data must never be configured to land inside the registered
+artifact directory** on a system-scope install. The fix is not to relax the
+unit; it is to point the app at the writable path the platform already
+provides (next).
+
+#### The per-app writable data path
+
+For every registered app, Collabhost provisions a per-app writable directory
+derived from the platform data root:
+
+```
+${COLLABHOST_DATA_PATH}/app-data/<slug>
+```
+
+`<slug>` is the app's slug. On a standard system-scope install this resolves
+to `/var/lib/collabhost/data/app-data/<slug>`; on a user-scope install it
+resolves under the user data root (default
+`~/.collabhost/data/app-data/<slug>`). Because it sits **inside** the unit's
+`ReadWritePaths` by construction — the same root Collabhost's own DB and
+single-file bundle dirs use — an app told to write there works under
+`ProtectSystem=strict` with **zero systemd-unit change**.
+
+You do not have to derive this path by hand, and you do not `mkdir` it.
+Collabhost creates the directory lazily when the app first needs it (and
+removes it when the app is deleted), and **returns the resolved absolute path
+on the API contract** as `writableDataPath`:
+
+| Surface | Field |
+|---------|-------|
+| `POST /api/v1/apps` (registration response) | `writableDataPath` |
+| `GET /api/v1/apps/{slug}` (app detail / `get_app`) | `writableDataPath` |
+| MCP `register_app` / `get_app` (tool result) | `writableDataPath` |
+
+The value is always an absolute path and is the same on every surface for a
+given app. The platform does not redirect the app's working directory or
+rewrite its config — the contract is simply "here is a writable absolute
+path; configure your app to write there."
+
+**Worked example — hosting Collaboard (SQLite-backed).** Collaboard keeps its
+board in a SQLite file. Register the app, read `writableDataPath` off the
+registration (or `get_app`) response, and set the connection string in the
+app's environment variables on the dashboard to point at it:
+
+```
+ConnectionStrings__Board=Data Source=<writableDataPath>/collaboard.db
+```
+
+where `<writableDataPath>` is the value the API returned. On a standard
+system-scope install that is `/var/lib/collabhost/data/app-data/collaboard`,
+so the literal line becomes:
+
+```
+ConnectionStrings__Board=Data Source=/var/lib/collabhost/data/app-data/collaboard/collaboard.db
+```
+
+The artifact tree, the platform, and the app now agree on one *writable*
+value, and nothing guesses a path into the read-only artifact tree.
+
+#### Where to put the read-only artifact tree
+
+The artifact path itself (read-only at runtime) is unconstrained — pick a
+convention that matches the rest of the host:
 
 | Convention | Shape | Best fit |
 |------------|-------|----------|
@@ -859,31 +938,25 @@ saves rework when a second or third app shows up:
 | `/opt/<vendor>/<app>/` | Vendored layout under `/opt`. Mirrors the Collabhost system-install's own `/opt/collabhost/`. | Multi-vendor hosts where each upstream owns a directory. |
 | `~/apps/<slug>/` | One directory per app under your home. Mirrors `~/.collabhost/`. | Workstation / homelab; user-scope install (§5.5.1). |
 
-Pick whichever matches the rest of the host's conventions. The Collabhost
-process needs read access to the directory and (for `dotnet-app`,
-`nodejs-app`, `executable`) execute on the binary; for `static-site` apps,
-read on the document root is sufficient.
-
-A few practical notes:
+Two practical notes:
 
 - **Use the slug as the leaf directory name** when feasible. The slug is the
   durable external handle for the app (it survives renames and shows up in
   every URL, log line, and route). Aligning the on-disk path with the slug
   keeps `ps`, `journalctl`, and the registration form all telling the same
-  story.
-- **Keep app data outside the binary tree** if the app writes to disk. A
-  pattern like `/srv/<slug>/bin/` (read-only artifacts) plus
-  `/srv/<slug>/data/` (writable) keeps upgrades cleanly scoped — replacing
-  `bin/` does not touch state.
-- **System-scope installs imply system-readable paths.** The `collabhost`
-  service user (created by `install-system.sh`, see §5.5.2) needs read /
-  execute on whatever path you register. `/srv/<slug>/` and
-  `/opt/<vendor>/<app>/` work without further action; `~/apps/<slug>/` does
-  not, because home directories on Linux default to mode 0700.
+  story — and it matches the `app-data/<slug>` writable path.
+- **System-scope installs need the artifact tree readable by the service
+  user.** The `collabhost` service user (created by `install-system.sh`, see
+  §5.5.2) needs read / execute on whatever artifact path you register.
+  `/srv/<slug>/` and `/opt/<vendor>/<app>/` work without further action;
+  `~/apps/<slug>/` does not, because home directories on Linux default to
+  mode 0700.
 
 The recommendation, when there is no other constraint, is `/srv/<slug>/` for
-system-scope installs and `~/apps/<slug>/` for user-scope. Both are cheap to
-walk away from later because nothing in Collabhost is keyed on the path.
+the system-scope artifact tree and `~/apps/<slug>/` for user-scope — and the
+platform-provided `writableDataPath` for everything the app writes. The
+artifact path is cheap to walk away from later because nothing in Collabhost
+is keyed on it.
 
 ---
 
