@@ -16,7 +16,11 @@ public static class McpServerInstructions
         - Lifecycle: start_app/stop_app return immediately. Poll get_app to confirm status.
           Use restart_app for a stop-then-start cycle. Always try stop_app before kill_app.
         - Registration: list_app_types (includes schemas) -> browse_filesystem ->
-          detect_strategy -> register_app -> start_app.
+          detect_strategy -> register_app -> start_app. register_app and get_app
+          return 'writableDataPath' -- a platform-provisioned absolute directory
+          inside Collabhost's writable data root. Point any app that writes to
+          disk (e.g. a SQLite connection string) at this path rather than its
+          install directory, which may be read-only under a hardened deployment.
         - Configuration: get_settings then update_settings (read-then-write). Some settings
           require restart.
         - Diagnostics: get_logs for process output (token-limited, summarize findings),

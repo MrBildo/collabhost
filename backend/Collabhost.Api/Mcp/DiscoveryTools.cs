@@ -24,7 +24,8 @@ public class DiscoveryTools
     ProcessSupervisor supervisor,
     ProxyManager proxy,
     ProxySettings proxySettings,
-    ProbeService probeService
+    ProbeService probeService,
+    AppDataPathResolver dataPathResolver
 )
 {
     private readonly IApplicationStartTime _startTime = startTime
@@ -47,6 +48,9 @@ public class DiscoveryTools
 
     private readonly ProbeService _probeService = probeService
         ?? throw new ArgumentNullException(nameof(probeService));
+
+    private readonly AppDataPathResolver _dataPathResolver = dataPathResolver
+        ?? throw new ArgumentNullException(nameof(dataPathResolver));
 
     [McpServerTool
     (
@@ -139,7 +143,7 @@ public class DiscoveryTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Returns detailed information about a specific application including identity, status, process info, route URL, capabilities, and technology probe data (detected runtime, frameworks, dependencies). Use this to inspect an app's current state before taking action. Probe data is cached and refreshed on app start and config changes.")]
+    [Description("Returns detailed information about a specific application including identity, status, process info, route URL, capabilities, technology probe data (detected runtime, frameworks, dependencies), and 'writableDataPath' (a platform-provisioned absolute directory inside Collabhost's writable data root -- point any app that writes to disk at this path rather than its install directory). Use this to inspect an app's current state before taking action. Probe data is cached and refreshed on app start and config changes.")]
     public async Task<CallToolResult> GetAppAsync
     (
         [Description("The app's unique slug identifier (e.g., 'my-api-server'). Use list_apps to find available slugs.")] string slug,
@@ -231,7 +235,8 @@ public class DiscoveryTools
             routeEnabled,
             routeTarget,
             capabilities,
-            probes
+            probes,
+            writableDataPath = _dataPathResolver.ResolveFor(app.Slug)
         };
 
         return McpResponseFormatter.Success(McpResponseFormatter.ToJson(result));
