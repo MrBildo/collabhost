@@ -247,7 +247,7 @@ builder.Services.AddActivityLog();
 builder.Services.AddRegistry();
 builder.Services.AddCapabilities();
 builder.Services.AddEventBus();
-builder.Services.AddSupervisor();
+builder.Services.AddSupervisor(effectiveDataDir);
 builder.Services.AddProxy(builder.Configuration);
 builder.Services.AddPortal(builder.Configuration);
 builder.Services.AddProbes();

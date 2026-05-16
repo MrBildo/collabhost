@@ -22,6 +22,7 @@ public class ProcessSupervisor
     IEventBus<ProcessStateChangedEvent> eventBus,
     IEnumerable<IProcessArgumentProvider> argumentProviders,
     IEnumerable<IProcessEnvironmentProvider> environmentProviders,
+    HostedAppBundleDirectory hostedAppBundleDirectory,
     ActivityEventStore activityEventStore,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
@@ -49,6 +50,9 @@ public class ProcessSupervisor
 
     private readonly IProcessEnvironmentProvider[] _environmentProviders =
         [.. (environmentProviders ?? throw new ArgumentNullException(nameof(environmentProviders)))];
+
+    private readonly HostedAppBundleDirectory _hostedAppBundleDirectory = hostedAppBundleDirectory
+        ?? throw new ArgumentNullException(nameof(hostedAppBundleDirectory));
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
@@ -280,7 +284,7 @@ public class ProcessSupervisor
     public RingBuffer<LogEntry> GetOrCreateLogBuffer(Ulid appId) =>
         _logBuffers.GetOrAdd(appId, _ => new RingBuffer<LogEntry>(1000));
 
-    public void CleanupDeletedApp(Ulid appId)
+    public void CleanupDeletedApp(Ulid appId, string appSlug)
     {
         _logBuffers.TryRemove(appId, out _);
         _restartPolicies.TryRemove(appId, out _);
@@ -289,6 +293,11 @@ public class ProcessSupervisor
         {
             process.Dispose();
         }
+
+        // Best-effort reap of the per-app single-file bundle-extraction dir
+        // provisioned at start for hosted dotnet-apps. Slug-keyed and isolated,
+        // so a non-dotnet app simply has no dir to remove. (#313.)
+        _hostedAppBundleDirectory.Reap(appSlug);
     }
 
     private async Task<ManagedProcess> StartAppInternalAsync(Ulid appId, CancellationToken ct)
@@ -358,9 +367,24 @@ public class ProcessSupervisor
 
         var operatorOverrideKeys = await GetEnvironmentOverrideKeysAsync(app.Id, ct);
 
+        var capabilityVariables = environmentConfiguration?.Variables;
+
+        // Provision a sandbox-writable single-file bundle-extraction dir for hosted
+        // dotnet-apps by construction. Injected into the capability-variables tier
+        // (not as an IProcessEnvironmentProvider) and gated on the operator not
+        // having pinned the variable -- so an explicit operator override wins
+        // silently, while the platform default is always present otherwise. (#313.)
+        if (HostedDotnetBundleEnvironment.ShouldProvision(app.AppTypeSlug, operatorOverrideKeys, out _))
+        {
+            var bundleDirectory = _hostedAppBundleDirectory.EnsureFor(app.Slug);
+
+            capabilityVariables ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            capabilityVariables[HostedDotnetBundleEnvironment.BundleExtractBaseDirVariable] = bundleDirectory;
+        }
+
         var environmentVariables = MergeEnvironmentVariables
         (
-            environmentConfiguration?.Variables,
+            capabilityVariables,
             operatorOverrideKeys,
             _environmentProviders,
             app.Slug,
