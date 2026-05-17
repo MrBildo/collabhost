@@ -202,10 +202,13 @@ public class LinuxProcessRunner : IManagedProcessRunner
             CreateNoWindow = true
         };
 
-        foreach (var (key, value) in configuration.EnvironmentVariables)
-        {
-            startInfo.EnvironmentVariables[key] = value;
-        }
+        // ProcessStartInfo.EnvironmentVariables is .NET-pre-seeded with the
+        // parent (supervisor) process environment. Applying only the curated
+        // set on top would leak Collabhost's own host vars
+        // (ASPNETCORE_CONTENTROOT etc.) into the child (#330). ChildProcessEnvironment
+        // clears the inherited env and applies the curated set plus an explicit
+        // OS-context allowlist.
+        ChildProcessEnvironment.Apply(startInfo.EnvironmentVariables, configuration.EnvironmentVariables);
 
         return startInfo;
     }

@@ -36,10 +36,10 @@ public class FallbackProcessRunner : IManagedProcessRunner
             CreateNoWindow = true
         };
 
-        foreach (var (key, value) in configuration.EnvironmentVariables)
-        {
-            startInfo.EnvironmentVariables[key] = value;
-        }
+        // Pre-seeded with the parent (supervisor) env; clear + apply curated +
+        // OS-context allowlist so the child does not inherit Collabhost's own
+        // host vars (#330).
+        ChildProcessEnvironment.Apply(startInfo.EnvironmentVariables, configuration.EnvironmentVariables);
 
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         var handle = new FallbackProcessHandle(process, configuration.OnOutput);
@@ -71,10 +71,10 @@ public class FallbackProcessRunner : IManagedProcessRunner
             CreateNoWindow = true
         };
 
-        foreach (var (key, value) in configuration.EnvironmentVariables)
-        {
-            startInfo.EnvironmentVariables[key] = value;
-        }
+        // Pre-seeded with the parent (supervisor) env; clear + apply curated +
+        // OS-context allowlist so the child does not inherit Collabhost's own
+        // host vars (#330).
+        ChildProcessEnvironment.Apply(startInfo.EnvironmentVariables, configuration.EnvironmentVariables);
 
         using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
 
