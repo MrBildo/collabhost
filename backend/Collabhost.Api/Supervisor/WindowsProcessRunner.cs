@@ -273,30 +273,20 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
 
     private static string? BuildEnvironmentBlock(IReadOnlyDictionary<string, string> environmentVariables)
     {
-        if (environmentVariables.Count == 0)
-        {
-            return null;
-        }
-
         // CreateProcess with CREATE_UNICODE_ENVIRONMENT expects:
         // KEY=VALUE\0KEY=VALUE\0\0
-        // We must include ALL environment variables (current + overrides),
-        // because passing a non-null environment block replaces the entire environment.
-        var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // A non-null environment block REPLACES the entire child environment, so
+        // it must be the COMPLETE intended set. Previously this merged the full
+        // host (supervisor) environment in, leaking Collabhost's own
+        // ASPNETCORE_CONTENTROOT / COLLABHOST_* into every hosted child (#330).
+        // ChildProcessEnvironment.Build is the told-input contract: the curated
+        // supervisor dictionary plus an explicit OS-context allowlist, nothing
+        // else inherited.
+        var merged = ChildProcessEnvironment.Build(environmentVariables);
 
-        foreach (var entry in Environment.GetEnvironmentVariables())
+        if (merged.Count == 0)
         {
-            if (entry is System.Collections.DictionaryEntry de
-                && de.Key is string key
-                && de.Value is string value)
-            {
-                merged[key] = value;
-            }
-        }
-
-        foreach (var (key, value) in environmentVariables)
-        {
-            merged[key] = value;
+            return null;
         }
 
         var builder = new StringBuilder();
@@ -327,10 +317,11 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
             CreateNoWindow = true
         };
 
-        foreach (var (key, value) in configuration.EnvironmentVariables)
-        {
-            startInfo.EnvironmentVariables[key] = value;
-        }
+        // Pre-seeded with the parent (supervisor) env; clear + apply curated +
+        // OS-context allowlist so the child does not inherit Collabhost's own
+        // host vars (#330). Same contract as the CreateProcess path's
+        // BuildEnvironmentBlock.
+        ChildProcessEnvironment.Apply(startInfo.EnvironmentVariables, configuration.EnvironmentVariables);
 
         return startInfo;
     }
