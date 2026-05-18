@@ -124,49 +124,10 @@ collabhost/
 │   ├── Directory.Build.targets # Test-project conditional NoWarn
 │   ├── Collabhost.AppHost/    # Aspire orchestrator
 │   ├── Collabhost.ServiceDefaults/  # Shared telemetry/health
-│   ├── Collabhost.Api/        # Main API project
-│   │   ├── ActivityLog/       # ActivityEvent store + query endpoint (operator-visible audit)
-│   │   ├── Authorization/     # Auth middleware (X-User-Key header, ?key= for SSE only), Users, roles
-│   │   ├── Capabilities/      # Catalog, config types, schemas, resolver, override store
-│   │   ├── Dashboard/         # Dashboard stats + events endpoints
-│   │   ├── Data/              # EF Core DbContext, migrations, AppType file-store, built-in type JSON
-│   │   ├── Events/            # Generic typed event bus
-│   │   ├── Filesystem/        # Filesystem browse + strategy detection endpoints
-│   │   ├── HealthChecks/      # Health-check executor (BackgroundService) + probe, surfaced on AppDetail
-│   │   ├── Installation/      # AppSettingsMerge CLI (`collabhost --merge-appsettings`) + merger
-│   │   ├── Mcp/               # MCP server (tools, auth, server instructions) at /mcp
-│   │   ├── Platform/          # Boot version tracking, version info, startup preflight, self-port validator, crash log, SIGHUP reload
-│   │   ├── Probes/            # Project metadata extractors (dotnet, node, react, typescript) + curator
-│   │   ├── Proxy/             # ProxyManager, CaddyClient, config builder, seeder
-│   │   ├── Registry/          # App entity, AppStore, CRUD + lifecycle endpoints
-│   │   ├── Shared/            # RingBuffer, LogEntry, PathExtensions, UTC date converter
-│   │   ├── Supervisor/        # ProcessSupervisor, ManagedProcess, PortAllocator, platform runners
-│   │   │   ├── Containment/   # IProcessContainment + Windows (Job Objects), Linux, Null impls
-│   │   │   └── Resources/     # IProcessResourceSampler + per-platform CPU/mem samplers, cache
-│   │   ├── System/            # Status + version endpoints (public, no auth)
-│   │   └── Properties/        # launchSettings.json (required for Aspire)
+│   ├── Collabhost.Api/        # Main API project — feature folders detailed in Core Subsystems below
 │   ├── Collabhost.Api.Tests/  # Integration tests (WebApplicationFactory + fakes)
 │   └── Collabhost.AppHost.Tests/  # Aspire smoke tests (real Kestrel + SQLite)
-├── frontend/
-│   ├── package.json
-│   ├── biome.json             # Linting + formatting
-│   ├── vite.config.ts
-│   ├── vitest.config.ts
-│   └── src/
-│       ├── actions/           # ActionButton, ActionBar
-│       ├── api/               # Client, endpoints, types
-│       ├── chrome/            # Topbar, Layout, AuthGate, Breadcrumbs
-│       ├── forms/             # SchemaField, RegistrationField, form inputs
-│       ├── hooks/             # TanStack Query hooks per domain (incl. use-log-stream SSE hook)
-│       ├── lib/               # cn helper, constants (POLL_INTERVALS), routes, format helpers
-│       ├── log/               # LogViewer, LogLine
-│       ├── pages/             # All page components
-│       ├── probes/            # Probe panels (dotnet, node, react, typescript) + registry
-│       ├── shared/            # EmptyState, ErrorBanner, ConfirmDialog, etc.
-│       ├── status/            # StatusDot, StatusText, StatusStrip, StatsStrip
-│       ├── styles/            # War Machine tokens, components, reset
-│       ├── tables/            # DataTable, FilterBar, app-columns
-│       └── test/              # Test setup + helpers for Vitest
+├── frontend/                  # React 19 + Vite — src/ layout per Frontend section below
 ├── docs/                      # Install scripts (install[-system].sh/.ps1), release-process.md, screenshots
 ├── systemd/                   # systemd unit templates (user + system scope)
 ├── release-assets/            # Files staged into the release archive (incl. INSTALL.md)
