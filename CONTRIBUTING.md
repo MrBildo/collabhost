@@ -69,10 +69,16 @@ Both routes coexist by design. **Host-env contributions win on key conflict** wi
 ### With Aspire (recommended)
 
 ```bash
-dotnet run --project backend/Collabhost.AppHost
+aspire start
 ```
 
 This starts the API, frontend dev server, and Aspire dashboard with OpenTelemetry. The dashboard URL is printed to the console on startup.
+
+If you don't have the Aspire CLI installed, you can launch the AppHost project directly as a raw fallback (no Aspire dashboard URL print, no Aspire UI):
+
+```bash
+dotnet run --project backend/Collabhost.AppHost
+```
 
 ### Standalone
 
@@ -135,8 +141,10 @@ collabhost/
 │       ├── tables/                # Data tables and filters
 │       └── test/                  # Vitest setup and shared test helpers
 ├── docs/
-│   ├── install.sh                 # End-user installer (Linux / macOS)
-│   └── install.ps1                # End-user installer (Windows)
+│   ├── install.sh                 # End-user installer (Linux / macOS, user-scope)
+│   ├── install.ps1                # End-user installer (Windows, user-scope)
+│   ├── install-system.sh          # System-scope installer (Linux server / systemd)
+│   └── install-system.ps1         # System-scope installer (Windows service)
 └── tools/                         # Seed utilities and local dev helpers (e.g. generate-ids.cs)
 ```
 
@@ -160,8 +168,8 @@ CI checks these. Save yourself a round trip by running them locally.
 
 ```bash
 cd backend
-dotnet build Collabhost.slnx --no-incremental   # 0 errors, 0 warnings
-dotnet format --verify-no-changes               # formatting clean
+dotnet build Collabhost.slnx --no-incremental         # 0 errors, 0 warnings
+dotnet format Collabhost.slnx --verify-no-changes     # formatting clean
 ```
 
 Use `--no-incremental` on the build so analyzer warnings surface -- incremental builds skip compilation and hide them.
@@ -188,6 +196,7 @@ The internal team also maintains a coding-conventions document with project-spec
 - `feature/` -- new features
 - `bugfix/` -- bug fixes
 - `hotfix/` -- urgent production fixes
+- `chore/` -- maintenance, tooling, dependency bumps (no behavior change)
 
 ### Commits
 
@@ -227,7 +236,7 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 
 **When it runs:**
 
-- **On any PR** that touches `publish.yml`, `publish-dryrun.yml`, `docs/install.sh`, `docs/install.ps1`, `caddy.version`, or anything under `release-assets/`. The dry-run is a CI gate on those paths.
+- **On any PR** that touches `publish.yml`, `publish-dryrun.yml`, `docs/install.sh`, `docs/install.ps1`, `docs/install-system.ps1`, `caddy.version`, `xcaddy.version`, `caddy-plugins.txt`, `frontend/**`, or anything under `release-assets/`. The dry-run is a CI gate on those paths.
 - **On demand** via `workflow_dispatch` -- run from the Actions tab. Optional `version` input (defaults to `0.0.0-dryrun`) stamps the produced archives.
 
 **How to use it:**
@@ -236,7 +245,7 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 2. Open a PR. If your diff matches the path filters, the dry-run runs automatically.
 3. Or: navigate to **Actions -> Publish (dry-run) -> Run workflow**, pick your branch, optionally provide a version stamp.
 4. Open the workflow run page. The `archive-<rid>` artifacts contain the produced archive + per-leg `.sha256`. The `checksums-aggregated` artifact contains the combined `checksums.txt`.
-5. Download an archive, extract, and inspect. Same six-item contract as the real workflow.
+5. Download an archive, extract, and inspect. Same seven-item contract as the real workflow.
 
 **What it does not do:** create a tag, create or update a GitHub Release, upload to the Releases surface. If you see a `gh release` invocation in the dry-run, that's a bug -- file an issue.
 
@@ -246,20 +255,21 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 
 **When it runs:**
 
-- **On any PR** that touches `docs/install.sh`, `docs/install.ps1`, `publish.yml`, `publish-dryrun.yml`, `install-integration.yml`, or `release-assets/`. Failures block merge for those PRs.
-- **On `release.published`** -- post-release validation that the archives we just shipped install correctly across all RIDs.
-- **On demand** via `workflow_dispatch` with an optional `version` input (a release tag like `v0.1.0`).
+- **Post-release**, chained off `publish.yml` via `workflow_run` (fires when the Publish workflow completes successfully). It downloads the just-published GitHub Release archives and exercises the live install scripts against them across all RIDs. This is **not** a PR gate -- it runs after a release is published, not on PRs.
+- **On demand** via `workflow_dispatch` with a required `version` input (a release tag like `v0.1.0`).
+
+It does **not** run on PRs and does **not** trigger on `release.published`. PR-time archive smoke is now handled by `publish-dryrun.yml`'s `archive-smoke` job (card #184), and the `release.published` trigger was replaced with `workflow_run` to avoid the parallel-fire race that failed all legs on the v1.0.0 cut (card #211).
 
 **Release-process checklist (before tagging):**
 
-- [ ] Trigger `install-integration.yml` via `workflow_dispatch` and confirm the `linux-arm64` leg passes (the QEMU leg only runs on manual + `release.published`, not PRs).
+- [ ] Trigger `install-integration.yml` via `workflow_dispatch` and confirm the `linux-arm64` leg passes (the QEMU leg only runs on manual dispatch and post-release `workflow_run`).
 
 **What each matrix leg verifies (per RID):**
 
 1. The install script succeeds against the live GitHub Release.
 2. `collabhost --version` runs from `$HOME` (catches CWD-relative `ContentRootPath` regressions).
 3. A reinstall preserves an operator-edited `appsettings.json` and a populated `data/` directory.
-4. The bundled Caddy version is reported (and on `release.published` runs, must match the `caddy.version` pin on the released commit).
+4. The bundled Caddy version is reported (and on post-release `workflow_run` runs, must match the `caddy.version` pin on the released commit).
 5. The first-boot admin-key bootstrap line (`Collabhost admin key:`) emits on stdout.
 
 **RID matrix:**
@@ -275,11 +285,11 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 
 **Intel Mac (osx-x64) not supported:** The `osx-x64` archive was dropped in v0.1.1. GitHub wound down `macos-13` Intel runners; queue starvation made CI coverage impossible. macOS on Apple Silicon (`osx-arm64`) is the supported macOS platform.
 
-**On a PR run, the target version is the latest published release** -- there may not be an unreleased tag to test against. On a `release.published` run, the target is the just-shipped tag.
+**On a post-release `workflow_run`, the target is the just-shipped tag** (`github.event.workflow_run.head_branch`). On a manual `workflow_dispatch`, the target is the `version` input, which must be a tag that already exists.
 
 ## Maintaining releases
 
-If you're cutting a Collabhost release (tagging, publishing the archive, bumping bundled deps), see [docs/release-process.md](docs/release-process.md). It covers the bundled-Caddy CVE response process, the response-time SLA, the pre-release checklist, and the version-pin mechanism (`caddy.version`). Bundling Caddy means Collabhost owns its CVE response window for end users -- the process exists so security fixes don't get stuck behind us.
+If you're cutting a Collabhost release (tagging, publishing the archive, bumping bundled deps), see [docs/release-process.md](docs/release-process.md). It covers the tag-then-release cut flow (the `gh release create --target` short-SHA gotcha included), what the Publish workflow produces, post-release `install-integration` validation, the bundled-Caddy CVE response process, the response-time SLA, the pre-release checklist, and the version-pin mechanism (`caddy.version`). Bundling Caddy means Collabhost owns its CVE response window for end users -- the process exists so security fixes don't get stuck behind us.
 
 ## Questions?
 

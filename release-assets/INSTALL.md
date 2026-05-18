@@ -239,6 +239,7 @@ Then `.\startup.ps1`.
 | `COLLABHOST_PROXY_DNS_API_TOKEN_ENV_VAR` | `Proxy:DnsApiTokenEnvVar` — the **name** of another host environment variable that holds the DNS provider's API token. Not the token value itself: Collabhost emits `{env.<this-name>}` into Caddy's config, and Caddy reads the named variable from its process environment at issue time. Default `CLOUDFLARE_API_TOKEN`. See §8.4. | Env-var name (not the token) | `CLOUDFLARE_API_TOKEN` |
 | `COLLABHOST_PROXY_STORAGE_PATH`  | `Proxy:StoragePath` — root directory for Caddy's CA, account keys, and per-host certificates. Unset by default → user-scope resolves to Caddy's XDG default `~/.local/share/caddy/`; the system-scope unit sets `/var/lib/collabhost/caddy/`. Drives the CA-trust artifacts in §9.11.1. | Absolute directory path | `/var/lib/collabhost/caddy` |
 | `COLLABHOST_LOGS_PATH`          | `Diagnostics:CrashLogs:Directory` — crash-log output directory. Unset by default → `{data-directory}/logs/` (i.e. `data/logs/` next to the binary, or the per-shape logs path in §9.7). See §9.7. | Absolute directory path | `/var/log/collabhost` |
+| `COLLABHOST_CONFIG_PATH`        | Absolute path to the operator-facing `appsettings.json` that Collabhost loads via an explicit `AddJsonFile`. Set by the system-scope installer to `/etc/collabhost/appsettings.json` so the canonical config lives outside the read-only install tree; **unset in user-scope**, where the binary's working-directory `appsettings.json` is used. To relocate the config in a system-scope install, set this in a systemd drop-in. | Absolute file path | `/etc/collabhost/appsettings.json` |
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
 | `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. | URL (no trailing slash) | `http://localhost:9000/releases/v1.3.0` |
@@ -254,7 +255,9 @@ Operator-relevant framework-standard variables (not Collabhost-specific):
 
 | Variable | Purpose |
 |----------|---------|
-| `ASPNETCORE_ENVIRONMENT` | Standard .NET env var. Keep unset or `Production` for production installs. |
+| `ASPNETCORE_ENVIRONMENT` | Standard .NET env var. Keep unset or `Production` for production installs. The system-scope installer sets it to `Production`. |
+| `DOTNET_ENVIRONMENT` | Standard .NET env var (the pre-ASP.NET-Core-6 environment name; `ASPNETCORE_ENVIRONMENT` takes precedence for ASP.NET hosting). The system-scope installer sets **both** `DOTNET_ENVIRONMENT` and `ASPNETCORE_ENVIRONMENT` to `Production` defensively. If you override the environment via a drop-in, set both. |
+| `ASPNETCORE_CONTENTROOT` | Standard ASP.NET Core content-root path. Set by the system-scope installer to `/opt/collabhost` so `wwwroot/` resolves to `/opt/collabhost/wwwroot/` under the canonical split layout (binary in `/opt`, data in `/var/lib`). **Unset in user-scope**, where the content root is the binary's directory. If the portal doesn't load from a custom system-scope install path, this is the variable to check. |
 | `Logging__LogLevel__Default` | Standard ASP.NET Core log-level knob. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Standard OpenTelemetry OTLP endpoint. No-op when empty. See §5.4.1 for forwarding telemetry to an external collector. |
 
@@ -268,11 +271,15 @@ only applies to the `COLLABHOST_*` variables above.
 **Hosted single-file dotnet-app bundle extraction (auto-provisioned).** A
 self-contained single-file `dotnet publish` app must extract its embedded
 native libraries to a writable directory on every cold start. For every hosted
-**dotnet-app**, Collabhost provisions a per-app extraction directory at
-`{data-directory}/app-bundles/<app-slug>/` (under the same data root as
-`COLLABHOST_DATA_PATH`, so the system-scope unit's existing writable paths
-cover it) and points the app's `DOTNET_BUNDLE_EXTRACT_BASE_DIR` there
-automatically. This is created lazily by the running service on first start,
+**single-file self-contained dotnet-app**, Collabhost provisions a per-app
+extraction directory at `{data-directory}/app-bundles/<app-slug>/` (under the
+same data root as `COLLABHOST_DATA_PATH`, so the system-scope unit's existing
+writable paths cover it) and points the app's `DOTNET_BUNDLE_EXTRACT_BASE_DIR`
+there automatically. Provisioning is **gated**: it fires only when the app type
+is `dotnet-app`, the on-disk artifact actually self-extracts (a single-file
+publish — a framework-dependent or non-single-file publish does no extraction
+and receives no injection), and the operator has not already pinned the
+variable. This is created lazily by the running service on first start,
 removed when the app is deleted, and requires no operator action on any install
 scope. To override it for a specific app — for example, to point a large
 single-file app at a faster disk — set `DOTNET_BUNDLE_EXTRACT_BASE_DIR` in that
@@ -860,10 +867,14 @@ install. Keep them separate:
 #### The artifact tree is read-only under system-scope hardening
 
 The system-scope systemd unit (§5.5.2) runs with `ProtectSystem=strict`. Only
-the paths in the unit's `ReadWritePaths` are writable — that set is the
-platform data root (`COLLABHOST_DATA_PATH`, default `/var/lib/collabhost/data`),
-the Caddy storage, and the log directory. **`/srv`, `/opt`, and a home
-directory are not in it.** An app you register under `/srv/<slug>/` runs fine,
+the paths in the unit's `ReadWritePaths` are writable. The unit grants
+`ReadWritePaths=/var/lib/collabhost /var/log/collabhost /etc/collabhost` —
+i.e. the **entire `/var/lib/collabhost` subtree** (which contains the platform
+data root `${COLLABHOST_DATA_PATH}` at `/var/lib/collabhost/data`, the Caddy
+storage, the dotnet-bundle and per-app bundle dirs, and every per-app writable
+path), plus the log directory (`/var/log/collabhost`) and the operator config
+directory (`/etc/collabhost`). **`/srv`, `/opt`, and a home directory are not
+in it.** An app you register under `/srv/<slug>/` runs fine,
 but any attempt it makes to write *into* that tree (a database file next to
 the binary, a `data/` subdirectory beside it) fails at runtime with a
 permission error — even though the directory looks writable from a shell,
@@ -1046,7 +1057,10 @@ sudo systemctl stop collabhost
 ```
 
 ```powershell
-# Windows / NSSM (§5.5.3)
+# Windows system-scope service (canonical, v1.3+, §5.5.4)
+Stop-Service Collabhost
+
+# Windows / NSSM (legacy, v1.2 and earlier, §5.5.3)
 nssm stop Collabhost
 ```
 

@@ -261,7 +261,7 @@ Apps are identified by **slug** throughout (e.g. `my-api-server`), not by ULID. 
 | Frontend | React 19, TypeScript, Vite |
 | Design System | *War Machine* (custom — dark, monospace, industrial) |
 | Reverse Proxy | Caddy (managed via JSON admin API) |
-| Orchestration | .NET Aspire, OpenTelemetry |
+| Orchestration | .NET Aspire 13.3 (preview), OpenTelemetry |
 | Testing | xUnit + Shouldly (backend), Vitest (frontend) |
 | Linting | Roslyn analyzers (backend), Biome (frontend) |
 
@@ -298,7 +298,9 @@ Collabhost is built by a human-AI collaborative team. The bots are autonomous AI
 
 **Bot Marcus** — Backend design, architecture, C# — [marcus@collabot.dev](mailto:marcus@collabot.dev)
 
-**Bot Kai** — Tooling, C# — [kai@collabot.dev](mailto:kai@collabot.dev)
+**Bot Kai** — Code review, simplification, C# — [kai@collabot.dev](mailto:kai@collabot.dev)
+
+**Bot Theo** — Tooling, harness and skill authoring — [theo@collabot.dev](mailto:theo@collabot.dev)
 
 ## License
 
