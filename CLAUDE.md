@@ -520,3 +520,12 @@ The failure class behind three production rollbacks (#322) was one shape repeate
 - **Commit everything** — `git status` must be clean when done.
 - Relative paths in committed files; absolute paths only in gitignored config.
 - Stay scoped to backend OR frontend — don't read both subsystems.
+
+### Branch & release strategy — trunk-based by default
+
+Collabhost runs **trunk-based development with tagged releases** — the Collabot.dev org-wide default (#335, Cora↔Nolan alignment). This section is the per-project prevailing-mode declaration the shared coordinator role file defers to.
+
+- **Default — trunk.** Every card PRs straight to `main`; `main` stays releasable at all times. Each PR must be **independently shippable** — half-built or risky/destructive work goes behind a flag or uses the integration-branch exception; it never lands half-done on `main`.
+- **A release is a tag on a point in `main`'s history**, not a branch that gets merged. Cut a release when work has accumulated; the changelog reconciles from the conventional-commit `#NNN` PR log since the last tag; the version (PATCH/MINOR/MAJOR) is decided at cut time from what accumulated. The operator's go/no-go gate is the **changelog-diff review at release-cut time**, not an aggregate PR. (`docs/release-process.md` already cuts this way — tag-then-release on a commit; no release-branch assumption.)
+- **Integration-branch exception**, gated by one discriminator: **is there a named bundle with a go/no-go gate over the bundle?** *Yes* (a named milestone, or a staged destructive change) → cut `release/<descriptive-name>` (never version numbers) or `feature/<epic>` from `main`; sub-cards PR into it; the aggregate PR → `main` is the operator's one go/no-go gate. *No* (independent cards, ship when ready) → trunk default. Single-PR releases never use a branch.
+- **The discriminator is evaluated continuously, not once at first-card.** When an investigation crystallizes into a shared-root-cause multi-PR correction mid-arc, cut the integration branch at that point and reparent the in-flight work. (Universal correctness — Collabhost's production-correctness arcs hit this emergent path more often than the org norm, but that is a frequency observation, not a Collabhost-specific discriminator variant.)
