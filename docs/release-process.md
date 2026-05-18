@@ -2,6 +2,45 @@
 
 This doc covers the operational obligations Collabhost takes on by bundling third-party binaries — primarily Caddy. If you're a contributor working on a regular feature PR, you don't need this doc; see [CONTRIBUTING.md](../CONTRIBUTING.md). This doc is for maintainers cutting a release.
 
+## Cutting a release
+
+Collabhost releases are **tag-then-release**. The Publish workflow is triggered by a published GitHub Release, not by a pushed tag — so the order is: create an annotated tag, push it, then create the Release against that tag.
+
+### The flow
+
+```bash
+# 1. Annotated tag on the exact commit you are releasing (use the FULL sha).
+git tag -a vX.Y.Z <full-sha> -m "Collabhost vX.Y.Z"
+
+# 2. Push the tag.
+git push origin vX.Y.Z
+
+# 3. Create the GitHub Release against the now-pushed tag.
+gh release create vX.Y.Z \
+  --verify-tag \
+  --title "Collabhost vX.Y.Z" \
+  --notes "<operator-facing release notes>"
+```
+
+`--verify-tag` makes `gh release create` fail rather than silently create a tag if the tag is missing — it forces the tag-first order and catches a typo'd tag name early.
+
+### The `--target` short-SHA gotcha
+
+`gh release create --target <short-sha>` is **rejected** by the GitHub API with `Release.target_commitish is invalid`. `--target` accepts only a branch name or a **full** 40-char commit SHA — never an abbreviated SHA. The tag-first flow above sidesteps this entirely: once the tag exists and is pushed, the Release resolves the commit from the tag and `--target` is not needed at all. If you must use `--target` (e.g. creating the tag at release time), pass a branch name or the full SHA.
+
+### What publishing triggers
+
+`.github/workflows/publish.yml` triggers on `release: types: [published]`. On a published Release it:
+
+- Parses the tag (must match `vX.Y.Z` or `vX.Y.Z-<pre-release>`, SemVer 2.0 §9; build metadata `+...` is rejected).
+- Builds the frontend once and runs the per-RID build matrix (`linux-x64`, `linux-arm64`, `osx-arm64`, `win-x64`).
+- Stages the **seven-item archive contract** per RID (collabhost binary, caddy binary, `appsettings.json`, `INSTALL.md`, `LICENSES/caddy-LICENSE`, `LICENSES/caddy-NOTICE`, `wwwroot/`) into a flat layout, archives it, and computes a per-leg `.sha256`.
+- Uploads `collabhost-<ver>-<rid>.<ext>` + its `.sha256` to the Release as assets (`--clobber`), then aggregates all per-leg sums into a single `checksums.txt` uploaded to the Release.
+
+### Post-release validation
+
+`install-integration.yml` fires **automatically via `workflow_run`** when `publish.yml` completes successfully — it downloads the just-shipped Release archives and exercises the live install scripts across all RIDs. This is a post-release validation, **not a PR gate** and **not a `release.published` trigger** (the `workflow_run` chaining replaced `release.published` per card #211 to avoid a parallel-fire race). Watch this run after publishing; a green Publish does not by itself prove the install scripts consume the archives correctly. PR-time archive smoke is a separate concern handled by `publish-dryrun.yml`'s `archive-smoke` job (card #184).
+
 ## Bundled-binary CVE response
 
 Collabhost ships a Caddy binary alongside its own binary in every release archive. End users do not install Caddy separately — the installer extracts ours. **Bundling means we own Caddy's CVE response window for our users**: when upstream Caddy ships a security release, Collabhost must ship a patch release with the updated binary or end-user installs are stuck on the vulnerable version.
@@ -38,7 +77,7 @@ Before tagging a release, walk this list:
 - [ ] **Plugin upstream check.** For every line in `caddy-plugins.txt`, verify the pinned version is still current at the plugin's upstream repo (e.g. `github.com/caddy-dns/cloudflare`). Bump if a security fix or compatibility-with-new-Caddy-core release lands.
 - [ ] **Smoke-test the new Caddy version against `CaddyClient`.** Collabhost talks to Caddy through the admin API (`POST /load`, `PATCH /config/...`). Caddy occasionally tightens admin-API behaviour between minors. Run `aspire start` or a standalone backend with the bumped version, register a managed app, exercise route reload. Log lines should be clean.
 - [ ] **Run the dry-run pipeline.** `.github/workflows/publish-dryrun.yml` builds the same archives the real release will produce. Required if `caddy.version`, `xcaddy.version`, or `caddy-plugins.txt` changed. The post-build step asserts every plugin's Caddy module is reachable via `caddy list-modules` — a missing plugin fails the leg, so a bump that breaks plugin compatibility surfaces here, not in production.
-- [ ] **Run the install-integration workflow.** Trigger `install-integration.yml` via `workflow_dispatch` and confirm at minimum the `linux-arm64` leg passes (the QEMU leg only runs on manual + `release.published`).
+- [ ] **Run the install-integration workflow.** Trigger `install-integration.yml` via `workflow_dispatch` and confirm at minimum the `linux-arm64` leg passes (the QEMU leg only runs on manual dispatch and post-release `workflow_run`).
 - [ ] **Credit upstream in release notes.** When a release rolls a Caddy security fix, note the CVE ID(s) and link the upstream advisory. Don't quietly ship security fixes — give operators a reason to update.
 
 ### Version pin mechanism

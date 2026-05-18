@@ -99,12 +99,12 @@ The reverse proxy is exposed in the UI as "Proxy" — never "Caddy". Backend ide
 | Backend | .NET 10 / C# (Minimal API, EF Core, SQLite) |
 | Frontend | React 19 + TypeScript, Vite, Biome, War Machine design system |
 | Testing | xUnit + Shouldly (backend), Vitest (frontend) |
-| Orchestration | Aspire 13.3, OpenTelemetry |
+| Orchestration | Aspire 13.3 (preview), OpenTelemetry |
 | Reverse Proxy | Caddy (edge), managed by Collabhost via JSON API |
 
 ## Active Branch
 
-Development is on `main`. The v1 codebase is preserved on `v0-reference` for reference only.
+Development is on `main`.
 
 ## Structure
 
@@ -112,7 +112,7 @@ Development is on `main`. The v1 codebase is preserved on `v0-reference` for ref
 collabhost/
 ├── CLAUDE.md                  # This file
 ├── .editorconfig              # Code style (tool-enforced)
-├── nuget.config               # NuGet feed config (Aspire preview)
+├── nuget.config               # NuGet feed config (Aspire preview, dnceng dotnet9 feed)
 ├── .agents/                   # Instance-local workspace (gitignored)
 │   ├── specs/                 # Architecture specs and feature specs
 │   ├── agents/{name}/         # Named agent workspaces (journal, TODO, archive)
@@ -132,16 +132,18 @@ collabhost/
 │   │   ├── Data/              # EF Core DbContext, migrations, AppType file-store, built-in type JSON
 │   │   ├── Events/            # Generic typed event bus
 │   │   ├── Filesystem/        # Filesystem browse + strategy detection endpoints
+│   │   ├── HealthChecks/      # Health-check executor (BackgroundService) + probe, surfaced on AppDetail
+│   │   ├── Installation/      # AppSettingsMerge CLI (`collabhost --merge-appsettings`) + merger
 │   │   ├── Mcp/               # MCP server (tools, auth, server instructions) at /mcp
-│   │   ├── Platform/          # Boot version tracking, version info, startup preflight, self-port validator
+│   │   ├── Platform/          # Boot version tracking, version info, startup preflight, self-port validator, crash log, SIGHUP reload
 │   │   ├── Probes/            # Project metadata extractors (dotnet, node, react, typescript) + curator
 │   │   ├── Proxy/             # ProxyManager, CaddyClient, config builder, seeder
 │   │   ├── Registry/          # App entity, AppStore, CRUD + lifecycle endpoints
 │   │   ├── Shared/            # RingBuffer, LogEntry, PathExtensions, UTC date converter
 │   │   ├── Supervisor/        # ProcessSupervisor, ManagedProcess, PortAllocator, platform runners
-│   │   │   └── Containment/   # IProcessContainment + Windows (Job Objects), Linux, Null impls
+│   │   │   ├── Containment/   # IProcessContainment + Windows (Job Objects), Linux, Null impls
+│   │   │   └── Resources/     # IProcessResourceSampler + per-platform CPU/mem samplers, cache
 │   │   ├── System/            # Status + version endpoints (public, no auth)
-│   │   ├── Updates/           # Update-check subsystem (placeholder; in flight)
 │   │   └── Properties/        # launchSettings.json (required for Aspire)
 │   ├── Collabhost.Api.Tests/  # Integration tests (WebApplicationFactory + fakes)
 │   └── Collabhost.AppHost.Tests/  # Aspire smoke tests (real Kestrel + SQLite)
@@ -165,8 +167,14 @@ collabhost/
 │       ├── styles/            # War Machine tokens, components, reset
 │       ├── tables/            # DataTable, FilterBar, app-columns
 │       └── test/              # Test setup + helpers for Vitest
-└── tools/                     # Demo + scratch projects used during dev (gitignored fixtures, demo apps)
-    └── generate-ids.cs        # ULID/GUID generator for seed data
+├── docs/                      # Install scripts (install[-system].sh/.ps1), release-process.md, screenshots
+├── systemd/                   # systemd unit templates (user + system scope)
+├── release-assets/            # Files staged into the release archive (incl. INSTALL.md)
+└── tools/                     # tools/* gitignored except 4 tracked helper scripts
+    ├── build-caddy.ps1        # Caddy custom-build (Windows)
+    ├── build-caddy.sh         # Caddy custom-build (Linux)
+    ├── generate-ids.cs        # ULID/GUID generator for seed data
+    └── lint-systemd-unit-drift.sh  # systemd unit drift linter
 ```
 
 ## Build & Run
@@ -255,6 +263,7 @@ cd frontend && npm run test                                  # Vitest — all gr
 - Auto-start on Collabhost startup
 - Static sites: start/stop toggles Caddy routing (no process)
 - Log streaming: SSE endpoint registered in `LogStreamEndpoints` consumes the same ring buffer.
+- Resource sampling (`Supervisor/Resources/`): `IProcessResourceSampler` + per-platform (Windows/Linux/Null) CPU/memory samplers, cached via `ProcessResourceCache` and refreshed by `ProcessResourceSamplerService`.
 
 ### Event Bus (`Events/`)
 - Generic `IEventBus<T>` with in-memory implementation
@@ -285,7 +294,7 @@ cd frontend && npm run test                                  # Vitest — all gr
 - Query param `?key=` fallback scoped to SSE endpoints (`/logs/stream`) only
 - Middleware skips path prefixes: `/health`, `/alive`, `/openapi`, `/mcp` (MCP has its own auth filter)
 - Public GETs (no key required): `GET /api/v1/status`, `GET /api/v1/version`
-- `User` entity with `UserRole` (Administrator, HumanUser, AgentUser); `UserStore` and `UserSeedService` handle the admin-key 3-scenario boot model (blind first run generates + prints; configured first run seeds silently; subsequent boot with a new configured key inserts an additional break-glass admin).
+- `User` entity with `UserRole` (Administrator, Agent); `UserStore` and `UserSeedService` handle the admin-key 3-scenario boot model (blind first run generates + prints; configured first run seeds silently; subsequent boot with a new configured key inserts an additional break-glass admin).
 - `RequireRoleFilter` is the endpoint-level guard for role-restricted routes (e.g. `/users/*`).
 - Admin key from config (`Auth:AdminKey`)
 
@@ -300,9 +309,11 @@ cd frontend && npm run test                                  # Vitest — all gr
 - `StartupPreflight` — validates data + user-types directories before DI is built; failure halts before any DB touch (exit 10).
 - `StartupStderr` — structured stderr writer for fatal startup failures (summary + details + recovery steps).
 - `ListenPortValidator` — cross-checks `Hosting:ListenPort` config against Kestrel's bound listen port and warns on mismatch.
+- `CrashLog` — writes fatal-startup crash dumps to a dedicated crash-log directory with retention (operator-facing diagnostics; wired in `Program.cs`).
+- `SighupReloadService` — handles SIGHUP for config reload without a full process restart.
 
 ### Portal (`Portal/`)
-- Static-asset shipping for the React dashboard. The dashboard ships in the same binary as the API and is served via `app.UseDefaultFiles()` + `app.UseStaticFiles()` + a custom `UsePortalSpaFallback()` middleware that handles React Router client-side routes. All three run in the middleware phase **before** auth, so the SPA shell, the dashboard root, and SPA deep links are reachable unauthenticated; auth is enforced at API-call time by `<AuthGate>` calling `/api/v1/auth/me`. The auth wall continues to gate `/api/v1/*`, `/health`, `/alive`, `/openapi`, and `/mcp` as today.
+- Static-asset shipping for the React dashboard. The dashboard ships in the same binary as the API and is served via `app.UseDefaultFiles()` + `app.UseStaticFiles()` + `app.UseMiddleware<PortalSpaFallbackMiddleware>()` that handles React Router client-side routes. All three run in the middleware phase **before** auth, so the SPA shell, the dashboard root, and SPA deep links are reachable unauthenticated; auth is enforced at API-call time by `<AuthGate>` calling `/api/v1/auth/me`. The auth wall continues to gate `/api/v1/*`, `/health`, `/alive`, `/openapi`, and `/mcp` as today.
 - `PortalSettings.Subdomain` — env `COLLABHOST_PORTAL_SUBDOMAIN` > `Portal:Subdomain` appsetting > hardcoded fallback `"collabhost"`. Resolved value is consumed by `ProxyConfigurationBuilder.BuildSelfRoute` and `BuildSubjectList` to set the Portal's proxy-fronted hostname. `RouteEntry.Domain` carries pre-resolved per-app hostnames (operators can customize via `RoutingConfiguration.DomainPattern`).
 - `PortalReachabilityCheck` — soft preflight wired into `app.Lifetime.ApplicationStarted` alongside `ListenPortValidator`. Warns (does not halt) when `wwwroot/index.html` is missing or `wwwroot/assets/` is empty. Two legitimate "missing" states exist (packaging regression, intentional stripped deployment); halting boot would trade a degraded mode for a fully unreachable one.
 - The Portal is **not** a registered app; it does not appear in `/api/v1/apps`, has no `AppType`, and is not seeded via `ProxyAppSeeder`. The `wwwroot/` directory is part of the archive contract (item 7 of 7). `/api/v1/routes` synthesizes a Portal row at index 0 (`isPortal: true`) so operators can see the resolved hostname; `/api/v1/status` carries `portalUrl`.
@@ -315,6 +326,14 @@ cd frontend && npm run test                                  # Vitest — all gr
 ### Filesystem (`Filesystem/`)
 - `GET /filesystem/browse` — directory listing for the registration form's path picker.
 - `GET /filesystem/detect-strategy` — sniffs an artifact path and returns the recommended discovery strategy (DotNetRuntimeConfiguration, PackageJson, Manual).
+
+### Health Checks (`HealthChecks/`)
+- `HealthCheckExecutorService` — singleton `BackgroundService` + `IHealthCheckExecutor`, registered via `AddHealthCheckExecutor()` and run as a hosted service (`HealthChecks/_Registration.cs`).
+- `HealthCheckProbe` — issues the configured localhost probe with a per-call timeout (private `HttpClient`, bypasses the shared resilience pipeline by design).
+- Latest result is surfaced operator-side as `healthStatus` on `AppDetail` (`Registry/AppEndpoints.cs`). Health-check execution is shipped, not deferred.
+
+### Installation (`Installation/`)
+- `AppSettingsMergeCli` + `AppSettingsMerger` — the `collabhost --merge-appsettings` CLI path (invoked early in `Program.cs`) that merges operator config into the canonical `appsettings.json`. Operator-facing install tooling.
 
 ## API Surface
 
@@ -440,8 +459,7 @@ All sub-agent dispatches are logged in the **project-scoped** dispatch log `.age
 ## Deferred Features
 
 See `v2-architecture.md` § Deferred Features for full list. Key items:
-- Health check execution (capability schema exists, no runtime executor wired)
-- App updates / deployment hooks (subsystem stubbed under `Updates/`, not yet wired)
+- App updates / deployment hooks — planned, not yet started (no code)
 - Real-time push for dashboard (log streaming ships via SSE; dashboard stats and routes still poll)
 - Action error feedback for failed mutations (card #101)
 
