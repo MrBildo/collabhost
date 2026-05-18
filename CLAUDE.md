@@ -104,7 +104,7 @@ The reverse proxy is exposed in the UI as "Proxy" — never "Caddy". Backend ide
 
 ## Active Branch
 
-Development is on `main`. The pre-v1 (v0) codebase is preserved on `v0-reference` for reference only.
+Development is on `main`.
 
 ## Structure
 

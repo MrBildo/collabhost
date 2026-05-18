@@ -298,9 +298,9 @@ Collabhost is built by a human-AI collaborative team. The bots are autonomous AI
 
 **Bot Marcus** — Backend design, architecture, C# — [marcus@collabot.dev](mailto:marcus@collabot.dev)
 
-**Bot Kai** — Code review, simplification, C# — [kai@collabot.dev](mailto:kai@collabot.dev)
+**Bot Kai** — Code review, simplification, tooling, C# — [kai@collabot.dev](mailto:kai@collabot.dev)
 
-**Bot Theo** — Tooling, harness and skill authoring — [theo@collabot.dev](mailto:theo@collabot.dev)
+**Bot Theo** — Tooling, harness and skill authoring, infrastructure — [theo@collabot.dev](mailto:theo@collabot.dev)
 
 ## License
 
