@@ -16,6 +16,8 @@ namespace Collabhost.Api.Mcp;
 
 #pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
 #pragma warning disable MA0011 // Ulid.ToString is not locale-sensitive
+// Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
+// at the top of each body via McpRequestAuthenticator.
 [McpServerToolType]
 public class LifecycleTools
 (
@@ -25,6 +27,7 @@ public class LifecycleTools
     ProxyManager proxy,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
+    McpRequestAuthenticator authenticator,
     ILogger<LifecycleTools> logger
 )
 {
@@ -46,6 +49,9 @@ public class LifecycleTools
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
 
+    private readonly McpRequestAuthenticator _authenticator = authenticator
+        ?? throw new ArgumentNullException(nameof(authenticator));
+
     private readonly ILogger<LifecycleTools> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
@@ -61,9 +67,17 @@ public class LifecycleTools
     public async Task<CallToolResult> StartAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
-        CancellationToken ct
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "start_app", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -161,9 +175,17 @@ public class LifecycleTools
     public async Task<CallToolResult> StopAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
-        CancellationToken ct
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "stop_app", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -261,9 +283,17 @@ public class LifecycleTools
     public async Task<CallToolResult> RestartAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
-        CancellationToken ct
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "restart_app", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -332,9 +362,17 @@ public class LifecycleTools
     public async Task<CallToolResult> KillAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
-        CancellationToken ct
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "kill_app", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -413,9 +451,17 @@ public class LifecycleTools
         // masks to a generic "An error occurred invoking '<tool>'." -- Card #331.
         [Description("Maximum number of log entries to return (1-500). Defaults to 100.")] int? limit = null,
         [Description("Entries to skip from the start of the buffer for pagination. Defaults to 0.")] int? offset = null,
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
         CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "get_logs", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)

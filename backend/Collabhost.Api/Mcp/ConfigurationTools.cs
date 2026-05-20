@@ -17,6 +17,8 @@ namespace Collabhost.Api.Mcp;
 
 #pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
 #pragma warning disable MA0011 // Ulid.ToString is not locale-sensitive
+// Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
+// at the top of each body via McpRequestAuthenticator.
 [McpServerToolType]
 public class ConfigurationTools
 (
@@ -27,6 +29,7 @@ public class ConfigurationTools
     ProxySettings proxySettings,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
+    McpRequestAuthenticator authenticator,
     ILogger<ConfigurationTools> logger
 )
 {
@@ -51,6 +54,9 @@ public class ConfigurationTools
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
 
+    private readonly McpRequestAuthenticator _authenticator = authenticator
+        ?? throw new ArgumentNullException(nameof(authenticator));
+
     private readonly ILogger<ConfigurationTools> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
@@ -66,9 +72,17 @@ public class ConfigurationTools
     public async Task<CallToolResult> GetSettingsAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
-        CancellationToken ct
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "get_settings", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -214,9 +228,17 @@ public class ConfigurationTools
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
         [Description("JSON object of settings overrides to apply. Must match the capability schema structure from get_settings. Example: {\"process\":{\"workingDirectory\":\"/app\"},\"restart\":{\"policy\":\"always\"}}")] string settings,
-        CancellationToken ct
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "update_settings", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -373,8 +395,19 @@ public class ConfigurationTools
         OpenWorld = false
     )]
     [Description("Forces Caddy to regenerate its proxy configuration from the current app registry state. Use this when routes appear stale or when an app's domain is not resolving correctly. This is safe to call at any time -- it regenerates the full configuration idempotently.")]
-    public async Task<CallToolResult> ReloadProxyAsync(CancellationToken ct)
+    public async Task<CallToolResult> ReloadProxyAsync
+    (
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
+    )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "reload_proxy", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         _proxy.RequestSync();
 
         try
@@ -413,8 +446,19 @@ public class ConfigurationTools
         OpenWorld = false
     )]
     [Description("Lists all proxy routes currently configured in Caddy. Each route shows the app slug, external domain ({slug}.<configured-base-domain>), upstream target, and whether the route is active. Use this to verify route configuration after starting or stopping an app.")]
-    public async Task<CallToolResult> ListRoutesAsync(CancellationToken ct)
+    public async Task<CallToolResult> ListRoutesAsync
+    (
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
+    )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "list_routes", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var apps = await _appStore.ListAsync(ct);
 
         var routes = new List<object>();

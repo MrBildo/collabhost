@@ -1,72 +1,38 @@
-using Collabhost.Api.Authorization;
-
 using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
+// MCP session setup. Permissive at the HTTP/session layer; per-call enforcement happens
+// in each tool via McpRequestAuthenticator. See Card #332 for the rationale (per-bot
+// identity through a shared user-scope MCP server requires per-call authKey).
+//
+// Backward compatibility path: clients that pinned X-User-Key in their .mcp.json under
+// v1.0.x still have their header read here and stashed in McpHeaderFallback so tools
+// can fall back to it when no per-call authKey is supplied. The 401 / role-filtering
+// that used to live here moved to McpRequestAuthenticator -- session setup no longer
+// rejects unauthenticated requests because the per-call authKey may still arrive.
 public static class McpAuthentication
 {
-    public static async Task ConfigureSessionAsync
+    // The McpServerOptions and CancellationToken parameters are part of the SDK delegate
+    // shape (ConfigureSessionOptionsCallback). They are intentionally unused here -- session
+    // setup no longer needs them under the per-call auth model.
+#pragma warning disable IDE0060
+    public static Task ConfigureSessionAsync
     (
         HttpContext httpContext,
         McpServerOptions sessionOptions,
         CancellationToken ct
     )
+#pragma warning restore IDE0060
     {
-        var authKey = httpContext.Request.Headers["X-User-Key"].ToString();
+        var headerKey = httpContext.Request.Headers["X-User-Key"].ToString();
 
-        if (string.IsNullOrEmpty(authKey))
+        if (!string.IsNullOrEmpty(headerKey))
         {
-            httpContext.Response.StatusCode = 401;
-            await httpContext.Response.WriteAsJsonAsync
-            (
-                new { error = "Unauthorized", message = "API key is required. Provide X-User-Key header." },
-                ct
-            );
-            return;
+            var fallback = httpContext.RequestServices.GetRequiredService<McpHeaderFallback>();
+            fallback.Set(headerKey);
         }
 
-        var resolver = httpContext.RequestServices.GetRequiredService<AuthKeyResolver>();
-        var user = await resolver.ResolveAsync(authKey, ct);
-
-        if (user is null || !user.IsActive)
-        {
-            httpContext.Response.StatusCode = 401;
-            await httpContext.Response.WriteAsJsonAsync
-            (
-                new { error = "Unauthorized", message = "Invalid or deactivated API key." },
-                ct
-            );
-            return;
-        }
-
-        // Populate scoped ICurrentUser for tool methods to inject
-        var currentUser = httpContext.RequestServices.GetRequiredService<CurrentUser>();
-        currentUser.Set(user);
-
-        // Filter tool visibility by role
-        if (user.Role != UserRole.Administrator)
-        {
-            FilterToolsByRole(sessionOptions, user.Role);
-        }
-    }
-
-    private static void FilterToolsByRole(McpServerOptions sessionOptions, UserRole role)
-    {
-        var allTools = sessionOptions.ToolCollection;
-
-        if (allTools is null)
-        {
-            return;
-        }
-
-        var toolsToRemove = allTools
-            .Where(tool => !Entitlements.CanAccessTool(role, tool.ProtocolTool.Name))
-                .ToList();
-
-        foreach (var tool in toolsToRemove)
-        {
-            allTools.Remove(tool);
-        }
+        return Task.CompletedTask;
     }
 }

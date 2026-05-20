@@ -10,6 +10,14 @@ public static class McpRegistration
     {
         public IServiceCollection AddMcp()
         {
+            // Per-call MCP authentication state. Both scoped. McpHeaderFallback caches the
+            // X-User-Key header (if present) captured at session setup; McpRequestAuthenticator
+            // runs at the top of each tool body. The header fallback exists strictly for
+            // v1.0.x backward compatibility (Card #332); new clients supply authKey as a
+            // per-call tool argument.
+            services.AddScoped<McpHeaderFallback>();
+            services.AddScoped<McpRequestAuthenticator>();
+
             services
                 .AddMcpServer(options =>
                 {

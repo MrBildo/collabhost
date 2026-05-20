@@ -969,6 +969,71 @@ platform-provided `writableDataPath` for everything the app writes. The
 artifact path is cheap to walk away from later because nothing in Collabhost
 is keyed on it.
 
+### 5.7 MCP client setup
+
+Collabhost exposes a Model Context Protocol (MCP) server at
+`https://collabhost.<base-domain>/mcp` for agent clients (Claude Code,
+compatible IDE plugins, custom bots). Every MCP tool accepts a per-call
+`authKey` argument — your Collabhost user key (the same ULID printed at
+first boot, or any user key you have created via the dashboard) — which the
+server uses to authenticate the call and stamp activity-log entries with the
+calling user's identity.
+
+**Why per-call.** MCP server configurations are typically shared at the user
+or project level — one configuration, one connection, many calling agents.
+A static header at connection time yields one shared identity for every
+caller, which collapses per-agent attribution in the activity log. Passing
+`authKey` per call is the channel through which per-agent identity reaches a
+shared MCP server. This mirrors how the Collaboard MCP works (`COLLABOARD_AUTH_KEY`
+per call); the Collabhost equivalent is your Collabhost user key.
+
+**Recommended pattern (Claude Code).** Each agent stores its own key in a
+per-agent `.env` (e.g. `~/.agents/bots/<bot>/.env`) and supplies it as
+`authKey` on every Collabhost MCP tool call. The shared MCP configuration
+itself carries no key; the connection is anonymous and each call provides
+its own identity.
+
+Example `~/.claude.json` (or project-scope `.mcp.json`) entry:
+
+```json
+{
+  "mcpServers": {
+    "collabhost": {
+      "type": "http",
+      "url": "https://collabhost.<your-base-domain>/mcp"
+    }
+  }
+}
+```
+
+No `headers` block is required. The calling agent supplies `authKey` per
+tool call. Replace `<your-base-domain>` with the value of `Proxy:BaseDomain`
+(see §5.4).
+
+The MCP client configuration intentionally carries no key — the per-bot
+agent loop is responsible for reading the `authKey` from its own
+`~/.agents/bots/<bot>/.env` and injecting it as the `authKey` argument on
+each tool call.
+
+**Treat the key as a secret.** The Collabhost user key authorizes the full
+REST control plane (process start/kill, registration, settings, delete).
+When it travels as a tool-call argument, it lands in conversation transcripts
+and harness logs alongside other tool I/O. Rotate via the dashboard if you
+have reason to believe a transcript has leaked.
+
+**Backward compatibility.** If an older client pins `X-User-Key` in its MCP
+connection configuration's `headers` block, the server falls back to that
+header when `authKey` is omitted from a tool call. Per-call `authKey` is the
+preferred path and overrides the header when both are present. The header
+fallback is a backward-compatibility path, not the recommended shape — new
+configurations should leave `headers` empty and let each agent supply
+`authKey` per call.
+
+**Administrator-only tools.** `delete_app` requires an administrator
+`authKey`. Other tools accept any active user key (administrator or agent).
+The role check happens per call; an agent attempting `delete_app` receives
+an authorization error from the server.
+
 ---
 
 ## 6. macOS: first-run quarantine
