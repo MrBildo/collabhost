@@ -1010,6 +1010,11 @@ No `headers` block is required. The calling agent supplies `authKey` per
 tool call. Replace `<your-base-domain>` with the value of `Proxy:BaseDomain`
 (see §5.4).
 
+The MCP client configuration intentionally carries no key — the per-bot
+agent loop is responsible for reading the `authKey` from its own
+`~/.agents/bots/<bot>/.env` and injecting it as the `authKey` argument on
+each tool call.
+
 **Treat the key as a secret.** The Collabhost user key authorizes the full
 REST control plane (process start/kill, registration, settings, delete).
 When it travels as a tool-call argument, it lands in conversation transcripts
