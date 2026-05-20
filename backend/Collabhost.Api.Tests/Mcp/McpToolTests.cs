@@ -72,68 +72,94 @@ public class McpToolTests(ApiFixture fixture)
         await _client.SendAsync(request);
     }
 
-    private DiscoveryTools CreateDiscoveryTools()
-    {
-        var startTime = _services.GetRequiredService<IApplicationStartTime>();
-        var appStore = _services.GetRequiredService<AppStore>();
-        var typeStore = _services.GetRequiredService<TypeStore>();
-        var supervisor = _services.GetRequiredService<ProcessSupervisor>();
-        var proxy = _services.GetRequiredService<ProxyManager>();
-        var proxySettings = _services.GetRequiredService<ProxySettings>();
-        var probeService = _services.GetRequiredService<ProbeService>();
-        var dataPathResolver = _services.GetRequiredService<AppDataPathResolver>();
+    // Each Create*Tools method resolves the production DI services and constructs the tool
+    // class. The McpRequestAuthenticator (Card #332) is also resolved from DI; tests pass
+    // ApiFixture.AdminKey as the per-call authKey, which the authenticator resolves and
+    // seeds CurrentUser from. The scope-shared services (CurrentUser, McpHeaderFallback)
+    // come from a single test-scoped scope so the authenticator's CurrentUser.Set call is
+    // visible to the tool body's _currentUser reads.
 
-        return new DiscoveryTools(startTime, appStore, typeStore, supervisor, proxy, proxySettings, probeService, dataPathResolver);
+    private (DiscoveryTools Tools, IServiceScope Scope) CreateDiscoveryTools()
+    {
+        var scope = _services.CreateScope();
+        var sp = scope.ServiceProvider;
+
+        var tools = new DiscoveryTools
+        (
+            sp.GetRequiredService<IApplicationStartTime>(),
+            sp.GetRequiredService<AppStore>(),
+            sp.GetRequiredService<TypeStore>(),
+            sp.GetRequiredService<ProcessSupervisor>(),
+            sp.GetRequiredService<ProxyManager>(),
+            sp.GetRequiredService<ProxySettings>(),
+            sp.GetRequiredService<ProbeService>(),
+            sp.GetRequiredService<AppDataPathResolver>(),
+            sp.GetRequiredService<McpRequestAuthenticator>()
+        );
+
+        return (tools, scope);
     }
 
-    private LifecycleTools CreateLifecycleTools()
+    private (LifecycleTools Tools, IServiceScope Scope) CreateLifecycleTools()
     {
-        var appStore = _services.GetRequiredService<AppStore>();
-        var typeStore = _services.GetRequiredService<TypeStore>();
-        var supervisor = _services.GetRequiredService<ProcessSupervisor>();
-        var proxy = _services.GetRequiredService<ProxyManager>();
-        var activityEventStore = _services.GetRequiredService<ActivityEventStore>();
-        var logger = _services.GetRequiredService<ILogger<LifecycleTools>>();
+        var scope = _services.CreateScope();
+        var sp = scope.ServiceProvider;
 
-        // ICurrentUser is scoped -- create a scope to resolve it
-        using var scope = _services.CreateScope();
-        var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
+        var tools = new LifecycleTools
+        (
+            sp.GetRequiredService<AppStore>(),
+            sp.GetRequiredService<TypeStore>(),
+            sp.GetRequiredService<ProcessSupervisor>(),
+            sp.GetRequiredService<ProxyManager>(),
+            sp.GetRequiredService<ICurrentUser>(),
+            sp.GetRequiredService<ActivityEventStore>(),
+            sp.GetRequiredService<McpRequestAuthenticator>(),
+            sp.GetRequiredService<ILogger<LifecycleTools>>()
+        );
 
-        return new LifecycleTools(appStore, typeStore, supervisor, proxy, currentUser, activityEventStore, logger);
+        return (tools, scope);
     }
 
-    private ConfigurationTools CreateConfigurationTools()
+    private (ConfigurationTools Tools, IServiceScope Scope) CreateConfigurationTools()
     {
-        var appStore = _services.GetRequiredService<AppStore>();
-        var typeStore = _services.GetRequiredService<TypeStore>();
-        var supervisor = _services.GetRequiredService<ProcessSupervisor>();
-        var proxy = _services.GetRequiredService<ProxyManager>();
-        var proxySettings = _services.GetRequiredService<ProxySettings>();
-        var activityEventStore = _services.GetRequiredService<ActivityEventStore>();
-        var logger = _services.GetRequiredService<ILogger<ConfigurationTools>>();
+        var scope = _services.CreateScope();
+        var sp = scope.ServiceProvider;
 
-        // ICurrentUser is scoped -- create a scope to resolve it
-        using var scope = _services.CreateScope();
-        var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
+        var tools = new ConfigurationTools
+        (
+            sp.GetRequiredService<AppStore>(),
+            sp.GetRequiredService<TypeStore>(),
+            sp.GetRequiredService<ProcessSupervisor>(),
+            sp.GetRequiredService<ProxyManager>(),
+            sp.GetRequiredService<ProxySettings>(),
+            sp.GetRequiredService<ICurrentUser>(),
+            sp.GetRequiredService<ActivityEventStore>(),
+            sp.GetRequiredService<McpRequestAuthenticator>(),
+            sp.GetRequiredService<ILogger<ConfigurationTools>>()
+        );
 
-        return new ConfigurationTools(appStore, typeStore, supervisor, proxy, proxySettings, currentUser, activityEventStore, logger);
+        return (tools, scope);
     }
 
-    private RegistrationTools CreateRegistrationTools()
+    private (RegistrationTools Tools, IServiceScope Scope) CreateRegistrationTools()
     {
-        var appStore = _services.GetRequiredService<AppStore>();
-        var typeStore = _services.GetRequiredService<TypeStore>();
-        var supervisor = _services.GetRequiredService<ProcessSupervisor>();
-        var proxy = _services.GetRequiredService<ProxyManager>();
-        var activityEventStore = _services.GetRequiredService<ActivityEventStore>();
-        var dataPathResolver = _services.GetRequiredService<AppDataPathResolver>();
-        var logger = _services.GetRequiredService<ILogger<RegistrationTools>>();
+        var scope = _services.CreateScope();
+        var sp = scope.ServiceProvider;
 
-        // ICurrentUser is scoped -- create a scope to resolve it
-        using var scope = _services.CreateScope();
-        var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
+        var tools = new RegistrationTools
+        (
+            sp.GetRequiredService<AppStore>(),
+            sp.GetRequiredService<TypeStore>(),
+            sp.GetRequiredService<ProcessSupervisor>(),
+            sp.GetRequiredService<ProxyManager>(),
+            sp.GetRequiredService<ICurrentUser>(),
+            sp.GetRequiredService<ActivityEventStore>(),
+            sp.GetRequiredService<AppDataPathResolver>(),
+            sp.GetRequiredService<McpRequestAuthenticator>(),
+            sp.GetRequiredService<ILogger<RegistrationTools>>()
+        );
 
-        return new RegistrationTools(appStore, typeStore, supervisor, proxy, currentUser, activityEventStore, dataPathResolver, logger);
+        return (tools, scope);
     }
 
     // -------- Discovery: list_apps --------
@@ -141,9 +167,10 @@ public class McpToolTests(ApiFixture fixture)
     [Fact]
     public async Task ListApps_HappyPath_ReturnsSuccessResult()
     {
-        var tools = CreateDiscoveryTools();
+        var (tools, scope) = CreateDiscoveryTools();
+        using var _ = scope;
 
-        var result = await tools.ListAppsAsync(null, CancellationToken.None);
+        var result = await tools.ListAppsAsync(status: null, authKey: ApiFixture.AdminKey, CancellationToken.None);
 
         (result.IsError ?? false).ShouldBeFalse();
         result.Content.ShouldNotBeEmpty();
@@ -153,9 +180,10 @@ public class McpToolTests(ApiFixture fixture)
     [Fact]
     public async Task ListApps_WithStatusFilter_ReturnsNonErrorResult()
     {
-        var tools = CreateDiscoveryTools();
+        var (tools, scope) = CreateDiscoveryTools();
+        using var _ = scope;
 
-        var result = await tools.ListAppsAsync("running", CancellationToken.None);
+        var result = await tools.ListAppsAsync(status: "running", authKey: ApiFixture.AdminKey, CancellationToken.None);
 
         (result.IsError ?? false).ShouldBeFalse();
     }
@@ -169,9 +197,10 @@ public class McpToolTests(ApiFixture fixture)
 
         try
         {
-            var tools = CreateLifecycleTools();
+            var (tools, scope) = CreateLifecycleTools();
+            using var _ = scope;
 
-            var result = await tools.GetLogsAsync(slug, null, null, CancellationToken.None);
+            var result = await tools.GetLogsAsync(slug, limit: null, offset: null, authKey: ApiFixture.AdminKey, CancellationToken.None);
 
             (result.IsError ?? false).ShouldBeFalse();
 
@@ -188,9 +217,10 @@ public class McpToolTests(ApiFixture fixture)
     [Fact]
     public async Task GetLogs_UnknownApp_ReturnsError()
     {
-        var tools = CreateLifecycleTools();
+        var (tools, scope) = CreateLifecycleTools();
+        using var _ = scope;
 
-        var result = await tools.GetLogsAsync("no-such-app-xyz", null, null, CancellationToken.None);
+        var result = await tools.GetLogsAsync("no-such-app-xyz", limit: null, offset: null, authKey: ApiFixture.AdminKey, CancellationToken.None);
 
         (result.IsError ?? false).ShouldBeTrue();
 
@@ -208,9 +238,10 @@ public class McpToolTests(ApiFixture fixture)
 
         try
         {
-            var tools = CreateConfigurationTools();
+            var (tools, scope) = CreateConfigurationTools();
+            using var _ = scope;
 
-            var result = await tools.GetSettingsAsync(slug, CancellationToken.None);
+            var result = await tools.GetSettingsAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
 
             (result.IsError ?? false).ShouldBeFalse();
 
@@ -227,9 +258,10 @@ public class McpToolTests(ApiFixture fixture)
     [Fact]
     public async Task GetSettings_UnknownApp_ReturnsError()
     {
-        var tools = CreateConfigurationTools();
+        var (tools, scope) = CreateConfigurationTools();
+        using var _ = scope;
 
-        var result = await tools.GetSettingsAsync("no-such-app-abc", CancellationToken.None);
+        var result = await tools.GetSettingsAsync("no-such-app-abc", authKey: ApiFixture.AdminKey, CancellationToken.None);
 
         (result.IsError ?? false).ShouldBeTrue();
 
@@ -241,19 +273,25 @@ public class McpToolTests(ApiFixture fixture)
     // -------- Registration: detect_strategy --------
 
     [Fact]
-    public void DetectStrategy_ExistingDirectory_ReturnsNonErrorResponse()
+    public async Task DetectStrategy_ExistingDirectory_ReturnsNonErrorResponse()
     {
         var dir = Path.GetTempPath();
 
-        var result = RegistrationTools.DetectStrategy(dir, "dotnet-app");
+        var (tools, scope) = CreateRegistrationTools();
+        using var _ = scope;
+
+        var result = await tools.DetectStrategyAsync(dir, "dotnet-app", authKey: ApiFixture.AdminKey, CancellationToken.None);
 
         (result.IsError ?? false).ShouldBeFalse();
     }
 
     [Fact]
-    public void DetectStrategy_NonexistentDirectory_ReturnsError()
+    public async Task DetectStrategy_NonexistentDirectory_ReturnsError()
     {
-        var result = RegistrationTools.DetectStrategy("/does/not/exist/xyz-abc", "dotnet-app");
+        var (tools, scope) = CreateRegistrationTools();
+        using var _ = scope;
+
+        var result = await tools.DetectStrategyAsync("/does/not/exist/xyz-abc", "dotnet-app", authKey: ApiFixture.AdminKey, CancellationToken.None);
 
         (result.IsError ?? false).ShouldBeTrue();
     }
@@ -271,14 +309,16 @@ public class McpToolTests(ApiFixture fixture)
 
         try
         {
-            var tools = CreateRegistrationTools();
+            var (tools, scope) = CreateRegistrationTools();
+            using var _ = scope;
 
             var result = await tools.RegisterAppAsync
             (
                 appName,
                 "executable",
                 installDirectory,
-                null,
+                settings: null,
+                authKey: ApiFixture.AdminKey,
                 CancellationToken.None
             );
 
@@ -341,56 +381,58 @@ public class McpToolTests(ApiFixture fixture)
         }
     }
 
-    // -------- Auth rejection at HTTP layer --------
+    // -------- Per-call auth contract (Card #332) --------
+    //
+    // Pre-#332: the /mcp endpoint enforced auth at session setup (HTTP 401 if X-User-Key was
+    // missing/invalid). Card #332 moved auth enforcement to per-tool-call (the only channel
+    // through which per-bot identity enters a shared user-scope MCP server). The /mcp endpoint
+    // itself is now permissive at the HTTP layer; tool calls fail at the CallToolResult
+    // layer when no key is supplied. tools/list does not require a key.
+    //
+    // The direct C# method calls below cover the per-call rejection path. The HTTP-layer
+    // session test (assert /mcp accepts unauthenticated tools/list) lives in
+    // McpTransportBindingTests.cs where the SDK stream transport is available.
 
     [Fact]
-    public async Task McpEndpoint_NoKey_ReturnsUnauthorized()
+    public async Task DirectCall_NoAuthKeyAndNoHeader_ReturnsAuthError()
     {
-        var client = fixture.CreateClient();
+        var (tools, scope) = CreateDiscoveryTools();
+        using var _ = scope;
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
-        request.Content = new StringContent
-        (
-            """{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}""",
-            System.Text.Encoding.UTF8,
-            "application/json"
-        );
-        request.Headers.Accept.ParseAdd("application/json, text/event-stream");
+        var result = await tools.ListAppsAsync(status: null, authKey: null, CancellationToken.None);
 
-        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        (result.IsError ?? false).ShouldBeTrue();
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        var text = GetFirstText(result);
+
+        text.ShouldContain("Authentication required");
     }
 
     [Fact]
-    public async Task McpEndpoint_InvalidKey_ReturnsUnauthorized()
+    public async Task DirectCall_InvalidAuthKey_ReturnsAuthError()
     {
-        var client = fixture.CreateClient();
+        var (tools, scope) = CreateDiscoveryTools();
+        using var _ = scope;
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
-        request.Content = new StringContent
-        (
-            """{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}""",
-            System.Text.Encoding.UTF8,
-            "application/json"
-        );
-        request.Headers.Accept.ParseAdd("application/json, text/event-stream");
-        request.Headers.Add("X-User-Key", "01BADKEYNOTINDB000000000X");
+        var result = await tools.ListAppsAsync(status: null, authKey: "01BADKEYNOTINDB000000000X", CancellationToken.None);
 
-        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        (result.IsError ?? false).ShouldBeTrue();
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        var text = GetFirstText(result);
+
+        text.ShouldContain("Invalid or deactivated authKey");
     }
 
     // -------- Discovery: get_system_status uptime --------
 
     [Fact]
-    public void GetSystemStatus_UptimeSeconds_IsNonNegative()
+    public async Task GetSystemStatus_UptimeSeconds_IsNonNegative()
     {
         // Validates that IApplicationStartTime eliminates the 0 / -0 race. Card #222.
-        var tools = CreateDiscoveryTools();
+        var (tools, scope) = CreateDiscoveryTools();
+        using var _ = scope;
 
-        var result = tools.GetSystemStatus();
+        var result = await tools.GetSystemStatusAsync(authKey: ApiFixture.AdminKey, CancellationToken.None);
 
         (result.IsError ?? false).ShouldBeFalse();
 
@@ -407,9 +449,10 @@ public class McpToolTests(ApiFixture fixture)
     {
         // MCP tool and REST endpoint share IApplicationStartTime, so their uptimeSeconds
         // values should agree within a tight tolerance (1s covers the round-trip delta).
-        var tools = CreateDiscoveryTools();
+        var (tools, scope) = CreateDiscoveryTools();
+        using var _ = scope;
 
-        var mcpResult = tools.GetSystemStatus();
+        var mcpResult = await tools.GetSystemStatusAsync(authKey: ApiFixture.AdminKey, CancellationToken.None);
         using var httpResponse = await _client.GetAsync(new Uri("/api/v1/status", UriKind.Relative));
 
         httpResponse.IsSuccessStatusCode.ShouldBeTrue();

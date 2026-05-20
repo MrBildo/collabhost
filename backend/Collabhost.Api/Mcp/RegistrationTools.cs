@@ -18,6 +18,8 @@ namespace Collabhost.Api.Mcp;
 
 #pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
 #pragma warning disable MA0011 // Ulid.ToString/TryParse is not locale-sensitive
+// Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
+// at the top of each body via McpRequestAuthenticator.
 [McpServerToolType]
 public class RegistrationTools
 (
@@ -28,6 +30,7 @@ public class RegistrationTools
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
     AppDataPathResolver dataPathResolver,
+    McpRequestAuthenticator authenticator,
     ILogger<RegistrationTools> logger
 )
 {
@@ -52,6 +55,9 @@ public class RegistrationTools
     private readonly AppDataPathResolver _dataPathResolver = dataPathResolver
         ?? throw new ArgumentNullException(nameof(dataPathResolver));
 
+    private readonly McpRequestAuthenticator _authenticator = authenticator
+        ?? throw new ArgumentNullException(nameof(authenticator));
+
     private readonly ILogger<RegistrationTools> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
@@ -72,9 +78,17 @@ public class RegistrationTools
         // Explicit `= null` default is load-bearing: the MCP tool-binding marshaller treats params with no
         // C# default as required. Card #331.
         [Description("Optional JSON object with additional registration settings specific to the app type. Example: {\"process\":{\"command\":\"./myapp\",\"arguments\":\"--port 5000\",\"discoveryStrategy\":\"Manual\"}}. Valid process keys: command, arguments, workingDirectory, discoveryStrategy, shutdownTimeoutSeconds, startupGracePeriodSeconds, maxStartupRetries.")] string? settings = null,
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
         CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "register_app", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         if (string.IsNullOrWhiteSpace(name))
         {
             return McpResponseFormatter.InvalidParameters("name is required.");
@@ -296,9 +310,30 @@ public class RegistrationTools
     public async Task<CallToolResult> DeleteAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
-        CancellationToken ct
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "delete_app", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
+        // delete_app is admin-only -- see Entitlements._agentTools. The authenticator above
+        // already enforces this via Entitlements.CanAccessTool, but checking IsAdministrator
+        // here is a belt-and-suspenders double-check at the destructive call site (Card #332,
+        // matches the spirit of the pre-#332 session-time tool-list filter that removed
+        // delete_app from the visible surface for non-admin callers).
+        if (!_currentUser.IsAdministrator)
+        {
+            return McpResponseFormatter.InvalidParameters
+            (
+                "delete_app requires an administrator authKey."
+            );
+        }
+
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -380,13 +415,22 @@ public class RegistrationTools
         OpenWorld = false
     )]
     [Description("Lists directories at a given path on the host machine. When path is omitted, returns the root drives (Windows) or '/' (Unix). Use this during app registration to find the install directory interactively. Returns child directory names and paths. Hidden and system directories are excluded.")]
-    public static CallToolResult BrowseFilesystem
+    public async Task<CallToolResult> BrowseFilesystemAsync
     (
         // Explicit `= null` default is load-bearing: the MCP tool-binding marshaller treats params with no
         // C# default as required. Card #331.
-        [Description("Absolute filesystem path to list. If omitted, returns root drives/directories.")] string? path = null
+        [Description("Absolute filesystem path to list. If omitted, returns root drives/directories.")] string? path = null,
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "browse_filesystem", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         if (string.IsNullOrWhiteSpace(path))
         {
             return BrowseRoots();
@@ -451,12 +495,21 @@ public class RegistrationTools
         OpenWorld = false
     )]
     [Description("Analyzes a directory and reports evidence relevant to the chosen app type -- runtime configs, project files, single-file binaries, package manifests, static-site entry points, or executables. Returns a strategy hint plus the list of evidence files found. The 'notApplicable' strategy is returned for app types that don't go through process discovery (static-site, executable directories with no clear binary). Use this after choosing an app type and install directory, before calling register_app, to understand what configuration Collabhost will auto-discover vs. what must be specified manually.")]
-    public static CallToolResult DetectStrategy
+    public async Task<CallToolResult> DetectStrategyAsync
     (
         [Description("Absolute filesystem path to analyze.")] string path,
-        [Description("App type slug (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable'). Use list_app_types to see valid values.")] string appTypeSlug
+        [Description("App type slug (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable'). Use list_app_types to see valid values.")] string appTypeSlug,
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "detect_strategy", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         if (string.IsNullOrWhiteSpace(path))
         {
             return McpResponseFormatter.InvalidParameters("path is required.");

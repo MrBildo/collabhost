@@ -67,26 +67,12 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
         // sees.
         var options = _fixture.Services.GetRequiredService<IOptions<McpServerOptions>>().Value;
 
-        // The production path sets a per-session ConfigureSessionOptions that resolves the
-        // X-User-Key header and populates the scoped CurrentUser. We mirror that here by
-        // resolving the admin user via AuthKeyResolver and seeding CurrentUser inside a scope
-        // that the McpServer will hold throughout the test. McpServer.Create accepts an
-        // IServiceProvider that tool factories use to resolve dependencies.
-        //
-        // Note: McpServerOptions.ScopeRequests defaults to true, so the SDK creates a fresh
-        // scope per tools/call request. Our seeded CurrentUser is on a different scope, which
-        // means activity-event recording inside the tool body will see an unresolved
-        // CurrentUser and log a warning. Tool bodies catch that and continue -- the binding
-        // assertion these tests target is unaffected. The warning is incidental log noise,
-        // not a test failure.
-        var resolver = _fixture.Services.GetRequiredService<AuthKeyResolver>();
-        var user = await resolver.ResolveAsync(ApiFixture.AdminKey, CancellationToken.None);
-
-        user.ShouldNotBeNull("Admin user must resolve from the integration AdminKey -- fixture invariant");
-
+        // Card #332: auth moved from session-time to per-call. Each tools/call invocation now
+        // carries its own `authKey` argument; the tool body's McpRequestAuthenticator resolves
+        // it and seeds CurrentUser inside the call's scope. The fixture no longer pre-seeds
+        // CurrentUser -- the binding tests below pass ApiFixture.AdminKey via the per-call
+        // arguments dictionary, exactly as a real MCP client would.
         var scope = _fixture.Services.CreateAsyncScope();
-        var currentUser = scope.ServiceProvider.GetRequiredService<CurrentUser>();
-        currentUser.Set(user);
 
         // Duplex pipe pair. Each Pipe is a one-way FIFO: clientToServer carries client->server
         // frames, serverToClient carries server->client frames. Stream transports treat one end
@@ -233,7 +219,11 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
             var result = await client.CallToolAsync
             (
                 "get_logs",
-                new Dictionary<string, object?>(StringComparer.Ordinal) { ["slug"] = slug },
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["slug"] = slug,
+                    ["authKey"] = ApiFixture.AdminKey
+                },
                 cancellationToken: CancellationToken.None
             );
 
@@ -255,7 +245,10 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
         var result = await client.CallToolAsync
         (
             "list_events",
-            arguments: null,
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["authKey"] = ApiFixture.AdminKey
+            },
             cancellationToken: CancellationToken.None
         );
 
@@ -272,7 +265,10 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
         var result = await client.CallToolAsync
         (
             "browse_filesystem",
-            arguments: null,
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["authKey"] = ApiFixture.AdminKey
+            },
             cancellationToken: CancellationToken.None
         );
 
@@ -301,7 +297,8 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
                 {
                     ["name"] = appName,
                     ["appTypeSlug"] = "executable",
-                    ["installDirectory"] = installDirectory
+                    ["installDirectory"] = installDirectory,
+                    ["authKey"] = ApiFixture.AdminKey
                 },
                 cancellationToken: CancellationToken.None
             );
@@ -333,7 +330,10 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
         var result = await client.CallToolAsync
         (
             "list_apps",
-            arguments: null,
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["authKey"] = ApiFixture.AdminKey
+            },
             cancellationToken: CancellationToken.None
         );
 
@@ -417,6 +417,288 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
         (
             "Found MCP tool parameters that will trigger the #331 binding defect:\n"
             + string.Join('\n', offenders)
+        );
+    }
+
+    // ---- Per-call per-bot attribution coverage (Card #332) ----
+    //
+    // The decided model: per-call `authKey` is the only channel through which per-bot identity
+    // enters a shared user-scope MCP server. These tests prove it end-to-end through real
+    // tools/call invocations on the stream transport:
+    //
+    //   1. Two distinct callers, two distinct keys, in the same transport-bound test session.
+    //   2. Each call's resulting activity-log row carries the calling user's ActorId/ActorName,
+    //      NOT the other user's, NOT a shared identity.
+    //
+    // This is the load-bearing assertion the card asked for: "two distinct keys -> two distinct
+    // CurrentUsers -> activity-log actors reflect the caller's identity, not a shared one."
+    // The pre-#332 model could not satisfy this through a shared user-scope server because the
+    // static header yielded one identity for every caller.
+
+    [Fact]
+    public async Task TwoCallers_TwoKeys_ActivityLogStampsEachCallersIdentity()
+    {
+        var client = _client!;
+
+        // Create a second user (Agent role) directly via UserStore. The fixture's admin key
+        // identifies user-A; we create user-B here so we have two distinct identities to drive
+        // distinct tools/call invocations against the same transport-bound MCP server.
+        var userStore = _fixture.Services.GetRequiredService<UserStore>();
+        var userB = await userStore.CreateAsync($"Bot-B-{Guid.NewGuid():N}", UserRole.Agent, CancellationToken.None);
+
+        // Resolve user-A via the admin key for ActorName comparison after the test calls.
+        var resolver = _fixture.Services.GetRequiredService<AuthKeyResolver>();
+        var userA = await resolver.ResolveAsync(ApiFixture.AdminKey, CancellationToken.None);
+        userA.ShouldNotBeNull("Admin user must resolve from the integration AdminKey");
+
+        // Each caller registers a static-site app via MCP -- a side-effecting call that records
+        // an activity event (ActivityEventTypes.AppCreated) with the caller's ActorId/Name. The
+        // app_created path is the simplest fixture-friendly side-effect (no process spawn, no
+        // proxy state change, no transport quirks).
+        var slugA = $"mcp-attr-a-{Guid.NewGuid().ToString("N")[..8]}";
+        var slugB = $"mcp-attr-b-{Guid.NewGuid().ToString("N")[..8]}";
+        var installA = Path.Combine(Path.GetTempPath(), $"collabhost-attr-a-{Guid.NewGuid():N}");
+        var installB = Path.Combine(Path.GetTempPath(), $"collabhost-attr-b-{Guid.NewGuid():N}");
+
+        Directory.CreateDirectory(installA);
+        Directory.CreateDirectory(installB);
+
+        try
+        {
+            var resultA = await client.CallToolAsync
+            (
+                "register_app",
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = slugA,
+                    ["appTypeSlug"] = "static-site",
+                    ["installDirectory"] = installA,
+                    ["authKey"] = ApiFixture.AdminKey
+                },
+                cancellationToken: CancellationToken.None
+            );
+
+            (resultA.IsError ?? false).ShouldBeFalse("register_app for user-A must succeed");
+
+            var resultB = await client.CallToolAsync
+            (
+                "register_app",
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = slugB,
+                    ["appTypeSlug"] = "static-site",
+                    ["installDirectory"] = installB,
+                    ["authKey"] = userB.AuthKey
+                },
+                cancellationToken: CancellationToken.None
+            );
+
+            (resultB.IsError ?? false).ShouldBeFalse("register_app for user-B must succeed");
+
+            // Query the activity log via REST -- the same log the dashboard reads from. The two
+            // app_created events should carry the two distinct ActorIds (not a shared one).
+            var (actorIdA, actorNameA) = await FindAppCreatedEventAsync(slugA);
+            var (actorIdB, actorNameB) = await FindAppCreatedEventAsync(slugB);
+
+            actorIdA.ShouldBe(userA.Id.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+                "user-A's call should be attributed to user-A's id");
+            actorNameA.ShouldBe(userA.Name);
+
+            actorIdB.ShouldBe(userB.Id.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+                "user-B's call should be attributed to user-B's id");
+            actorNameB.ShouldBe(userB.Name);
+
+            actorIdA.ShouldNotBe(actorIdB,
+                "The two callers used distinct authKeys -- their activity-log actors must be distinct. "
+                + "If both rows carry the same ActorId, per-call authKey is NOT being honored and "
+                + "Card #332's load-bearing property is broken.");
+        }
+        finally
+        {
+            await DeleteAppAsync(_fixture.Client, slugA);
+            await DeleteAppAsync(_fixture.Client, slugB);
+
+            if (Directory.Exists(installA))
+            {
+                Directory.Delete(installA, true);
+            }
+
+            if (Directory.Exists(installB))
+            {
+                Directory.Delete(installB, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task PerCallAuthKey_OverridesHeaderFallback()
+    {
+        // Two co-existing channels: the X-User-Key header (captured at session setup as a
+        // backward-compat fallback) and the per-call authKey argument. When both are set,
+        // per-call wins -- this is the contract that lets one shared user-scope MCP server
+        // (header pinned to one identity, or unset) deliver per-bot attribution through the
+        // per-call argument.
+        //
+        // The transport-binding fixture does NOT set the header at session setup, so this test
+        // verifies the precedence indirectly: a per-call authKey to a distinct user must yield
+        // that user's identity in the activity log, regardless of what (if anything) the
+        // session captured. The point is that the per-call value is the load-bearing one.
+        var client = _client!;
+
+        var userStore = _fixture.Services.GetRequiredService<UserStore>();
+        var userC = await userStore.CreateAsync($"Bot-C-{Guid.NewGuid():N}", UserRole.Agent, CancellationToken.None);
+
+        var slug = $"mcp-attr-override-{Guid.NewGuid().ToString("N")[..8]}";
+        var install = Path.Combine(Path.GetTempPath(), $"collabhost-attr-override-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(install);
+
+        try
+        {
+            var result = await client.CallToolAsync
+            (
+                "register_app",
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = slug,
+                    ["appTypeSlug"] = "static-site",
+                    ["installDirectory"] = install,
+                    ["authKey"] = userC.AuthKey
+                },
+                cancellationToken: CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeFalse("per-call authKey path must succeed");
+
+            var (actorId, actorName) = await FindAppCreatedEventAsync(slug);
+
+            actorId.ShouldBe(userC.Id.ToString(null, System.Globalization.CultureInfo.InvariantCulture));
+            actorName.ShouldBe(userC.Name);
+        }
+        finally
+        {
+            await DeleteAppAsync(_fixture.Client, slug);
+
+            if (Directory.Exists(install))
+            {
+                Directory.Delete(install, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MissingAuthKeyAndNoHeader_ReturnsAuthError()
+    {
+        // No per-call authKey, no X-User-Key header at session setup (the transport fixture
+        // doesn't simulate one). The body should never run; the authenticator returns an
+        // error CallToolResult instead. This is the contract that replaced the pre-#332
+        // HTTP-401-at-session-setup behavior.
+        var client = _client!;
+
+        var result = await client.CallToolAsync
+        (
+            "list_apps",
+            arguments: null,
+            cancellationToken: CancellationToken.None
+        );
+
+        (result.IsError ?? false).ShouldBeTrue
+        (
+            "Missing authKey with no header fallback must yield an authentication error "
+            + "from McpRequestAuthenticator, not a body that runs against an unresolved user."
+        );
+
+        if (result.Content is { Count: > 0 } && result.Content[0] is TextContentBlock block)
+        {
+            block.Text.ShouldContain("Authentication required");
+        }
+    }
+
+    [Fact]
+    public async Task DeleteApp_AgentRoleAuthKey_ReturnsForbidden()
+    {
+        // Entitlements.CanAccessTool excludes Agents from delete_app. The pre-#332 path
+        // enforced this by removing delete_app from a non-admin's visible tool list at
+        // session setup; per-call auth enforces it at invocation. Either way, the contract
+        // is: an Agent attempting delete_app gets rejected, never executes.
+        var client = _client!;
+
+        var userStore = _fixture.Services.GetRequiredService<UserStore>();
+        var agent = await userStore.CreateAsync($"Bot-Agent-{Guid.NewGuid():N}", UserRole.Agent, CancellationToken.None);
+
+        // Create an app so the target exists -- the rejection must come from the auth
+        // entitlement check, not from "app not found" deeper in the body.
+        var slug = await CreateStaticSiteAsync(_fixture.Client);
+
+        try
+        {
+            var result = await client.CallToolAsync
+            (
+                "delete_app",
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["slug"] = slug,
+                    ["authKey"] = agent.AuthKey
+                },
+                cancellationToken: CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeTrue("delete_app with Agent authKey must be rejected");
+
+            if (result.Content is { Count: > 0 } && result.Content[0] is TextContentBlock block)
+            {
+                var isEntitlementDenial = block.Text.Contains("Tool 'delete_app' is not available", StringComparison.Ordinal);
+                var isAdminCheckDenial = block.Text.Contains("delete_app requires an administrator", StringComparison.Ordinal);
+
+                (isEntitlementDenial || isAdminCheckDenial).ShouldBeTrue
+                (
+                    "Expected either the authenticator's entitlement-denial message or the "
+                    + "body's belt-and-suspenders IsAdministrator check message. Got: " + block.Text
+                );
+            }
+        }
+        finally
+        {
+            // Static site still exists because delete_app was rejected; use the REST client
+            // (admin key) to clean up.
+            await DeleteAppAsync(_fixture.Client, slug);
+        }
+    }
+
+    // Looks up the most recent ActivityEventTypes.AppCreated row for the given app slug via
+    // the REST events endpoint. Returns the actor's id/name for attribution assertions.
+    private async Task<(string ActorId, string ActorName)> FindAppCreatedEventAsync(string appSlug)
+    {
+        using var request = new HttpRequestMessage
+        (
+            HttpMethod.Get,
+            $"/api/v1/events?appSlug={Uri.EscapeDataString(appSlug)}&eventType=app.created&limit=10"
+        );
+        request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+        var ct = _serverCts?.Token ?? CancellationToken.None;
+        var response = await _fixture.Client.SendAsync(request, ct);
+        response.IsSuccessStatusCode.ShouldBeTrue
+        (
+            $"Activity-log query for app {appSlug} returned {response.StatusCode}."
+        );
+
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(ct);
+        var items = body.GetProperty("items");
+
+        items.GetArrayLength().ShouldBeGreaterThan
+        (
+            0,
+            $"No app.created event recorded for {appSlug} -- the MCP register_app body never "
+            + "wrote to the activity log. Per-call auth may not have populated CurrentUser before "
+            + "the body ran."
+        );
+
+        var first = items[0];
+
+        return
+        (
+            ActorId: first.GetProperty("actorId").GetString() ?? string.Empty,
+            ActorName: first.GetProperty("actorName").GetString() ?? string.Empty
         );
     }
 

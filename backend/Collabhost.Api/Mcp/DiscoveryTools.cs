@@ -15,6 +15,9 @@ using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
+// Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
+// at the top of each body via McpRequestAuthenticator. See McpRequestAuthenticator.cs for
+// the per-call vs. header-fallback rationale.
 [McpServerToolType]
 public class DiscoveryTools
 (
@@ -25,7 +28,8 @@ public class DiscoveryTools
     ProxyManager proxy,
     ProxySettings proxySettings,
     ProbeService probeService,
-    AppDataPathResolver dataPathResolver
+    AppDataPathResolver dataPathResolver,
+    McpRequestAuthenticator authenticator
 )
 {
     private readonly IApplicationStartTime _startTime = startTime
@@ -52,6 +56,9 @@ public class DiscoveryTools
     private readonly AppDataPathResolver _dataPathResolver = dataPathResolver
         ?? throw new ArgumentNullException(nameof(dataPathResolver));
 
+    private readonly McpRequestAuthenticator _authenticator = authenticator
+        ?? throw new ArgumentNullException(nameof(authenticator));
+
     [McpServerTool
     (
         Name = "get_system_status",
@@ -61,8 +68,19 @@ public class DiscoveryTools
         OpenWorld = false
     )]
     [Description("Returns system hostname, Collabhost version, and uptime in seconds. Use this to identify the host and verify the platform version. This tool does not require any apps to be registered. Format the uptime locally if a human-readable form is needed.")]
-    public CallToolResult GetSystemStatus()
+    public async Task<CallToolResult> GetSystemStatusAsync
+    (
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
+    )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "get_system_status", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var uptimeSeconds = Math.Round((DateTime.UtcNow - _startTime.UtcStartedAt).TotalSeconds, 1);
 
         var result = new
@@ -87,9 +105,17 @@ public class DiscoveryTools
     public async Task<CallToolResult> ListAppsAsync
     (
         [Description("Filter by app status. Valid values: running, stopped, crashed, backoff, fatal. If omitted, returns all apps.")] string? status = null,
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
         CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "list_apps", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var apps = await _appStore.ListAsync(ct);
 
         var items = new List<object>();
@@ -147,9 +173,17 @@ public class DiscoveryTools
     public async Task<CallToolResult> GetAppAsync
     (
         [Description("The app's unique slug identifier (e.g., 'my-api-server'). Use list_apps to find available slugs.")] string slug,
-        CancellationToken ct
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "get_app", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -251,10 +285,19 @@ public class DiscoveryTools
         OpenWorld = false
     )]
     [Description("Lists all available application types with their display names, descriptions, capabilities, and registration schemas. Use this when registering a new app to discover valid app type slugs and understand what fields each type requires. The five built-in types are: dotnet-app, nodejs-app, static-site, executable, system-service.")]
-#pragma warning disable IDE0060 // MCP framework requires CancellationToken parameter
-    public Task<CallToolResult> ListAppTypesAsync(CancellationToken ct)
-#pragma warning restore IDE0060
+    public async Task<CallToolResult> ListAppTypesAsync
+    (
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
+        CancellationToken ct = default
+    )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "list_app_types", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var appTypes = _typeStore.ListTypes();
 
         var items = new List<object>();
@@ -287,7 +330,7 @@ public class DiscoveryTools
         var header = "Use appType slug in register_app. Each type supports different capabilities.";
         var json = McpResponseFormatter.ToJson(items);
 
-        return Task.FromResult(McpResponseFormatter.Success($"{header}\n{json}"));
+        return McpResponseFormatter.Success($"{header}\n{json}");
     }
 
     private (RoutingConfiguration? config, string? domain, bool routeEnabled) ResolveRouting

@@ -128,35 +128,44 @@ public class AuthMiddlewareTests(ApiFixture fixture)
     }
 
     [Fact]
-    public async Task McpPath_IsSkippedByMiddleware_Returns200OrMcpError()
+    public async Task McpPath_IsSkippedByMiddleware_ReachesMcpHandler()
     {
-        // /mcp is in the skip list for the REST auth middleware.
-        // The MCP server has its own auth (McpAuthentication.ConfigureSessionAsync).
-        // A request to /mcp without a key should reach the MCP layer, not be 401'd by
-        // our middleware. MCP will reject it with its own 401, but not our middleware's 401.
+        // /mcp is in the REST auth middleware's skip list. Under the per-call auth model
+        // (Card #332), the MCP server itself accepts unauthenticated session-level requests
+        // (initialize, tools/list); per-call authKey enforcement happens inside each tool
+        // body. So an unauthenticated `initialize` should reach the MCP handler and get a
+        // valid MCP response, NOT a middleware 401.
+        //
+        // The key assertion: our REST auth middleware did NOT short-circuit before reaching
+        // the MCP layer. Anything other than a middleware-style 401 with the middleware's
+        // body shape proves that.
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
 
-        // Send the minimum valid JSON-RPC body MCP expects
+        // Send the minimum valid JSON-RPC body MCP expects. Accept header advertises both
+        // application/json and text/event-stream so MCP picks the JSON streaming path.
         request.Content = new StringContent
         (
             """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}""",
             System.Text.Encoding.UTF8,
             "application/json"
         );
+        request.Headers.Accept.ParseAdd("application/json, text/event-stream");
 
         var response = await _client.SendAsync(request);
 
-        // MCP returns 401 from its own auth, not from our middleware.
-        // Both 401 and any MCP-handled response are acceptable here.
-        // The key assertion: our middleware did NOT short-circuit before reaching the MCP layer.
-        // We distinguish this by checking the response body: our middleware writes {"error":"Unauthorized"},
-        // while MCP writes {"error":"Unauthorized","message":"API key is required..."}.
-        // Both happen to return 401, so we verify the response comes from MCP's auth,
-        // not from our middleware (which would also set 401 but never reaches /mcp paths).
-        // The middleware skip means any MCP response is acceptable.
-        var statusCode = (int)response.StatusCode;
+        // If our middleware short-circuited, the response body would carry the middleware's
+        // exact shape: {"error":"Unauthorized","message":"API key is required. Provide
+        // X-User-Key header."}. Any other response shape proves the middleware skip worked.
+        var body = await response.Content.ReadAsStringAsync();
 
-        statusCode.ShouldBeInRange(400, 499, "MCP path should reach MCP handler, not return 200 auth pass-through");
+        body.ShouldNotContain
+        (
+            "API key is required. Provide X-User-Key header.",
+            Case.Sensitive,
+            "If this string appears in the response body, the REST auth middleware short-circuited "
+            + "the /mcp path -- meaning the skip-prefix entry for /mcp is broken and the MCP "
+            + "transport never saw the request."
+        );
     }
 
     [Fact]

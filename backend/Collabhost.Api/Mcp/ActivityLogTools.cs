@@ -9,11 +9,20 @@ using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
+// Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
+// at the top of each body via McpRequestAuthenticator.
 [McpServerToolType]
-public class ActivityLogTools(ActivityEventStore activityEventStore)
+public class ActivityLogTools
+(
+    ActivityEventStore activityEventStore,
+    McpRequestAuthenticator authenticator
+)
 {
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
+
+    private readonly McpRequestAuthenticator _authenticator = authenticator
+        ?? throw new ArgumentNullException(nameof(authenticator));
 
     // MCP tool caps at 50 events while the REST endpoint caps at 200.
     // This is intentional: MCP responses are consumed as LLM context tokens,
@@ -38,9 +47,17 @@ public class ActivityLogTools(ActivityEventStore activityEventStore)
         [Description("Filter by event type (e.g., 'app.crashed', 'app.started'). Exact match.")] string? eventType = null,
         [Description("Filter by category: 'app', 'user', or 'proxy'. Matches the prefix of event types.")] string? category = null,
         [Description("Maximum number of events to return (default 20, max 50).")] int? limit = null,
+        [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
         CancellationToken ct = default
     )
     {
+        var authError = await _authenticator.AuthenticateAsync(authKey, "list_events", ct);
+
+        if (authError is not null)
+        {
+            return authError;
+        }
+
         var effectiveLimit = Math.Clamp(limit ?? _defaultLimit, 1, _maxLimit);
 
         var query = new ActivityEventQuery
