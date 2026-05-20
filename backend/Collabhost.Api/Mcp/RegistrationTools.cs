@@ -69,8 +69,10 @@ public class RegistrationTools
         [Description("Display name for the application (e.g., 'My API Server').")] string name,
         [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'system-service').")] string appTypeSlug,
         [Description("Absolute path to the application's directory on the host filesystem.")] string installDirectory,
-        [Description("Optional JSON object with additional registration settings specific to the app type. Example: {\"process\":{\"command\":\"./myapp\",\"arguments\":\"--port 5000\",\"discoveryStrategy\":\"Manual\"}}. Valid process keys: command, arguments, workingDirectory, discoveryStrategy, shutdownTimeoutSeconds, startupGracePeriodSeconds, maxStartupRetries.")] string? settings,
-        CancellationToken ct
+        // Explicit `= null` default is load-bearing: the MCP tool-binding marshaller treats params with no
+        // C# default as required. Card #331.
+        [Description("Optional JSON object with additional registration settings specific to the app type. Example: {\"process\":{\"command\":\"./myapp\",\"arguments\":\"--port 5000\",\"discoveryStrategy\":\"Manual\"}}. Valid process keys: command, arguments, workingDirectory, discoveryStrategy, shutdownTimeoutSeconds, startupGracePeriodSeconds, maxStartupRetries.")] string? settings = null,
+        CancellationToken ct = default
     )
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -380,7 +382,9 @@ public class RegistrationTools
     [Description("Lists directories at a given path on the host machine. When path is omitted, returns the root drives (Windows) or '/' (Unix). Use this during app registration to find the install directory interactively. Returns child directory names and paths. Hidden and system directories are excluded.")]
     public static CallToolResult BrowseFilesystem
     (
-        [Description("Absolute filesystem path to list. If omitted, returns root drives/directories.")] string? path
+        // Explicit `= null` default is load-bearing: the MCP tool-binding marshaller treats params with no
+        // C# default as required. Card #331.
+        [Description("Absolute filesystem path to list. If omitted, returns root drives/directories.")] string? path = null
     )
     {
         if (string.IsNullOrWhiteSpace(path))

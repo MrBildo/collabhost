@@ -32,11 +32,13 @@ public class ActivityLogTools(ActivityEventStore activityEventStore)
     [Description("Lists recent activity events (state changes, operator actions, system events). Use to understand what happened to an app or who performed an action. Filter by app slug, event type, or category. Returns newest events first.")]
     public async Task<CallToolResult> ListEventsAsync
     (
-        [Description("Filter by app slug (e.g., 'my-api'). Only returns events for this app.")] string? appSlug,
-        [Description("Filter by event type (e.g., 'app.crashed', 'app.started'). Exact match.")] string? eventType,
-        [Description("Filter by category: 'app', 'user', or 'proxy'. Matches the prefix of event types.")] string? category,
-        [Description("Maximum number of events to return (default 20, max 50).")] int? limit,
-        CancellationToken ct
+        // Explicit `= null` defaults on optional params are load-bearing: the MCP tool-binding marshaller
+        // treats params with no C# default as required. Card #331.
+        [Description("Filter by app slug (e.g., 'my-api'). Only returns events for this app.")] string? appSlug = null,
+        [Description("Filter by event type (e.g., 'app.crashed', 'app.started'). Exact match.")] string? eventType = null,
+        [Description("Filter by category: 'app', 'user', or 'proxy'. Matches the prefix of event types.")] string? category = null,
+        [Description("Maximum number of events to return (default 20, max 50).")] int? limit = null,
+        CancellationToken ct = default
     )
     {
         var effectiveLimit = Math.Clamp(limit ?? _defaultLimit, 1, _maxLimit);
