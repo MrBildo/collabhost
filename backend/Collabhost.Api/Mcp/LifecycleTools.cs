@@ -406,9 +406,14 @@ public class LifecycleTools
     public async Task<CallToolResult> GetLogsAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
-        [Description("Maximum number of log entries to return (1-500). Defaults to 100.")] int? limit,
-        [Description("Entries to skip from the start of the buffer for pagination. Defaults to 0.")] int? offset,
-        CancellationToken ct
+        // Explicit `= null` defaults on optional params are load-bearing: Microsoft.Extensions.AI.Abstractions'
+        // tool-binding marshaller treats parameters with no C# default as REQUIRED (ParameterInfo.HasDefaultValue
+        // is false for `int?`/`string?` without an explicit `= null`). Without these, a client call that omits
+        // the argument throws ArgumentException through the marshaller, which ModelContextProtocol.Core then
+        // masks to a generic "An error occurred invoking '<tool>'." -- Card #331.
+        [Description("Maximum number of log entries to return (1-500). Defaults to 100.")] int? limit = null,
+        [Description("Entries to skip from the start of the buffer for pagination. Defaults to 0.")] int? offset = null,
+        CancellationToken ct = default
     )
     {
         var app = await _appStore.GetBySlugAsync(slug, ct);
