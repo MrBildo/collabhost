@@ -9,6 +9,7 @@ using Collabhost.Api.HealthChecks;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Shared;
+using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 using Collabhost.Api.Supervisor.Resources;
 
@@ -40,6 +41,7 @@ public static class AppEndpoints
         group.MapPost("/{slug}/restart", RestartAppAsync);
         group.MapPost("/{slug}/kill", KillAppAsync);
         group.MapGet("/{slug}/logs", GetAppLogsAsync);
+        group.MapPost("/{slug}/runtime-config-file/import", ImportRuntimeConfigFileAsync);
     }
 
     private static async Task<IResult> ListAppsAsync
@@ -340,6 +342,8 @@ public static class AppEndpoints
         AppStore store,
         TypeStore typeStore,
         ProbeService probeService,
+        ProxyManager proxy,
+        RuntimeConfigFileWriter runtimeConfigFileWriter,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
         CancellationToken ct
@@ -442,6 +446,29 @@ public static class AppEndpoints
             await probeService.RunProbesAsync(app.Id, ct);
         }
 
+        // Re-render the runtime-config file when its capability values change and
+        // the route is currently enabled. The route-enable path handles the
+        // start-time write; this handles edits while the route is already live.
+        // Write failure surfaces as a 409 with the override already persisted --
+        // operator-actionable (the save did happen; the file on disk did not).
+        // Card #336, Marcus precondition #4.
+        if (request.Changes.ContainsKey("runtime-config-file")
+            && proxy.IsRouteExplicitlyEnabled(app.Slug))
+        {
+            try
+            {
+                await runtimeConfigFileWriter.RenderAsync(app, ct);
+            }
+            catch (RuntimeConfigFileWriteException exception)
+            {
+                return TypedResults.Problem
+                (
+                    "Settings saved, but failed to write runtime-config file: " + exception.Message,
+                    statusCode: 409
+                );
+            }
+        }
+
         var changedCapabilities = request.Changes.Keys
             .Where(k => !string.Equals(k, "identity", StringComparison.Ordinal))
                 .ToList();
@@ -490,6 +517,7 @@ public static class AppEndpoints
         ProcessSupervisor supervisor,
         ProxyManager proxy,
         ProbeService probeService,
+        RuntimeConfigFileWriter runtimeConfigFileWriter,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
         CancellationToken ct
@@ -508,6 +536,21 @@ public static class AppEndpoints
         // Routing-only apps (e.g. static sites): enable route instead of starting a process
         if (!hasProcess && hasRouting)
         {
+            // Render runtime-config-file BEFORE enabling the route (Card #336).
+            // Ordering matters: if we enabled the route first, Caddy could serve a
+            // stale on-disk value for an arbitrary window before the writer landed
+            // the new file -- exactly the cutover bug (#236) #336 set out to fix.
+            // Writer no-ops when the resolved Values is empty (preserves any
+            // operator-maintained file on disk -- CLAUDE.md Rule 3).
+            try
+            {
+                await runtimeConfigFileWriter.RenderAsync(app, ct);
+            }
+            catch (RuntimeConfigFileWriteException exception)
+            {
+                return TypedResults.Problem(exception.Message, statusCode: 409);
+            }
+
             proxy.EnableRoute(app.Slug);
             proxy.RequestSync();
 
@@ -753,6 +796,49 @@ public static class AppEndpoints
         catch (InvalidOperationException exception)
         {
             return TypedResults.Problem(exception.Message, statusCode: 409);
+        }
+    }
+
+    // POST /api/v1/apps/{slug}/runtime-config-file/import (Card #336).
+    //
+    // Reads the existing config file on disk (typically <artifactDir>/config.json)
+    // and returns its flat string->string top-level entries plus a list of any
+    // skipped non-flat entries (nested objects, arrays, nulls, non-string
+    // primitives). The response is a preview only -- it does NOT persist the
+    // values; the operator reviews and saves them via the normal settings-save
+    // flow. Bill ruling S55 #6: flat-JSON only, warn about skipped entries.
+    private static async Task<IResult> ImportRuntimeConfigFileAsync
+    (
+        string slug,
+        AppStore store,
+        RuntimeConfigFileWriter runtimeConfigFileWriter,
+        CancellationToken ct
+    )
+    {
+        var app = await store.GetBySlugAsync(slug, ct);
+
+        if (app is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        try
+        {
+            var result = await runtimeConfigFileWriter.ImportFromDiskAsync(app, ct);
+
+            return TypedResults.Ok
+            (
+                new RuntimeConfigFileImportResponse
+                (
+                    result.Imported,
+                    result.Skipped,
+                    result.SourcePath
+                )
+            );
+        }
+        catch (RuntimeConfigFileWriteException exception)
+        {
+            return TypedResults.Problem(exception.Message, statusCode: 400);
         }
     }
 
@@ -1241,7 +1327,8 @@ file static class AppEndpointExtensions
             "restart" => 4,
             "auto-start" => 5,
             "environment-defaults" => 6,
-            "artifact" => 7,
+            "runtime-config-file" => 7,
+            "artifact" => 8,
             _ => 99
         };
     }

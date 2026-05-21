@@ -351,6 +351,7 @@ public class ProxyManagerVerifyCaddyReadyTests
             hostingSettings,
             new Collabhost.Api.Portal.PortalSettings { Subdomain = "collabhost" },
             activityEventStore,
+            new Collabhost.Api.StaticSite.RuntimeConfigFileWriter(capabilityStore, NullLogger<Collabhost.Api.StaticSite.RuntimeConfigFileWriter>.Instance),
             timeProvider ?? TimeProvider.System,
             NullLogger<ProxyManager>.Instance
         );

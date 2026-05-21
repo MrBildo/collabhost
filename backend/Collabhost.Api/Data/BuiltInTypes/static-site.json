@@ -13,6 +13,10 @@
       "responseHeaders": {
         "/config.json::Cache-Control": "no-cache"
       }
+    },
+    "runtime-config-file": {
+      "path": "/config.json",
+      "values": {}
     }
   }
 }

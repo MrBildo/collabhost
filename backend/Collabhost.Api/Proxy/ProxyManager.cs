@@ -10,6 +10,7 @@ using Collabhost.Api.Events;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Portal;
 using Collabhost.Api.Registry;
+using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 
 namespace Collabhost.Api.Proxy;
@@ -27,6 +28,7 @@ public class ProxyManager
     HostingSettings hostingSettings,
     PortalSettings portalSettings,
     ActivityEventStore activityEventStore,
+    RuntimeConfigFileWriter runtimeConfigFileWriter,
     TimeProvider timeProvider,
     ILogger<ProxyManager> logger
 ) : IHostedService, IDisposable
@@ -60,6 +62,9 @@ public class ProxyManager
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
+
+    private readonly RuntimeConfigFileWriter _runtimeConfigFileWriter = runtimeConfigFileWriter
+        ?? throw new ArgumentNullException(nameof(runtimeConfigFileWriter));
 
     // Injected so the post-launch admin-API probe loop runs on virtual time under test.
     // Production wires TimeProvider.System; tests wire FakeTimeProvider so the deadline,
@@ -696,6 +701,29 @@ public class ProxyManager
                 "Auto-start enabling route for routing-only app '{DisplayName}'",
                 app.DisplayName
             );
+
+            // Render runtime-config-file BEFORE enabling the route (Card #336).
+            // Writer no-ops when resolved Values is empty. If the write fails on
+            // a non-empty Values (e.g. artifact dir missing on disk yet), log a
+            // warning and skip the route -- the operator-visible signal is the
+            // route NOT enabling, matching the user-initiated StartAppAsync
+            // failure semantics. Auto-start does not surface to a caller, so
+            // failure goes to the log + activity stream.
+            try
+            {
+                await _runtimeConfigFileWriter.RenderAsync(app, ct);
+            }
+            catch (RuntimeConfigFileWriteException ex)
+            {
+                _logger.LogWarning
+                (
+                    ex,
+                    "Auto-start of route for '{DisplayName}' skipped -- runtime-config-file write failed",
+                    app.DisplayName
+                );
+
+                continue;
+            }
 
             EnableRoute(app.Slug);
 

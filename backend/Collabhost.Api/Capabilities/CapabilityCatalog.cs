@@ -55,6 +55,12 @@ public static class CapabilityCatalog
                 typeof(ArtifactConfiguration),
                 ArtifactConfiguration.Schema
             ),
+            ["runtime-config-file"] = new
+            (
+                "Runtime Config File",
+                typeof(RuntimeConfigFileConfiguration),
+                RuntimeConfigFileConfiguration.Schema
+            ),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public static CapabilityDefinition? Get(string slug) =>

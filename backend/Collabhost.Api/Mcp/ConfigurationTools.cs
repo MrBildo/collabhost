@@ -558,7 +558,8 @@ file static class ConfigurationToolExtensions
             "restart" => 4,
             "auto-start" => 5,
             "environment-defaults" => 6,
-            "artifact" => 7,
+            "runtime-config-file" => 7,
+            "artifact" => 8,
             _ => 99
         };
     }

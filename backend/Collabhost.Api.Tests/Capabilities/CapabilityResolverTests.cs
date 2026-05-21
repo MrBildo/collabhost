@@ -515,4 +515,61 @@ public class CapabilityResolverTests
 
         result.ShouldBe("my-app.collab.internal");
     }
+
+    // Card #336: runtime-config-file keys are JSON identifiers and must NOT
+    // fall through to the env-var pattern (which would reject hyphenated keys
+    // like "api-base-url"). Marcus precondition #2.
+
+    [Fact]
+    public void ValidateEdits_RuntimeConfigFile_HyphenatedKey_Accepted()
+    {
+        var overrides = new JsonObject
+        {
+            ["values"] = new JsonObject { ["api-base-url"] = "https://api.example.com" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("runtime-config-file", overrides, isNewApp: false);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ValidateEdits_RuntimeConfigFile_DotNotationKey_Accepted()
+    {
+        var overrides = new JsonObject
+        {
+            ["values"] = new JsonObject { ["app.config.url"] = "https://api.example.com" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("runtime-config-file", overrides, isNewApp: false);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ValidateEdits_RuntimeConfigFile_WhitespaceKey_Rejected()
+    {
+        var overrides = new JsonObject
+        {
+            ["values"] = new JsonObject { ["api base url"] = "https://api.example.com" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("runtime-config-file", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("'api base url'");
+    }
+
+    [Fact]
+    public void ValidateEdits_RuntimeConfigFile_EmptyKey_Rejected()
+    {
+        var overrides = new JsonObject
+        {
+            ["values"] = new JsonObject { [""] = "value" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("runtime-config-file", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(1);
+    }
 }

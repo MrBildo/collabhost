@@ -34,6 +34,23 @@ public static partial class CapabilityResolver
     [GeneratedRegex(ResponseHeaderKeyPatternString, RegexOptions.None, 100)]
     private static partial Regex ResponseHeaderKeyPattern { get; }
 
+    // JSON-key contract for the runtime-config-file capability (Card #336).
+    // Keys land verbatim in a flat JSON object on disk, so the contract is
+    // permissive -- any non-empty token without whitespace. This is intentionally
+    // wider than the env-var contract (which is POSIX-identifier-strict) because
+    // JSON identifiers commonly include hyphens (e.g. "api-base-url"), and wider
+    // than the response-header contract (which carries a "<path>::<HeaderName>"
+    // shape) because runtime-config keys have no such compound structure. The
+    // bound on length is the regex engine's; the bound on key character set is
+    // "no whitespace, not empty," which keeps the on-disk JSON deterministic.
+    public const string RuntimeConfigFileKeyPatternString = @"^[^\s]+$";
+
+    public const string RuntimeConfigFileKeyPatternMessage =
+        "Keys must be non-empty and contain no whitespace.";
+
+    [GeneratedRegex(RuntimeConfigFileKeyPatternString, RegexOptions.None, 100)]
+    private static partial Regex RuntimeConfigFileKeyPattern { get; }
+
     public static T Resolve<T>(string defaultConfigurationJson, string? overrideConfigurationJson)
         where T : class
     {
@@ -93,6 +110,7 @@ public static partial class CapabilityResolver
         patternString switch
         {
             ResponseHeaderKeyPatternString => ResponseHeaderKeyPattern,
+            RuntimeConfigFileKeyPatternString => RuntimeConfigFileKeyPattern,
             _ => new Regex(patternString, RegexOptions.None, TimeSpan.FromMilliseconds(100))
         };
 
