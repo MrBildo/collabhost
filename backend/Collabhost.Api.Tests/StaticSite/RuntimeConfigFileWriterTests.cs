@@ -439,6 +439,48 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
             () => _writer.ImportFromDiskAsync(app, CancellationToken.None)
         );
     }
+
+    [Fact]
+    public async Task ImportFromDiskAsync_JsonArrayRoot_ThrowsActionable()
+    {
+        // F1 (Kai S55 #7): a config.json that parses to a JsonArray must surface
+        // as a 400-with-actionable-message (RuntimeConfigFileWriteException), not
+        // a 500 from an unwrapped InvalidOperationException via .AsObject().
+        var app = await CreateStaticSiteAppAsync();
+
+        var sourcePath = Path.Combine(_tempArtifactDir, "config.json");
+
+        await File.WriteAllTextAsync(sourcePath, "[1, 2, 3]", CancellationToken.None);
+
+        var exception = await Should.ThrowAsync<RuntimeConfigFileWriteException>
+        (
+            () => _writer.ImportFromDiskAsync(app, CancellationToken.None)
+        );
+
+        exception.Message.ShouldContain("is not a JSON object");
+        exception.Message.ShouldContain(sourcePath);
+    }
+
+    [Fact]
+    public async Task ImportFromDiskAsync_JsonScalarRoot_ThrowsActionable()
+    {
+        // F1 companion: a scalar root (string, number, bool) must funnel to the
+        // same 400-class path as the JsonArray case above. Covers the second
+        // shape JsonNode.Parse can return that is not a JsonObject.
+        var app = await CreateStaticSiteAppAsync();
+
+        var sourcePath = Path.Combine(_tempArtifactDir, "config.json");
+
+        await File.WriteAllTextAsync(sourcePath, "\"just a string\"", CancellationToken.None);
+
+        var exception = await Should.ThrowAsync<RuntimeConfigFileWriteException>
+        (
+            () => _writer.ImportFromDiskAsync(app, CancellationToken.None)
+        );
+
+        exception.Message.ShouldContain("is not a JSON object");
+        exception.Message.ShouldContain(sourcePath);
+    }
 }
 
 // In-memory SQLite factory for isolated testing -- each test gets a fresh

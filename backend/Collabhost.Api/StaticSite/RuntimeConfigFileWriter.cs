@@ -242,11 +242,11 @@ public class RuntimeConfigFileWriter
             );
         }
 
-        JsonObject? root;
+        JsonNode? parsed;
 
         try
         {
-            root = JsonNode.Parse(text)?.AsObject();
+            parsed = JsonNode.Parse(text);
         }
         catch (JsonException ex)
         {
@@ -257,7 +257,11 @@ public class RuntimeConfigFileWriter
             );
         }
 
-        if (root is null)
+        // Funnel non-object roots (JsonArray, JsonValue, or top-level null) to the
+        // same 400-with-actionable-message path. Casting via .AsObject() would
+        // throw InvalidOperationException on a JsonArray / JsonValue, which is
+        // NOT a JsonException, and would surface as a 500 from the endpoint.
+        if (parsed is not JsonObject root)
         {
             throw new RuntimeConfigFileWriteException
             (
