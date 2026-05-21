@@ -37,6 +37,13 @@
         "DOTNET_NOLOGO": "1",
         "DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION": "true"
       }
+    },
+    "security-headers": {
+      "enableHsts": false,
+      "hstsMaxAgeSeconds": 300,
+      "headers": {
+        "X-Content-Type-Options": "nosniff"
+      }
     }
   }
 }

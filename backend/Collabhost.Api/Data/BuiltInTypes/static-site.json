@@ -17,6 +17,13 @@
     "runtime-config-file": {
       "path": "/config.json",
       "values": {}
+    },
+    "security-headers": {
+      "enableHsts": false,
+      "hstsMaxAgeSeconds": 300,
+      "headers": {
+        "X-Content-Type-Options": "nosniff"
+      }
     }
   }
 }

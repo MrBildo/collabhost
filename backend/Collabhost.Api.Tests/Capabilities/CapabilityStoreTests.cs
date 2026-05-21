@@ -198,7 +198,7 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
         );
 
         result.ShouldNotBeNull();
-        result.Count.ShouldBe(8);
+        result.Count.ShouldBe(9);
         result.ShouldContainKey("process");
         result.ShouldContainKey("routing");
         result.ShouldContainKey("restart");
@@ -207,6 +207,7 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
         result.ShouldContainKey("port-injection");
         result.ShouldContainKey("environment-defaults");
         result.ShouldContainKey("health-check");
+        result.ShouldContainKey("security-headers");
     }
 
     [Fact]
@@ -287,11 +288,11 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
     }
 
     [Theory]
-    [InlineData("dotnet-app", 8)]
-    [InlineData("nodejs-app", 8)]
-    [InlineData("static-site", 3)]
+    [InlineData("dotnet-app", 9)]
+    [InlineData("nodejs-app", 9)]
+    [InlineData("static-site", 4)]
     [InlineData("system-service", 5)]
-    [InlineData("executable", 7)]
+    [InlineData("executable", 8)]
     public async Task ResolveAllJsonAsync_AllTypes_ReturnsCorrectBindingCount
     (
         string appTypeSlug,

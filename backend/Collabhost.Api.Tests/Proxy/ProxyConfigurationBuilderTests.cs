@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 
+using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Portal;
 using Collabhost.Api.Proxy;
@@ -934,6 +935,362 @@ public class ProxyConfigurationBuilderTests
         }
 
         return entries;
+    }
+
+    // ----- Card #309: security-headers blanket emission -----
+
+    [Fact]
+    public void Build_ReverseProxyRoute_NullSecurityHeaders_FlatShapeUnchanged()
+    {
+        // Migration safety: a route with no security-headers spec (capability
+        // not bound, or the empty-no-op invariant fires) emits the byte-
+        // identical pre-#309 flat reverse-proxy shape -- no subroute wrap.
+        // Precondition #1 + #6: invariant at the builder.
+        var routes = new List<RouteEntry>
+        {
+            new("api", DefaultDomain("api"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true, ResponseHeaders: null, SecurityHeaders: null)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+
+        // Flat shape: handler is the reverse_proxy directly, NOT a subroute.
+        handler["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+    }
+
+    [Fact]
+    public void Build_ReverseProxyRoute_EmptySecurityHeadersSpec_FlatShapeUnchanged()
+    {
+        // Empty-no-op invariant fires at the builder on the resolved spec:
+        // EnableHsts: false + Headers: {} -> no emission, no subroute wrap.
+        // Precondition #1: mirrors #336's RuntimeConfigFileWriter empty-Values
+        // short-circuit.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = false,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new("api", DefaultDomain("api"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true, ResponseHeaders: null, SecurityHeaders: spec)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+
+        handler["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+    }
+
+    [Fact]
+    public void Build_ReverseProxyRoute_AllHeadersSuppressed_FlatShapeUnchanged()
+    {
+        // Operator-suppression case: every Headers entry has empty value AND
+        // EnableHsts: false. The emission helper drops every entry, the
+        // post-suppression set is empty, and emission returns null -- the
+        // route stays flat. Precondition #1 + #5 + #6 in combination.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = false,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["X-Content-Type-Options"] = ""
+            }
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new("api", DefaultDomain("api"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true, ResponseHeaders: null, SecurityHeaders: spec)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+
+        handler["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+    }
+
+    [Fact]
+    public void Build_ReverseProxyRoute_XctoSeed_WrappedInSubrouteWithHeadersBeforeReverseProxy()
+    {
+        // The XCTO-default-on case: every routed app type's security-headers
+        // type-level default carries {"X-Content-Type-Options": "nosniff"}.
+        // The emitted reverse-proxy route gains a subroute wrap with the
+        // blanket headers handler BEFORE the reverse_proxy. Precondition #6.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = false,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["X-Content-Type-Options"] = "nosniff"
+            }
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new("api", DefaultDomain("api"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true, ResponseHeaders: null, SecurityHeaders: spec)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var topHandler = GetRoutes(config)![1]!["handle"]![0]!;
+
+        topHandler["handler"]!.GetValue<string>().ShouldBe("subroute");
+
+        var subrouteHandlers = topHandler["routes"]!.AsArray();
+        subrouteHandlers.Count.ShouldBe(2);
+
+        var headers = subrouteHandlers[0]!["handle"]![0]!;
+        headers["handler"]!.GetValue<string>().ShouldBe("headers");
+        headers["response"]!["set"]!["X-Content-Type-Options"]![0]!.GetValue<string>().ShouldBe("nosniff");
+
+        var reverseProxy = subrouteHandlers[1]!["handle"]![0]!;
+        reverseProxy["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+    }
+
+    [Fact]
+    public void Build_ReverseProxyRoute_HstsEnabled_EmitsStsHeader()
+    {
+        // EnableHsts: true expands to a Strict-Transport-Security entry at
+        // emission time, computed from HstsMaxAgeSeconds. The default of 300
+        // (5 minutes) is the staged-rollout floor.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = true,
+            HstsMaxAgeSeconds = 300,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new("api", DefaultDomain("api"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true, ResponseHeaders: null, SecurityHeaders: spec)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        var headers = subrouteHandlers[0]!["handle"]![0]!;
+        headers["response"]!["set"]!["Strict-Transport-Security"]![0]!.GetValue<string>().ShouldBe("max-age=300");
+    }
+
+    [Fact]
+    public void Build_ReverseProxyRoute_HstsMaxAgeZero_EmitsMaxAgeZero()
+    {
+        // The rollback / un-pin signal: EnableHsts: true + HstsMaxAgeSeconds: 0
+        // emits "max-age=0", which tells browsers to expire any prior pin.
+        // Precondition #4: zero is allowed and is the documented escape hatch.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = true,
+            HstsMaxAgeSeconds = 0,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new("api", DefaultDomain("api"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true, ResponseHeaders: null, SecurityHeaders: spec)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        var headers = subrouteHandlers[0]!["handle"]![0]!;
+        headers["response"]!["set"]!["Strict-Transport-Security"]![0]!.GetValue<string>().ShouldBe("max-age=0");
+    }
+
+    [Fact]
+    public void Build_ReverseProxyRoute_EmptyValueHeader_DroppedFromEmission()
+    {
+        // Operator-suppression mechanism (Bill ruling, precondition #5):
+        // an entry with empty-string value is the documented escape hatch for
+        // a type-default. The emission helper drops it; the surviving headers
+        // are emitted. Pairs with the all-suppressed test above.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = false,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["X-Content-Type-Options"] = "",
+                ["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            }
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new("api", DefaultDomain("api"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true, ResponseHeaders: null, SecurityHeaders: spec)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        var set = subrouteHandlers[0]!["handle"]![0]!["response"]!["set"]!.AsObject();
+
+        // XCTO entry was dropped; Referrer-Policy survives.
+        set.ContainsKey("X-Content-Type-Options").ShouldBeFalse();
+        set["Referrer-Policy"]![0]!.GetValue<string>().ShouldBe("strict-origin-when-cross-origin");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_XctoSeed_InsertedBeforePathMatchedHeaders()
+    {
+        // Subroute insertion order (precondition #7): security-headers blanket
+        // handler appears BEFORE #308's path-matched handlers. Caddy
+        // `response.set` is last-write-wins on the chain, so the path-matched
+        // handler (encountered later) overrides the blanket on collision.
+        // CSS-specificity analogy: more-specific wins.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = false,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["X-Content-Type-Options"] = "nosniff"
+            }
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "portal",
+                DefaultDomain("portal"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: "/srv/portal",
+                Enabled: true,
+                ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["/config.json::Cache-Control"] = "no-cache"
+                },
+                SecurityHeaders: spec
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        // 0 = vars root, 1 = blanket security-headers, 2 = path-matched #308, 3 = file_server
+        subrouteHandlers.Count.ShouldBe(4);
+        subrouteHandlers[0]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("vars");
+
+        var blanket = subrouteHandlers[1]!;
+        // Blanket has no `match` segment -- it applies to every response.
+        blanket.AsObject().ContainsKey("match").ShouldBeFalse();
+        blanket["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("headers");
+        blanket["handle"]![0]!["response"]!["set"]!["X-Content-Type-Options"]![0]!
+            .GetValue<string>().ShouldBe("nosniff");
+
+        var pathMatched = subrouteHandlers[2]!;
+        // Path-matched has a `match.path`.
+        pathMatched["match"]![0]!["path"]![0]!.GetValue<string>().ShouldBe("/config.json");
+        pathMatched["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("headers");
+
+        subrouteHandlers[3]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("file_server");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_PathMatchedOverlapsBlanket_PathMatchedFollowsBlanketInChain()
+    {
+        // Precondition #7 precedence test (operator semantic): when blanket
+        // and path-matched handlers both set the SAME header name, the path-
+        // matched handler must be the one encountered LATER in the chain --
+        // so Caddy's `response.set` last-write-wins selects the path-scoped
+        // value. We can't observe Caddy's runtime behavior in a builder unit
+        // test, but we CAN assert the deterministic chain order that produces
+        // it.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = false,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["X-Test"] = "blanket-value"
+            }
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "portal",
+                DefaultDomain("portal"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: "/srv/portal",
+                Enabled: true,
+                ResponseHeaders: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["/foo::X-Test"] = "path-value"
+                },
+                SecurityHeaders: spec
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        // Index 1 is the blanket; index 2 is the path-matched. Caddy walks
+        // the chain in array order; the path-matched fires AFTER the blanket
+        // on /foo, so its value wins. Non-matching paths (e.g. /bar) only see
+        // the blanket.
+        var blanket = subrouteHandlers[1]!;
+        blanket.AsObject().ContainsKey("match").ShouldBeFalse();
+        blanket["handle"]![0]!["response"]!["set"]!["X-Test"]![0]!.GetValue<string>().ShouldBe("blanket-value");
+
+        var pathMatched = subrouteHandlers[2]!;
+        pathMatched["match"]![0]!["path"]![0]!.GetValue<string>().ShouldBe("/foo");
+        pathMatched["handle"]![0]!["response"]!["set"]!["X-Test"]![0]!.GetValue<string>().ShouldBe("path-value");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_NullSecurityHeaders_ShapeUnchanged()
+    {
+        // Defensive: null SecurityHeaders + null ResponseHeaders preserves the
+        // pre-#308 + pre-#309 minimal file-server subroute (vars + file_server).
+        var routes = new List<RouteEntry>
+        {
+            new("docs", DefaultDomain("docs"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true, ResponseHeaders: null, SecurityHeaders: null)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+        subrouteHandlers.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_SecurityHeadersOnly_NoPathMatched()
+    {
+        // Pure #309 path: security-headers spec emits the blanket; #308's
+        // ResponseHeaders is null. Subroute is vars + blanket + file_server.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = false,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["X-Content-Type-Options"] = "nosniff"
+            }
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new("docs", DefaultDomain("docs"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true, ResponseHeaders: null, SecurityHeaders: spec)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+        subrouteHandlers.Count.ShouldBe(3);
+        subrouteHandlers[0]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("vars");
+        subrouteHandlers[1]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("headers");
+        subrouteHandlers[2]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("file_server");
     }
 
     // -------- HasTlsListener (Card #263 item 1.3) --------

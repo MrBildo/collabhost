@@ -34,6 +34,13 @@
       "variables": {
         "NODE_ENV": "production"
       }
+    },
+    "security-headers": {
+      "enableHsts": false,
+      "hstsMaxAgeSeconds": 300,
+      "headers": {
+        "X-Content-Type-Options": "nosniff"
+      }
     }
   }
 }

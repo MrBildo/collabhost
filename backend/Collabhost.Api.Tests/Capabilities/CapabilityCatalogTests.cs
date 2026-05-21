@@ -18,12 +18,13 @@ public class CapabilityCatalogTests
         "restart",
         "auto-start",
         "artifact",
-        "runtime-config-file"
+        "runtime-config-file",
+        "security-headers"
     ];
 
     [Fact]
-    public void All_ContainsExactlyNineCapabilities() =>
-        CapabilityCatalog.All.Count.ShouldBe(9);
+    public void All_ContainsExactlyTenCapabilities() =>
+        CapabilityCatalog.All.Count.ShouldBe(10);
 
     [Theory]
     [MemberData(nameof(AllSlugs))]
@@ -117,6 +118,9 @@ public class CapabilityCatalogTests
     [InlineData("auto-start", "enabled", false)]
     [InlineData("runtime-config-file", "path", false)]
     [InlineData("runtime-config-file", "values", false)]
+    [InlineData("security-headers", "enableHsts", true)]
+    [InlineData("security-headers", "hstsMaxAgeSeconds", true)]
+    [InlineData("security-headers", "headers", true)]
     public void Schema_RequiresRestart_FlaggedCorrectly
     (
         string capabilitySlug,

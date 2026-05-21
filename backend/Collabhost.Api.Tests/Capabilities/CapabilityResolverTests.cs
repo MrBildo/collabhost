@@ -572,4 +572,220 @@ public class CapabilityResolverTests
 
         errors.Count.ShouldBe(1);
     }
+
+    // ----- Card #309: per-field key-pattern (security-headers.headers) -----
+
+    [Theory]
+    [InlineData("X-Content-Type-Options")]
+    [InlineData("Strict-Transport-Security")]
+    [InlineData("Referrer-Policy")]
+    [InlineData("X-Frame-Options")]
+    [InlineData("Cache-Control")]
+    [InlineData("X-Custom-Header-1")]
+    public void ValidateEdits_SecurityHeaders_ValidHeaderName_ReturnsNoError(string key)
+    {
+        var overrides = new JsonObject
+        {
+            ["headers"] = new JsonObject { [key] = "nosniff" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("security-headers", overrides, isNewApp: false);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("")]                          // empty
+    [InlineData("Bad Header")]                // contains space
+    [InlineData("Header:With:Colon")]         // contains colon
+    [InlineData("Header\"WithQuote")]         // contains quote
+    [InlineData("/path/scoped::Header-Name")] // compound shape rejected (use routing.responseHeaders)
+    public void ValidateEdits_SecurityHeaders_InvalidHeaderName_ReturnsError(string key)
+    {
+        var overrides = new JsonObject
+        {
+            ["headers"] = new JsonObject { [key] = "value" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("security-headers", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("Invalid key");
+        // The operator-facing message is the security-headers message, not env-var.
+        errors[0].ShouldContain("valid HTTP header name");
+    }
+
+    [Fact]
+    public void ValidateEdits_SecurityHeaders_EnableHstsTrueAndStsInMap_Rejected()
+    {
+        // Cross-field collision: convenience flag AND freeform map BOTH carry
+        // the HSTS channel. Bill ruling (precondition #3): ValidateEdits
+        // rejects the cross-field state. The operator must choose one channel.
+        var overrides = new JsonObject
+        {
+            ["enableHsts"] = true,
+            ["headers"] = new JsonObject
+            {
+                ["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+            }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("security-headers", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("Strict-Transport-Security");
+        errors[0].ShouldContain("Enable HSTS");
+    }
+
+    [Fact]
+    public void ValidateEdits_SecurityHeaders_EnableHstsTrueAndMapEmpty_Accepted()
+    {
+        // The typed flag fires alone -- no collision. This is the standard
+        // "operator opts into HSTS via the checkbox" state and must pass.
+        var overrides = new JsonObject
+        {
+            ["enableHsts"] = true,
+            ["headers"] = new JsonObject()
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("security-headers", overrides, isNewApp: false);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ValidateEdits_SecurityHeaders_EnableHstsTrueAndUnrelatedHeader_Accepted()
+    {
+        // The cross-field rule fires only on the STS key. An operator who
+        // turns on HSTS AND sets a Referrer-Policy in the map is doing two
+        // independent things -- both legitimate.
+        var overrides = new JsonObject
+        {
+            ["enableHsts"] = true,
+            ["headers"] = new JsonObject
+            {
+                ["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("security-headers", overrides, isNewApp: false);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ValidateEdits_SecurityHeaders_EnableHstsFalseAndStsInMap_Accepted()
+    {
+        // Without the convenience flag the map is the sole channel. Operator
+        // who hand-authors STS gets to do so without the convenience flag
+        // colliding.
+        var overrides = new JsonObject
+        {
+            ["enableHsts"] = false,
+            ["headers"] = new JsonObject
+            {
+                ["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+            }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("security-headers", overrides, isNewApp: false);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ValidateEdits_SecurityHeaders_OnlyStsInMap_Accepted()
+    {
+        // Map-only path with no enableHsts in the override at all (inherits
+        // type default of false). No collision.
+        var overrides = new JsonObject
+        {
+            ["headers"] = new JsonObject
+            {
+                ["Strict-Transport-Security"] = "max-age=300"
+            }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("security-headers", overrides, isNewApp: false);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Resolve_SecurityHeaders_TypeDefaultsCarryXctoSeed()
+    {
+        // The Rule 3 disclosure case: every routed app type's type-level
+        // default ships the XCTO seed. When no override is present, the
+        // resolved spec carries the seed verbatim and emission produces the
+        // nosniff header. Migration test pair, precondition #11.
+        var defaults = """
+            {"enableHsts":false,"hstsMaxAgeSeconds":300,"headers":{"X-Content-Type-Options":"nosniff"}}
+            """;
+
+        var resolved = CapabilityResolver.Resolve<SecurityHeadersConfiguration>(defaults, null);
+
+        resolved.EnableHsts.ShouldBeFalse();
+        resolved.HstsMaxAgeSeconds.ShouldBe(300);
+        resolved.Headers.ShouldContainKey("X-Content-Type-Options");
+        resolved.Headers["X-Content-Type-Options"].ShouldBe("nosniff");
+    }
+
+    [Fact]
+    public void Resolve_SecurityHeaders_OverrideWithEmptyMap_DefaultsSurvive()
+    {
+        // The documented MergeJson semantic, surfaced for operator awareness
+        // (precondition #11 migration pair): an override row that carries
+        // headers: {} does NOT delete the type-default entries because
+        // MergeJson is one-level-deep and shallow-merges JsonObject keys. The
+        // operator-facing suppression path is per-entry override-to-empty,
+        // dropped at emission -- NOT clearing the map.
+        var defaults = """
+            {"enableHsts":false,"hstsMaxAgeSeconds":300,"headers":{"X-Content-Type-Options":"nosniff"}}
+            """;
+        var overrides = """{"headers":{}}""";
+
+        var resolved = CapabilityResolver.Resolve<SecurityHeadersConfiguration>(defaults, overrides);
+
+        // XCTO seed still present -- clearing the map did NOT remove it.
+        resolved.Headers.ShouldContainKey("X-Content-Type-Options");
+        resolved.Headers["X-Content-Type-Options"].ShouldBe("nosniff");
+    }
+
+    [Fact]
+    public void Resolve_SecurityHeaders_OverrideXctoToEmptyString_PreservedInResolvedSpec()
+    {
+        // Operator-suppression channel: override row carries the XCTO key
+        // with value = "" (the emission helper drops empty-valued entries at
+        // build time). MergeJson shallow-merges, so the resolved spec carries
+        // the empty value, NOT the original "nosniff". Builder is responsible
+        // for the drop; resolver carries the operator intent.
+        var defaults = """
+            {"enableHsts":false,"hstsMaxAgeSeconds":300,"headers":{"X-Content-Type-Options":"nosniff"}}
+            """;
+        var overrides = """{"headers":{"X-Content-Type-Options":""}}""";
+
+        var resolved = CapabilityResolver.Resolve<SecurityHeadersConfiguration>(defaults, overrides);
+
+        resolved.Headers["X-Content-Type-Options"].ShouldBe("");
+    }
+
+    [Fact]
+    public void Resolve_SecurityHeaders_NullHeaders_NormalizedToEmpty()
+    {
+        // Same null-normalization shape as RoutingConfiguration.ResponseHeaders
+        // and RuntimeConfigFileConfiguration.Values. An override {"headers":null}
+        // passes ValidateEdits (null is not a JsonObject) and flows through
+        // MergeJson's else-branch overwriting defaults["headers"] with null.
+        // The explicit setter normalizes to an empty dictionary so the emitter
+        // never sees a null reference.
+        var defaults = """
+            {"enableHsts":false,"hstsMaxAgeSeconds":300,"headers":{"X-Content-Type-Options":"nosniff"}}
+            """;
+        var overrideWithNull = """{"headers":null}""";
+
+        var resolved = CapabilityResolver.Resolve<SecurityHeadersConfiguration>(defaults, overrideWithNull);
+
+        resolved.Headers.ShouldNotBeNull();
+        resolved.Headers.Count.ShouldBe(0);
+    }
 }

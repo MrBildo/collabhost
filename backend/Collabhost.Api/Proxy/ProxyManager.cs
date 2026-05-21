@@ -634,6 +634,25 @@ public class ProxyManager
                     : null;
             }
 
+            // Resolve security-headers for every routed app type (Card #309).
+            // The capability is bound on every routed type's JSON with the
+            // XCTO seed; system-service has no routing binding so this code
+            // is never reached for it. A type without the security-headers
+            // binding returns null and the builder skips emission.
+            var hasSecurityHeaders = _typeStore.HasBinding(app.AppTypeSlug, "security-headers");
+
+            SecurityHeadersConfiguration? securityHeaders = null;
+
+            if (hasSecurityHeaders)
+            {
+                securityHeaders = await _capabilityStore.ResolveAsync<SecurityHeadersConfiguration>
+                (
+                    "security-headers",
+                    app,
+                    ct
+                );
+            }
+
             var enabled = IsRouteEnabled(app.Slug);
 
             // Resolve the operator-configurable DomainPattern at the boundary so the builder
@@ -658,7 +677,8 @@ public class ProxyManager
                     routingConfiguration.SpaFallback,
                     artifactDirectory,
                     enabled,
-                    responseHeaders
+                    responseHeaders,
+                    securityHeaders
                 )
             );
         }

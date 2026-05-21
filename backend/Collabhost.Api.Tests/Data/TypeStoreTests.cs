@@ -136,11 +136,11 @@ public class TypeStoreTests
     }
 
     [Theory]
-    [InlineData("dotnet-app", 8)]
-    [InlineData("nodejs-app", 8)]
-    [InlineData("static-site", 3)]
+    [InlineData("dotnet-app", 9)]
+    [InlineData("nodejs-app", 9)]
+    [InlineData("static-site", 4)]
     [InlineData("system-service", 5)]
-    [InlineData("executable", 7)]
+    [InlineData("executable", 8)]
     public async Task GetBindings_ReturnsCorrectBindingCount(string slug, int expectedCount)
     {
         var store = CreateTypeStore();
@@ -177,7 +177,12 @@ public class TypeStoreTests
     [InlineData("static-site", "routing", true)]
     [InlineData("system-service", "routing", false)]
     [InlineData("system-service", "port-injection", false)]
+    [InlineData("system-service", "security-headers", false)]
     [InlineData("executable", "health-check", false)]
+    [InlineData("dotnet-app", "security-headers", true)]
+    [InlineData("nodejs-app", "security-headers", true)]
+    [InlineData("static-site", "security-headers", true)]
+    [InlineData("executable", "security-headers", true)]
     [InlineData("nonexistent", "process", false)]
     public async Task HasBinding_ReturnsExpectedResult
     (
@@ -248,5 +253,41 @@ public class TypeStoreTests
 
         routingJson.ShouldContain("test.internal");
         routingJson.ShouldNotContain("collab.internal");
+    }
+
+    // Card #309 precondition #10 -- defense-in-depth assertion: every app
+    // type with a routing binding MUST also have a security-headers binding.
+    // The pair travels together (security-headers is the response-header
+    // analogue of routing). Catches the next-routed-app-type-added regression
+    // where a new type's JSON forgets the security-headers binding and
+    // silently loses the platform's XCTO default for that type.
+    [Fact]
+    public async Task LoadAsync_AllRoutedTypes_AlsoHaveSecurityHeadersBinding()
+    {
+        var store = CreateTypeStore();
+
+        await store.LoadAsync();
+
+        var routedWithoutSecurityHeaders = new List<string>();
+
+        foreach (var type in store.ListTypes())
+        {
+            if (!store.HasBinding(type.Slug, "routing"))
+            {
+                continue;
+            }
+
+            if (!store.HasBinding(type.Slug, "security-headers"))
+            {
+                routedWithoutSecurityHeaders.Add(type.Slug);
+            }
+        }
+
+        routedWithoutSecurityHeaders.ShouldBeEmpty
+        (
+            "Every app type with a `routing` binding must also have a "
+            + "`security-headers` binding -- silent loss of the platform's "
+            + "XCTO default is the regression this assertion guards. Card #309."
+        );
     }
 }

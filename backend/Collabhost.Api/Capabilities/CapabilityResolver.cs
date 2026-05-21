@@ -51,6 +51,23 @@ public static partial class CapabilityResolver
     [GeneratedRegex(RuntimeConfigFileKeyPatternString, RegexOptions.None, 100)]
     private static partial Regex RuntimeConfigFileKeyPattern { get; }
 
+    // HTTP-header-name contract for the security-headers capability (Card #309).
+    // Mirrors the header-name half of ResponseHeaderKeyPatternString (RFC 7230
+    // tchar set) -- security-headers carries blanket (no path) header rules,
+    // so the compound "<path>::<HeaderName>" shape would be wrong. Without this
+    // explicit declaration, ValidateEdits falls back to the env-var POSIX
+    // pattern and rejects every legitimate HTTP header name (the env-var
+    // pattern lacks '-').
+    public const string SecurityHeaderKeyPatternString =
+        @"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$";
+
+    public const string SecurityHeaderKeyPatternMessage =
+        "Keys must be a valid HTTP header name "
+        + "(e.g. \"X-Content-Type-Options\", \"Strict-Transport-Security\").";
+
+    [GeneratedRegex(SecurityHeaderKeyPatternString, RegexOptions.None, 100)]
+    private static partial Regex SecurityHeaderKeyPattern { get; }
+
     public static T Resolve<T>(string defaultConfigurationJson, string? overrideConfigurationJson)
         where T : class
     {
@@ -111,6 +128,7 @@ public static partial class CapabilityResolver
         {
             ResponseHeaderKeyPatternString => ResponseHeaderKeyPattern,
             RuntimeConfigFileKeyPatternString => RuntimeConfigFileKeyPattern,
+            SecurityHeaderKeyPatternString => SecurityHeaderKeyPattern,
             _ => new Regex(patternString, RegexOptions.None, TimeSpan.FromMilliseconds(100))
         };
 
@@ -187,6 +205,63 @@ public static partial class CapabilityResolver
             }
         }
 
+        ValidateCrossFieldEdits(capabilitySlug, proposedOverrides, errors);
+
         return errors;
+    }
+
+    // Cross-field validation: rules that depend on more than one field in the
+    // same capability. Today this is HSTS convenience-vs-freeform collision on
+    // security-headers; future cross-field rules belong here too. The standard
+    // per-field validation above runs first so per-key errors surface
+    // independent of the cross-field state.
+    private static void ValidateCrossFieldEdits
+    (
+        string capabilitySlug,
+        JsonObject proposedOverrides,
+        List<string> errors
+    )
+    {
+        if (!string.Equals(capabilitySlug, "security-headers", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // The collision: EnableHsts: true AND Headers map carries a
+        // Strict-Transport-Security entry. Both channels would compete for the
+        // same emitted header; the operator must choose one. We check only
+        // against state present in THIS override (not against type defaults
+        // merged in) because the operator's edit is what we are validating --
+        // an override that does not touch EnableHsts inherits the default of
+        // false and the collision cannot fire; an override that does not touch
+        // Headers cannot carry the offending entry.
+        var enableHsts = proposedOverrides.TryGetPropertyValue("enableHsts", out var enableHstsNode)
+            && enableHstsNode is JsonValue enableHstsValue
+            && enableHstsValue.TryGetValue<bool>(out var enableHstsBool)
+            && enableHstsBool;
+
+        if (!enableHsts)
+        {
+            return;
+        }
+
+        if (proposedOverrides.TryGetPropertyValue("headers", out var headersNode)
+            && headersNode is JsonObject headersObject)
+        {
+            foreach (var entry in headersObject)
+            {
+                if (string.Equals(entry.Key, "Strict-Transport-Security", StringComparison.OrdinalIgnoreCase))
+                {
+                    errors.Add
+                    (
+                        "security-headers: Cannot set 'Strict-Transport-Security' in headers map "
+                        + "while Enable HSTS is on. Choose one channel -- either turn off Enable "
+                        + "HSTS and author the header manually in the map, or leave the map entry "
+                        + "out and let Enable HSTS govern the header."
+                    );
+                    break;
+                }
+            }
+        }
     }
 }
