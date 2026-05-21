@@ -158,6 +158,21 @@ public record UpdateSettingsRequest
     Dictionary<string, Dictionary<string, JsonElement>> Changes
 );
 
+// --- Runtime Config File Import (Card #336) ---
+
+// Response from POST /apps/{slug}/runtime-config-file/import. The operator
+// reviews `imported` (the flat string->string entries pulled from the existing
+// file on disk) and saves them via the standard settings-save flow. `skipped`
+// names any top-level entries that were non-flat (nested objects, arrays,
+// nulls, non-string primitives) -- the importer surfaces them so the operator
+// can decide whether to manage those via the source file or convert them.
+public record RuntimeConfigFileImportResponse
+(
+    IReadOnlyDictionary<string, string> Imported,
+    IReadOnlyList<string> Skipped,
+    string SourcePath
+);
+
 // --- ProcessState extension ---
 
 public static class ProcessStateExtensions

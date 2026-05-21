@@ -116,6 +116,7 @@ public class RouteExplicitStateTests
             new HostingSettings { ListenAddress = "localhost", ListenPort = 58400 },
             new Collabhost.Api.Portal.PortalSettings { Subdomain = "collabhost" },
             activityEventStore,
+            new Collabhost.Api.StaticSite.RuntimeConfigFileWriter(capabilityStore, NullLogger<Collabhost.Api.StaticSite.RuntimeConfigFileWriter>.Instance),
             TimeProvider.System,
             NullLogger<ProxyManager>.Instance
         );

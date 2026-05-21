@@ -14,6 +14,7 @@ using Collabhost.Api.Portal;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
+using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 
 using Microsoft.AspNetCore.Hosting.Server;
@@ -252,6 +253,7 @@ builder.Services.AddProxy(builder.Configuration);
 builder.Services.AddPortal(builder.Configuration);
 builder.Services.AddProbes();
 builder.Services.AddHealthCheckExecutor();
+builder.Services.AddStaticSite();
 
 // MCP
 builder.Services.AddMcp();

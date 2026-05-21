@@ -258,6 +258,7 @@ public class ProxyManagerDegradedStateTests : IAsyncLifetime
             hostingSettings,
             new Collabhost.Api.Portal.PortalSettings { Subdomain = "collabhost" },
             activityEventStore,
+            new Collabhost.Api.StaticSite.RuntimeConfigFileWriter(capabilityStore, NullLogger<Collabhost.Api.StaticSite.RuntimeConfigFileWriter>.Instance),
             TimeProvider.System,
             NullLogger<ProxyManager>.Instance
         );

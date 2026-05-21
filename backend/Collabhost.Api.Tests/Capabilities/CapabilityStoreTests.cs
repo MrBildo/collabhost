@@ -289,7 +289,7 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
     [Theory]
     [InlineData("dotnet-app", 8)]
     [InlineData("nodejs-app", 8)]
-    [InlineData("static-site", 2)]
+    [InlineData("static-site", 3)]
     [InlineData("system-service", 5)]
     [InlineData("executable", 7)]
     public async Task ResolveAllJsonAsync_AllTypes_ReturnsCorrectBindingCount

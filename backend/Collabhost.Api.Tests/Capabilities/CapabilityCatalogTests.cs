@@ -17,12 +17,13 @@ public class CapabilityCatalogTests
         "environment-defaults",
         "restart",
         "auto-start",
-        "artifact"
+        "artifact",
+        "runtime-config-file"
     ];
 
     [Fact]
-    public void All_ContainsExactlyEightCapabilities() =>
-        CapabilityCatalog.All.Count.ShouldBe(8);
+    public void All_ContainsExactlyNineCapabilities() =>
+        CapabilityCatalog.All.Count.ShouldBe(9);
 
     [Theory]
     [MemberData(nameof(AllSlugs))]
@@ -114,6 +115,8 @@ public class CapabilityCatalogTests
     [InlineData("restart", "policy", false)]
     [InlineData("restart", "successExitCodes", false)]
     [InlineData("auto-start", "enabled", false)]
+    [InlineData("runtime-config-file", "path", false)]
+    [InlineData("runtime-config-file", "values", false)]
     public void Schema_RequiresRestart_FlaggedCorrectly
     (
         string capabilitySlug,
