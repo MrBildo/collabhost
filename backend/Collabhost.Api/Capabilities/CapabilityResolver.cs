@@ -205,20 +205,49 @@ public static partial class CapabilityResolver
             }
         }
 
+        // Defense-in-depth: also run cross-field validation against the
+        // in-flight delta so a single PUT carrying both EnableHsts:true and
+        // Headers["Strict-Transport-Security"] surfaces the operator-facing
+        // error message at the earliest possible point. The endpoint MUST
+        // additionally call ValidateMergedOverrides against the post-merge
+        // effective override -- the in-flight check alone is insufficient
+        // because a two-step operator edit (save STS in headers, later toggle
+        // EnableHsts) reaches the collision state with neither step rejected.
+        // See ValidateMergedOverrides for the load-bearing check.
         ValidateCrossFieldEdits(capabilitySlug, proposedOverrides, errors);
 
         return errors;
     }
 
+    // Cross-field validation against the effective post-merge override
+    // (existing-stored-override deep-merged with the in-flight delta).
+    // Callers that hold only a partial delta -- the PUT settings endpoint is
+    // the canonical case -- MUST invoke this after computing the merged
+    // override; otherwise a two-step operator edit can reach a forbidden
+    // cross-field state with neither step rejected by ValidateEdits alone.
+    // The contract is a superset of ValidateEdits' in-flight cross-field
+    // check; keeping both is defense-in-depth, not redundant work.
+    public static IReadOnlyList<string> ValidateMergedOverrides
+    (
+        string capabilitySlug,
+        JsonObject mergedOverride
+    )
+    {
+        var errors = new List<string>();
+        ValidateCrossFieldEdits(capabilitySlug, mergedOverride, errors);
+        return errors;
+    }
+
     // Cross-field validation: rules that depend on more than one field in the
     // same capability. Today this is HSTS convenience-vs-freeform collision on
-    // security-headers; future cross-field rules belong here too. The standard
-    // per-field validation above runs first so per-key errors surface
-    // independent of the cross-field state.
+    // security-headers; future cross-field rules belong here too. Operates on
+    // whatever JsonObject is passed -- the in-flight delta (called from
+    // ValidateEdits as defense-in-depth) or the post-merge effective override
+    // (called from ValidateMergedOverrides as the load-bearing check).
     private static void ValidateCrossFieldEdits
     (
         string capabilitySlug,
-        JsonObject proposedOverrides,
+        JsonObject overrides,
         List<string> errors
     )
     {
@@ -229,13 +258,8 @@ public static partial class CapabilityResolver
 
         // The collision: EnableHsts: true AND Headers map carries a
         // Strict-Transport-Security entry. Both channels would compete for the
-        // same emitted header; the operator must choose one. We check only
-        // against state present in THIS override (not against type defaults
-        // merged in) because the operator's edit is what we are validating --
-        // an override that does not touch EnableHsts inherits the default of
-        // false and the collision cannot fire; an override that does not touch
-        // Headers cannot carry the offending entry.
-        var enableHsts = proposedOverrides.TryGetPropertyValue("enableHsts", out var enableHstsNode)
+        // same emitted header; the operator must choose one.
+        var enableHsts = overrides.TryGetPropertyValue("enableHsts", out var enableHstsNode)
             && enableHstsNode is JsonValue enableHstsValue
             && enableHstsValue.TryGetValue<bool>(out var enableHstsBool)
             && enableHstsBool;
@@ -245,7 +269,7 @@ public static partial class CapabilityResolver
             return;
         }
 
-        if (proposedOverrides.TryGetPropertyValue("headers", out var headersNode)
+        if (overrides.TryGetPropertyValue("headers", out var headersNode)
             && headersNode is JsonObject headersObject)
         {
             foreach (var entry in headersObject)

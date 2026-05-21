@@ -712,6 +712,87 @@ public class CapabilityResolverTests
     }
 
     [Fact]
+    public void ValidateMergedOverrides_SecurityHeaders_HstsTrueAndStsInMap_Rejected()
+    {
+        // The two-step operator-edit collision path that the in-flight
+        // ValidateEdits check alone CANNOT catch. The endpoint passes the
+        // post-merge effective override (existing-stored ∪ in-flight delta)
+        // and the cross-field check fires against the merged state. This is
+        // the load-bearing contract behind precondition #3 -- the F1 finding
+        // from Kai's PR #213 review.
+        var merged = new JsonObject
+        {
+            ["enableHsts"] = true,
+            ["headers"] = new JsonObject
+            {
+                ["Strict-Transport-Security"] = "max-age=300"
+            }
+        };
+
+        var errors = CapabilityResolver.ValidateMergedOverrides("security-headers", merged);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("Strict-Transport-Security");
+        errors[0].ShouldContain("Enable HSTS");
+    }
+
+    [Fact]
+    public void ValidateMergedOverrides_SecurityHeaders_HstsTrueAndMapEmpty_Accepted()
+    {
+        // Symmetric to the ValidateEdits_..._Accepted case but tested against
+        // the merged-state entry point. Operator opts into HSTS via the typed
+        // flag, map is empty -- no collision.
+        var merged = new JsonObject
+        {
+            ["enableHsts"] = true,
+            ["headers"] = new JsonObject()
+        };
+
+        var errors = CapabilityResolver.ValidateMergedOverrides("security-headers", merged);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ValidateMergedOverrides_SecurityHeaders_HstsFalseAndStsInMap_Accepted()
+    {
+        // Map-only HSTS authoring is the alternate channel. With the
+        // convenience flag off, the operator's hand-authored STS row is the
+        // sole emission channel -- no collision.
+        var merged = new JsonObject
+        {
+            ["enableHsts"] = false,
+            ["headers"] = new JsonObject
+            {
+                ["Strict-Transport-Security"] = "max-age=63072000"
+            }
+        };
+
+        var errors = CapabilityResolver.ValidateMergedOverrides("security-headers", merged);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ValidateMergedOverrides_NonSecurityHeadersCapability_NoError()
+    {
+        // The cross-field check is security-headers-specific today. Other
+        // capabilities flowing through ValidateMergedOverrides return clean.
+        var merged = new JsonObject
+        {
+            ["enableHsts"] = true,
+            ["headers"] = new JsonObject
+            {
+                ["Strict-Transport-Security"] = "max-age=300"
+            }
+        };
+
+        var errors = CapabilityResolver.ValidateMergedOverrides("routing", merged);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void Resolve_SecurityHeaders_TypeDefaultsCarryXctoSeed()
     {
         // The Rule 3 disclosure case: every routed app type's type-level

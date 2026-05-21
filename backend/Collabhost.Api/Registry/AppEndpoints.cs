@@ -425,6 +425,26 @@ public static class AppEndpoints
                 effectiveOverride[fieldKey] = JsonNode.Parse(fieldValue.GetRawText());
             }
 
+            // Cross-field validation on the post-merge effective override.
+            // ValidateEdits above ran cross-field defense-in-depth on the
+            // in-flight delta only; this is the load-bearing check that
+            // catches the two-step operator path (e.g. save STS in headers
+            // first, later toggle EnableHsts -- neither delta alone would
+            // trip the in-flight check, but the merged state would).
+            var mergedValidationErrors = CapabilityResolver.ValidateMergedOverrides
+            (
+                sectionKey, effectiveOverride
+            );
+
+            if (mergedValidationErrors.Count > 0)
+            {
+                return TypedResults.Problem
+                (
+                    string.Join("; ", mergedValidationErrors),
+                    statusCode: 400
+                );
+            }
+
             await store.SaveOverrideAsync
             (
                 app.Id,
