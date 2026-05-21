@@ -217,6 +217,16 @@ type SettingsValidationError = {
   }>
 }
 
+// Response from POST /apps/{slug}/runtime-config-file/import (Card #336).
+// Preview only — the operator reviews `imported`/`skipped` and saves via the
+// standard settings-save flow. `skipped` lists top-level entries that were
+// not flat string->string (nested objects, arrays, nulls, non-string primitives).
+type RuntimeConfigFileImportResponse = {
+  imported: Record<string, string>
+  skipped: string[]
+  sourcePath: string
+}
+
 // --- Action Result ---
 
 type ActionResult = {
@@ -461,6 +471,7 @@ export type {
   SettingsField,
   UpdateSettingsRequest,
   SettingsValidationError,
+  RuntimeConfigFileImportResponse,
   ActionResult,
   LogsResponse,
   LogEntry,
