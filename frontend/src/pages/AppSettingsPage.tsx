@@ -1,13 +1,20 @@
 import { ActionButton } from '@/actions/ActionButton'
 import { ApiError } from '@/api/client'
-import type { AppSettings, SettingsField, SettingsValidationError } from '@/api/types'
+import type { AppSettings, RuntimeConfigFileImportResponse, SettingsField, SettingsValidationError } from '@/api/types'
 import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { SchemaField } from '@/forms/SchemaField'
-import { useAppSettings, useDeleteApp, useSaveSettings, useSettingsRestartApp } from '@/hooks/use-app-settings'
+import {
+  useAppSettings,
+  useDeleteApp,
+  useImportRuntimeConfigFile,
+  useSaveSettings,
+  useSettingsRestartApp,
+} from '@/hooks/use-app-settings'
 import { useCurrentUser } from '@/hooks/use-current-user'
 import { ROUTES } from '@/lib/routes'
 import { ConfirmDialog } from '@/shared/ConfirmDialog'
 import { ErrorBanner } from '@/shared/ErrorBanner'
+import { ImportConfigDialog } from '@/shared/ImportConfigDialog'
 import { RestartConfirmDialog } from '@/shared/RestartConfirmDialog'
 import { SectionDivider } from '@/shared/SectionDivider'
 import { Spinner } from '@/shared/Spinner'
@@ -37,6 +44,7 @@ function AppSettingsPage() {
   const saveMutation = useSaveSettings(slug ?? '')
   const restartMutation = useSettingsRestartApp(slug ?? '')
   const deleteMutation = useDeleteApp()
+  const importMutation = useImportRuntimeConfigFile(slug ?? '')
   const { data: currentUser } = useCurrentUser()
   const isAdmin = currentUser?.role === 'administrator'
 
@@ -46,6 +54,11 @@ function AppSettingsPage() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   const [isRestartDialogOpen, setIsRestartDialogOpen] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // Card #336 — import-preview state. The dialog opens immediately on click
+  // and shows a loading body until the preview lands (or an error surfaces).
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [importPreview, setImportPreview] = useState<RuntimeConfigFileImportResponse | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
 
   // Stash the changes object when the restart dialog opens so both
   // Save Only and Save & Restart use the same payload
@@ -235,6 +248,59 @@ function AppSettingsPage() {
     })
   }, [slug, deleteMutation, navigate])
 
+  // Card #336 — open the import dialog and kick off the preview call.
+  const handleImportClick = useCallback(() => {
+    setImportPreview(null)
+    setImportError(null)
+    setIsImportDialogOpen(true)
+    importMutation.mutate(undefined, {
+      onSuccess: (response) => {
+        setImportPreview(response)
+      },
+      onError: (error) => {
+        if (error instanceof ApiError) {
+          // The importer surfaces operator-actionable messages in a Problem
+          // Details body — peel the `detail` field when present, otherwise
+          // fall back to the raw body / message.
+          try {
+            const parsed = JSON.parse(error.body) as { detail?: string }
+            setImportError(parsed.detail ?? error.message)
+          } catch {
+            setImportError(error.body || error.message)
+          }
+        } else {
+          setImportError(error instanceof Error ? error.message : 'Failed to read config.json on disk')
+        }
+      },
+    })
+  }, [importMutation])
+
+  const handleImportCancel = useCallback(() => {
+    setIsImportDialogOpen(false)
+    setImportPreview(null)
+    setImportError(null)
+  }, [])
+
+  // Merge the preview into the runtime-config-file Values edit state. Existing
+  // operator-typed entries are preserved; imported keys win on collision. The
+  // operator still has to save — this only stages the change in the form.
+  const handleImportConfirm = useCallback(() => {
+    if (!importPreview) return
+    setEditValues((prev) => ({
+      ...prev,
+      'runtime-config-file': {
+        ...prev['runtime-config-file'],
+        values: {
+          ...((prev['runtime-config-file']?.values as Record<string, string> | undefined) ?? {}),
+          ...importPreview.imported,
+        },
+      },
+    }))
+    setIsImportDialogOpen(false)
+    setImportPreview(null)
+    setImportError(null)
+  }, [importPreview])
+
   function getFieldValue(field: SettingsField, sectionKey: string): unknown {
     if (isEditing && editValues[sectionKey] !== undefined) {
       return editValues[sectionKey][field.key] ?? field.value
@@ -322,6 +388,16 @@ function AppSettingsPage() {
                 className={i > 0 ? 'wm-settings-field-separator' : ''}
               />
             ))}
+            {/* Card #336 — section-specific import affordance. The section is
+                otherwise schema-driven; this is the one slot where the page
+                knows about a capability by name. */}
+            {isEditing && section.key === 'runtime-config-file' && (
+              <div className="mt-2 ml-1">
+                <ActionButton onClick={handleImportClick} disabled={importMutation.isPending}>
+                  Import current config.json
+                </ActionButton>
+              </div>
+            )}
           </div>
         </div>
       ))}
@@ -360,6 +436,18 @@ function AppSettingsPage() {
         onSaveAndRestart={handleSaveAndRestart}
         onSaveOnly={handleSaveOnly}
         onCancel={handleRestartDialogCancel}
+      />
+
+      {/* Card #336 — import preview dialog for runtime-config-file */}
+      <ImportConfigDialog
+        isOpen={isImportDialogOpen}
+        isPending={importMutation.isPending}
+        imported={importPreview?.imported ?? null}
+        skipped={importPreview?.skipped ?? []}
+        sourcePath={importPreview?.sourcePath ?? null}
+        error={importError}
+        onConfirm={handleImportConfirm}
+        onCancel={handleImportCancel}
       />
     </div>
   )

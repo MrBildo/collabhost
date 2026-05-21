@@ -1,5 +1,5 @@
-import { deleteApp, getAppSettings, restartApp, updateAppSettings } from '@/api/endpoints'
-import type { ActionResult, AppSettings, UpdateSettingsRequest } from '@/api/types'
+import { deleteApp, getAppSettings, importRuntimeConfigFile, restartApp, updateAppSettings } from '@/api/endpoints'
+import type { ActionResult, AppSettings, RuntimeConfigFileImportResponse, UpdateSettingsRequest } from '@/api/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 function useAppSettings(slug: string) {
@@ -35,6 +35,15 @@ function useDeleteApp() {
   })
 }
 
+// Card #336. Preview-only import — the response is staged into a confirmation
+// modal and merged into the local edit values on operator confirm. No query
+// invalidation here: nothing on the server changed.
+function useImportRuntimeConfigFile(slug: string) {
+  return useMutation<RuntimeConfigFileImportResponse, Error, void>({
+    mutationFn: () => importRuntimeConfigFile(slug),
+  })
+}
+
 function useSettingsRestartApp(slug: string) {
   const queryClient = useQueryClient()
 
@@ -49,4 +58,4 @@ function useSettingsRestartApp(slug: string) {
   })
 }
 
-export { useAppSettings, useSaveSettings, useDeleteApp, useSettingsRestartApp }
+export { useAppSettings, useSaveSettings, useDeleteApp, useImportRuntimeConfigFile, useSettingsRestartApp }

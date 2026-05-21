@@ -16,6 +16,7 @@ import type {
   MeResponse,
   RegistrationSchema,
   RouteListResponse,
+  RuntimeConfigFileImportResponse,
   SystemStatus,
   UpdateSettingsRequest,
   User,
@@ -63,6 +64,15 @@ function updateAppSettings(slug: string, body: UpdateSettingsRequest): Promise<A
     method: 'PUT',
     body: JSON.stringify(body),
   })
+}
+
+// Card #336: preview-only import of the operator-managed runtime-config file.
+// The endpoint reads <artifactDir>/config.json (or the configured path), returns
+// the flat string->string entries and the names of any skipped non-flat entries.
+// It does NOT persist — the operator reviews the preview and saves via the
+// standard settings-save flow.
+function importRuntimeConfigFile(slug: string): Promise<RuntimeConfigFileImportResponse> {
+  return request(`/apps/${slug}/runtime-config-file/import`, { method: 'POST' })
 }
 
 // --- Logs ---
@@ -175,6 +185,7 @@ export {
   deleteApp,
   getAppSettings,
   updateAppSettings,
+  importRuntimeConfigFile,
   getAppLogs,
   getDashboardStats,
   getDashboardEvents,
