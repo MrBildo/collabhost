@@ -281,7 +281,8 @@ function AppSettingsPage() {
     setImportError(null)
   }, [])
 
-  // Merge the preview into the runtime-config-file Values edit state. The
+  // Merge the preview into the runtime-config-file Values edit state. Existing
+  // operator-typed entries are preserved; imported keys win on collision. The
   // operator still has to save — this only stages the change in the form.
   const handleImportConfirm = useCallback(() => {
     if (!importPreview) return
@@ -289,7 +290,10 @@ function AppSettingsPage() {
       ...prev,
       'runtime-config-file': {
         ...prev['runtime-config-file'],
-        values: { ...importPreview.imported },
+        values: {
+          ...((prev['runtime-config-file']?.values as Record<string, string> | undefined) ?? {}),
+          ...importPreview.imported,
+        },
       },
     }))
     setIsImportDialogOpen(false)

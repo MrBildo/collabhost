@@ -297,4 +297,100 @@ describe('AppSettingsPage — runtime-config-file import (Card #336)', () => {
     await waitFor(() => expect(screen.getByText('Network down')).toBeInTheDocument())
     expect(screen.getByText('Apply')).toBeDisabled()
   })
+
+  // F1 regression — Kai PR-review S55 #10. Prior to the fix, Apply did a full
+  // overwrite of the Values editor map, silently dropping any keys the operator
+  // had typed before importing. The contract is now merge: operator-typed
+  // entries survive, imported keys win on collision.
+  test('Apply preserves operator-typed entries that are not in the imported set', async () => {
+    let onSuccess: ((data: RuntimeConfigFileImportResponse) => void) | undefined
+    const importStub = makeMutationStub<RuntimeConfigFileImportResponse, void>((_vars, callbacks) => {
+      onSuccess = callbacks?.onSuccess
+    })
+    mockUseImportRuntimeConfigFile.mockReturnValue(
+      importStub as unknown as ReturnType<typeof useImportRuntimeConfigFile>,
+    )
+
+    const user = userEvent.setup()
+    render(<AppSettingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+
+    // Operator types an entry into the KeyValueField BEFORE opening Import.
+    const newKeyInput = screen.getByLabelText('New entry key') as HTMLInputElement
+    const newValueInput = screen.getByLabelText('New entry value') as HTMLInputElement
+    await user.type(newKeyInput, 'operator-typed-key')
+    await user.type(newValueInput, 'their-value')
+    await user.click(screen.getByLabelText('Add entry'))
+
+    // The typed entry now renders as a row.
+    await waitFor(() => {
+      expect(screen.getByLabelText('Key for operator-typed-key')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: /Import current config\.json/i }))
+
+    act(() => {
+      onSuccess?.({
+        imported: { 'imported-key': 'imported-value' },
+        skipped: [],
+        sourcePath: '/srv/uat-336/config.json',
+      })
+    })
+
+    await waitFor(() => expect(screen.getByText('Apply')).not.toBeDisabled())
+    await user.click(screen.getByText('Apply'))
+
+    const dialog = document.querySelector('dialog')
+    expect(dialog).not.toHaveAttribute('open')
+
+    // Both entries must be present after Apply — the operator-typed key was NOT
+    // dropped, AND the imported key landed.
+    await waitFor(() => {
+      expect(screen.getByLabelText('Key for operator-typed-key')).toBeInTheDocument()
+      expect(screen.getByLabelText('Key for imported-key')).toBeInTheDocument()
+    })
+  })
+
+  // F1 collision case — imported wins on key collision. Documents the merge
+  // contract for any future maintainer who wonders which side wins ties.
+  test('Apply prefers the imported value on key collision', async () => {
+    let onSuccess: ((data: RuntimeConfigFileImportResponse) => void) | undefined
+    const importStub = makeMutationStub<RuntimeConfigFileImportResponse, void>((_vars, callbacks) => {
+      onSuccess = callbacks?.onSuccess
+    })
+    mockUseImportRuntimeConfigFile.mockReturnValue(
+      importStub as unknown as ReturnType<typeof useImportRuntimeConfigFile>,
+    )
+
+    const user = userEvent.setup()
+    render(<AppSettingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+
+    // Operator types an entry with key "shared" and a stale value.
+    await user.type(screen.getByLabelText('New entry key'), 'shared')
+    await user.type(screen.getByLabelText('New entry value'), 'stale-value')
+    await user.click(screen.getByLabelText('Add entry'))
+
+    await waitFor(() => expect(screen.getByLabelText('Key for shared')).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: /Import current config\.json/i }))
+
+    act(() => {
+      onSuccess?.({
+        imported: { shared: 'imported-wins' },
+        skipped: [],
+        sourcePath: '/srv/uat-336/config.json',
+      })
+    })
+
+    await waitFor(() => expect(screen.getByText('Apply')).not.toBeDisabled())
+    await user.click(screen.getByText('Apply'))
+
+    // Imported value wins — the editor shows the imported value for the
+    // collided key.
+    await waitFor(() => {
+      const valueInput = screen.getByLabelText('Value for shared') as HTMLInputElement
+      expect(valueInput.value).toBe('imported-wins')
+    })
+  })
 })
