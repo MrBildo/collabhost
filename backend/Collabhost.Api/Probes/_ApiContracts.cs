@@ -5,6 +5,35 @@ namespace Collabhost.Api.Probes;
 
 public record ProbeEntry(string Type, string Label, object Data);
 
+// Cache lifecycle state surfaced to the API boundary (Card #337). Distinguishes
+// the three observationally-indistinguishable empty states that `Entries=[]`
+// alone could not separate:
+//   - NotApplicable : the app's AppType is not in the probe-applicable set
+//     (today: `system-service`). Entries will always be empty by curation
+//     policy; the frontend should render this differently from "we haven't
+//     looked yet."
+//   - NeverProbed   : no cache entry exists for this app id. Either the app
+//     is brand-new (registered after the last periodic tick) or the periodic
+//     service has not yet completed its first sweep for this app.
+//   - Fresh         : the cache holds an entry written within the freshness
+//     window. Entries may still be empty (legitimately empty extraction --
+//     e.g. dotnet-app with an artifact directory containing nothing the
+//     extractors recognize); the status distinguishes this from NeverProbed.
+//   - Stale         : the cache holds an entry written outside the freshness
+//     window. Under normal Option-B operation the periodic refresher runs at
+//     half the freshness window, so Stale should not appear -- when it does,
+//     the periodic loop has stopped advancing and the operator should see an
+//     explicit signal rather than blank panels.
+public enum ProbeCacheStatus
+{
+    Fresh,
+    Stale,
+    NeverProbed,
+    NotApplicable
+}
+
+public record ProbeCacheResult(ProbeCacheStatus Status, List<ProbeEntry> Entries);
+
 // --- .NET Runtime ---
 
 public record DotnetRuntimeData

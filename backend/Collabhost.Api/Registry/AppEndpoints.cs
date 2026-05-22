@@ -207,8 +207,10 @@ public static class AppEndpoints
             autoStartValue = autoStartConfiguration.Enabled;
         }
 
-        // Probes -- cached probe results from in-memory cache
-        var probes = probeService.GetCachedProbes(app.Id);
+        // Probes -- cached probe results plus lifecycle state (Card #337).
+        var probeResult = probeService.GetCachedProbes(app.Id, app.AppTypeSlug);
+        var probesStatus = probeResult.Status.ToApiString();
+        var probes = probeResult.Entries;
 
         // Route info
         AppRoute? route = null;
@@ -291,6 +293,7 @@ public static class AppEndpoints
             domain,
             routeEnabled,
             healthStatus,
+            probesStatus,
             probes,
             resources,
             route,
@@ -1089,6 +1092,7 @@ public static class AppEndpoints
         string slug,
         AppStore store,
         ProcessSupervisor supervisor,
+        ProbeService probeService,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
         CancellationToken ct
@@ -1138,6 +1142,12 @@ public static class AppEndpoints
         await store.DeleteAppAsync(app.Id, ct);
 
         supervisor.CleanupDeletedApp(app.Id, appSlug);
+
+        // Drop cached probe data for the deleted app id so a recreated app with
+        // the same slug (but a new ULID) never inherits stale entries. The
+        // periodic sweep also prunes orphans, but doing it inline keeps the
+        // cache honest between ticks. Card #337 fix-along.
+        probeService.InvalidateProbeCache(app.Id);
 
         await activityEventStore.RecordAsync
         (

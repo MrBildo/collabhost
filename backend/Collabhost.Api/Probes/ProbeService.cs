@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Registry;
@@ -6,13 +8,12 @@ namespace Collabhost.Api.Probes;
 
 // JSON-serialized DTOs -- List<T> is practical for probe results
 #pragma warning disable MA0016
-#pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive -- cache key interpolation is safe
 
 public class ProbeService
 (
     AppStore appStore,
     CapabilityStore capabilityStore,
-    IMemoryCache cache,
+    TimeProvider timeProvider,
     ILogger<ProbeService> logger
 )
 {
@@ -22,18 +23,59 @@ public class ProbeService
     private readonly CapabilityStore _capabilityStore = capabilityStore
         ?? throw new ArgumentNullException(nameof(capabilityStore));
 
-    private readonly IMemoryCache _cache = cache
-        ?? throw new ArgumentNullException(nameof(cache));
+    private readonly TimeProvider _timeProvider = timeProvider
+        ?? throw new ArgumentNullException(nameof(timeProvider));
 
     private readonly ILogger<ProbeService> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
-    private static readonly TimeSpan _probeCacheDuration = TimeSpan.FromMinutes(30);
+    private readonly ConcurrentDictionary<Ulid, ProbeCacheEntry> _cache = new();
 
-    public List<ProbeEntry> GetCachedProbes(Ulid appId) =>
-        _cache.TryGetValue<List<ProbeEntry>>($"probe:{appId}", out var cached) && cached is not null
-            ? cached
-            : [];
+    // Freshness window. An entry written more than this ago is reported as Stale.
+    // The periodic refresher (ProbePeriodicService) runs at half this cadence so
+    // under normal operation entries cycle from Fresh -> Fresh, never Stale.
+    // Stale is the operator-facing signal that the periodic loop has stopped
+    // advancing. Internal-with-init so tests can override.
+    internal TimeSpan FreshnessWindow { get; init; } = TimeSpan.FromMinutes(30);
+
+    public ProbeCacheResult GetCachedProbes(Ulid appId, string appTypeSlug)
+    {
+        if (!IsProbeApplicable(appTypeSlug))
+        {
+            return new ProbeCacheResult(ProbeCacheStatus.NotApplicable, []);
+        }
+
+        if (!_cache.TryGetValue(appId, out var entry))
+        {
+            return new ProbeCacheResult(ProbeCacheStatus.NeverProbed, []);
+        }
+
+        var age = _timeProvider.GetUtcNow() - entry.SetAt;
+        var status = ClassifyAge(age, FreshnessWindow);
+
+        return new ProbeCacheResult(status, entry.Entries);
+    }
+
+    // Pure state-classifier extracted from GetCachedProbes so the cache-lifecycle
+    // states can be exercised without standing up the full DI graph. The caller
+    // is responsible for the NotApplicable / NeverProbed branches; this maps a
+    // cached entry's age into Fresh-vs-Stale.
+    internal static ProbeCacheStatus ClassifyAge(TimeSpan age, TimeSpan freshnessWindow) =>
+        age <= freshnessWindow
+            ? ProbeCacheStatus.Fresh
+            : ProbeCacheStatus.Stale;
+
+    // The set of AppType slugs whose curation policy can ever produce probe
+    // entries. Mirrors the allow* flags in ProbeCurator.Curate. Currently
+    // excludes `system-service` (no probe panels apply). Unknown/user-defined
+    // AppType slugs default to applicable -- the curator (not this filter) is
+    // the authoritative gate on whether any panel comes out.
+    internal static bool IsProbeApplicable(string appTypeSlug) =>
+        appTypeSlug switch
+        {
+            "system-service" => false,
+            _ => true
+        };
 
     public async Task RunProbesAsync(Ulid appId, CancellationToken ct)
     {
@@ -61,7 +103,7 @@ public class ProbeService
             app.AppTypeSlug
         );
 
-        _cache.Set($"probe:{appId}", probes, _probeCacheDuration);
+        _cache[appId] = new ProbeCacheEntry(_timeProvider.GetUtcNow(), probes);
 
         _logger.LogDebug
         (
@@ -74,6 +116,16 @@ public class ProbeService
     public async Task RunProbesForAllAppsAsync(CancellationToken ct)
     {
         var apps = await _appStore.ListAsync(ct);
+
+        // Prune cache entries for apps that no longer exist. Mirrors the pattern
+        // ProcessResourceSamplerService uses for stopped processes -- the periodic
+        // service is the natural owner of cleanup since it walks the live app set.
+        var liveAppIds = apps.Select(a => a.Id).ToHashSet();
+
+        foreach (var staleAppId in _cache.Keys.Where(id => !liveAppIds.Contains(id)).ToList())
+        {
+            _cache.TryRemove(staleAppId, out _);
+        }
 
         foreach (var app in apps)
         {
@@ -94,7 +146,7 @@ public class ProbeService
     }
 
     public void InvalidateProbeCache(Ulid appId) =>
-        _cache.Remove($"probe:{appId}");
+        _cache.TryRemove(appId, out _);
 
     // Pre-card-#220 entry point retained for tests that don't supply an AppType.
     // The new entry point routes through the evidence collector so detection and
@@ -142,4 +194,8 @@ public class ProbeService
             artifactDirectory
         );
     }
+
+    // Sealed: private nested cache record, not part of the public surface,
+    // not designed for extension.
+    private sealed record ProbeCacheEntry(DateTimeOffset SetAt, List<ProbeEntry> Entries);
 }
