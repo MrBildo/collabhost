@@ -1143,10 +1143,11 @@ public static class AppEndpoints
 
         supervisor.CleanupDeletedApp(app.Id, appSlug);
 
-        // Drop cached probe data for the deleted app id so a recreated app with
-        // the same slug (but a new ULID) never inherits stale entries. The
-        // periodic sweep also prunes orphans, but doing it inline keeps the
-        // cache honest between ticks. Card #337 fix-along.
+        // Early hygiene on delete -- release this app's cached probe entry
+        // immediately rather than letting it squat in the cache until the next
+        // periodic prune tick. The cache is keyed by ULID, so a recreated app
+        // with the same slug always gets a fresh entry regardless. Card #337
+        // fix-along.
         probeService.InvalidateProbeCache(app.Id);
 
         await activityEventStore.RecordAsync
