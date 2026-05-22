@@ -238,7 +238,9 @@ public class DiscoveryTools
             autoStart = autoStartConfig?.Enabled;
         }
 
-        var probes = _probeService.GetCachedProbes(app.Id);
+        var probeResult = _probeService.GetCachedProbes(app.Id, app.AppTypeSlug);
+        var probes = probeResult.Entries;
+        var probesStatus = probeResult.Status.ToApiString();
 
         string? routeTarget = null;
 
@@ -269,6 +271,7 @@ public class DiscoveryTools
             routeEnabled,
             routeTarget,
             capabilities,
+            probesStatus,
             probes,
             writableDataPath = _dataPathResolver.ResolveFor(app.Slug)
         };

@@ -44,6 +44,12 @@ public record AppDetail
     string? Domain,
     bool DomainActive,
     string? HealthStatus,
+    // Probe cache lifecycle state (Card #337). Distinguishes never-probed /
+    // fresh / stale / not-applicable from each other; before #337 all four
+    // collapsed to an empty Probes array, leaving the frontend unable to
+    // render distinct empty-state copy. Values: "fresh", "stale",
+    // "never-probed", "not-applicable" (lowercase-hyphen).
+    string ProbesStatus,
     List<ProbeEntry> Probes,
     AppResources? Resources,
     AppRoute? Route,
@@ -190,6 +196,18 @@ public static class ProcessStateExtensions
             ProcessState.Backoff => "backoff",
             ProcessState.Fatal => "fatal",
             _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Unknown ProcessState value"),
+        };
+    }
+
+    extension(ProbeCacheStatus status)
+    {
+        public string ToApiString() => status switch
+        {
+            ProbeCacheStatus.Fresh => "fresh",
+            ProbeCacheStatus.Stale => "stale",
+            ProbeCacheStatus.NeverProbed => "never-probed",
+            ProbeCacheStatus.NotApplicable => "not-applicable",
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown ProbeCacheStatus value"),
         };
     }
 }
