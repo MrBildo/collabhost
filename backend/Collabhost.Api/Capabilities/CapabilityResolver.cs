@@ -51,6 +51,23 @@ public static partial class CapabilityResolver
     [GeneratedRegex(RuntimeConfigFileKeyPatternString, RegexOptions.None, 100)]
     private static partial Regex RuntimeConfigFileKeyPattern { get; }
 
+    // HTTP-header-name contract for the security-headers capability (Card #309).
+    // Mirrors the header-name half of ResponseHeaderKeyPatternString (RFC 7230
+    // tchar set) -- security-headers carries blanket (no path) header rules,
+    // so the compound "<path>::<HeaderName>" shape would be wrong. Without this
+    // explicit declaration, ValidateEdits falls back to the env-var POSIX
+    // pattern and rejects every legitimate HTTP header name (the env-var
+    // pattern lacks '-').
+    public const string SecurityHeaderKeyPatternString =
+        @"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$";
+
+    public const string SecurityHeaderKeyPatternMessage =
+        "Keys must be a valid HTTP header name "
+        + "(e.g. \"X-Content-Type-Options\", \"Strict-Transport-Security\").";
+
+    [GeneratedRegex(SecurityHeaderKeyPatternString, RegexOptions.None, 100)]
+    private static partial Regex SecurityHeaderKeyPattern { get; }
+
     public static T Resolve<T>(string defaultConfigurationJson, string? overrideConfigurationJson)
         where T : class
     {
@@ -111,6 +128,7 @@ public static partial class CapabilityResolver
         {
             ResponseHeaderKeyPatternString => ResponseHeaderKeyPattern,
             RuntimeConfigFileKeyPatternString => RuntimeConfigFileKeyPattern,
+            SecurityHeaderKeyPatternString => SecurityHeaderKeyPattern,
             _ => new Regex(patternString, RegexOptions.None, TimeSpan.FromMilliseconds(100))
         };
 
@@ -187,6 +205,87 @@ public static partial class CapabilityResolver
             }
         }
 
+        // Defense-in-depth: also run cross-field validation against the
+        // in-flight delta so a single PUT carrying both EnableHsts:true and
+        // Headers["Strict-Transport-Security"] surfaces the operator-facing
+        // error message at the earliest possible point. The endpoint MUST
+        // additionally call ValidateMergedOverrides against the post-merge
+        // effective override -- the in-flight check alone is insufficient
+        // because a two-step operator edit (save STS in headers, later toggle
+        // EnableHsts) reaches the collision state with neither step rejected.
+        // See ValidateMergedOverrides for the load-bearing check.
+        ValidateCrossFieldEdits(capabilitySlug, proposedOverrides, errors);
+
         return errors;
+    }
+
+    // Cross-field validation against the effective post-merge override
+    // (existing-stored-override deep-merged with the in-flight delta).
+    // Callers that hold only a partial delta -- the PUT settings endpoint is
+    // the canonical case -- MUST invoke this after computing the merged
+    // override; otherwise a two-step operator edit can reach a forbidden
+    // cross-field state with neither step rejected by ValidateEdits alone.
+    // The contract is a superset of ValidateEdits' in-flight cross-field
+    // check; keeping both is defense-in-depth, not redundant work.
+    public static IReadOnlyList<string> ValidateMergedOverrides
+    (
+        string capabilitySlug,
+        JsonObject mergedOverride
+    )
+    {
+        var errors = new List<string>();
+        ValidateCrossFieldEdits(capabilitySlug, mergedOverride, errors);
+        return errors;
+    }
+
+    // Cross-field validation: rules that depend on more than one field in the
+    // same capability. Today this is HSTS convenience-vs-freeform collision on
+    // security-headers; future cross-field rules belong here too. Operates on
+    // whatever JsonObject is passed -- the in-flight delta (called from
+    // ValidateEdits as defense-in-depth) or the post-merge effective override
+    // (called from ValidateMergedOverrides as the load-bearing check).
+    private static void ValidateCrossFieldEdits
+    (
+        string capabilitySlug,
+        JsonObject overrides,
+        List<string> errors
+    )
+    {
+        if (!string.Equals(capabilitySlug, "security-headers", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // The collision: EnableHsts: true AND Headers map carries a
+        // Strict-Transport-Security entry. Both channels would compete for the
+        // same emitted header; the operator must choose one.
+        var enableHsts = overrides.TryGetPropertyValue("enableHsts", out var enableHstsNode)
+            && enableHstsNode is JsonValue enableHstsValue
+            && enableHstsValue.TryGetValue<bool>(out var enableHstsBool)
+            && enableHstsBool;
+
+        if (!enableHsts)
+        {
+            return;
+        }
+
+        if (overrides.TryGetPropertyValue("headers", out var headersNode)
+            && headersNode is JsonObject headersObject)
+        {
+            foreach (var entry in headersObject)
+            {
+                if (string.Equals(entry.Key, "Strict-Transport-Security", StringComparison.OrdinalIgnoreCase))
+                {
+                    errors.Add
+                    (
+                        "security-headers: Cannot set 'Strict-Transport-Security' in headers map "
+                        + "while Enable HSTS is on. Choose one channel -- either turn off Enable "
+                        + "HSTS and author the header manually in the map, or leave the map entry "
+                        + "out and let Enable HSTS govern the header."
+                    );
+                    break;
+                }
+            }
+        }
     }
 }

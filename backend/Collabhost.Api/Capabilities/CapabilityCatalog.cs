@@ -61,6 +61,12 @@ public static class CapabilityCatalog
                 typeof(RuntimeConfigFileConfiguration),
                 RuntimeConfigFileConfiguration.Schema
             ),
+            ["security-headers"] = new
+            (
+                "Security Headers",
+                typeof(SecurityHeadersConfiguration),
+                SecurityHeadersConfiguration.Schema
+            ),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public static CapabilityDefinition? Get(string slug) =>

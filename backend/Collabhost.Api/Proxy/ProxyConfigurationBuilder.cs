@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Portal;
 using Collabhost.Api.Registry;
@@ -191,6 +192,53 @@ public static class ProxyConfigurationBuilder
     {
         var dialPort = route.Port?.ToString(CultureInfo.InvariantCulture) ?? "0";
 
+        var reverseProxyHandler = new JsonObject
+        {
+            ["handler"] = "reverse_proxy",
+            ["upstreams"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["dial"] = $"localhost:{dialPort}"
+                }
+            }
+        };
+
+        // Conditional subroute-wrap on non-empty security-headers emission
+        // (precondition #6). When no security-header handler is emitted the
+        // route stays flat -- byte-identical to the pre-#309 reverse-proxy
+        // shape so an operator who suppresses all security headers (or any
+        // future state without a security-headers binding) gets back the
+        // un-wrapped emission. Card #309.
+        var securityHeaderHandler = BuildSecurityHeaderHandler(route.SecurityHeaders);
+
+        var handle = new JsonArray();
+
+        if (securityHeaderHandler is not null)
+        {
+            var subrouteHandlers = new JsonArray
+            {
+                securityHeaderHandler,
+                new JsonObject
+                {
+                    ["handle"] = new JsonArray { reverseProxyHandler }
+                }
+            };
+
+            handle.Add
+            (
+                new JsonObject
+                {
+                    ["handler"] = "subroute",
+                    ["routes"] = subrouteHandlers
+                }
+            );
+        }
+        else
+        {
+            handle.Add(reverseProxyHandler);
+        }
+
         return new JsonObject
         {
             ["@id"] = $"route_{route.Slug}",
@@ -201,20 +249,7 @@ public static class ProxyConfigurationBuilder
                     ["host"] = new JsonArray { route.Domain }
                 }
             },
-            ["handle"] = new JsonArray
-            {
-                new JsonObject
-                {
-                    ["handler"] = "reverse_proxy",
-                    ["upstreams"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["dial"] = $"localhost:{dialPort}"
-                        }
-                    }
-                }
-            },
+            ["handle"] = handle,
             ["terminal"] = true
         };
     }
@@ -225,6 +260,20 @@ public static class ProxyConfigurationBuilder
         {
             BuildFileServerRootHandler(route)
         };
+
+        // Blanket security-headers handler (Card #309) inserted BEFORE the
+        // path-matched response-header handlers (Card #308). Caddy's
+        // `response.set` is last-write-wins on the response-commit deferred-
+        // mutation chain, so the path-scoped handler -- emitted later in the
+        // chain -- wins on overlapping header names. Same shape as CSS
+        // specificity: the more-specific path rule beats the blanket rule
+        // when they collide on the same key. Precondition #7.
+        var securityHeaderHandler = BuildSecurityHeaderHandler(route.SecurityHeaders);
+
+        if (securityHeaderHandler is not null)
+        {
+            subrouteHandlers.Add(securityHeaderHandler);
+        }
 
         // Path-matched response-header handlers. Caddy's `headers` handler is a
         // deferred response-header mutation, non-terminal -- it must be
@@ -374,6 +423,106 @@ public static class ProxyConfigurationBuilder
         }
 
         return handlers;
+    }
+
+    // Builds the single blanket (un-matched) `headers` handler for the route's
+    // security-headers spec. Returns null when emission should be skipped --
+    // the empty-no-op invariant: !EnableHsts AND empty Headers map (after
+    // dropping empty-string-valued entries) -- so the caller can also skip
+    // the subroute-wrap on reverse-proxy routes (precondition #1 + #6).
+    //
+    // Emission semantics:
+    //  - EnableHsts: true expands to a Strict-Transport-Security entry whose
+    //    value is computed from HstsMaxAgeSeconds. max-age=0 is the legitimate
+    //    rollback / un-pin signal (precondition #4).
+    //  - Headers map entries are emitted verbatim; entries whose value is the
+    //    empty string are DROPPED (operator-suppression mechanism, precondition
+    //    #5). The operator who needs to suppress XCTO sets its value to "" in
+    //    the Headers map; the entry survives MergeJson (it is an override over
+    //    the type-default value) and the emitter skips it here.
+    //  - Output ordering is ordinal by header name for snapshot stability.
+    //
+    // Card #309.
+    private static JsonObject? BuildSecurityHeaderHandler(SecurityHeadersConfiguration? resolved)
+    {
+        if (resolved is null)
+        {
+            return null;
+        }
+
+        // Empty-no-op invariant at the builder, on the resolved spec
+        // (precondition #1). Mirrors #336's RuntimeConfigFileWriter empty-
+        // Values short-circuit -- ZERO emission when there is nothing to
+        // emit. Critical for the reverse-proxy subroute-wrap conditional:
+        // without this, every reverse-proxy route would gain a subroute even
+        // when there is no header to set.
+        if (!resolved.EnableHsts && (resolved.Headers is null || resolved.Headers.Count == 0))
+        {
+            return null;
+        }
+
+        var set = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        if (resolved.EnableHsts)
+        {
+            var maxAge = resolved.HstsMaxAgeSeconds < 0 ? 0 : resolved.HstsMaxAgeSeconds;
+
+            set["Strict-Transport-Security"] = string.Format
+            (
+                CultureInfo.InvariantCulture,
+                "max-age={0}",
+                maxAge
+            );
+        }
+
+        if (resolved.Headers is not null)
+        {
+            foreach (var (name, value) in resolved.Headers)
+            {
+                // Operator-suppression: an empty-string value is the documented
+                // escape hatch for type-default rows (notably the XCTO seed).
+                // MergeJson is one-level-deep and cannot delete a type-default
+                // entry by clearing the override map; the suppression channel
+                // is per-entry override-to-empty + drop-at-emission. Card #309
+                // precondition #5 (Bill ruling).
+                if (string.IsNullOrEmpty(value))
+                {
+                    continue;
+                }
+
+                set[name] = value;
+            }
+        }
+
+        // If only convenience flags fired and the post-suppression header set
+        // is empty (e.g. EnableHsts: false + Headers: {"X-Content-Type-Options": ""})
+        // re-check the empty-no-op invariant on the materialized output.
+        if (set.Count == 0)
+        {
+            return null;
+        }
+
+        var setObject = new JsonObject();
+
+        foreach (var (name, value) in set)
+        {
+            setObject[name] = new JsonArray { value };
+        }
+
+        return new JsonObject
+        {
+            ["handle"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["handler"] = "headers",
+                    ["response"] = new JsonObject
+                    {
+                        ["set"] = setObject
+                    }
+                }
+            }
+        };
     }
 
     private static JsonObject BuildSpaFallbackHandler() =>
@@ -547,5 +696,12 @@ public record RouteEntry
     // value). Null or empty = no header handlers emitted (the file-server
     // subroute shape is identical to before this field existed -- the
     // migration-safe default). File-server routes only. Card #308.
-    IReadOnlyDictionary<string, string>? ResponseHeaders = null
+    IReadOnlyDictionary<string, string>? ResponseHeaders = null,
+    // Resolved security-headers spec for this route. Null = capability not
+    // bound on the app type (e.g. system-service) or app explicitly opted out
+    // -- emission skipped, subroute-wrap on reverse-proxy stays flat. Applies
+    // to both reverse-proxy and file-server routes; the emission helper at
+    // the builder is the single source of truth for "should anything be
+    // emitted." Card #309.
+    SecurityHeadersConfiguration? SecurityHeaders = null
 );
