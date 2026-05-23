@@ -203,6 +203,17 @@ type SettingsField = {
   // the operator-facing message shown on failure. null/absent => the env-var default.
   keyPattern?: string | null
   keyPatternMessage?: string | null
+  // Card #338: schema-declared effectiveness predicate. The dependent field is
+  // visible-but-inert when the sibling parent field does not equal `value`. The
+  // BE camelCases enum `value`s at serialization (so e.g. "fileServer" / "manual"
+  // align with the camelCased Select option values). Same-section only -- cross-
+  // section dependencies are explicitly out of contract.
+  dependsOn?: FieldDependency | null
+}
+
+type FieldDependency = {
+  field: string
+  value: string
 }
 
 type UpdateSettingsRequest = {
@@ -469,6 +480,7 @@ export type {
   AppSettings,
   SettingsSection,
   SettingsField,
+  FieldDependency,
   UpdateSettingsRequest,
   SettingsValidationError,
   RuntimeConfigFileImportResponse,

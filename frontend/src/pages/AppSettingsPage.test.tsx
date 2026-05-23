@@ -394,3 +394,110 @@ describe('AppSettingsPage — runtime-config-file import (Card #336)', () => {
     })
   })
 })
+
+// Card #338 -- cross-tier dependency rendering. AppSettingsPage owns the
+// derivation: it resolves the parent's effective value (preferring edit state
+// over baseline when in edit mode) and passes a disabledByDependency prop into
+// SchemaField when the parent does not satisfy the predicate. Same-section
+// only by design.
+describe('AppSettingsPage — DependsOn rendering (Card #338)', () => {
+  function makeSettingsWithHsts(enableHsts: boolean): AppSettings {
+    return {
+      id: '01ULID0000000000000000000A',
+      name: 'test-338',
+      displayName: 'Test 338',
+      appTypeName: 'dotnet-app',
+      registeredAt: '2026-04-01T00:00:00Z',
+      sections: [
+        {
+          key: 'security-headers',
+          title: 'Security Headers',
+          fields: [
+            {
+              key: 'enableHsts',
+              label: 'Enable HSTS',
+              type: 'boolean',
+              value: enableHsts,
+              defaultValue: false,
+              editable: { mode: 'always' },
+              requiresRestart: true,
+            },
+            {
+              key: 'hstsMaxAgeSeconds',
+              label: 'HSTS Max Age',
+              type: 'number',
+              value: 31536000,
+              defaultValue: null,
+              editable: { mode: 'always' },
+              requiresRestart: true,
+              dependsOn: { field: 'enableHsts', value: 'true' },
+            },
+          ],
+        },
+      ],
+    }
+  }
+
+  beforeEach(() => {
+    mockUseSaveSettings.mockReturnValue(makeMutationStub() as unknown as ReturnType<typeof useSaveSettings>)
+    mockUseDeleteApp.mockReturnValue(makeMutationStub() as unknown as ReturnType<typeof useDeleteApp>)
+    mockUseSettingsRestartApp.mockReturnValue(makeMutationStub() as unknown as ReturnType<typeof useSettingsRestartApp>)
+    mockUseImportRuntimeConfigFile.mockReturnValue(
+      makeMutationStub() as unknown as ReturnType<typeof useImportRuntimeConfigFile>,
+    )
+    mockUseCurrentUser.mockReturnValue({
+      data: { id: 'u1', name: 'Admin', role: 'administrator', isActive: true, createdAt: '' },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useCurrentUser>)
+  })
+
+  test('dependent field renders disabled + badged when parent is unmet (read mode)', () => {
+    mockUseAppSettings.mockReturnValue({
+      data: makeSettingsWithHsts(false),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppSettings>)
+
+    render(<AppSettingsPage />)
+
+    expect(screen.getByText('Effective only when Enable HSTS = On')).toBeInTheDocument()
+  })
+
+  test('dependent field renders enabled with no badge when parent is met', () => {
+    mockUseAppSettings.mockReturnValue({
+      data: makeSettingsWithHsts(true),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppSettings>)
+
+    render(<AppSettingsPage />)
+
+    expect(screen.queryByText(/Effective only when/)).not.toBeInTheDocument()
+  })
+
+  test('toggling parent in edit mode flips dependent field state without save round-trip', async () => {
+    mockUseAppSettings.mockReturnValue({
+      data: makeSettingsWithHsts(false),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppSettings>)
+
+    const user = userEvent.setup()
+    render(<AppSettingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+
+    // Initially: dependency unmet, max-age input is disabled, badge present.
+    let maxAgeInput = screen.getByRole('spinbutton')
+    expect(maxAgeInput).toBeDisabled()
+    expect(screen.getByText('Effective only when Enable HSTS = On')).toBeInTheDocument()
+
+    // Operator toggles Enable HSTS on -- the dependent's gray/active state must
+    // flip in the same render, without saving.
+    await user.click(screen.getByRole('switch'))
+
+    maxAgeInput = screen.getByRole('spinbutton')
+    expect(maxAgeInput).not.toBeDisabled()
+    expect(screen.queryByText(/Effective only when/)).not.toBeInTheDocument()
+  })
+})

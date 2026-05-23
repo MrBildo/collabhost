@@ -1302,7 +1302,16 @@ public static class AppEndpoints
                         fieldDescriptor.HelpText,
                         fieldDescriptor.Unit,
                         fieldDescriptor.KeyPattern,
-                        fieldDescriptor.KeyPatternMessage
+                        fieldDescriptor.KeyPatternMessage,
+                        // #338. CamelCase the dependency value so it matches
+                        // the camelCased Select option values above. Boolean
+                        // parents ship "true"/"false" -- already lowercase
+                        // (ToCamelCase is a no-op). Enum-name parents
+                        // ("FileServer", "Manual") become "fileServer"/"manual"
+                        // to align with the FE's view of the parent value.
+                        fieldDescriptor.DependsOn is { } dependsOn
+                            ? new FieldDependency(dependsOn.Field, dependsOn.Value.ToCamelCase())
+                            : null
                     )
                 );
             }

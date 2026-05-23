@@ -1,6 +1,12 @@
 import { ActionButton } from '@/actions/ActionButton'
 import { ApiError } from '@/api/client'
-import type { AppSettings, RuntimeConfigFileImportResponse, SettingsField, SettingsValidationError } from '@/api/types'
+import type {
+  AppSettings,
+  RuntimeConfigFileImportResponse,
+  SettingsField,
+  SettingsSection,
+  SettingsValidationError,
+} from '@/api/types'
 import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { SchemaField } from '@/forms/SchemaField'
 import {
@@ -34,6 +40,52 @@ function buildInitialValues(settings: AppSettings): DirtyFields {
     values[section.key] = sectionValues
   }
   return values
+}
+
+// Card #338 -- dependency resolution. Same-section only (capability boundaries
+// are semantic; cross-section deps are explicitly out of contract). The BE
+// camelCases enum dependency values at serialization (e.g. "fileServer", not
+// "FileServer") to align with Select option values, so the comparator is a
+// stringified equality check on the parent's effective value.
+function resolveParentValue(
+  section: SettingsSection,
+  parentKey: string,
+  editValues: DirtyFields,
+  isEditing: boolean,
+): unknown {
+  if (isEditing) {
+    const edit = editValues[section.key]?.[parentKey]
+    if (edit !== undefined) return edit
+  }
+  return section.fields.find((f) => f.key === parentKey)?.value
+}
+
+function isDependencyMet(parentValue: unknown, requiredValue: string): boolean {
+  if (parentValue == null) return false
+  // Boolean parents: dependency.value is "true" / "false" string-encoded.
+  if (typeof parentValue === 'boolean') {
+    return String(parentValue) === requiredValue
+  }
+  // Number / select / text: stringify and compare. Select option values are
+  // already camelCased and aligned with the BE-side camelCasing of dep values.
+  return String(parentValue) === requiredValue
+}
+
+function formatRequiredValueLabel(parentField: SettingsField | undefined, requiredValue: string): string {
+  // For Select parents, render the option's display label so the badge reads
+  // "Effective only when Serve Mode = File Server" rather than the raw
+  // camelCased option value.
+  if (parentField?.type === 'select') {
+    const match = parentField.options?.find((o) => o.value === requiredValue)
+    if (match) return match.label
+  }
+  // For Boolean parents, "true"/"false" → "On"/"Off" reads naturally in the
+  // effectiveness-predicate sentence ("Effective only when Enable HSTS = On").
+  if (parentField?.type === 'boolean') {
+    if (requiredValue === 'true') return 'On'
+    if (requiredValue === 'false') return 'Off'
+  }
+  return requiredValue
 }
 
 function AppSettingsPage() {
@@ -357,27 +409,45 @@ function AppSettingsPage() {
         <div key={section.key} className="mb-7">
           <SectionDivider label={section.title} className="mb-3" />
           <div className="flex flex-col gap-0">
-            {section.fields.map((field, i) => (
-              <SchemaField
-                key={field.key}
-                fieldKey={`${section.key}-${field.key}`}
-                label={field.label}
-                type={field.type}
-                value={getFieldValue(field, section.key)}
-                defaultValue={field.defaultValue}
-                editable={field.editable}
-                requiresRestart={field.requiresRestart}
-                options={field.options}
-                helpText={field.helpText}
-                unit={field.unit}
-                keyPattern={field.keyPattern}
-                keyPatternMessage={field.keyPatternMessage}
-                error={fieldErrors[section.key]?.[field.key]}
-                isEditing={isEditing}
-                onChange={(val) => handleFieldChange(section.key, field.key, val)}
-                className={i > 0 ? 'wm-settings-field-separator' : ''}
-              />
-            ))}
+            {section.fields.map((field, i) => {
+              // Card #338 -- per-render dependency derivation. Same-section only.
+              // Resolved here (not inside SchemaField) because the page is the
+              // single seam with all sibling field values + edit state in scope.
+              let disabledByDependency: { parentLabel: string; requiredValueLabel: string } | undefined
+              if (field.dependsOn) {
+                const parentValue = resolveParentValue(section, field.dependsOn.field, editValues, isEditing)
+                if (!isDependencyMet(parentValue, field.dependsOn.value)) {
+                  const parentField = section.fields.find((f) => f.key === field.dependsOn?.field)
+                  disabledByDependency = {
+                    parentLabel: parentField?.label ?? field.dependsOn.field,
+                    requiredValueLabel: formatRequiredValueLabel(parentField, field.dependsOn.value),
+                  }
+                }
+              }
+
+              return (
+                <SchemaField
+                  key={field.key}
+                  fieldKey={`${section.key}-${field.key}`}
+                  label={field.label}
+                  type={field.type}
+                  value={getFieldValue(field, section.key)}
+                  defaultValue={field.defaultValue}
+                  editable={field.editable}
+                  requiresRestart={field.requiresRestart}
+                  options={field.options}
+                  helpText={field.helpText}
+                  unit={field.unit}
+                  keyPattern={field.keyPattern}
+                  keyPatternMessage={field.keyPatternMessage}
+                  disabledByDependency={disabledByDependency}
+                  error={fieldErrors[section.key]?.[field.key]}
+                  isEditing={isEditing}
+                  onChange={(val) => handleFieldChange(section.key, field.key, val)}
+                  className={i > 0 ? 'wm-settings-field-separator' : ''}
+                />
+              )
+            })}
             {/* Card #336 — section-specific import affordance. The section is
                 otherwise schema-driven; this is the one slot where the page
                 knows about a capability by name. */}

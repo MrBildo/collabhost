@@ -1,6 +1,7 @@
 import type { FieldEditable, FieldOption, FieldType } from '@/api/types'
 import { cn } from '@/lib/cn'
 import { BooleanField } from './BooleanField'
+import { DependencyBadge } from './DependencyBadge'
 import { DirectoryField } from './DirectoryField'
 import { FormField } from './FormField'
 import { KeyValueField } from './KeyValueField'
@@ -25,6 +26,15 @@ type SchemaFieldProps = {
   // Card #308: server-authoritative key-validation contract for keyvalue fields.
   keyPattern?: string | null
   keyPatternMessage?: string | null
+  // Card #338: dependency-unmet rendering. When set, the field stays visible
+  // (discoverability) but is disabled and the DependencyBadge announces why.
+  // Resolved by AppSettingsPage from the schema-declared DependsOn against the
+  // sibling parent's effective value -- not by SchemaField itself, which has no
+  // sibling-value scope.
+  disabledByDependency?: {
+    parentLabel: string
+    requiredValueLabel: string
+  }
   error?: string
   isEditing: boolean
   onChange: (value: unknown) => void
@@ -76,6 +86,7 @@ function SchemaField({
   unit,
   keyPattern,
   keyPatternMessage,
+  disabledByDependency,
   error,
   isEditing,
   onChange,
@@ -91,11 +102,16 @@ function SchemaField({
   const isLocked = editable.mode === 'locked'
   const isDerived = editable.mode === 'derived'
   const isReadOnly = isLocked || isDerived
-  // keyvalue fields are inherently customized per-app — override badge is noise
-  const hasOverride = !isKeyValue && isOverridden(value, defaultValue)
+  const isDependencyUnmet = !!disabledByDependency
+  // keyvalue fields are inherently customized per-app — override badge is noise.
+  // Card #338: a non-default value that is currently inert is also noise; suppress
+  // the Override badge while dependency-unmet.
+  const hasOverride = !isKeyValue && !isDependencyUnmet && isOverridden(value, defaultValue)
   const fieldId = `field-${fieldKey}`
-  // Restart badge only shows in edit mode for editable fields
-  const showRestartBadge = requiresRestart && isEditing && !isReadOnly
+  // Restart badge only shows in edit mode for editable fields whose value can
+  // actually take effect. Card #338 -- suppress while dependency-unmet (a value
+  // that won't take effect can't trigger a restart either).
+  const showRestartBadge = requiresRestart && isEditing && !isReadOnly && !isDependencyUnmet
 
   const badges = (
     <>
@@ -103,6 +119,12 @@ function SchemaField({
       {isDerived && <LockBadge reason={editable.mode === 'derived' ? editable.reason : ''} />}
       {hasOverride && !isReadOnly && <OverrideBadge />}
       {showRestartBadge && <RestartBadge />}
+      {isDependencyUnmet && (
+        <DependencyBadge
+          parentLabel={disabledByDependency.parentLabel}
+          requiredValueLabel={disabledByDependency.requiredValueLabel}
+        />
+      )}
     </>
   )
 
@@ -154,6 +176,7 @@ function SchemaField({
         onChange,
         compiledKeyPattern,
         keyPatternMessageValue,
+        isDependencyUnmet,
       )}
     </FormField>
   )
@@ -169,6 +192,7 @@ function renderEditField(
   onChange: (value: unknown) => void,
   keyPattern: RegExp | undefined,
   keyPatternMessage: string | undefined,
+  disabled: boolean,
 ): React.ReactNode {
   switch (type) {
     case 'text':
@@ -178,6 +202,7 @@ function renderEditField(
           value={String(value ?? '')}
           onChange={onChange}
           hasError={hasError}
+          disabled={disabled}
           className="max-w-sm"
         />
       )
@@ -189,13 +214,14 @@ function renderEditField(
           value={value as number | null}
           onChange={onChange}
           hasError={hasError}
+          disabled={disabled}
           unit={unit}
           className="max-w-[120px]"
         />
       )
 
     case 'boolean':
-      return <BooleanField id={fieldId} value={!!value} onChange={onChange} />
+      return <BooleanField id={fieldId} value={!!value} onChange={onChange} disabled={disabled} />
 
     case 'select':
       return (
@@ -205,6 +231,7 @@ function renderEditField(
           onChange={onChange}
           options={options ?? []}
           hasError={hasError}
+          disabled={disabled}
           className="max-w-[200px]"
         />
       )
@@ -216,6 +243,7 @@ function renderEditField(
           value={String(value ?? '')}
           onChange={onChange}
           hasError={hasError}
+          disabled={disabled}
           className="max-w-md"
         />
       )
@@ -225,6 +253,7 @@ function renderEditField(
         <KeyValueField
           value={(value as Record<string, string>) ?? {}}
           onChange={onChange}
+          disabled={disabled}
           keyPattern={keyPattern}
           keyPatternMessage={keyPatternMessage}
         />

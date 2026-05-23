@@ -112,7 +112,16 @@ public record SettingsField
     // Server-authoritative: CapabilityResolver.ValidateEdits enforces the same
     // pattern; this carries it to the frontend as a mirror. Card #308.
     string? KeyPattern = null,
-    string? KeyPatternMessage = null
+    string? KeyPatternMessage = null,
+    // Card #338. Mirror of FieldDescriptor.DependsOn -- an effectiveness
+    // predicate (NOT a legality predicate) on a sibling field in the same
+    // section. The runtime (Proxy builder, process runner) is what makes an
+    // inert dependent value inert in served behavior; the FE renders the
+    // dependent field grayed + disabled + badged when the parent is unmet.
+    // Absent on every field that has no schema-declared dependency. The Value
+    // is camelCased at this serialization boundary so it matches the
+    // camelCased option values FE consumers see for Select parents.
+    FieldDependency? DependsOn = null
 );
 
 // --- Action Result ---
