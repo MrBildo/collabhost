@@ -58,7 +58,15 @@ public record AppDetail
     // runtime-derived from COLLABHOST_DATA_PATH, never persisted. The operator
     // points the app's writable config (e.g. a SQLite connection string) at
     // this path so it lands inside the system-scope unit's ReadWritePaths.
-    string WritableDataPath
+    string WritableDataPath,
+    // Detail-page tabs to render for this app, in order. Backend-authoritative
+    // so the FE does not derive tab visibility from appType.slug or actions
+    // shape (which both break when a new AppType lands). Values are lowercase
+    // hyphenated tab identifiers: "logs", "technology", "health", "route".
+    // Resolution lives in AppEndpoints (the slug-switch is the single source
+    // of truth) -- not derived from capability bindings, because tabs are a
+    // UI concern not a domain one. Card #348, D5.
+    IReadOnlyList<string> Tabs
 );
 
 public record AppTypeDetailRef(string Slug, string DisplayName);
@@ -121,7 +129,16 @@ public record SettingsField
     // Absent on every field that has no schema-declared dependency. The Value
     // is camelCased at this serialization boundary so it matches the
     // camelCased option values FE consumers see for Select parents.
-    FieldDependency? DependsOn = null
+    FieldDependency? DependsOn = null,
+    // Card #348. Mirror of FieldDescriptor.Required / ValuePattern /
+    // ValuePatternMessage / MinValue / MaxValue. Absent everywhere these
+    // are unset on the source schema; FE consumers fall back to no
+    // client-side constraint and rely on the server's authoritative check.
+    bool Required = false,
+    string? ValuePattern = null,
+    string? ValuePatternMessage = null,
+    double? MinValue = null,
+    double? MaxValue = null
 );
 
 // --- Action Result ---

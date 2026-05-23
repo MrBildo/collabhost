@@ -19,12 +19,13 @@ public class CapabilityCatalogTests
         "auto-start",
         "artifact",
         "runtime-config-file",
-        "security-headers"
+        "security-headers",
+        "external-target"
     ];
 
     [Fact]
-    public void All_ContainsExactlyTenCapabilities() =>
-        CapabilityCatalog.All.Count.ShouldBe(10);
+    public void All_ContainsExactlyElevenCapabilities() =>
+        CapabilityCatalog.All.Count.ShouldBe(11);
 
     [Theory]
     [MemberData(nameof(AllSlugs))]

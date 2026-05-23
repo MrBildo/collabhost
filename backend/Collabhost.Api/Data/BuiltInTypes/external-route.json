@@ -1,0 +1,29 @@
+{
+  "slug": "external-route",
+  "displayName": "External Route",
+  "description": "Reverse-proxy route to a service Collabhost does not manage (Docker, LAN host, Tailscale, self-hosted upstream).",
+  "bindings": {
+    "external-target": {
+      "host": "",
+      "port": 0,
+      "scheme": "http"
+    },
+    "routing": {
+      "domainPattern": "{slug}.{baseDomain}",
+      "serveMode": "ReverseProxy",
+      "spaFallback": false
+    },
+    "health-check": {
+      "endpoint": "/health",
+      "intervalSeconds": 30,
+      "timeoutSeconds": 5
+    },
+    "security-headers": {
+      "enableHsts": false,
+      "hstsMaxAgeSeconds": 300,
+      "headers": {
+        "X-Content-Type-Options": "nosniff"
+      }
+    }
+  }
+}

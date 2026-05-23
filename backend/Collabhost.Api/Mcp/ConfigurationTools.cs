@@ -27,6 +27,7 @@ public class ConfigurationTools
     ProcessSupervisor supervisor,
     ProxyManager proxy,
     ProxySettings proxySettings,
+    ExternalTargetSettings externalTargetSettings,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
     McpRequestAuthenticator authenticator,
@@ -47,6 +48,12 @@ public class ConfigurationTools
 
     private readonly ProxySettings _proxySettings = proxySettings
         ?? throw new ArgumentNullException(nameof(proxySettings));
+
+    // Card #348, D3. Threaded into CapabilityResolver.ValidateEdits when the
+    // section under edit is external-target so the host-pattern check honors
+    // the operator's public-hosts opt-in.
+    private readonly ExternalTargetSettings _externalTargetSettings = externalTargetSettings
+        ?? throw new ArgumentNullException(nameof(externalTargetSettings));
 
     private readonly ICurrentUser _currentUser = currentUser
         ?? throw new ArgumentNullException(nameof(currentUser));
@@ -317,7 +324,7 @@ public class ConfigurationTools
 
             var validationErrors = CapabilityResolver.ValidateEdits
             (
-                sectionKey, proposedOverrides, false
+                sectionKey, proposedOverrides, false, _externalTargetSettings.AllowPublicHosts
             );
 
             if (validationErrors.Count > 0)

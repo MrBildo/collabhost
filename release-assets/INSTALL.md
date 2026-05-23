@@ -969,7 +969,101 @@ platform-provided `writableDataPath` for everything the app writes. The
 artifact path is cheap to walk away from later because nothing in Collabhost
 is keyed on it.
 
-### 5.7 MCP client setup
+### 5.7 External-route apps (services Collabhost does not run)
+
+The `external-route` app type (added in card #348) lets you front a service
+Collabhost does NOT manage with a `{slug}.<base-domain>` URL: a Docker
+container running on the same host, a LAN machine, a Tailscale-fronted host,
+a self-hosted upstream that pre-dates Collabhost. The platform handles the
+hostname + TLS termination via Caddy; the upstream itself stays where it is.
+
+There is no install directory, no process to start, no auto-restart — the
+lifecycle the operator sees is enable-route / disable-route. Health checks
+run from the Collabhost process to the operator-declared host:port.
+
+**Registration (REST):**
+
+```bash
+# Example: front a Crawl4AI Docker container running on localhost:11235 with
+# a crawl4ai.collab.internal URL on a default install.
+curl -X POST https://collabhost.collab.internal/api/v1/apps \
+  -H "X-User-Key: $COLLABHOST_AUTH_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "crawl4ai",
+    "displayName": "Crawl4AI",
+    "appTypeSlug": "external-route",
+    "values": {
+      "external-target": {
+        "host": "localhost",
+        "port": 11235,
+        "scheme": "http"
+      }
+    }
+  }'
+```
+
+**Registration (MCP):**
+
+```jsonc
+// tools/call register_app
+{
+  "name": "Crawl4AI",
+  "appTypeSlug": "external-route",
+  "installDirectory": null,            // optional for external-route -- no install dir
+  "settings": "{\"external-target\":{\"host\":\"localhost\",\"port\":11235,\"scheme\":\"http\"}}",
+  "authKey": "..."                     // per-bot Collabhost user key
+}
+```
+
+The route auto-enables at registration (there is no "build artifact" step to
+gate it on, unlike `static-site`). Operators who want to take an external-route
+offline use `stop_app` to disable the route; `start_app` re-enables it.
+
+**Host restrictions and the `ExternalTarget:AllowPublicHosts` opt-in:**
+
+By default, the platform restricts the `host` field on `external-target` to
+loopback / RFC1918 / link-local IPv4 / `*.local` / `*.lan` / IPv6 loopback.
+This is the "homelab + container + Tailscale" audience; the first operator
+who tries to register `api.openai.com` as an upstream discovers the platform
+has an opinion.
+
+To front a public hostname (a SaaS upstream you want behind a
+`{slug}.collab.<domain>` route), opt in:
+
+```jsonc
+// appsettings.json
+{
+  "ExternalTarget": {
+    "AllowPublicHosts": true
+  }
+}
+```
+
+Or via env var: `COLLABHOST_EXTERNAL_TARGET_ALLOW_PUBLIC_HOSTS=true`. With
+the flag on, the strict-anchor host pattern is bypassed; a permissive
+hostname-shape check still rejects whitespace / blanks / illegal characters.
+
+**`scheme` field:**
+
+- `http` (default) — Caddy reaches the upstream over plain HTTP. The right
+  pick for LAN / container / Tailscale upstreams; Caddy handles the
+  public-cert side.
+- `https` — Caddy speaks TLS to the upstream. Required only when the upstream
+  itself terminates TLS (a self-signed endpoint behind Tailscale, a SaaS
+  hostname). Caddy uses the system trust store to verify the upstream cert.
+
+**Health-check semantic caveat:**
+
+The probe runs from inside the Collabhost process to the external host:port;
+Caddy then also reaches the same host:port at request time. In a default
+install, these paths are identical. The narrow case where they could diverge
+is a Docker-with-host-networking setup where Collabhost-host and the
+supervised Caddy share a network namespace with subtle differences. If you
+see a healthy probe but failing user-facing requests (or vice versa), this
+is where to look first.
+
+### 5.8 MCP client setup
 
 Collabhost exposes a Model Context Protocol (MCP) server at
 `https://collabhost.<base-domain>/mcp` for agent clients (Claude Code,

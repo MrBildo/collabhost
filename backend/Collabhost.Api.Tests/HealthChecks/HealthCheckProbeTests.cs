@@ -34,7 +34,9 @@ public class HealthCheckProbeTests
         var result = await probe.ProbeAsync
         (
             "test-app",
+            "localhost",
             5000,
+            "http",
             new HealthCheckConfiguration { Endpoint = "/health", IntervalSeconds = 30, TimeoutSeconds = 5 },
             CancellationToken.None
         );
@@ -57,7 +59,9 @@ public class HealthCheckProbeTests
         var result = await probe.ProbeAsync
         (
             "test-app",
+            "localhost",
             5000,
+            "http",
             new HealthCheckConfiguration { Endpoint = "/health", IntervalSeconds = 30, TimeoutSeconds = 5 },
             CancellationToken.None
         );
@@ -74,7 +78,9 @@ public class HealthCheckProbeTests
         var result = await probe.ProbeAsync
         (
             "test-app",
+            "localhost",
             5000,
+            "http",
             new HealthCheckConfiguration { Endpoint = "/health", IntervalSeconds = 30, TimeoutSeconds = 5 },
             CancellationToken.None
         );
@@ -91,7 +97,9 @@ public class HealthCheckProbeTests
         var result = await probe.ProbeAsync
         (
             "test-app",
+            "localhost",
             5000,
+            "http",
             new HealthCheckConfiguration { Endpoint = "/health", IntervalSeconds = 30, TimeoutSeconds = 5 },
             CancellationToken.None
         );
@@ -114,7 +122,9 @@ public class HealthCheckProbeTests
         var result = await probe.ProbeAsync
         (
             "test-app",
+            "localhost",
             5000,
+            "http",
             new HealthCheckConfiguration { Endpoint = "/health", IntervalSeconds = 30, TimeoutSeconds = 1 },
             CancellationToken.None
         );
@@ -136,7 +146,9 @@ public class HealthCheckProbeTests
         await probe.ProbeAsync
         (
             "test-app",
+            "localhost",
             5000,
+            "http",
             new HealthCheckConfiguration { Endpoint = "", IntervalSeconds = 30, TimeoutSeconds = 5 },
             CancellationToken.None
         );
@@ -157,7 +169,9 @@ public class HealthCheckProbeTests
         await probe.ProbeAsync
         (
             "test-app",
+            "localhost",
             5000,
+            "http",
             new HealthCheckConfiguration { Endpoint = "status/ready", IntervalSeconds = 30, TimeoutSeconds = 5 },
             CancellationToken.None
         );

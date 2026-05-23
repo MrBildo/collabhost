@@ -67,6 +67,12 @@ public static class CapabilityCatalog
                 typeof(SecurityHeadersConfiguration),
                 SecurityHeadersConfiguration.Schema
             ),
+            ["external-target"] = new
+            (
+                "External Target",
+                typeof(ExternalTargetConfiguration),
+                ExternalTargetConfiguration.Schema
+            ),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public static CapabilityDefinition? Get(string slug) =>

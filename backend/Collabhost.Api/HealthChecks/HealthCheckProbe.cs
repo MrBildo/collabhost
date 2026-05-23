@@ -21,12 +21,16 @@ public class HealthCheckProbe(HttpClient httpClient, TimeProvider timeProvider, 
     public async Task<HealthCheckResult> ProbeAsync
     (
         string slug,
+        string host,
         int port,
+        string scheme,
         HealthCheckConfiguration configuration,
         CancellationToken ct
     )
     {
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentException.ThrowIfNullOrWhiteSpace(scheme);
 
         var endpoint = string.IsNullOrWhiteSpace(configuration.Endpoint)
             ? "/health"
@@ -40,7 +44,9 @@ public class HealthCheckProbe(HttpClient httpClient, TimeProvider timeProvider, 
         var url = string.Format
         (
             CultureInfo.InvariantCulture,
-            "http://localhost:{0}{1}",
+            "{0}://{1}:{2}{3}",
+            scheme,
+            host,
             port,
             endpoint
         );

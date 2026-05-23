@@ -597,11 +597,52 @@ public class ProxyManager
             }
 
             int? port = null;
+            string? externalDial = null;
+            string? externalScheme = null;
 
             if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
             {
-                var managedProcess = _processSupervisor.GetProcess(app.Id);
-                port = managedProcess?.Port;
+                // External-route apps (Card #348): the upstream is operator-
+                // declared, not Collabhost-supervised. Mirrors the static-site
+                // "artifact location is not configured" skip-with-warning
+                // shape so misconfigured external-route apps surface the same
+                // way to the operator -- the route disappears from the proxy
+                // config and the warning hits the log.
+                if (_typeStore.HasBinding(app.AppTypeSlug, "external-target"))
+                {
+                    var target = await _capabilityStore.ResolveAsync<ExternalTargetConfiguration>
+                    (
+                        "external-target", app, ct
+                    );
+
+                    if (target is null
+                        || string.IsNullOrWhiteSpace(target.Host)
+                        || target.Port <= 0)
+                    {
+                        _logger.LogWarning
+                        (
+                            "Skipping route for '{Slug}' -- external-target host or port is not configured",
+                            app.Slug
+                        );
+
+                        continue;
+                    }
+
+                    externalDial = string.Format
+                    (
+                        CultureInfo.InvariantCulture,
+                        "{0}:{1}",
+                        target.Host,
+                        target.Port
+                    );
+
+                    externalScheme = target.Scheme;
+                }
+                else
+                {
+                    var managedProcess = _processSupervisor.GetProcess(app.Id);
+                    port = managedProcess?.Port;
+                }
             }
 
             string? artifactDirectory = null;
@@ -678,7 +719,9 @@ public class ProxyManager
                     artifactDirectory,
                     enabled,
                     responseHeaders,
-                    securityHeaders
+                    securityHeaders,
+                    externalDial,
+                    externalScheme
                 )
             );
         }
