@@ -88,7 +88,7 @@ type ProbeEntry =
   | { type: 'executable'; label: string; data: ExecutableProbe }
   | { type: string; label: string; data: Record<string, unknown> }
 
-type FieldType = 'text' | 'number' | 'boolean' | 'select' | 'directory' | 'keyValue' | 'keyvalue'
+type FieldType = 'text' | 'number' | 'boolean' | 'select' | 'directory' | 'keyvalue'
 
 type FieldEditable = { mode: 'always' } | { mode: 'locked'; reason: string } | { mode: 'derived'; reason: string }
 
