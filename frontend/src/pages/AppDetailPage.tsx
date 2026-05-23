@@ -16,7 +16,7 @@ import { LOG_BUFFER_CAP } from '@/lib/constants'
 import { formatDateTime, formatHealthStatus, formatMemory, formatUptime } from '@/lib/format'
 import { formatActionError } from '@/lib/format-action-error'
 import { ROUTES } from '@/lib/routes'
-import type { LogStream } from '@/log/LogViewer'
+import type { LogStream, StreamMode } from '@/log/LogViewer'
 import { LogViewer } from '@/log/LogViewer'
 import { ProbeSection } from '@/probes/ProbeSection'
 import { DetailCard } from '@/shared/DetailCard'
@@ -39,6 +39,13 @@ function AppDetailPage() {
 
   const logStream$ = useLogStream(slug ?? '', { resetKey: detailQuery.data?.status })
   const isUsingSSE = logStream$.entries.length > 0 || logStream$.isConnected
+
+  // Operator-visible feed mode (#321 — Bill's ruling: surface degraded states):
+  // - 'live'         — SSE open AND we're displaying its entries
+  // - 'reconnecting' — committed to SSE (entries cached) but disconnected;
+  //                    the ~45s liveness-net window when nothing is live
+  // - 'polling'      — SSE never produced entries; useAppLogs is the source
+  const streamMode: StreamMode = isUsingSSE ? (logStream$.isConnected ? 'live' : 'reconnecting') : 'polling'
 
   const logsQuery = useAppLogs(slug ?? '', {
     stream: logStream === 'all' ? undefined : logStream,
@@ -305,6 +312,7 @@ function AppDetailPage() {
           totalBuffered={totalBuffered}
           stream={logStream}
           onStreamChange={setLogStream}
+          streamMode={streamMode}
           className="flex-1"
         />
       )}
