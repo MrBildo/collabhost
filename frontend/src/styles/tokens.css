@@ -88,4 +88,10 @@
 
   /* Topbar height */
   --wm-topbar-height: 48px;
+
+  /* Stream-surface min-height (log viewer + event list, #340).
+   * Generous floor so neither surface compacts on shorter viewports;
+   * page main-scrolls past the viewport when the floor is exceeded.
+   * Both surfaces remain internally scrollable. */
+  --wm-stream-min-height: 480px;
 }

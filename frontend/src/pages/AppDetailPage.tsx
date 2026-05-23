@@ -202,7 +202,7 @@ function AppDetailPage() {
     : []
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div className="flex flex-col">
       {/* Breadcrumbs */}
       <Breadcrumbs
         segments={[{ label: 'Apps', to: ROUTES.apps }, { label: app.displayName }]}
@@ -313,7 +313,6 @@ function AppDetailPage() {
           stream={logStream}
           onStreamChange={setLogStream}
           streamMode={streamMode}
-          className="flex-1"
         />
       )}
       {activeTab === 'technology' && <ProbeSection probes={app.probes} />}
