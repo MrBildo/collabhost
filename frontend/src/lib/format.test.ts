@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   formatBytes,
   formatEnumLabel,
+  formatHealthStatus,
   formatMemory,
   formatProxyState,
   formatStatus,
@@ -81,6 +82,38 @@ describe('formatStatus', () => {
     expect(formatStatus('restarting')).toBe('Restarting')
     expect(formatStatus('backoff')).toBe('Backoff')
     expect(formatStatus('fatal')).toBe('Fatal')
+  })
+})
+
+describe('formatHealthStatus', () => {
+  test('formats managed-app statuses with healthy/unhealthy labels', () => {
+    expect(formatHealthStatus('healthy')).toBe('Healthy')
+    expect(formatHealthStatus('unhealthy')).toBe('Unhealthy')
+    expect(formatHealthStatus('degraded')).toBe('Degraded')
+    expect(formatHealthStatus('unknown')).toBe('Unknown')
+  })
+
+  test('formats managed-app statuses when slug is a known managed type', () => {
+    expect(formatHealthStatus('healthy', 'dotnet-app')).toBe('Healthy')
+    expect(formatHealthStatus('unhealthy', 'nodejs-app')).toBe('Unhealthy')
+    expect(formatHealthStatus('healthy', 'static-site')).toBe('Healthy')
+    expect(formatHealthStatus('healthy', 'executable')).toBe('Healthy')
+    expect(formatHealthStatus('healthy', 'system-service')).toBe('Healthy')
+  })
+
+  test('formats external-route statuses with reachable/unreachable labels (Card #348 D6)', () => {
+    expect(formatHealthStatus('healthy', 'external-route')).toBe('Reachable')
+    expect(formatHealthStatus('unhealthy', 'external-route')).toBe('Unreachable')
+  })
+
+  test('preserves degraded and unknown labels for external-route (only reachability splits)', () => {
+    expect(formatHealthStatus('degraded', 'external-route')).toBe('Degraded')
+    expect(formatHealthStatus('unknown', 'external-route')).toBe('Unknown')
+  })
+
+  test('falls back to managed labels for an unknown slug', () => {
+    expect(formatHealthStatus('healthy', 'some-future-type')).toBe('Healthy')
+    expect(formatHealthStatus('unhealthy', 'some-future-type')).toBe('Unhealthy')
   })
 })
 

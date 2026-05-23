@@ -68,10 +68,13 @@ function makeAppDetail(overrides: Partial<AppDetail> = {}): AppDetail {
     domain: null,
     domainActive: false,
     healthStatus: null,
+    probesStatus: 'never-probed',
     probes: [],
     resources: null,
     route: null,
     actions: { canStart: false, canStop: true, canRestart: true, canKill: true },
+    writableDataPath: '/var/lib/collabhost/data/app-data/my-api',
+    tabs: ['logs', 'technology'],
     ...overrides,
   }
 }
@@ -174,5 +177,76 @@ describe('AppDetailPage action-error banner', () => {
     render(<AppDetailPage />)
 
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('AppDetailPage tabs (Card #348 D5)', () => {
+  beforeEach(() => {
+    setupDefaults()
+  })
+
+  test('renders Logs + Technology tabs for a managed app (default backend shape)', () => {
+    render(<AppDetailPage />)
+
+    expect(screen.getByRole('button', { name: 'Logs' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Technology' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Health' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Route' })).toBeNull()
+  })
+
+  test('renders Health + Route tabs for an external-route app, hides Logs/Technology', () => {
+    mockUseAppDetail.mockReturnValue({
+      data: makeAppDetail({
+        appType: { slug: 'external-route', displayName: 'External Route' },
+        tabs: ['health', 'route'],
+        pid: null,
+        port: null,
+        route: { domain: 'crawl4ai.collab.internal', target: 'http://192.168.1.50:11235', tls: true },
+        healthStatus: 'healthy',
+      }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppDetail>)
+
+    render(<AppDetailPage />)
+
+    expect(screen.getByRole('button', { name: 'Health' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Route' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Logs' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Technology' })).toBeNull()
+  })
+
+  test('renders external-route health label as "Reachable" (Card #348 D6 terminology split)', () => {
+    mockUseAppDetail.mockReturnValue({
+      data: makeAppDetail({
+        appType: { slug: 'external-route', displayName: 'External Route' },
+        tabs: ['health', 'route'],
+        pid: null,
+        port: null,
+        healthStatus: 'healthy',
+      }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppDetail>)
+
+    render(<AppDetailPage />)
+
+    // External-route's stats strip shrinks to Uptime + Health; the cell value
+    // is the terminology-split label, not "Healthy".
+    expect(screen.getAllByText('Reachable').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Healthy')).toBeNull()
+  })
+
+  test('falls back to [logs, technology] when backend tabs field is empty (defensive)', () => {
+    mockUseAppDetail.mockReturnValue({
+      data: makeAppDetail({ tabs: [] }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppDetail>)
+
+    render(<AppDetailPage />)
+
+    expect(screen.getByRole('button', { name: 'Logs' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Technology' })).toBeInTheDocument()
   })
 })
