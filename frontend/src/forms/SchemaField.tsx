@@ -81,7 +81,7 @@ function SchemaField({
   onChange,
   className,
 }: SchemaFieldProps) {
-  const isKeyValue = type === 'keyValue' || type === 'keyvalue'
+  const isKeyValue = type === 'keyvalue'
   const compiledKeyPattern = compileKeyPattern(keyPattern)
   // The pattern and its message are a pair. If no pattern is in effect (absent,
   // null, or a malformed source that failed to compile), the message must also
@@ -91,7 +91,7 @@ function SchemaField({
   const isLocked = editable.mode === 'locked'
   const isDerived = editable.mode === 'derived'
   const isReadOnly = isLocked || isDerived
-  // keyValue fields are inherently customized per-app — override badge is noise
+  // keyvalue fields are inherently customized per-app — override badge is noise
   const hasOverride = !isKeyValue && isOverridden(value, defaultValue)
   const fieldId = `field-${fieldKey}`
   // Restart badge only shows in edit mode for editable fields
@@ -108,7 +108,7 @@ function SchemaField({
 
   // Read mode or locked/derived fields -- show plain text
   if (!isEditing || isReadOnly) {
-    // keyValue type gets its own read rendering
+    // keyvalue type gets its own read rendering
     if (isKeyValue) {
       const kvValue = (value as Record<string, string>) ?? {}
       return (
@@ -220,7 +220,6 @@ function renderEditField(
         />
       )
 
-    case 'keyValue':
     case 'keyvalue':
       return (
         <KeyValueField

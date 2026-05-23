@@ -132,7 +132,6 @@ function renderField(
         />
       )
 
-    case 'keyValue':
     case 'keyvalue':
       return <KeyValueField value={(value as Record<string, string>) ?? {}} onChange={onChange} />
   }
