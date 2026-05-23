@@ -67,7 +67,7 @@ The runbook supports BOTH shapes:
 - **Single-bot, one session.** One operator-bot runs all four legs (WSL2-user → WSL2-system → Windows-user → Windows-system) in sequence in one session. The §7 cross-leg sanity assertion fires only in this shape — it requires the same observer across all four legs to compare version strings and boot-time order-of-magnitude.
 - **Multi-bot, multi-session.** Different operator-bots run different legs on different hosts across multiple sessions, composing into one card per release. The skill protocol (when built) will say "if a UAT card for this version exists and is partial, resume from it; do not start over." Until then, the convention is: one card per release; each operator appends their leg's results; the last operator flips the verdict.
 
-A full pass across WSL2 × Windows × user × system × four app types is **at least a half-day**, probably more for a first run. Multi-session is the realistic shape; single-session is the exception.
+A full pass across WSL2 × Windows × user × system × five app types is **at least a half-day**, probably more for a first run. Multi-session is the realistic shape; single-session is the exception.
 
 ### What "right looks like" — concrete anchors
 
@@ -138,14 +138,15 @@ For every leg:
 5. **Browser-verify dashboard landing** per §0.
 6. **Browser-verify `/api/v1/version`** matches the release archive's version string.
 
-### 2. Built-in app types — the four legs of registration
+### 2. Built-in app types — the five legs of registration
 
-For each of the four legs, register **all four** built-in app types in this order:
+For each of the four install legs, register **all five** built-in app types in this order:
 
-1. **`static-site`** — simplest; no process, no port allocation. If this fails, the proxy / routing stack is broken and the other three will too.
-2. **`executable`** — process + port-injection + reverse-proxy, but `Manual` strategy (no discovery). Validates the supervisor surface independent of language-specific discovery.
-3. **`dotnet-app`** — process + `DotNetRuntimeConfiguration` discovery + ASP.NET-default env vars.
-4. **`nodejs-app`** — process + `PackageJson` discovery + npm-based shape.
+1. **`static-site`** — simplest; no process, no port allocation. If this fails, the proxy / routing stack is broken and the other four will too.
+2. **`external-route`** — no process, no port allocation, no artifact. Routing-only against an operator-declared upstream. Exercises the second routing-only shape early so a regression in `BuildReverseProxyRoute`'s `ExternalDial` branch surfaces before the process-bearing types muddy the signal. (Card #348.)
+3. **`executable`** — process + port-injection + reverse-proxy, but `Manual` strategy (no discovery). Validates the supervisor surface independent of language-specific discovery.
+4. **`dotnet-app`** — process + `DotNetRuntimeConfiguration` discovery + ASP.NET-default env vars.
+5. **`nodejs-app`** — process + `PackageJson` discovery + npm-based shape.
 
 This order is "least machinery to most machinery." A failure at step N localizes the bug to the surface added between step N-1 and step N.
 
@@ -156,6 +157,7 @@ Fixtures are built from checked-in recipes at `docs/uat-fixtures/recipes/<app-ty
 | App type | Fixture shape | Capability surfaces exercised |
 |---|---|---|
 | `static-site` | A directory containing `index.html` + at least one CSS file + at least one image asset. Optionally `config.json` to exercise `runtime-config-file`. | `FileServer` mode + `responseHeaders` + `runtime-config-file` (when `config.json` present) |
+| `external-route` | NO directory — the fixture is a side-process the operator launches on the test box. Suggested: `python -m http.server 11235` from a directory containing an `index.html` + a `health` file (so the configured `/health` probe returns 200). Self-contained; no Docker dependency. The registration target is `host: localhost`, `port: 11235`, `scheme: http`. | `external-target` (host + port + scheme) + `routing` (`ReverseProxy` mode, `ExternalDial` branch) + `health-check` (probes the external target, not localhost-of-Collabhost-process) + `security-headers`. NO process, NO port-injection, NO artifact, NO restart, NO auto-start. |
 | `executable` | A directory containing one self-contained binary that listens on `$PORT` and serves HTTP on `/` and a `/health` GET. Tiny Go or Rust binary preferred. | Supervisor + port-injection (`PORT` env var, bare integer) + reverse-proxy |
 | `dotnet-app` | An ASP.NET Core publish output directory (`dotnet publish` of a minimal API). The `*.runtimeconfig.json` file at the root is the discoverable signal. | `DotNetRuntimeConfiguration` discovery + `ASPNETCORE_URLS` injection + `health-check` capability default at `/health` |
 | `nodejs-app` | A directory containing `package.json` with a `"start"` script + the necessary `node_modules/` (or a recipe to `npm install` before registering). | `PackageJson` discovery + `PORT` injection (bare integer) + `health-check` capability |
@@ -198,7 +200,7 @@ For each app type, in the dashboard:
 
 **Per-app `/etc/hosts` precondition (card #345):** the documented `install.sh` / `install.ps1` paths handle the Portal hostname (`collabhost.collab.internal`) but **not** per-app subdomains (`<slug>.collab.internal`). The operator must add the per-app entry to `/etc/hosts` (Linux) or `%SystemRoot%\System32\drivers\etc\hosts` (Windows) before §6 routing assertions can pass against the real domain. Operator-UX friction point tracked for future install-script work.
 
-After all four app types are registered, the app list (`AppListPage`) should show four rows with the four slugs. Stats strip on the Dashboard shows `total: 4, running: 0, stopped: 4` (or stopped-equivalent for the static site).
+After all five app types are registered, the app list (`AppListPage`) should show five rows with the five slugs. Stats strip on the Dashboard shows `total: 5`. Per D8 (Card #348), the `external-route` app is **auto-enabled at registration** — its row reads `running` (route-enabled) immediately, distinct from the other four types which start `stopped`. Expected snapshot: `total: 5, running: 1 (external-route), stopped: 4`.
 
 ### 3. Per-app-type lifecycle assertions
 
@@ -329,6 +331,59 @@ When the `executable` fixture is a self-contained `.NET` publish (the ambiguous 
 
 Assert: the banner renders AND its text content matches the string above (case-sensitive).
 
+#### 3.4 `external-route` (no process — route to a service Collabhost does not run)
+
+`external-route` is the second routing-only AppType. Unlike `static-site`, the route points at an operator-declared upstream `host:port` instead of a local artifact directory. Lifecycle is identical to `static-site` (enable/disable route, no start/stop process) with one difference: per D8, the route is **auto-enabled at registration**, so `status == "running"` from the moment the operator gets a 200 back from `POST /api/v1/apps`.
+
+**Pre-flight: side process running.** Before registration, the operator launches the fixture upstream on the test box. With the suggested Python fixture: `cd <fixture-dir> && python -m http.server 11235` in a separate tmux pane / PowerShell window. Verify `curl http://localhost:11235/health` returns 200 from the test box before registering. If the upstream isn't reachable from the box at registration time, the health probe will start firing `unhealthy` (terminology-rendered as `Unreachable` per D6) and the operator chases a Collabhost bug that isn't there.
+
+**Registration (private-only by default — D3):**
+
+- Register via dashboard `/apps/new` → 6th tile (`External Route`) → fill `external-target.host`, `external-target.port`, `external-target.scheme`.
+- Submit with `host: localhost`, `port: 11235`, `scheme: http`. Expect 200; redirect to `/apps/<slug>`.
+- Activity log: `app.created` event written (per Kai's #348 PR-230 review C-1, the absence of an `app.started` event on auto-enable is documented behavior, not a regression — record what is observed without asserting `app.started`).
+
+**Negative path — private-only validation rejects a public host (D3):**
+
+- Attempt to register a second external-route with `host: api.openai.com`. With `ExternalTargetSettings.AllowPublicHosts == false` (the default), the API rejects with a 400 carrying `ExternalTargetHostPatternMessage` ("Host must be localhost, 127.0.0.1, ::1, an RFC1918 / link-local IPv4 address, or a *.local / *.lan hostname. To front a public hostname, set ExternalTarget:AllowPublicHosts = true in appsettings.").
+- Update `appsettings.json` to set `"ExternalTarget": { "AllowPublicHosts": true }`. Restart Collabhost (per §6.3 per-leg restart shape).
+- Re-attempt the `api.openai.com` registration. Expect 200. Note: the fallback `PermissiveHostnamePattern` still rejects whitespace and structurally-invalid hosts — try `host: " not valid "` to confirm.
+- **Tear down the opt-in before continuing:** revert the `AppSettingsSection` change; restart. The default-private posture is the supported steady state for the rest of the UAT pass.
+
+**Route emission (the F-1 / F-2 surface — verify directly):**
+
+- `GET /api/v1/routes` row for the slug: `target` is the operator-declared `host:port` (e.g. `localhost:11235`), **NOT** `"not-running"` or `localhost:0`. Per Kai's #348 PR-230 review F-1 (folded into the polish round), the `target` column synthesis honors `ExternalDial` for external-route apps. A regression that surfaces `"not-running"` on the Routes page for a live external-route is the exact symmetric-bug the F-1/F-2 fix-along closed.
+- MCP `list_routes` returns the same shape — `target: "localhost:11235"`. Mirror assertion to F-2.
+- Caddy admin API (`http://localhost:<adminPort>/config/apps/http/servers/.../routes`) carries the route with `@id: "route_<slug>"` and `handle[0].handler: "reverse_proxy"`, `handle[0].upstreams[0].dial: "localhost:11235"` — NOT `"localhost:0"`. **The dial pre-resolution is the load-bearing change.**
+- For an `https` upstream fixture (skip on standard UAT; exercise once when a TLS upstream is available): the emitted Caddy config carries the `transport` block with an empty `tls` object (Card #348 D2).
+
+**Actual serving:** `curl -k https://<slug>.collab.internal/` returns the Python `http.server` directory listing. Per-app `/etc/hosts` precondition per §2.2.
+
+**Health check (D6 terminology split):**
+
+- `/api/v1/apps/{slug}.healthStatus` populates within ~1.5× the configured `intervalSeconds` (default 30s). The backend enum value is `healthy / unhealthy / degraded / unknown` (unchanged from managed apps — the wire shape is uniform per the cross-tier discipline).
+- **Browser-verify the rendered label.** On App Detail, the Health tab + the stats-strip Health cell render `Reachable` / `Unreachable` / `Degraded` / `Unknown` for external-route — NOT `Healthy` / `Unhealthy`. The split is FE display formatting (`formatHealthStatus(status, appTypeSlug)` in `lib/format.ts`). A regression that renders `Healthy` for an external-route is a frontend bug (the formatter discriminator failed).
+- Probe target verification: the probe URL is `http://localhost:11235/health`, NOT `http://localhost:<some-collabhost-port>/health`. The split between supervised-process probes (probe Collabhost's allocated port) and external-target probes (probe the operator-declared host:port) is the §9 health-check refactor. Capture the probe's stdout on the Python fixture to confirm — the fixture should log a GET to `/health` on the cadence.
+- **Disabled-route → probe halts.** Disable the route (`POST /api/v1/apps/{slug}/stop` → `EnableRoute(slug) == false`). The probe stops firing (gate-condition in `HealthCheckExecutorService.TickAsync`); the `latest` cache for this app is cleared; `healthStatus` reads `null`. Re-enable; probes resume.
+
+**`tabs` DTO drives App Detail tab strip (D5):**
+
+- Navigate to `/apps/{slug}`. The tab strip shows exactly two tabs: `Health` and `Route`. The `Logs` and `Technology` tabs are **absent** — external-route has no process to stream logs from and no probe extractors that apply.
+- Stats strip shrinks: shows `Uptime` + `Health` only. The process-bound cells (PID / Port / Restarts / Memory) are absent — there is no process to measure.
+- Health tab content: renders the terminology-split label with about-this-probe copy. Route tab content: renders Domain / Upstream / TLS rows with the operator-declared values.
+- A regression that surfaces `Logs` / `Technology` tabs for external-route is a frontend bug (the `tabs` field was ignored).
+
+**Type picker (D7):**
+
+- Navigate to `/apps/new`. The type-picker grid shows 6 tiles (the 5 prior types + `External Route`). The tile description text reads "Reverse-proxy route to a service Collabhost does not manage (Docker, LAN host, Tailscale, self-hosted upstream)." (or whichever copy is on the wire from `Data/BuiltInTypes/external-route.json` `description`).
+- A regression that omits the tile means `GET /api/v1/app-types` is not returning the new built-in (the embedded resource load broke).
+
+**Restart-from-stopped:** `POST /api/v1/apps/{slug}/start` again. Verify route re-appears, the upstream serves through Caddy, the probe resumes.
+
+**Restart / Kill:** External-route has neither (`AppActions.CanRestart: false`, `CanKill: false`). Assert the API rejects these calls with the expected 409 InvalidOperationException-mapped error (not a 500).
+
+**Delete:** Same path as the other types. The route is torn down explicitly via the §13 fix-along (`AppEndpoints.DeleteAppAsync` calls `proxy.DisableRoute(slug)` + `RequestSync()` before the EF delete, closing the small window where Caddy still routes to a deleted app). For MCP `delete_app`, Kai's PR-230 review C-2 noted the symmetric fix-along did NOT land in MCP — `RegistrationTools.DeleteAppAsync` does not call `DisableRoute`. Test the REST delete path on the runbook; surface a finding if a follow-up makes the MCP path symmetric.
+
 ### 4. Detect-strategy suggestion verification
 
 `GET /api/v1/filesystem/detect-strategy?path=<absolute>&appTypeSlug=<slug>` returns `DetectStrategyResponse(SuggestedStrategy, paths[])` per `FilesystemEndpoints.DetectStrategy`. The strategy comes from `ArtifactEvidenceCollector.Collect`.
@@ -358,6 +413,7 @@ Assert: the banner renders AND its text content matches the string above (case-s
 | `executable` | Looks like single-file .NET publish | Signal attribute `isManagedDotnet: true` — surfaces the §3.3 nudge | varies |
 | `executable` | No executables | `Manual` + empty signals | `[]` |
 | (any) | Empty directory | `Manual` (or `NotApplicable` for static) | `[]` |
+| `external-route` | (no path field — no `artifact` capability) | N/A — the registration form has no discovery section because the `external-target` capability supplies the upstream directly. The detect-strategy endpoint is not called. | N/A |
 
 **Verification flow (per app type, per leg):**
 
@@ -376,6 +432,7 @@ Each app type emits probe data per `Probes/_ApiContracts.cs`. The frontend rende
 | `nodejs-app` | `NodeData` (engine, package manager, module system, dep counts) + optionally `ReactData` / `TypeScriptData` if detected | "Node" panel + "React" panel (if React detected) + "TypeScript" panel (if TS detected) |
 | `static-site` | `StaticSiteData` (HasIndexHtml, HtmlFileCount, TotalAssetBytes, HasNestedAssets) | "Static Site" panel |
 | `executable` | `ExecutableData` (BinaryName, BinarySizeBytes, CandidateBinaryCount, IsManagedDotnet) | "Executable" panel + nudge banner if `IsManagedDotnet` (see §3.3 for the frozen banner wording) |
+| `external-route` | — | **No probe panel.** External-route has no artifact directory to extract from; the `tabs` field omits `technology`, so the probe section never renders. `probesStatus` is `not-applicable`. The Technology tab is absent from the AppDetail tab strip entirely — there is no empty-state copy because there is no surface to render the empty state into. |
 | `system-service` | — | **Out of scope for this runbook today.** `system-service` is a registered AppType but no fixture is in the §2.1 set. Probe contract returns `ProbeCacheStatus.NotApplicable`. If a future release adds probe behavior for system-service apps, extend §2.1 + this table in the same PR. Placeholder anchor for the eventual addition. |
 
 #### 5.1 The four `ProbeCacheStatus` states
@@ -407,19 +464,22 @@ For each registered app, navigate to `/apps/{slug}` and assert:
 
 #### 6.1 Activity log assertion
 
-After all four apps complete §3 lifecycle, `GET /api/v1/events` should carry an event sequence per app — `registered` → `started` → (health-check-passed?) → `stopped` → `restarted` → `deleted`. Browser-verify the events feed on Dashboard renders the recent activity.
+After all five apps complete §3 lifecycle, `GET /api/v1/events` should carry an event sequence per app — `registered` → `started` → (health-check-passed?) → `stopped` → `restarted` → `deleted`. Browser-verify the events feed on Dashboard renders the recent activity.
 
 For static-site: `app.started` fires even though there's no process — the activity event represents intent + route enablement.
+
+For external-route: per Kai's #348 PR-230 review C-1 (intentional, documented behavior), **`app.started` does NOT fire on auto-enable at registration** — only `app.created` is written. Subsequent manual stop → start cycles DO record `app.stopped` / `app.started` per the normal route-toggle path. If a future release reverses C-1 (folds the missing event into the auto-enable path), update this paragraph in the same PR.
 
 For process-bearing apps: `app.crashed` for any app the operator expects to be running, `app.fatal` for an app that exhausted its backoff window, and `app.killed` when the operator did NOT issue a kill (suggests the supervisor force-killed via the 10s timeout on delete or graceful-shutdown fallback). Any of these on a clean UAT pass is a finding.
 
 #### 6.2 Auto-start verification
 
-After all four apps are started AND `dotnet-app`/`nodejs-app`/`static-site` have `auto-start.enabled=true` per their JSON, **restart Collabhost itself** (the binary, not just the apps). On boot:
+After all five apps are started AND `dotnet-app`/`nodejs-app`/`static-site` have `auto-start.enabled=true` per their JSON, **restart Collabhost itself** (the binary, not just the apps). On boot:
 
 - `dotnet-app`, `nodejs-app`, `static-site` should auto-start. Browser-verify they're running within ~30s of Collabhost coming back.
 - `executable` (auto-start default `false`) should remain stopped.
-- An `app.auto_started` activity event fires for each auto-started app (distinct from `app.started`). Check `/api/v1/events?type=app.auto_started` post-restart.
+- `external-route` has NO `auto-start` capability binding (per Card #348 spec §4) — but its route-state is in-memory only and defaults to enabled on first read. Confirm a previously-running external-route is back to `running` post-Collabhost-restart (route-enabled by default-true semantics, not by auto-start). A previously-stopped external-route is also `running` post-restart because the in-memory `false` from `DisableRoute` did not persist. **This is a known asymmetry with the four process-bearing types** — stopped state across restart only survives for apps with persisted lifecycle state. Not a regression; record per leg and surface to operators in the runbook narrative below.
+- An `app.auto_started` activity event fires for each auto-started app (distinct from `app.started`). Check `/api/v1/events?type=app.auto_started` post-restart. External-route does NOT emit `app.auto_started` (no auto-start capability binding) — the route silently becomes reachable again.
 
 **Static-site auto-start:** static-site does NOT have an `auto-start` capability binding in the type defaults — but auto-start of a static-site means re-enabling the Caddy route, not starting a process. Confirm a started static-site is restored to `running` (route-enabled) post-Collabhost-restart.
 
@@ -492,6 +552,9 @@ These are the assertions where the operator surface looks green but the backend 
 9. **A dotnet-app under hardened systemd "starts" but exits 159 immediately.** `DOTNET_BUNDLE_EXTRACT_BASE_DIR` not set or pointed at unwritable path. Assert via the activity-event sequence (`app.started` then `app.crashed` within seconds) (§3.1).
 10. **Malformed `package.json` looks like "no `package.json`" to detect-strategy.** Cover with the explicit corrupt-fixture step (§4 row 10).
 11. **Stale @id collision in Caddy after delete-then-recreate.** Cover with the cycle: register → start → stop → delete → register-with-same-slug → start. Assert clean Caddy state at each step (§ Cross-cutting).
+12. **External-route Routes-page row reads `target: "not-running"` for a live route (Card #348 F-1 / F-2 mirror).** Pre-#348-polish, the route-table target column synthesized `localhost:{port}` from the supervised process — for external-route with no process, that fell through to `"not-running"` even when the route was emitting `dial = "{host}:{port}"` correctly. The polish round closed it; the runbook continues to assert. Cover by registering an external-route, opening the Routes page, asserting the `target` column reads the operator-declared `host:port` (NOT `not-running` and NOT `localhost:0`). The same assertion fires against MCP `list_routes`.
+13. **External-route health probe reports `healthy` while the upstream is actually down.** The probe is a localhost-style GET from the Collabhost process to the operator-declared `host:port`. If a process on the test box is bound to the port but is not the intended upstream (port collision or a leftover side-process), the probe returns 200 and reads `Reachable`. The operator's `*.collab.internal` request reaches the same misbound process via Caddy. **Silent-failure surface: the dashboard says green but the upstream is wrong.** Mitigation: the `/health` endpoint on the fixture must be specific enough that a port-collider won't accidentally serve it. The Python `http.server` fixture serves a literal `health` file from the upstream's directory — a port-collider that doesn't have that file in CWD returns 404 and the probe correctly reads `Unreachable`. Document, do not engineer around.
+14. **`ExternalTargetSettings.AllowPublicHosts = true` accepted but the host is not validated against the fallback shape.** When `AllowPublicHosts == true`, the strict private-only regex is bypassed but the `PermissiveHostnamePattern` (`^[A-Za-z0-9.-]+$`) is still enforced. A regression that bypasses BOTH patterns would accept arbitrary input including whitespace, control characters, or shell-metacharacters into the host field. Cover with the explicit "whitespace host" and "shell-meta host" rejection-still-fires assertion in §3.4.
 
 ### Cross-cutting backend assertions
 
