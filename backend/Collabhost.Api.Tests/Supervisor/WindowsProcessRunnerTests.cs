@@ -28,6 +28,51 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         }
     }
 
+    // The OS process can exit before its OutputDataReceived / ErrorDataReceived
+    // events have drained from the pipe-read thread, so a one-shot read after
+    // process exit can observe an empty captured collection on a loaded runner.
+    // Bounded-poll the captured collection until the expected entry appears or
+    // the timeout expires. Class-wide hardening per #315 (umbrella for #198/#264).
+    private static async Task WaitForOutputAsync
+    (
+        ConcurrentBag<string> captured,
+        string expectedToken,
+        int timeoutSeconds = 10
+    )
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (captured.Any(line => line.Contains(expectedToken, StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+    }
+
+    private static async Task WaitForOutputAsync<T>
+    (
+        ConcurrentBag<T> captured,
+        Func<T, bool> predicate,
+        int timeoutSeconds = 10
+    )
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (captured.Any(predicate))
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+    }
+
     [SkippableFact]
     [Trait("Platform", "windows")]
     public async Task Start_CapturesStdoutFromProcess()
@@ -48,6 +93,7 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         using var handle = _runner.Start(configuration);
 
         await WaitForExitAsync(handle);
+        await WaitForOutputAsync(captured, "hello-stdout");
 
         handle.HasExited.ShouldBeTrue();
 
@@ -74,6 +120,7 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         using var handle = _runner.Start(configuration);
 
         await WaitForExitAsync(handle);
+        await WaitForOutputAsync(captured, entry => entry.Line.Contains("hello-stderr", StringComparison.Ordinal));
 
         handle.HasExited.ShouldBeTrue();
 
@@ -275,6 +322,7 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         using var handle = _runner.Start(configuration);
 
         await WaitForExitAsync(handle);
+        await WaitForOutputAsync(captured, "graceful-shutdown-test");
 
         handle.HasExited.ShouldBeTrue();
 
@@ -299,6 +347,8 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         );
 
         var result = await _runner.RunToCompletionAsync(configuration, TimeSpan.FromSeconds(10));
+
+        await WaitForOutputAsync(captured, "run-to-completion-test");
 
         result.ExitCode.ShouldBe(0);
         result.TimedOut.ShouldBeFalse();

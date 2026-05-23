@@ -52,7 +52,10 @@ public class ProcessSupervisorStopAsyncTests
         stopwatch.Stop();
 
         // Polling loop is 250ms granular; allow a small tolerance over the 1s host budget.
-        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2));
+        // Tolerance bumped to 3s under #315 (Rule 9 expansion, Kai's PR #220 finding) after
+        // a 2.068s observed wall time on Windows-latest CI (3.4% over a 2s ceiling) -- same
+        // Windows-CI timing-flake family as the WindowsProcessRunnerTests stdio-capture race.
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(3));
 
         // The hung process must be hard-killed once the host budget elapses.
         hungHandle.KillCount.ShouldBe(1);
