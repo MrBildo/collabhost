@@ -128,9 +128,13 @@ if (-not $Tag)
     }
 }
 
-if ($Tag -notmatch '^v\d+\.\d+\.\d+$')
+# Accepts vX.Y.Z and SemVer 2.0 §9 pre-release tags (e.g. v1.2.1-rc1, v2.0.0-beta.3).
+# Build metadata (+...) is intentionally rejected -- archive filenames use the version
+# as a path segment and '+' is friction across tools. Keep this pattern in sync with
+# publish.yml, install-integration.yml, _install-lib.sh, and install-system.ps1.
+if ($Tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$')
 {
-    throw "Invalid release tag '$Tag' -- expected vX.Y.Z."
+    throw "Invalid release tag '$Tag' -- expected vX.Y.Z or vX.Y.Z-<pre-release>."
 }
 
 $VersionNumber = $Tag.TrimStart('v')

@@ -120,9 +120,13 @@ resolve_tag() {
     fi
   fi
 
-  # Validate tag shape (vX.Y.Z). v1 does not support pre-release tags.
-  if ! printf '%s' "${TAG}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-    echo "Invalid release tag '${TAG}' -- expected vX.Y.Z." >&2
+  # Validate tag shape. Accepts vX.Y.Z and SemVer 2.0 §9 pre-release tags
+  # (e.g. v1.2.1-rc1, v2.0.0-beta.3). Build metadata (+...) is intentionally
+  # rejected -- archive filenames use VERSION as a path segment and '+' is
+  # friction across tools. Keep this pattern in sync with publish.yml,
+  # install-integration.yml, install.ps1, and install-system.ps1.
+  if ! printf '%s' "${TAG}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
+    echo "Invalid release tag '${TAG}' -- expected vX.Y.Z or vX.Y.Z-<pre-release>." >&2
     exit 1
   fi
 
