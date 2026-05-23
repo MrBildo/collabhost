@@ -6,11 +6,26 @@ import { LogLine } from './LogLine'
 
 type LogStream = 'all' | 'stdout' | 'stderr'
 
+/**
+ * Connection mode for the log feed:
+ * - 'live'         — SSE connection is open and streaming (the healthy path)
+ * - 'polling'      — SSE never connected or yielded no entries; the page is
+ *                    polling /logs as the documented fallback
+ * - 'reconnecting' — SSE produced entries then dropped; entries are stale
+ *                    while the hook is reconnecting (the ~45s "neither mode"
+ *                    window — liveness-net bounded). (#321)
+ *
+ * Both non-'live' modes render a small degraded-mode indicator so the operator
+ * has a signal that the feed isn't live. Bill's ruling on #321.
+ */
+type StreamMode = 'live' | 'polling' | 'reconnecting'
+
 type LogViewerProps = {
   entries: StreamEntry[]
   totalBuffered: number
   stream: LogStream
   onStreamChange: (stream: LogStream) => void
+  streamMode: StreamMode
   className?: string
 }
 
@@ -42,7 +57,27 @@ function LogGapMarker() {
   )
 }
 
-function LogViewer({ entries, totalBuffered, stream, onStreamChange, className }: LogViewerProps) {
+function StreamModeIndicator({ mode }: { mode: StreamMode }) {
+  if (mode === 'live') return null
+  const label = mode === 'polling' ? 'polling' : 'reconnecting'
+  return (
+    <span
+      className="wm-stream-mode"
+      data-mode={mode}
+      data-testid="stream-mode-indicator"
+      title={
+        mode === 'polling'
+          ? 'Live stream unavailable — polling for log updates'
+          : 'Live stream interrupted — reconnecting'
+      }
+    >
+      <span className="wm-stream-mode__dot" aria-hidden="true" />
+      <span className="wm-stream-mode__label">{label}</span>
+    </span>
+  )
+}
+
+function LogViewer({ entries, totalBuffered, stream, onStreamChange, streamMode, className }: LogViewerProps) {
   const [isFollowing, setIsFollowing] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
   const userScrolledRef = useRef(false)
@@ -97,6 +132,7 @@ function LogViewer({ entries, totalBuffered, stream, onStreamChange, className }
           ))}
         </div>
         <div className="flex items-center gap-3">
+          <StreamModeIndicator mode={streamMode} />
           <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>
             {totalBuffered} buffered
           </span>
@@ -141,4 +177,4 @@ function LogViewer({ entries, totalBuffered, stream, onStreamChange, className }
 }
 
 export { LogViewer }
-export type { LogViewerProps, LogStream }
+export type { LogViewerProps, LogStream, StreamMode }

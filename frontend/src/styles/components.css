@@ -859,6 +859,53 @@
   overflow-y: auto;
 }
 
+/* Stream-mode indicator (#321): small pill that appears next to the log
+   header counters when the feed isn't live SSE. Yellow = polling
+   (documented fallback), amber-pulse = reconnecting (the ~45s liveness-net
+   window where neither SSE nor polling is active). No indicator at all
+   when the stream is live — silence is the success state. */
+.wm-stream-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--wm-mono);
+  font-size: var(--wm-font-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: var(--wm-radius);
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.wm-stream-mode[data-mode="polling"] {
+  background: var(--wm-yellow-dim);
+  border-color: var(--wm-yellow-border);
+  color: var(--wm-yellow);
+}
+
+.wm-stream-mode[data-mode="reconnecting"] {
+  background: var(--wm-amber-dim);
+  border-color: var(--wm-amber-border);
+  color: var(--wm-amber);
+}
+
+.wm-stream-mode__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+.wm-stream-mode[data-mode="reconnecting"] .wm-stream-mode__dot {
+  animation: wm-pulse 1s infinite;
+}
+
+.wm-stream-mode__label {
+  font-weight: 500;
+}
+
 .wm-log-line {
   display: flex;
   gap: 12px;
