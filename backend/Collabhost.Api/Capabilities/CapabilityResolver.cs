@@ -9,7 +9,23 @@ public static partial class CapabilityResolver
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
-    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.None, 100)]
+    // Server-side compile uses \z (not $) so a trailing newline does not pass
+    // validation -- in .NET, $ matches before a final \n, which would admit a
+    // newline-bearing key (e.g. "FOO\n") that lands downstream as a
+    // newline-bearing environment variable name. \z is the strict
+    // end-of-string anchor. (#310)
+    //
+    // The env-var pattern has no wire counterpart -- it is the default fallback
+    // for KeyValue fields whose schema declares no KeyPattern, so it is not
+    // surfaced to the frontend and the .NET-only \z is safe here.
+    //
+    // For the three patterns that DO ship to the frontend via FieldDescriptor.
+    // KeyPattern (response-header / runtime-config-file / security-headers),
+    // the wire-form const keeps the $ anchor (which JavaScript's ECMA-262 $
+    // already treats as strict end-of-input -- the trailing-newline-admission
+    // is a .NET-specific quirk) and the .NET-compiled regex uses \z. The
+    // wire-to-compile mapping lives in ResolveKeyPattern.
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.None, 100)]
     private static partial Regex EnvironmentVariableKeyPattern { get; }
 
     // Flattened per-path response-header key contract for the static-site routing
@@ -22,7 +38,9 @@ public static partial class CapabilityResolver
     //   - HeaderName: an RFC 7230 field-name token (1*tchar).
     // The string form is surfaced to the frontend via the settings-field DTO
     // (FieldDescriptor.KeyPattern); the compiled form below is the
-    // server-authoritative enforcement in ValidateEdits.
+    // server-authoritative enforcement in ValidateEdits. The two forms differ
+    // only in the end-anchor: $ on the wire (JavaScript-safe), \z in the
+    // compiled regex (.NET strict; rejects trailing \n -- #310).
     public const string ResponseHeaderKeyPatternString =
         @"^/[^\s:]+::[!#$%&'*+.^_`|~0-9A-Za-z-]+$";
 
@@ -31,7 +49,7 @@ public static partial class CapabilityResolver
         + "(no spaces or colons), '::', then a valid HTTP header name "
         + "(e.g. \"/config.json::Cache-Control\").";
 
-    [GeneratedRegex(ResponseHeaderKeyPatternString, RegexOptions.None, 100)]
+    [GeneratedRegex(@"^/[^\s:]+::[!#$%&'*+.^_`|~0-9A-Za-z-]+\z", RegexOptions.None, 100)]
     private static partial Regex ResponseHeaderKeyPattern { get; }
 
     // JSON-key contract for the runtime-config-file capability (Card #336).
@@ -43,12 +61,13 @@ public static partial class CapabilityResolver
     // shape) because runtime-config keys have no such compound structure. The
     // bound on length is the regex engine's; the bound on key character set is
     // "no whitespace, not empty," which keeps the on-disk JSON deterministic.
+    // Wire form uses $ (JavaScript-safe); compiled form uses \z (#310).
     public const string RuntimeConfigFileKeyPatternString = @"^[^\s]+$";
 
     public const string RuntimeConfigFileKeyPatternMessage =
         "Keys must be non-empty and contain no whitespace.";
 
-    [GeneratedRegex(RuntimeConfigFileKeyPatternString, RegexOptions.None, 100)]
+    [GeneratedRegex(@"^[^\s]+\z", RegexOptions.None, 100)]
     private static partial Regex RuntimeConfigFileKeyPattern { get; }
 
     // HTTP-header-name contract for the security-headers capability (Card #309).
@@ -57,7 +76,8 @@ public static partial class CapabilityResolver
     // so the compound "<path>::<HeaderName>" shape would be wrong. Without this
     // explicit declaration, ValidateEdits falls back to the env-var POSIX
     // pattern and rejects every legitimate HTTP header name (the env-var
-    // pattern lacks '-').
+    // pattern lacks '-'). Wire form uses $ (JavaScript-safe); compiled form
+    // uses \z (#310).
     public const string SecurityHeaderKeyPatternString =
         @"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$";
 
@@ -65,7 +85,7 @@ public static partial class CapabilityResolver
         "Keys must be a valid HTTP header name "
         + "(e.g. \"X-Content-Type-Options\", \"Strict-Transport-Security\").";
 
-    [GeneratedRegex(SecurityHeaderKeyPatternString, RegexOptions.None, 100)]
+    [GeneratedRegex(@"^[!#$%&'*+.^_`|~0-9A-Za-z-]+\z", RegexOptions.None, 100)]
     private static partial Regex SecurityHeaderKeyPattern { get; }
 
     public static T Resolve<T>(string defaultConfigurationJson, string? overrideConfigurationJson)

@@ -266,6 +266,7 @@ public class CapabilityResolverTests
     [InlineData("path/var")]
     [InlineData("has-dash")]
     [InlineData("has.dot")]
+    [InlineData("NODE_ENV\n")]   // #310: trailing newline rejected (\z anchor, not $)
     public void ValidateEdits_InvalidEnvironmentVariableKey_ReturnsError(string key)
     {
         var overrides = new JsonObject
@@ -341,6 +342,7 @@ public class CapabilityResolverTests
     [InlineData("/with:colon::Cache-Control")]       // colon in path
     [InlineData("/config.json::Cache\"Control")]     // invalid header char
     [InlineData("Cache-Control")]                    // env-var-shaped key rejected here
+    [InlineData("/config.json::Cache-Control\n")]    // #310: trailing newline rejected (\z anchor, not $)
     public void ValidateEdits_InvalidResponseHeaderKey_ReturnsError(string key)
     {
         var overrides = new JsonObject
@@ -573,6 +575,24 @@ public class CapabilityResolverTests
         errors.Count.ShouldBe(1);
     }
 
+    [Fact]
+    public void ValidateEdits_RuntimeConfigFile_TrailingNewlineKey_Rejected()
+    {
+        // #310 regression: in .NET, $ matches before a trailing \n, which
+        // would admit a newline-bearing key (e.g. "api-base-url\n") that
+        // lands downstream in the generated runtime-config JSON. The pattern
+        // anchors with \z so the trailing newline is rejected.
+        var overrides = new JsonObject
+        {
+            ["values"] = new JsonObject { ["api-base-url\n"] = "https://api.example.com" }
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("runtime-config-file", overrides, isNewApp: false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("Invalid key");
+    }
+
     // ----- Card #309: per-field key-pattern (security-headers.headers) -----
 
     [Theory]
@@ -600,6 +620,7 @@ public class CapabilityResolverTests
     [InlineData("Header:With:Colon")]         // contains colon
     [InlineData("Header\"WithQuote")]         // contains quote
     [InlineData("/path/scoped::Header-Name")] // compound shape rejected (use routing.responseHeaders)
+    [InlineData("X-Content-Type-Options\n")]  // #310: trailing newline rejected (\z anchor, not $)
     public void ValidateEdits_SecurityHeaders_InvalidHeaderName_ReturnsError(string key)
     {
         var overrides = new JsonObject
