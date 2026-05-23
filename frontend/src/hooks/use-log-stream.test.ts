@@ -724,20 +724,18 @@ describe('useLogStream', () => {
 
   test('cleanup-path flush trims pending entries to buffer cap before resetting', () => {
     // Setup: send more than LOG_BUFFER_CAP events with a rAF pending, then
-    // trigger cleanup via slug change. The cleanup-flush branch must apply
-    // the same trim the RAF branch would have applied. We capture the
-    // intermediate rendered-entries via the slug-change semantics: the
-    // cleanup-flush runs synchronously inside the effect-cleanup, so the
-    // entries length immediately after cleanup (but before the next effect
-    // runs and resets for the new slug) reflects the trim.
+    // trigger cleanup by disabling the hook (enabled: false). Disabling
+    // fires the effect cleanup without a slug-reset in the successor effect —
+    // the cleanup's setRenderEntries([...trimmed]) is the last committed value.
     //
-    // Practically, we observe this by reading the state right after a slug
-    // change: entries get trimmed by cleanup, then the new-slug effect resets
-    // entries to []. The trim happened — visible via the lack of a 1100-entry
-    // intermediate render.
-    const { result, rerender } = renderHook(({ slug }: { slug: string }) => useLogStream(slug), {
-      initialProps: { slug: 'app-a' },
-    })
+    // Why not unmount: React 18 suppresses state updates from cleanup effects
+    // during unmount, so result.current freezes at its pre-cleanup value.
+    // Disabling instead gives us the same cleanup path with a live successor
+    // effect that returns early (isEnabled guard), so the trim commits.
+    const { result, rerender } = renderHook(
+      ({ slug, enabled }: { slug: string; enabled: boolean }) => useLogStream(slug, { enabled }),
+      { initialProps: { slug: 'app-a', enabled: true } },
+    )
     const es = latestInstance()
 
     act(() => {
@@ -752,14 +750,16 @@ describe('useLogStream', () => {
     // Pre-rerender: render hasn't fired yet (rAF still pending).
     expect(result.current.entries).toHaveLength(0)
 
-    // Slug change triggers effect cleanup → trim+flush → then new-effect resets.
-    rerender({ slug: 'app-b' })
+    // Disable the hook: fires cleanup (trim+flush) then the new effect returns
+    // early at the isEnabled guard — no slug-reset overwrites the trimmed state.
+    rerender({ slug: 'app-a', enabled: false })
 
-    // After the rerender, entries are reset for app-b. The cleanup branch
-    // exercised the trim path; the assertion that proves it ran is that the
-    // old EventSource is closed and a new one was created.
+    // The cleanup-path trim is directly observable: entries must equal exactly
+    // LOG_BUFFER_CAP (trimToBufferCap sliced the 1100-entry pending buffer).
+    // Deleting the trimToBufferCap call at line 209 of use-log-stream.ts would
+    // cause this assertion to fail (entries would be LOG_BUFFER_CAP + 100).
+    expect(result.current.entries).toHaveLength(LOG_BUFFER_CAP)
     expect(es.readyState).toBe(2)
-    expect(MockEventSource.instances).toHaveLength(2)
   })
 
   test('trimToBufferCap returns the same reference when under cap', () => {
