@@ -322,6 +322,25 @@ public class RegistrationTools
                 },
                 ct
             );
+
+            // Card #348 polish (C-1): external-route apps auto-enable at registration (D8).
+            // Record AppStarted so the activity feed reflects the route going live.
+            if (hasExternalTarget)
+            {
+                await _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppStarted,
+                        ActorId = _currentUser.UserId.ToString(),
+                        ActorName = _currentUser.User.Name,
+                        AppId = app.Id.ToString(),
+                        AppSlug = app.Slug,
+                        MetadataJson = null
+                    },
+                    ct
+                );
+            }
         }
         catch (Exception ex)
         {
@@ -418,6 +437,21 @@ public class RegistrationTools
             {
                 // Already stopped
             }
+        }
+
+        // Routing-only apps (static-site, external-route): disable the Caddy route
+        // before the row is deleted. Without this, the route survives in Caddy until
+        // the next sync pass re-derives the live set from AppStore.ListAsync -- a small
+        // window where Caddy still routes to an app that no longer exists.
+        // Card #348 polish: REST DeleteAppAsync got this fix-along in the initial PR.
+        // MCP delete_app is the symmetric closure (same marginal cost, same surface).
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
+        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
+
+        if (!hasProcess && hasRouting)
+        {
+            _proxy.DisableRoute(appSlug);
+            _proxy.RequestSync();
         }
 
         await _appStore.DeleteAppAsync(app.Id, ct);

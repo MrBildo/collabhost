@@ -86,11 +86,52 @@ public static class ProxyEndpoints
 
             var process = supervisor.GetProcess(app.Id);
 
-            var target = routingConfiguration.ServeMode == ServeMode.ReverseProxy
-                ? process?.Port is not null
-                    ? $"localhost:{process.Port.Value.ToString(CultureInfo.InvariantCulture)}"
-                    : "not-running"
-                : "Static Files";
+            // Card #348 polish: external-route apps have no supervised process.
+            // Synthesize the operator-declared upstream so the Routes table matches
+            // what Caddy is actually dialing -- same resolution pattern used on the
+            // App Detail page (AppEndpoints.GetAppDetailAsync).
+            var hasExternalTarget = bindings.ContainsKey("external-target");
+
+            string target;
+
+            if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
+            {
+                if (hasExternalTarget)
+                {
+                    var externalTarget = bindings.TryGetValue("external-target", out var externalTargetBinding)
+                        ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
+                        (
+                            externalTargetBinding,
+                            overrides.TryGetValue("external-target", out var externalTargetOverride)
+                                ? externalTargetOverride.ConfigurationJson
+                                : null
+                        )
+                        : null;
+
+                    target = externalTarget is not null
+                        && !string.IsNullOrWhiteSpace(externalTarget.Host)
+                        && externalTarget.Port > 0
+                            ? string.Format
+                            (
+                                CultureInfo.InvariantCulture,
+                                "{0}://{1}:{2}",
+                                externalTarget.Scheme,
+                                externalTarget.Host,
+                                externalTarget.Port
+                            )
+                            : "not-configured";
+                }
+                else
+                {
+                    target = process?.Port is not null
+                        ? $"localhost:{process.Port.Value.ToString(CultureInfo.InvariantCulture)}"
+                        : "not-running";
+                }
+            }
+            else
+            {
+                target = "Static Files";
+            }
 
             entries.Add
             (

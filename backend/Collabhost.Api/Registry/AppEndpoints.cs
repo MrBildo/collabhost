@@ -1170,6 +1170,26 @@ public static class AppEndpoints
             ct
         );
 
+        // Card #348 polish (C-1): external-route apps auto-enable at registration (D8).
+        // Record AppStarted so the activity feed reflects the route going live -- the same
+        // event the manual start path records for routing-only apps (StartAppAsync).
+        if (hasExternalTarget)
+        {
+            await activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppStarted,
+                    ActorId = currentUser.UserId.ToString(),
+                    ActorName = currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = null
+                },
+                ct
+            );
+        }
+
         return TypedResults.Created
         (
             $"/api/v1/apps/{app.Slug}",

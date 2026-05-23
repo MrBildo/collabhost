@@ -502,11 +502,51 @@ public class ConfigurationTools
 
             var process = _supervisor.GetProcess(app.Id);
 
-            var target = routingConfiguration.ServeMode == ServeMode.ReverseProxy
-                ? process?.Port is not null
-                    ? string.Create(CultureInfo.InvariantCulture, $"localhost:{process.Port.Value}")
-                    : "not-running"
-                : "file-server";
+            // Card #348 polish: external-route apps have no supervised process.
+            // Synthesize the operator-declared upstream so list_routes matches what
+            // Caddy is actually dialing -- same resolution as AppEndpoints.GetAppDetailAsync.
+            var hasExternalTarget = bindings.ContainsKey("external-target");
+
+            string target;
+
+            if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
+            {
+                if (hasExternalTarget)
+                {
+                    var externalTarget = bindings.TryGetValue("external-target", out var externalTargetBinding)
+                        ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
+                        (
+                            externalTargetBinding,
+                            overrides.TryGetValue("external-target", out var externalTargetOverride)
+                                ? externalTargetOverride.ConfigurationJson
+                                : null
+                        )
+                        : null;
+
+                    target = externalTarget is not null
+                        && !string.IsNullOrWhiteSpace(externalTarget.Host)
+                        && externalTarget.Port > 0
+                            ? string.Format
+                            (
+                                CultureInfo.InvariantCulture,
+                                "{0}://{1}:{2}",
+                                externalTarget.Scheme,
+                                externalTarget.Host,
+                                externalTarget.Port
+                            )
+                            : "not-configured";
+                }
+                else
+                {
+                    target = process?.Port is not null
+                        ? string.Create(CultureInfo.InvariantCulture, $"localhost:{process.Port.Value}")
+                        : "not-running";
+                }
+            }
+            else
+            {
+                target = "file-server";
+            }
 
             var enabled = _proxy.IsRouteEnabled(app.Slug);
 
@@ -560,13 +600,14 @@ file static class ConfigurationToolExtensions
         {
             "process" => 0,
             "port-injection" => 1,
-            "routing" => 2,
-            "health-check" => 3,
-            "restart" => 4,
-            "auto-start" => 5,
-            "environment-defaults" => 6,
-            "runtime-config-file" => 7,
-            "artifact" => 8,
+            "external-target" => 2, // Card #348 polish: keep adjacent to routing, matches AppEndpoints order.
+            "routing" => 3,
+            "health-check" => 4,
+            "restart" => 5,
+            "auto-start" => 6,
+            "environment-defaults" => 7,
+            "runtime-config-file" => 8,
+            "artifact" => 9,
             _ => 99
         };
     }
