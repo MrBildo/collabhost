@@ -451,4 +451,108 @@ describe('SchemaField', () => {
       expect(screen.queryByText('Overridden')).not.toBeInTheDocument()
     })
   })
+
+  // Card #338 -- dependency-unmet rendering. Same-section schema-declared
+  // effectiveness predicate. When the parent is unmet, the field stays visible
+  // for discoverability, is disabled to prevent operator confusion, and the
+  // DependencyBadge announces why. Override + Restart badges are suppressed
+  // because an inert value is noise, not signal.
+  describe('dependency badge (#338)', () => {
+    test('renders disabled with dependency badge when parent is unmet', () => {
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="HSTS Max Age"
+          type="number"
+          value={31536000}
+          defaultValue={null}
+          editable={EDITABLE_ALWAYS}
+          isEditing={true}
+          onChange={vi.fn()}
+          disabledByDependency={{ parentLabel: 'Enable HSTS', requiredValueLabel: 'On' }}
+        />,
+      )
+      const input = screen.getByRole('spinbutton')
+      expect(input).toBeDisabled()
+      expect(screen.getByText('Effective only when Enable HSTS = On')).toBeInTheDocument()
+    })
+
+    test('renders enabled without dependency badge when parent is met', () => {
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="HSTS Max Age"
+          type="number"
+          value={31536000}
+          defaultValue={null}
+          editable={EDITABLE_ALWAYS}
+          isEditing={true}
+          onChange={vi.fn()}
+        />,
+      )
+      const input = screen.getByRole('spinbutton')
+      expect(input).not.toBeDisabled()
+      expect(screen.queryByText(/Effective only when/)).not.toBeInTheDocument()
+    })
+
+    test('suppresses override badge while dependency-unmet', () => {
+      // value !== defaultValue (overridden) AND requiresRestart, but the field
+      // is currently inert -- both badges are noise.
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="HSTS Max Age"
+          type="number"
+          value={31536000}
+          defaultValue={null}
+          editable={EDITABLE_ALWAYS}
+          requiresRestart={true}
+          isEditing={true}
+          onChange={vi.fn()}
+          disabledByDependency={{ parentLabel: 'Enable HSTS', requiredValueLabel: 'On' }}
+        />,
+      )
+      expect(screen.queryByText('Overridden')).not.toBeInTheDocument()
+      expect(screen.queryByText('Restart required')).not.toBeInTheDocument()
+      expect(screen.getByText('Effective only when Enable HSTS = On')).toBeInTheDocument()
+    })
+
+    test('boolean field is disabled when dependency-unmet', () => {
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="SPA Fallback"
+          type="boolean"
+          value={false}
+          defaultValue={false}
+          editable={EDITABLE_ALWAYS}
+          isEditing={true}
+          onChange={vi.fn()}
+          disabledByDependency={{ parentLabel: 'Serve Mode', requiredValueLabel: 'File Server' }}
+        />,
+      )
+      const toggle = screen.getByRole('switch')
+      expect(toggle).toBeDisabled()
+      expect(screen.getByText('Effective only when Serve Mode = File Server')).toBeInTheDocument()
+    })
+
+    test('text field is disabled when dependency-unmet', () => {
+      render(
+        <SchemaField
+          fieldKey="test"
+          label="Command"
+          type="text"
+          value="dotnet"
+          defaultValue=""
+          editable={EDITABLE_ALWAYS}
+          isEditing={true}
+          onChange={vi.fn()}
+          disabledByDependency={{ parentLabel: 'Discovery Strategy', requiredValueLabel: 'Manual' }}
+        />,
+      )
+      const input = screen.getByRole('textbox')
+      expect(input).toBeDisabled()
+      expect(screen.getByText('Effective only when Discovery Strategy = Manual')).toBeInTheDocument()
+    })
+  })
 })
