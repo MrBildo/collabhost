@@ -1,6 +1,8 @@
+import type { StreamEntry } from '@/api/types'
+import { LOG_BUFFER_CAP } from '@/lib/constants'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { useLogStream } from './use-log-stream'
+import { trimToBufferCap, useLogStream } from './use-log-stream'
 
 // --- MockEventSource ---
 
@@ -711,5 +713,109 @@ describe('useLogStream', () => {
 
     // No new EventSource instances should have been created after unmount
     expect(MockEventSource.instances).toHaveLength(1)
+  })
+
+  // --- Buffer-cap trim invariant (#319) ---
+  //
+  // The RAF-flush path is covered by 'buffer cap enforced, oldest entries
+  // dropped' above. The cleanup-flush path (effect teardown with a pending
+  // rAF) trims via the same helper but was previously structurally untested —
+  // covered here as part of the trimToBufferCap extraction.
+
+  test('cleanup-path flush trims pending entries to buffer cap before resetting', () => {
+    // Setup: send more than LOG_BUFFER_CAP events with a rAF pending, then
+    // trigger cleanup by disabling the hook (enabled: false). Disabling
+    // fires the effect cleanup without a slug-reset in the successor effect —
+    // the cleanup's setRenderEntries([...trimmed]) is the last committed value.
+    //
+    // Why not unmount: React 18 suppresses state updates from cleanup effects
+    // during unmount, so result.current freezes at its pre-cleanup value.
+    // Disabling instead gives us the same cleanup path with a live successor
+    // effect that returns early (isEnabled guard), so the trim commits.
+    const { result, rerender } = renderHook(
+      ({ slug, enabled }: { slug: string; enabled: boolean }) => useLogStream(slug, { enabled }),
+      { initialProps: { slug: 'app-a', enabled: true } },
+    )
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+      for (let i = 1; i <= LOG_BUFFER_CAP + 100; i++) {
+        es.simulateEvent('log', makeLogEvent(i))
+      }
+      // Intentionally NO flushRaf() — the rAF stays pending so the cleanup
+      // branch is the one that flushes.
+    })
+
+    // Pre-rerender: render hasn't fired yet (rAF still pending).
+    expect(result.current.entries).toHaveLength(0)
+
+    // Disable the hook: fires cleanup (trim+flush) then the new effect returns
+    // early at the isEnabled guard — no slug-reset overwrites the trimmed state.
+    rerender({ slug: 'app-a', enabled: false })
+
+    // The cleanup-path trim is directly observable: entries must equal exactly
+    // LOG_BUFFER_CAP (trimToBufferCap sliced the 1100-entry pending buffer).
+    // Deleting the trimToBufferCap call at line 209 of use-log-stream.ts would
+    // cause this assertion to fail (entries would be LOG_BUFFER_CAP + 100).
+    expect(result.current.entries).toHaveLength(LOG_BUFFER_CAP)
+    expect(es.readyState).toBe(2)
+  })
+
+  test('trimToBufferCap returns the same reference when under cap', () => {
+    const entries: StreamEntry[] = Array.from({ length: 10 }, (_, i) => ({
+      type: 'log',
+      entry: {
+        id: i + 1,
+        timestamp: '2026-04-05T12:00:00Z',
+        stream: 'stdout',
+        content: `line ${i + 1}`,
+      },
+    }))
+    const result = trimToBufferCap(entries)
+    expect(result).toBe(entries)
+    expect(result).toHaveLength(10)
+  })
+
+  test('trimToBufferCap returns the same reference when exactly at cap', () => {
+    const entries: StreamEntry[] = Array.from({ length: LOG_BUFFER_CAP }, (_, i) => ({
+      type: 'log',
+      entry: {
+        id: i + 1,
+        timestamp: '2026-04-05T12:00:00Z',
+        stream: 'stdout',
+        content: `line ${i + 1}`,
+      },
+    }))
+    const result = trimToBufferCap(entries)
+    expect(result).toBe(entries)
+    expect(result).toHaveLength(LOG_BUFFER_CAP)
+  })
+
+  test('trimToBufferCap trims to the tail when over cap', () => {
+    const entries: StreamEntry[] = Array.from({ length: LOG_BUFFER_CAP + 50 }, (_, i) => ({
+      type: 'log',
+      entry: {
+        id: i + 1,
+        timestamp: '2026-04-05T12:00:00Z',
+        stream: 'stdout',
+        content: `line ${i + 1}`,
+      },
+    }))
+    const result = trimToBufferCap(entries)
+    expect(result).not.toBe(entries)
+    expect(result).toHaveLength(LOG_BUFFER_CAP)
+    // Tail preserved: last entry is the highest id
+    const last = result[result.length - 1]
+    expect(last).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: LOG_BUFFER_CAP + 50 }),
+    })
+    // Oldest dropped: first entry is id 51 (we dropped 50)
+    const first = result[0]
+    expect(first).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 51 }),
+    })
   })
 })

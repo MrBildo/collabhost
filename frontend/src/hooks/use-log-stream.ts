@@ -6,6 +6,21 @@ const RECONNECT_DELAY_MS = 3_000
 const LIVENESS_CHECK_INTERVAL_MS = 10_000
 const LIVENESS_TIMEOUT_MS = 45_000
 
+/**
+ * Trim a stream-entry buffer to the LOG_BUFFER_CAP tail, returning a new array
+ * when the trim is needed and the same reference when it is not.
+ *
+ * Shared by both flush paths — the RAF-batched flush (scheduleFlush) and the
+ * cleanup flush (effect teardown) — to keep the buffer-cap contract in one
+ * place. The third buffer-cap policy site in this file (the gap-overflow
+ * branch in the 'log' handler) is intentionally NOT routed through this
+ * helper: gap-overflow is a full RESET to `[]` because the missing range
+ * cannot be recovered, which is a different policy from "trim to fit." (#319)
+ */
+function trimToBufferCap(entries: StreamEntry[]): StreamEntry[] {
+  return entries.length > LOG_BUFFER_CAP ? entries.slice(-LOG_BUFFER_CAP) : entries
+}
+
 type UseLogStreamOptions = {
   enabled?: boolean
   /** When this value changes, the EventSource is closed and reopened.
@@ -78,9 +93,7 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
       if (rafScheduledRef.current) return
       rafScheduledRef.current = true
       rafIdRef.current = requestAnimationFrame(() => {
-        if (entriesRef.current.length > LOG_BUFFER_CAP) {
-          entriesRef.current = entriesRef.current.slice(-LOG_BUFFER_CAP)
-        }
+        entriesRef.current = trimToBufferCap(entriesRef.current)
         setRenderEntries([...entriesRef.current])
         rafScheduledRef.current = false
       })
@@ -193,9 +206,7 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
       if (rafScheduledRef.current) {
         cancelAnimationFrame(rafIdRef.current)
         rafScheduledRef.current = false
-        if (entriesRef.current.length > LOG_BUFFER_CAP) {
-          entriesRef.current = entriesRef.current.slice(-LOG_BUFFER_CAP)
-        }
+        entriesRef.current = trimToBufferCap(entriesRef.current)
         setRenderEntries([...entriesRef.current])
       } else {
         cancelAnimationFrame(rafIdRef.current)
@@ -220,5 +231,5 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
   return { entries: renderEntries, isStreaming, isConnected, error }
 }
 
-export { useLogStream }
+export { trimToBufferCap, useLogStream }
 export type { UseLogStreamResult }
