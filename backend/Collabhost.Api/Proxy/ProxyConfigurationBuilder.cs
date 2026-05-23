@@ -190,7 +190,17 @@ public static class ProxyConfigurationBuilder
 
     private static JsonObject BuildReverseProxyRoute(RouteEntry route)
     {
-        var dialPort = route.Port?.ToString(CultureInfo.InvariantCulture) ?? "0";
+        // External-target routes (Card #348) carry a pre-resolved dial
+        // address and the producer (ProxyManager.LoadRoutableAppsAsync) is
+        // the single source of truth for which shape applies. Supervised-
+        // process routes synthesize localhost:{Port} as before.
+        var dial = route.ExternalDial
+            ?? string.Format
+            (
+                CultureInfo.InvariantCulture,
+                "localhost:{0}",
+                route.Port?.ToString(CultureInfo.InvariantCulture) ?? "0"
+            );
 
         var reverseProxyHandler = new JsonObject
         {
@@ -199,10 +209,26 @@ public static class ProxyConfigurationBuilder
             {
                 new JsonObject
                 {
-                    ["dial"] = $"localhost:{dialPort}"
+                    ["dial"] = dial
                 }
             }
         };
+
+        // HTTPS upstream needs Caddy's transport block so the proxy speaks
+        // TLS to the backend. An empty `tls` object means "use Caddy's
+        // default TLS verify against the system trust store" -- operators
+        // fronting a self-signed upstream can later opt into
+        // `transport.tls.insecure_skip_verify` via the v2 transport-config
+        // capability arc; for v1 of external-route, default-verify is the
+        // safe posture. Card #348, D2.
+        if (string.Equals(route.ExternalScheme, "https", StringComparison.Ordinal))
+        {
+            reverseProxyHandler["transport"] = new JsonObject
+            {
+                ["protocol"] = "http",
+                ["tls"] = new JsonObject()
+            };
+        }
 
         // Conditional subroute-wrap on non-empty security-headers emission
         // (precondition #6). When no security-header handler is emitted the
@@ -703,5 +729,19 @@ public record RouteEntry
     // to both reverse-proxy and file-server routes; the emission helper at
     // the builder is the single source of truth for "should anything be
     // emitted." Card #309.
-    SecurityHeadersConfiguration? SecurityHeaders = null
+    SecurityHeadersConfiguration? SecurityHeaders = null,
+    // Pre-resolved "host:port" dial address for routes whose upstream is NOT a
+    // Collabhost-supervised process. When set, BuildReverseProxyRoute dials
+    // this instead of synthesizing localhost:{Port}. Mutually exclusive in
+    // semantics with Port -- Port carries the supervised-process port-injection
+    // shape, ExternalDial carries the unmanaged-upstream shape. The producer
+    // (ProxyManager.LoadRoutableAppsAsync) is the single source of truth for
+    // which shape applies. The record carries both fields so existing call
+    // sites stay clean. Card #348.
+    string? ExternalDial = null,
+    // Upstream scheme for external-target routes. "http" (default when
+    // ExternalDial is set and unspecified) or "https". When "https", the
+    // builder emits a Caddy transport block so the proxy speaks TLS to the
+    // upstream. Ignored when ExternalDial is null. Card #348.
+    string? ExternalScheme = null
 );

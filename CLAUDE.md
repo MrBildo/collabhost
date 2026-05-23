@@ -200,11 +200,12 @@ cd frontend && npm run test                                  # Vitest — all gr
 - `App` entity with ULID primary key, slug-based identity. Slug is the immutable external handle.
 - `AppType` (separate subsystem under `Data/AppTypes/`) is a slug-keyed file-backed type record loaded by `TypeStore` from `Data/BuiltInTypes/*.json` plus an optional user-types directory.
 - `AppStore` singleton with `IDbContextFactory<AppDbContext>` + `IMemoryCache`
-- 5 built-in app types: `dotnet-app`, `nodejs-app`, `static-site`, `executable`, `system-service`
+- 6 built-in app types: `dotnet-app`, `nodejs-app`, `static-site`, `executable`, `system-service`, `external-route`
+- `external-route` (#348) is a routing-only app type whose upstream is a service Collabhost does NOT run (Docker container, LAN host, Tailscale, self-hosted endpoint). The operator declares the upstream `host:port` (and optional `scheme`) via the `external-target` capability; Caddy fronts the route with TLS and health-checks the upstream. Lifecycle is enable/disable route — no process to start, stop, restart, or kill.
 - Slug: unique, immutable, `[a-z0-9-]`, used in API routes and domain names
 
 ### Capability System (`Capabilities/`)
-- 8 behavioral capabilities: process, port-injection, routing, health-check, environment-defaults, restart, auto-start, artifact
+- 11 behavioral capabilities: process, port-injection, routing, health-check, environment-defaults, restart, auto-start, artifact, runtime-config-file (#336), security-headers (#309), external-target (#348)
 - Static `CapabilityCatalog` (code-only, no DB table) — `FrozenDictionary<string, CapabilityDefinition>` keyed by capability slug, defines display name + configuration type + schema.
 - Type-level defaults live on the `AppType` JSON files (`Data/BuiltInTypes/*.json` and the user-types dir) as a `capabilities` dictionary. Per-app overrides are stored as `CapabilityOverride` rows (`AppId` + `CapabilitySlug` + `ConfigurationJson`).
 - `CapabilityResolver.Resolve<T>(defaultJson, overrideJson)` — pure static function, deep JSON merge, no I/O. `ResolveJson(...)` returns the merged JSON without deserialization. `ValidateEdits(...)` enforces schema known-key + Locked/Derived field rules.

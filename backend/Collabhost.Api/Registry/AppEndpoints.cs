@@ -148,6 +148,7 @@ public static class AppEndpoints
 
         var hasProcess = bindings?.ContainsKey("process") ?? false;
         var hasRouting = bindings?.ContainsKey("routing") ?? false;
+        var hasExternalTarget = bindings?.ContainsKey("external-target") ?? false;
 
         // Routing
         RoutingConfiguration? routingConfiguration = null;
@@ -217,11 +218,53 @@ public static class AppEndpoints
 
         if (routingConfiguration is not null && domain is not null)
         {
-            var target = routingConfiguration.ServeMode == ServeMode.ReverseProxy && process?.Port is not null
-                ? $"localhost:{process.Port.Value.ToString(CultureInfo.InvariantCulture)}"
-                : routingConfiguration.ServeMode == ServeMode.FileServer
+            string target;
+
+            if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
+            {
+                if (hasExternalTarget)
+                {
+                    // External-target apps (Card #348): the upstream is operator-
+                    // declared, surface the resolved host:port so the App Detail
+                    // page tells the operator where the proxy actually dials --
+                    // not a misleading "localhost:..." that does not exist.
+                    var externalTarget = bindings is not null
+                        && bindings.TryGetValue("external-target", out var externalTargetBinding)
+                            ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
+                            (
+                                externalTargetBinding,
+                                overrides.TryGetValue("external-target", out var externalTargetOverride)
+                                    ? externalTargetOverride.ConfigurationJson
+                                    : null
+                            )
+                            : null;
+
+                    target = externalTarget is not null
+                        && !string.IsNullOrWhiteSpace(externalTarget.Host)
+                        && externalTarget.Port > 0
+                            ? string.Format
+                            (
+                                CultureInfo.InvariantCulture,
+                                "{0}://{1}:{2}",
+                                externalTarget.Scheme,
+                                externalTarget.Host,
+                                externalTarget.Port
+                            )
+                            : "not-configured";
+                }
+                else
+                {
+                    target = process?.Port is not null
+                        ? $"localhost:{process.Port.Value.ToString(CultureInfo.InvariantCulture)}"
+                        : "not-running";
+                }
+            }
+            else
+            {
+                target = routingConfiguration.ServeMode == ServeMode.FileServer
                     ? "file-server"
                     : "not-running";
+            }
 
             // TLS posture is derived from the proxy's configured listen surface (Card
             // #263 item 1.3). Today this evaluates to true on every supported install
@@ -236,12 +279,25 @@ public static class AppEndpoints
 
         var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug);
 
-        // Health status -- pulled from the executor's cache. Null when the capability
-        // is not bound for this app type, when the process is not running, or when
-        // no probe has run yet. The frontend renders null as "--".
+        // Health status -- pulled from the executor's cache. Null when the
+        // capability is not bound for this app type, when there is no live
+        // probe target, or when no probe has run yet. The frontend renders
+        // null as "--".
+        //
+        // Two live-probe shapes today (Card #348):
+        //   (a) Supervised-process app, process running -- the existing shape.
+        //   (b) External-route app, route enabled -- the executor's TickAsync
+        //       gates on IsRouteEnabled, so a disabled external-route's
+        //       cache entry is cleared. We still gate at the surface so a
+        //       race (probe wrote, then operator disabled) doesn't show a
+        //       stale value.
         string? healthStatus = null;
 
-        if (process is not null && process.IsRunning && hasProcess)
+        var liveProbeTarget =
+            (hasProcess && process is not null && process.IsRunning)
+            || (hasExternalTarget && hasRouting && routeEnabled);
+
+        if (liveProbeTarget)
         {
             var healthResult = healthCheckExecutor.GetLatest(app.Id);
 
@@ -272,6 +328,8 @@ public static class AppEndpoints
             }
         }
 
+        var tabs = ResolveTabs(app.AppTypeSlug);
+
         var detail = new AppDetail
         (
             app.Id.ToString(),
@@ -298,11 +356,28 @@ public static class AppEndpoints
             resources,
             route,
             actions,
-            dataPathResolver.ResolveFor(app.Slug)
+            dataPathResolver.ResolveFor(app.Slug),
+            tabs
         );
 
         return TypedResults.Ok(detail);
     }
+
+    // Backend-authoritative App Detail tabs (Card #348, D5). Centralized so
+    // every future AppType only updates this one switch; the FE renders what
+    // the backend says without re-deriving from appType.slug or actions. The
+    // switch matches every built-in slug today; unknown slugs default to the
+    // process-app shape rather than rendering an empty tab strip on an
+    // unrecognized type (preserves existing FE behavior pre-#348).
+    internal static IReadOnlyList<string> ResolveTabs(string appTypeSlug) =>
+        appTypeSlug switch
+        {
+            "dotnet-app" or "nodejs-app" or "executable" => ["logs", "technology"],
+            "static-site" => ["logs", "technology"],
+            "system-service" => ["logs"],
+            "external-route" => ["health", "route"],
+            _ => ["logs", "technology"]
+        };
 
     private static async Task<IResult> GetAppSettingsAsync
     (
@@ -347,6 +422,7 @@ public static class AppEndpoints
         ProbeService probeService,
         ProxyManager proxy,
         RuntimeConfigFileWriter runtimeConfigFileWriter,
+        ExternalTargetSettings externalTargetSettings,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
         CancellationToken ct
@@ -402,7 +478,7 @@ public static class AppEndpoints
 
             var validationErrors = CapabilityResolver.ValidateEdits
             (
-                sectionKey, proposedOverrides, false
+                sectionKey, proposedOverrides, false, externalTargetSettings.AllowPublicHosts
             );
 
             if (validationErrors.Count > 0)
@@ -920,6 +996,7 @@ public static class AppEndpoints
         AppStore store,
         TypeStore typeStore,
         ProxyManager proxy,
+        ExternalTargetSettings externalTargetSettings,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
         AppDataPathResolver dataPathResolver,
@@ -983,7 +1060,7 @@ public static class AppEndpoints
 
                 var validationErrors = CapabilityResolver.ValidateEdits
                 (
-                    sectionKey, overrideObject, true
+                    sectionKey, overrideObject, true, externalTargetSettings.AllowPublicHosts
                 );
 
                 if (validationErrors.Count > 0)
@@ -1053,14 +1130,27 @@ public static class AppEndpoints
             );
         }
 
-        // Routing-only apps (e.g. static sites) start with their route disabled.
-        // Process-based apps have routes tied to process state, so no explicit disable needed.
+        // Routing-only apps (e.g. static sites) start with their route disabled
+        // because the operator still needs to populate an artifact directory
+        // before the route is meaningful. External-route apps (Card #348, D8)
+        // skip that intermediate step -- the upstream is operator-declared --
+        // so they auto-enable at registration. Process-based apps have routes
+        // tied to process state and need no explicit toggle here.
         var hasRouting = typeStore.HasBinding(appType.Slug, "routing");
         var hasProcess = typeStore.HasBinding(appType.Slug, "process");
+        var hasExternalTarget = typeStore.HasBinding(appType.Slug, "external-target");
 
         if (hasRouting && !hasProcess)
         {
-            proxy.DisableRoute(app.Slug);
+            if (hasExternalTarget)
+            {
+                proxy.EnableRoute(app.Slug);
+                proxy.RequestSync();
+            }
+            else
+            {
+                proxy.DisableRoute(app.Slug);
+            }
         }
 
         await activityEventStore.RecordAsync
@@ -1080,6 +1170,26 @@ public static class AppEndpoints
             ct
         );
 
+        // Card #348 polish (C-1): external-route apps auto-enable at registration (D8).
+        // Record AppStarted so the activity feed reflects the route going live -- the same
+        // event the manual start path records for routing-only apps (StartAppAsync).
+        if (hasExternalTarget)
+        {
+            await activityEventStore.RecordAsync
+            (
+                new ActivityEvent
+                {
+                    EventType = ActivityEventTypes.AppStarted,
+                    ActorId = currentUser.UserId.ToString(),
+                    ActorName = currentUser.User.Name,
+                    AppId = app.Id.ToString(),
+                    AppSlug = app.Slug,
+                    MetadataJson = null
+                },
+                ct
+            );
+        }
+
         return TypedResults.Created
         (
             $"/api/v1/apps/{app.Slug}",
@@ -1091,7 +1201,9 @@ public static class AppEndpoints
     (
         string slug,
         AppStore store,
+        TypeStore typeStore,
         ProcessSupervisor supervisor,
+        ProxyManager proxy,
         ProbeService probeService,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
@@ -1109,6 +1221,7 @@ public static class AppEndpoints
         var appId = app.Id.ToString();
         var appSlug = app.Slug;
         var appDisplayName = app.DisplayName;
+        var appTypeSlug = app.AppTypeSlug;
 
         // Stop if running (10s timeout, force-kill fallback)
         var process = supervisor.GetProcess(app.Id);
@@ -1137,6 +1250,22 @@ public static class AppEndpoints
             {
                 // Already stopped
             }
+        }
+
+        // Routing-only apps (static-site, external-route): explicitly disable
+        // the route before the row is deleted. Without this, the route survives
+        // in Caddy until the next SyncRoutesAsync pass re-derives the live set
+        // from AppStore.ListAsync -- a small window where Caddy still routes to
+        // an app that no longer exists. Card #348 fix-along; in-scope per
+        // CLAUDE.md Rule 9 marginal-cost test (the PR already touches the
+        // proxy surface, the delete site is the natural symmetric closure).
+        var hasProcess = typeStore.HasBinding(appTypeSlug, "process");
+        var hasRouting = typeStore.HasBinding(appTypeSlug, "routing");
+
+        if (!hasProcess && hasRouting)
+        {
+            proxy.DisableRoute(appSlug);
+            proxy.RequestSync();
         }
 
         await store.DeleteAppAsync(app.Id, ct);
@@ -1311,7 +1440,15 @@ public static class AppEndpoints
                         // to align with the FE's view of the parent value.
                         fieldDescriptor.DependsOn is { } dependsOn
                             ? new FieldDependency(dependsOn.Field, dependsOn.Value.ToCamelCase())
-                            : null
+                            : null,
+                        // Card #348: per-field validation hints (Required /
+                        // ValuePattern / MinValue / MaxValue) surface so the FE
+                        // can mirror the server's authoritative rule.
+                        fieldDescriptor.Required,
+                        fieldDescriptor.ValuePattern,
+                        fieldDescriptor.ValuePatternMessage,
+                        fieldDescriptor.MinValue,
+                        fieldDescriptor.MaxValue
                     )
                 );
             }
@@ -1362,13 +1499,14 @@ file static class AppEndpointExtensions
         {
             "process" => 0,
             "port-injection" => 1,
-            "routing" => 2,
-            "health-check" => 3,
-            "restart" => 4,
-            "auto-start" => 5,
-            "environment-defaults" => 6,
-            "runtime-config-file" => 7,
-            "artifact" => 8,
+            "external-target" => 2, // Card #348: keep adjacent to routing -- the upstream-target capability sits with the routing concern.
+            "routing" => 3,
+            "health-check" => 4,
+            "restart" => 5,
+            "auto-start" => 6,
+            "environment-defaults" => 7,
+            "runtime-config-file" => 8,
+            "artifact" => 9,
             _ => 99
         };
     }

@@ -1306,4 +1306,179 @@ public class ProxyConfigurationBuilderTests
     [InlineData("   ", false)]
     public void HasTlsListener_VariousAddresses_ReturnsExpected(string listenAddress, bool expected) =>
         ProxyConfigurationBuilder.HasTlsListener(listenAddress).ShouldBe(expected);
+
+    // -------- External-target dial (Card #348) --------
+
+    [Fact]
+    public void Build_ExternalRoute_DialsTheOperatorDeclaredAddress()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "crawl4ai",
+                DefaultDomain("crawl4ai"),
+                ServeMode.ReverseProxy,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: null,
+                Enabled: true,
+                ResponseHeaders: null,
+                SecurityHeaders: null,
+                ExternalDial: "192.168.1.50:11235",
+                ExternalScheme: "http"
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var appRoute = GetRoutes(config)![1]!;
+        var dial = appRoute["handle"]![0]!["upstreams"]![0]!["dial"]!.GetValue<string>();
+        dial.ShouldBe("192.168.1.50:11235");
+    }
+
+    [Fact]
+    public void Build_ExternalRoute_HttpScheme_OmitsTransportBlock()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "crawl4ai",
+                DefaultDomain("crawl4ai"),
+                ServeMode.ReverseProxy,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: null,
+                Enabled: true,
+                ResponseHeaders: null,
+                SecurityHeaders: null,
+                ExternalDial: "localhost:11235",
+                ExternalScheme: "http"
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+        handler.AsObject().ContainsKey("transport").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Build_ExternalRoute_HttpsScheme_EmitsTransportTlsBlock()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "upstream",
+                DefaultDomain("upstream"),
+                ServeMode.ReverseProxy,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: null,
+                Enabled: true,
+                ResponseHeaders: null,
+                SecurityHeaders: null,
+                ExternalDial: "upstream.local:8443",
+                ExternalScheme: "https"
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+        var transport = handler["transport"]!.AsObject();
+
+        transport["protocol"]!.GetValue<string>().ShouldBe("http");
+        transport["tls"]!.AsObject().Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Build_SupervisedRoute_ExternalDialNull_DialsLocalhostAsBefore()
+    {
+        // Regression guard: the new field defaults preserve the supervised-
+        // process shape byte-identically.
+        var routes = new List<RouteEntry>
+        {
+            new("my-app", DefaultDomain("my-app"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var dial = GetRoutes(config)![1]!["handle"]![0]!["upstreams"]![0]!["dial"]!.GetValue<string>();
+        dial.ShouldBe("localhost:5000");
+    }
+
+    [Fact]
+    public void Build_ExternalRoute_WithSecurityHeaders_WrapsInSubroute()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "crawl4ai",
+                DefaultDomain("crawl4ai"),
+                ServeMode.ReverseProxy,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: null,
+                Enabled: true,
+                ResponseHeaders: null,
+                SecurityHeaders: new SecurityHeadersConfiguration
+                {
+                    EnableHsts = false,
+                    HstsMaxAgeSeconds = 300,
+                    Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["X-Content-Type-Options"] = "nosniff"
+                    }
+                },
+                ExternalDial: "192.168.1.50:11235",
+                ExternalScheme: "http"
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+        handler["handler"]!.GetValue<string>().ShouldBe("subroute");
+
+        var subrouteHandlers = handler["routes"]!.AsArray();
+        subrouteHandlers.Count.ShouldBe(2);
+
+        // First handler is the security-headers blanket; second wraps the
+        // reverse_proxy still dialing the external target.
+        var reverseProxy = subrouteHandlers[1]!["handle"]![0]!;
+        reverseProxy["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+        reverseProxy["upstreams"]![0]!["dial"]!.GetValue<string>().ShouldBe("192.168.1.50:11235");
+    }
+
+    [Fact]
+    public void Build_DisabledExternalRoute_EmitsServiceUnavailableStub()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "crawl4ai",
+                DefaultDomain("crawl4ai"),
+                ServeMode.ReverseProxy,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: null,
+                Enabled: false,
+                ResponseHeaders: null,
+                SecurityHeaders: null,
+                ExternalDial: "192.168.1.50:11235",
+                ExternalScheme: "http"
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+        handler["handler"]!.GetValue<string>().ShouldBe("static_response");
+        handler["status_code"]!.GetValue<string>().ShouldBe("503");
+    }
 }

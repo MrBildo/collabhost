@@ -27,6 +27,7 @@ public class RegistrationTools
     TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
+    ExternalTargetSettings externalTargetSettings,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
     AppDataPathResolver dataPathResolver,
@@ -45,6 +46,11 @@ public class RegistrationTools
 
     private readonly ProxyManager _proxy = proxy
         ?? throw new ArgumentNullException(nameof(proxy));
+
+    // Card #348, D3. Carried through to CapabilityResolver.ValidateEdits when
+    // a registration settings JSON carries an external-target section.
+    private readonly ExternalTargetSettings _externalTargetSettings = externalTargetSettings
+        ?? throw new ArgumentNullException(nameof(externalTargetSettings));
 
     private readonly ICurrentUser _currentUser = currentUser
         ?? throw new ArgumentNullException(nameof(currentUser));
@@ -73,11 +79,17 @@ public class RegistrationTools
     public async Task<CallToolResult> RegisterAppAsync
     (
         [Description("Display name for the application (e.g., 'My API Server').")] string name,
-        [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'system-service').")] string appTypeSlug,
-        [Description("Absolute path to the application's directory on the host filesystem.")] string installDirectory,
+        [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'system-service', 'external-route').")] string appTypeSlug,
+        // installDirectory loosened to conditionally-required per Card #348 D4.
+        // For app types that bind process or artifact (dotnet-app, nodejs-app, static-site,
+        // executable, system-service) the directory is still required and validated below
+        // after type lookup. For routing-only types whose upstream is operator-declared
+        // (external-route via external-target binding) the parameter is meaningless and
+        // accepted as empty or null.
+        [Description("Absolute path to the application's directory on the host filesystem. Required for app types that bind process or artifact (dotnet-app, nodejs-app, static-site, executable, system-service). Accepted as empty or null for routing-only types like external-route, which have no install directory.")] string? installDirectory = null,
         // Explicit `= null` default is load-bearing: the MCP tool-binding marshaller treats params with no
         // C# default as required. Card #331.
-        [Description("Optional JSON object with additional registration settings specific to the app type. Example: {\"process\":{\"command\":\"./myapp\",\"arguments\":\"--port 5000\",\"discoveryStrategy\":\"Manual\"}}. Valid process keys: command, arguments, workingDirectory, discoveryStrategy, shutdownTimeoutSeconds, startupGracePeriodSeconds, maxStartupRetries.")] string? settings = null,
+        [Description("Optional JSON object with additional registration settings specific to the app type. Examples: dotnet-app -> {\"process\":{\"command\":\"./myapp\",\"arguments\":\"--port 5000\",\"discoveryStrategy\":\"Manual\"}}; external-route -> {\"external-target\":{\"host\":\"localhost\",\"port\":11235,\"scheme\":\"http\"}}. Valid process keys: command, arguments, workingDirectory, discoveryStrategy, shutdownTimeoutSeconds, startupGracePeriodSeconds, maxStartupRetries. Valid external-target keys: host, port, scheme.")] string? settings = null,
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
         CancellationToken ct = default
     )
@@ -99,16 +111,28 @@ public class RegistrationTools
             return McpResponseFormatter.InvalidParameters("appTypeSlug is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(installDirectory))
-        {
-            return McpResponseFormatter.InvalidParameters("installDirectory is required.");
-        }
-
         var appType = _typeStore.GetBySlug(appTypeSlug);
 
         if (appType is null)
         {
             return McpResponseFormatter.AppTypeNotFound(appTypeSlug);
+        }
+
+        // installDirectory is required only for app types that bind `process`
+        // (uses it as workingDirectory) or `artifact` (uses it as location).
+        // For sparse-capability routing-only types like external-route, the
+        // parameter is meaningless and accepted as null or empty. Card #348, D4.
+        var directoryRequired =
+            _typeStore.HasBinding(appType.Slug, "process")
+            || _typeStore.HasBinding(appType.Slug, "artifact");
+
+        if (directoryRequired && string.IsNullOrWhiteSpace(installDirectory))
+        {
+            return McpResponseFormatter.InvalidParameters
+            (
+                $"installDirectory is required for app type '{appType.Slug}' "
+                + "(this type uses an install directory for its process or artifact location)."
+            );
         }
 
         // Derive slug from name
@@ -186,7 +210,7 @@ public class RegistrationTools
 
                     var validationErrors = CapabilityResolver.ValidateEdits
                     (
-                        sectionKey, sectionChanges, true
+                        sectionKey, sectionChanges, true, _externalTargetSettings.AllowPublicHosts
                     );
 
                     if (validationErrors.Count > 0)
@@ -251,12 +275,33 @@ public class RegistrationTools
         }
 
         // Routing-only apps (e.g. static sites) start with their route disabled
+        // because the operator still needs to populate an artifact directory
+        // before the route is meaningful. External-route apps (Card #348, D8)
+        // are the inversion: there is no "build artifact" intermediate step,
+        // the upstream is the operator-declared host:port, so the honest
+        // default is enabled-at-registration. If the operator later wants to
+        // disable, stop_app is the lever.
+        //
+        // EnableRoute failure mode. If the channel is full or Caddy is down,
+        // the call returns but the route stays disabled until the next sync.
+        // The operator gets a 200 from register_app and can call start_app
+        // to retry. Same posture as today's process apps -- creation
+        // succeeds, start can fail later.
         var hasRouting = _typeStore.HasBinding(appType.Slug, "routing");
         var hasProcessCapability = _typeStore.HasBinding(appType.Slug, "process");
+        var hasExternalTarget = _typeStore.HasBinding(appType.Slug, "external-target");
 
         if (hasRouting && !hasProcessCapability)
         {
-            _proxy.DisableRoute(app.Slug);
+            if (hasExternalTarget)
+            {
+                _proxy.EnableRoute(app.Slug);
+                _proxy.RequestSync();
+            }
+            else
+            {
+                _proxy.DisableRoute(app.Slug);
+            }
         }
 
         try
@@ -277,6 +322,25 @@ public class RegistrationTools
                 },
                 ct
             );
+
+            // Card #348 polish (C-1): external-route apps auto-enable at registration (D8).
+            // Record AppStarted so the activity feed reflects the route going live.
+            if (hasExternalTarget)
+            {
+                await _activityEventStore.RecordAsync
+                (
+                    new ActivityEvent
+                    {
+                        EventType = ActivityEventTypes.AppStarted,
+                        ActorId = _currentUser.UserId.ToString(),
+                        ActorName = _currentUser.User.Name,
+                        AppId = app.Id.ToString(),
+                        AppSlug = app.Slug,
+                        MetadataJson = null
+                    },
+                    ct
+                );
+            }
         }
         catch (Exception ex)
         {
@@ -373,6 +437,21 @@ public class RegistrationTools
             {
                 // Already stopped
             }
+        }
+
+        // Routing-only apps (static-site, external-route): disable the Caddy route
+        // before the row is deleted. Without this, the route survives in Caddy until
+        // the next sync pass re-derives the live set from AppStore.ListAsync -- a small
+        // window where Caddy still routes to an app that no longer exists.
+        // Card #348 polish: REST DeleteAppAsync got this fix-along in the initial PR.
+        // MCP delete_app is the symmetric closure (same marginal cost, same surface).
+        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
+        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
+
+        if (!hasProcess && hasRouting)
+        {
+            _proxy.DisableRoute(appSlug);
+            _proxy.RequestSync();
         }
 
         await _appStore.DeleteAppAsync(app.Id, ct);

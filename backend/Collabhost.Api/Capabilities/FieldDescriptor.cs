@@ -19,7 +19,18 @@ public record FieldDescriptor
     // not frontend-only trust: CapabilityResolver.ValidateEdits enforces the
     // same pattern server-side. Card #308.
     string? KeyPattern = null,
-    string? KeyPatternMessage = null
+    string? KeyPatternMessage = null,
+    // Text/Number scalar fields. Server-authoritative validation rule plus
+    // its operator-facing message. ValuePattern carries a regex the value
+    // must match (Text fields only); MinValue/MaxValue bound a numeric value
+    // (Number fields only). All three are absent on every existing field --
+    // adding any of them is purely additive. CapabilityResolver.ValidateEdits
+    // enforces them server-side; FieldDescriptor surfaces them so the FE can
+    // mirror the rule. Card #348.
+    string? ValuePattern = null,
+    string? ValuePatternMessage = null,
+    double? MinValue = null,
+    double? MaxValue = null
 );
 
 public record FieldOption(string Value, string Label);

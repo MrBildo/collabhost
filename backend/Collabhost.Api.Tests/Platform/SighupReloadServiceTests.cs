@@ -132,7 +132,7 @@ public class SighupReloadServiceTests : IDisposable
         var typeStore = CreateTypeStore();
         await typeStore.LoadAsync();
 
-        typeStore.ListTypes().Count.ShouldBe(5);
+        typeStore.ListTypes().Count.ShouldBe(6);
 
         using var lifetime = new StubApplicationLifetime();
         using var service = new SighupReloadService(typeStore, lifetime, NullLogger<SighupReloadService>.Instance);
@@ -153,12 +153,12 @@ public class SighupReloadServiceTests : IDisposable
         // trigger fires-and-forgets a Task.Run, so we have to poll for the snapshot update.
         await WaitForConditionAsync
         (
-            () => typeStore.ListTypes().Count == 6,
+            () => typeStore.ListTypes().Count == 7,
             lifetime.ApplicationStopping,
             timeoutMilliseconds: 5000
         );
 
-        typeStore.ListTypes().Count.ShouldBe(6);
+        typeStore.ListTypes().Count.ShouldBe(7);
 
         var customType = typeStore.GetBySlug("sighup-test-app");
         customType.ShouldNotBeNull();

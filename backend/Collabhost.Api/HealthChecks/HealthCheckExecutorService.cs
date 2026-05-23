@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Supervisor;
 
@@ -22,6 +23,7 @@ public class HealthCheckExecutorService
     TypeStore typeStore,
     CapabilityStore capabilityStore,
     ProcessSupervisor supervisor,
+    ProxyManager proxy,
     HealthCheckProbe probe,
     TimeProvider timeProvider,
     ILogger<HealthCheckExecutorService> logger
@@ -38,6 +40,12 @@ public class HealthCheckExecutorService
 
     private readonly ProcessSupervisor _supervisor = supervisor
         ?? throw new ArgumentNullException(nameof(supervisor));
+
+    // External-route apps (Card #348) don't have a supervised process for the
+    // executor to gate on -- the route-enabled state is the analog. Resolved
+    // via ProxyManager.IsRouteEnabled inside TickAsync.
+    private readonly ProxyManager _proxy = proxy
+        ?? throw new ArgumentNullException(nameof(proxy));
 
     private readonly HealthCheckProbe _probe = probe
         ?? throw new ArgumentNullException(nameof(probe));
@@ -112,12 +120,80 @@ public class HealthCheckExecutorService
                 continue;
             }
 
-            var process = _supervisor.GetProcess(app.Id);
+            // Resolve the probe target. Two shapes today (Card #348):
+            //   (a) Supervised-process apps (dotnet-app, nodejs-app, executable):
+            //       the supervisor's ManagedProcess is the source of truth for
+            //       port + running-state; the probe dials localhost:{port}.
+            //   (b) External-target apps (external-route): the operator-declared
+            //       host:port is the probe target; the route-enabled state is
+            //       the analog of "process is running" -- a disabled route
+            //       means the operator has stopped the app and we should NOT
+            //       probe the underlying upstream (which may still be up).
+            string host;
+            int port;
+            string scheme;
 
-            if (process is null || !process.IsRunning || process.Port is null)
+            var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
+
+            if (hasProcess)
             {
-                // Not running -> clear stale "healthy" / "unhealthy" results.
-                // The reader returns null in this state and the UI renders "--".
+                var process = _supervisor.GetProcess(app.Id);
+
+                if (process is null || !process.IsRunning || process.Port is null)
+                {
+                    // Not running -> clear stale "healthy" / "unhealthy" results.
+                    // The reader returns null in this state and the UI renders "--".
+                    _latest.TryRemove(app.Id, out _);
+                    _lastProbedAt.TryRemove(app.Id, out _);
+                    continue;
+                }
+
+                host = "localhost";
+                port = process.Port.Value;
+                scheme = "http";
+            }
+            else if (_typeStore.HasBinding(app.AppTypeSlug, "external-target"))
+            {
+                // Disabled route is the "operator stopped this app" signal --
+                // clear the cached result and skip. Matches the supervised-
+                // process branch's "not running" clearing semantics so the FE
+                // renders "--" on the App Detail page.
+                if (!_proxy.IsRouteEnabled(app.Slug))
+                {
+                    _latest.TryRemove(app.Id, out _);
+                    _lastProbedAt.TryRemove(app.Id, out _);
+                    continue;
+                }
+
+                var target = await _capabilityStore.ResolveAsync<ExternalTargetConfiguration>
+                (
+                    "external-target", app, ct
+                );
+
+                if (target is null
+                    || string.IsNullOrWhiteSpace(target.Host)
+                    || target.Port <= 0)
+                {
+                    // Misconfigured external-target -> clear and skip. Same
+                    // shape as supervised-process unconfigured-port -- the
+                    // proxy's LoadRoutableAppsAsync logs the warning; here we
+                    // just keep state clean.
+                    _latest.TryRemove(app.Id, out _);
+                    _lastProbedAt.TryRemove(app.Id, out _);
+                    continue;
+                }
+
+                host = target.Host;
+                port = target.Port;
+                scheme = target.Scheme;
+            }
+            else
+            {
+                // Health-check capability bound but neither process nor
+                // external-target -- unreachable for any built-in AppType
+                // shipped today; the safe behavior is "skip and clear" so a
+                // misshaped user-defined AppType doesn't accumulate stale
+                // probe state.
                 _latest.TryRemove(app.Id, out _);
                 _lastProbedAt.TryRemove(app.Id, out _);
                 continue;
@@ -142,13 +218,15 @@ public class HealthCheckExecutorService
 
             _lastProbedAt[app.Id] = now;
 
-            var port = process.Port.Value;
             var appId = app.Id;
             var slug = app.Slug;
+            var probeHost = host;
+            var probePort = port;
+            var probeScheme = scheme;
 
             probeTasks.Add(Task.Run(async () =>
             {
-                var result = await _probe.ProbeAsync(slug, port, configuration, ct);
+                var result = await _probe.ProbeAsync(slug, probeHost, probePort, probeScheme, configuration, ct);
                 _latest[appId] = result;
             }, ct));
         }

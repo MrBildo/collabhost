@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Collabhost.Api.Capabilities;
 
 public static partial class CapabilityResolver
@@ -88,6 +90,52 @@ public static partial class CapabilityResolver
     [GeneratedRegex(@"^[!#$%&'*+.^_`|~0-9A-Za-z-]+\z", RegexOptions.None, 100)]
     private static partial Regex SecurityHeaderKeyPattern { get; }
 
+    // External-target host contract (Card #348). Permits loopback / RFC1918 /
+    // link-local IPv4 / IPv6 loopback / *.local / *.lan -- the homelab /
+    // container / Tailscale audience. ExternalTargetSettings.AllowPublicHosts
+    // bypasses this pattern when an operator opts in to public-hostname
+    // upstreams.
+    //
+    // Wire form uses $ (JavaScript-safe ECMA-262 anchor); compiled form uses
+    // \z to refuse trailing \n -- a host bearing a newline is a config
+    // landmine, not a legitimate hostname. The wire-vs-compile mapping lives
+    // in ResolveValuePattern (mirrors the existing ResolveKeyPattern split
+    // per #310).
+    public const string ExternalTargetHostPatternString =
+        @"^(localhost|127\.0\.0\.1|::1|"
+        + @"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        + @"192\.168\.\d{1,3}\.\d{1,3}|"
+        + @"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+        + @"169\.254\.\d{1,3}\.\d{1,3}|"
+        + @"[A-Za-z0-9-]+\.local|"
+        + @"[A-Za-z0-9-]+\.lan)$";
+
+    public const string ExternalTargetHostPatternMessage =
+        "Host must be localhost, 127.0.0.1, ::1, an RFC1918 / link-local IPv4 "
+        + "address, or a *.local / *.lan hostname. To front a public hostname, "
+        + "set ExternalTarget:AllowPublicHosts = true in appsettings.";
+
+    [GeneratedRegex
+    (
+        @"^(localhost|127\.0\.0\.1|::1|"
+        + @"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        + @"192\.168\.\d{1,3}\.\d{1,3}|"
+        + @"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+        + @"169\.254\.\d{1,3}\.\d{1,3}|"
+        + @"[A-Za-z0-9-]+\.local|"
+        + @"[A-Za-z0-9-]+\.lan)\z",
+        RegexOptions.None,
+        100
+    )]
+    private static partial Regex ExternalTargetHostPattern { get; }
+
+    // Permissive shape fallback when AllowPublicHosts is on. "host is a
+    // non-empty string that looks like a hostname or IP" -- alphanumeric +
+    // '.' + '-' + ':' (for IPv6 literals like ::1 or [fe80::1]). The policy
+    // gate is upstream (AllowPublicHosts); this is the residual shape check.
+    [GeneratedRegex(@"^[A-Za-z0-9.:\-]+\z", RegexOptions.None, 100)]
+    private static partial Regex PermissiveHostnamePattern { get; }
+
     public static T Resolve<T>(string defaultConfigurationJson, string? overrideConfigurationJson)
         where T : class
     {
@@ -152,11 +200,30 @@ public static partial class CapabilityResolver
             _ => new Regex(patternString, RegexOptions.None, TimeSpan.FromMilliseconds(100))
         };
 
+    // Sibling of ResolveKeyPattern for ValuePattern (FieldDescriptor.ValuePattern,
+    // Card #348). Same wire-vs-compile discipline (#310 LESSON) -- wire uses $,
+    // compile uses \z. Returns null when the schema's pattern is recognized
+    // AND the active policy explicitly bypasses it -- the external-target host
+    // policy uses this to return null when AllowPublicHosts is on, falling
+    // through to the permissive hostname fallback in the validator.
+    //
+    // The closed-set switch is the canonical safety net: ValuePattern values
+    // are author-controlled (FieldDescriptor in *Configuration.Schema) and the
+    // strict-anchor compiled form lives in a corresponding [GeneratedRegex]
+    // partial property. The fallback compiles with a bounded timeout as
+    // defense-in-depth for a future schema pattern that forgets to register
+    // here -- it never sees untrusted input.
+    public static Regex? ResolveValuePattern(string patternString, bool allowPublicHosts = false) =>
+        patternString == ExternalTargetHostPatternString
+            ? (allowPublicHosts ? null : ExternalTargetHostPattern)
+            : new Regex(patternString, RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
     public static IReadOnlyList<string> ValidateEdits
     (
         string capabilitySlug,
         JsonObject proposedOverrides,
-        bool isNewApp
+        bool isNewApp,
+        bool allowPublicHosts = false
     )
     {
         var errors = new List<string>();
@@ -191,6 +258,106 @@ public static partial class CapabilityResolver
             else if (field.Editable is FieldEditableDerived derived && !isNewApp)
             {
                 errors.Add($"{capabilitySlug}.{property.Key}: {derived.Reason}");
+            }
+
+            // Required-field check at registration time (isNewApp == true) for
+            // any field whose schema declares Required. Surfaces explicitly-
+            // empty values that the marshaller deserialized to default("") /
+            // default(0) before they land in CapabilityStore. Existing
+            // capabilities that already enforce required-ness via the
+            // FieldEditableLocked guard ("Set during registration") still trip
+            // that check; this is the parallel guard for fields whose Required
+            // shape isn't covered by Locked semantics. Card #348.
+            var fieldIsEmpty = IsEmptyValue(property.Value, field.Type);
+
+            if (field.Required && isNewApp && fieldIsEmpty)
+            {
+                errors.Add($"{capabilitySlug}.{property.Key}: This field is required.");
+            }
+
+            // Numeric bounds (Number fields only). Out-of-range values are
+            // rejected explicitly so the operator-facing message names the
+            // bound instead of a downstream `dial = "<host>:-1"` symptom.
+            // Card #348. Read the value via double-or-long fallback -- JSON
+            // integers come back as long under System.Text.Json's lazy
+            // value-shape inference, and TryGetValue<double>() does not
+            // unbox a long-shaped JsonValue. Skip when the field is empty
+            // (Required handles that case alone) so the operator sees one
+            // error message per missing field, not two.
+            if (field.Type == FieldType.Number
+                && !fieldIsEmpty
+                && property.Value is JsonValue numericValue
+                && TryReadDouble(numericValue, out var asDouble))
+            {
+                if (field.MinValue is { } min && asDouble < min)
+                {
+                    errors.Add
+                    (
+                        $"{capabilitySlug}.{property.Key}: Must be greater than or equal to "
+                        + min.ToString(CultureInfo.InvariantCulture) + "."
+                    );
+                }
+
+                if (field.MaxValue is { } max && asDouble > max)
+                {
+                    errors.Add
+                    (
+                        $"{capabilitySlug}.{property.Key}: Must be less than or equal to "
+                        + max.ToString(CultureInfo.InvariantCulture) + "."
+                    );
+                }
+            }
+
+            // Value-pattern check (Text fields). Same wire-vs-compile
+            // discipline as KeyPattern -- the schema declares a wire form
+            // (FE-consumable regex with $ anchor); ResolveValuePattern
+            // returns the compile-side form (\z anchor) and may return null
+            // when an active policy bypasses the check (e.g. external-target
+            // host under AllowPublicHosts). When the pattern is bypassed AND
+            // the field is the external-target host, fall through to a
+            // permissive hostname-shape check so a value like "foo bar"
+            // still gets rejected even when public hosts are allowed. The
+            // policy gate is the *content* of host the operator may pick.
+            // The residual shape check still applies. Card #348.
+            if (field.Type == FieldType.Text
+                && field.ValuePattern is { } valuePattern
+                && property.Value is JsonValue stringValue
+                && stringValue.TryGetValue<string>(out var asString)
+                && !string.IsNullOrEmpty(asString))
+            {
+                // Empty string is handled by Required (when set) -- skip the
+                // ValuePattern check here so an operator who left a required
+                // field blank doesn't get TWO error messages for the same
+                // condition. A non-Required field with an empty value
+                // legitimately escapes the pattern check (operator hasn't
+                // supplied a value yet).
+                var compiled = ResolveValuePattern(valuePattern, allowPublicHosts);
+
+                if (compiled is not null)
+                {
+                    if (!compiled.IsMatch(asString))
+                    {
+                        errors.Add
+                        (
+                            $"{capabilitySlug}.{property.Key}: "
+                            + (field.ValuePatternMessage ?? "Value does not match the required pattern.")
+                        );
+                    }
+                }
+                else if (valuePattern == ExternalTargetHostPatternString
+                    && !PermissiveHostnamePattern.IsMatch(asString))
+                {
+                    // AllowPublicHosts bypass active. Still enforce the
+                    // permissive hostname shape so whitespace / illegal
+                    // chars don't sneak through. Empty already handled by
+                    // Required and the short-circuit above.
+                    errors.Add
+                    (
+                        $"{capabilitySlug}.{property.Key}: "
+                        + "Host must be a non-empty hostname or IP "
+                        + "(letters, digits, '.', '-', ':' only)."
+                    );
+                }
             }
 
             // Validate key-value field keys against the field's declared key
@@ -237,6 +404,56 @@ public static partial class CapabilityResolver
         ValidateCrossFieldEdits(capabilitySlug, proposedOverrides, errors);
 
         return errors;
+    }
+
+    // Helper. Does the proposed override value mean "operator left this
+    // empty"? For Text and Directory the answer is null/missing or an empty
+    // or whitespace-only string. For Number the answer is zero -- numbers
+    // default to 0 on missing. For other types (Boolean, Select, KeyValue)
+    // the answer is null/missing only -- "false", empty string, and empty
+    // object are legitimate values, not absence.
+    private static bool IsEmptyValue(JsonNode? value, FieldType type) =>
+        value is null
+            ? true
+            : type switch
+            {
+                FieldType.Text or FieldType.Directory =>
+                    value is JsonValue stringValue
+                        && stringValue.TryGetValue<string>(out var s)
+                        && string.IsNullOrWhiteSpace(s),
+                FieldType.Number =>
+                    value is JsonValue numericValue
+                        && TryReadDouble(numericValue, out var d)
+                        && Math.Abs(d) < double.Epsilon,
+                _ => false
+            };
+
+    // System.Text.Json keeps numeric values in their original JSON shape
+    // (long for integers, double for fractionals). TryGetValue<double> does
+    // NOT unbox a long-shaped JsonValue and TryGetValue<long> does not
+    // unbox a double-shaped JsonValue. Probe both shapes so the caller can
+    // treat all numeric JSON as a double.
+    private static bool TryReadDouble(JsonValue numericValue, out double value)
+    {
+        if (numericValue.TryGetValue<double>(out value))
+        {
+            return true;
+        }
+
+        if (numericValue.TryGetValue<long>(out var asLong))
+        {
+            value = asLong;
+            return true;
+        }
+
+        if (numericValue.TryGetValue<int>(out var asInt))
+        {
+            value = asInt;
+            return true;
+        }
+
+        value = 0;
+        return false;
     }
 
     // Cross-field validation against the effective post-merge override

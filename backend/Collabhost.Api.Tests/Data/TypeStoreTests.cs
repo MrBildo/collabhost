@@ -44,13 +44,13 @@ public class TypeStoreTests
     }
 
     [Fact]
-    public async Task LoadAsync_LoadsAllFiveBuiltInTypes()
+    public async Task LoadAsync_LoadsAllSixBuiltInTypes()
     {
         var store = CreateTypeStore();
 
         await store.LoadAsync();
 
-        store.ListTypes().Count.ShouldBe(5);
+        store.ListTypes().Count.ShouldBe(6);
     }
 
     [Theory]
@@ -59,6 +59,7 @@ public class TypeStoreTests
     [InlineData("static-site")]
     [InlineData("system-service")]
     [InlineData("executable")]
+    [InlineData("external-route")]
     public async Task LoadAsync_LoadsExpectedSlugs(string slug)
     {
         var store = CreateTypeStore();
