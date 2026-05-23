@@ -33,10 +33,12 @@ namespace Collabhost.Api.Tests.Probes;
 // This file closes that gap. It publishes a real self-contained single-file
 // .NET artifact AND a real framework-dependent loose-*.dll publish at test
 // setup, then asserts ShouldProvision lands the right answer when fed through
-// the real ArtifactEvidenceCollector (no mocked signal anywhere). If a future
-// edit to ArtifactEvidenceCollector.CollectDotnet reorders the rules so that a
-// stray runtimeconfig.json pre-empts single-file detection, the
-// SelfContainedSingleFile_* test breaks loudly.
+// the real ArtifactEvidenceCollector (no mocked signal anywhere). The tests
+// guard the S26 contract specifically: the positive test catches reorders that
+// demote single-file detection below a rule that fires on a console single-file
+// layout, and the negative test catches weakening of the runtimeconfig
+// short-circuit. Reorders that preserve the semantics for these two specific
+// layouts would not be caught.
 //
 // Fixture model: test-time `dotnet publish` against a minimal generated csproj
 // (one Program.cs main entrypoint). Rationale documented in PR body. Cost:
@@ -150,7 +152,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
     // Extracts returns false here and ShouldProvision flips to false on a real
     // self-extracting artifact -- which is the S24/S26 production failure
     // class. This test breaks loudly when that happens.
-    [Fact]
+    [SkippableFact]
     public void SelfContainedSingleFile_ProvisionsTrue_ThroughTheRealCollector()
     {
         SkipIfPublishUnavailable();
@@ -187,7 +189,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
     // DOTNET_BUNDLE_EXTRACT_BASE_DIR. If a future edit weakens the
     // runtimeconfig short-circuit so it falls through into single-file
     // detection by accident, this test catches it.
-    [Fact]
+    [SkippableFact]
     public void FrameworkDependentLooseDll_DoesNotProvision_ThroughTheRealCollector()
     {
         SkipIfPublishUnavailable();
