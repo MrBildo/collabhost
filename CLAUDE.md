@@ -365,7 +365,7 @@ Work is tracked on the Collabhost Collaboard board. Bots and drones use the `col
 | Slug | `collabhost` |
 | Board UUID | `9868de95-1cb0-408f-9776-62eec8cfb9b8` |
 
-Auth key: `.agents.env` → `COLLABOARD_AUTH_KEY` (gitignored, per-operator). Drones receive the key in the dispatch prompt.
+Auth key: each bot reads their `COLLABOARD_AUTH_KEY` from `~/.agents/bots/<bot>/.env` (personal credential, per the `collaboard` skill). The MCP wrapper does not auto-inject; pass `authKey` on every call. Drones read their own key — the dispatching agent does not pass the key in the dispatch prompt.
 
 ### Project lane deviation (Collabhost-only)
 
