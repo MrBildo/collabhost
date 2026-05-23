@@ -241,9 +241,26 @@ public static class DotnetExtractor
                     continue;
                 }
 
-                // Each TFM gets its own subdirectory (e.g., net10.0/)
+                // Each TFM gets its own subdirectory (e.g., net10.0/).
+                // Within a TFM directory, `dotnet publish` (no -o) writes to a
+                // `publish/` subdirectory alongside the build output. Prefer
+                // the publish-side runtime config -- it is the deployment-closest
+                // artifact, same rationale as the top-level publish/ preference
+                // above. (Card #268.)
                 foreach (var tfmDir in Directory.GetDirectories(configDir))
                 {
+                    var tfmPublishDir = Path.Combine(tfmDir, "publish");
+
+                    if (Directory.Exists(tfmPublishDir))
+                    {
+                        var publishResult = FindRuntimeConfig(tfmPublishDir);
+
+                        if (publishResult is not null)
+                        {
+                            return publishResult;
+                        }
+                    }
+
                     var result = FindRuntimeConfig(tfmDir);
 
                     if (result is not null)
