@@ -53,6 +53,9 @@ frontend/src/**/*.js
 # Frontend test artifacts
 frontend/junit.xml
 
+# UAT fixture build output (recipes tracked under docs/uat-fixtures/recipes/, output is not)
+docs/uat-fixtures/build/
+
 # Playwright MCP
 .playwright-mcp/
 
