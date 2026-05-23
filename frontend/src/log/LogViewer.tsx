@@ -145,13 +145,7 @@ function LogViewer({ entries, totalBuffered, stream, onStreamChange, streamMode,
           </button>
         </div>
       </div>
-      <div
-        ref={scrollRef}
-        className="wm-log-viewer flex-1"
-        style={{ minHeight: 0 }}
-        onScroll={handleScroll}
-        onWheel={handleWheel}
-      >
+      <div ref={scrollRef} className="wm-log-viewer flex-1" onScroll={handleScroll} onWheel={handleWheel}>
         {filteredEntries.length === 0 ? (
           <div className="text-xs py-4 text-center" style={{ color: 'var(--wm-text-dim)' }}>
             No log entries

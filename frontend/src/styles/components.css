@@ -874,6 +874,7 @@
   font-size: var(--wm-font-xs);
   line-height: 1.8;
   overflow-y: auto;
+  min-height: var(--wm-stream-min-height);
 }
 
 /* Stream-mode indicator (#321): small pill that appears next to the log
@@ -1526,5 +1527,5 @@ dialog.wm-dialog-overlay::backdrop {
   border: 1px solid var(--wm-border);
   border-radius: var(--wm-radius-md);
   overflow-y: auto;
-  height: 280px;
+  min-height: var(--wm-stream-min-height);
 }
