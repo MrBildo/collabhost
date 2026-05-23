@@ -65,7 +65,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
 
         try
         {
-            var projectDir = await BuildFixtureProjectAsync().ConfigureAwait(false);
+            var projectDir = await BuildFixtureProjectAsync();
 
             // Default debug-symbol shape -- we want the publish that mirrors what
             // an operator running `dotnet publish -r <rid> --self-contained
@@ -92,7 +92,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
                     "-p:GenerateDocumentationFile=false",
                     "--nologo"
                 ]
-            ).ConfigureAwait(false);
+            );
 
             _frameworkDependentDir = await PublishAsync
             (
@@ -109,7 +109,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
                     "-p:GenerateDocumentationFile=false",
                     "--nologo"
                 ]
-            ).ConfigureAwait(false);
+            );
 
             _publishSucceeded = true;
         }
@@ -286,13 +286,13 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
         (
             Path.Combine(projectDir, "collabhost-fixture-hosted-app.csproj"),
             csproj
-        ).ConfigureAwait(false);
+        );
 
         await File.WriteAllTextAsync
         (
             Path.Combine(projectDir, "Program.cs"),
             program
-        ).ConfigureAwait(false);
+        );
 
         return projectDir;
     }
@@ -336,7 +336,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
 
         try
         {
-            await process.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+            await process.WaitForExitAsync(cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -356,8 +356,8 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
             );
         }
 
-        var stdout = await stdoutTask.ConfigureAwait(false);
-        var stderr = await stderrTask.ConfigureAwait(false);
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
 
         return process.ExitCode != 0
             ? throw new PublishFailedException
