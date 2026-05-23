@@ -66,22 +66,37 @@ function AppSettingsPage() {
 
   const settings = settingsQuery.data
 
-  const isDirty = useMemo(() => {
-    if (!settings) return false
+  /**
+   * Single source of truth for the dirty-fields walk. Returns the changed
+   * fields grouped by section, or null when nothing has changed. Both
+   * `isDirty` (the save-button enable state) and the save-payload path in
+   * `handleSave` derive from this — keeping them on one walk prevents the
+   * silent operator-facing defect class where the button says "dirty" but
+   * the payload is empty (or vice versa). (#319)
+   */
+  const computedChanges = useMemo((): Record<string, Record<string, unknown>> | null => {
+    if (!settings) return null
+
+    const changes: Record<string, Record<string, unknown>> = {}
     for (const section of settings.sections) {
       for (const field of section.fields) {
         const editVal = editValues[section.key]?.[field.key]
         if (editVal !== undefined && editVal !== field.value) {
-          if (typeof editVal === 'object' && typeof field.value === 'object') {
-            if (JSON.stringify(editVal) !== JSON.stringify(field.value)) return true
-          } else {
-            return true
+          const isObjectChange = typeof editVal === 'object' && typeof field.value === 'object'
+          const hasChanged = isObjectChange ? JSON.stringify(editVal) !== JSON.stringify(field.value) : true
+          if (hasChanged) {
+            if (!changes[section.key]) changes[section.key] = {}
+            const sectionChanges = changes[section.key]
+            if (sectionChanges) sectionChanges[field.key] = editVal
           }
         }
       }
     }
-    return false
+
+    return Object.keys(changes).length > 0 ? changes : null
   }, [settings, editValues])
+
+  const isDirty = computedChanges !== null
 
   const handleEdit = useCallback(() => {
     if (!settings) return
@@ -113,30 +128,6 @@ function AppSettingsPage() {
       return { ...prev, [sectionKey]: sectionErrors }
     })
   }, [])
-
-  /** Build the changes object from current edit state. Returns null if nothing changed. */
-  const buildChanges = useCallback((): Record<string, Record<string, unknown>> | null => {
-    if (!settings) return null
-
-    const changes: Record<string, Record<string, unknown>> = {}
-    for (const section of settings.sections) {
-      for (const field of section.fields) {
-        const sectionEditValues = editValues[section.key]
-        const editVal = sectionEditValues?.[field.key]
-        if (editVal !== undefined && editVal !== field.value) {
-          const isObjectChange = typeof editVal === 'object' && typeof field.value === 'object'
-          const hasChanged = isObjectChange ? JSON.stringify(editVal) !== JSON.stringify(field.value) : true
-          if (hasChanged) {
-            if (!changes[section.key]) changes[section.key] = {}
-            const sectionChanges = changes[section.key]
-            if (sectionChanges) sectionChanges[field.key] = editVal
-          }
-        }
-      }
-    }
-
-    return Object.keys(changes).length > 0 ? changes : null
-  }, [settings, editValues])
 
   /** Check if any of the changed fields have requiresRestart flagged by the API. */
   const hasRestartRequiredChanges = useCallback(
@@ -205,22 +196,21 @@ function AppSettingsPage() {
   const handleSave = useCallback(() => {
     if (!settings || !slug) return
 
-    const changes = buildChanges()
-    if (!changes) {
+    if (!computedChanges) {
       setIsEditing(false)
       return
     }
 
     // If any changed field requires restart, show the confirmation dialog
-    if (hasRestartRequiredChanges(changes)) {
-      pendingChangesRef.current = changes
+    if (hasRestartRequiredChanges(computedChanges)) {
+      pendingChangesRef.current = computedChanges
       setIsRestartDialogOpen(true)
       return
     }
 
     // No restart-flagged fields changed — save directly
-    executeSave(changes, false)
-  }, [settings, slug, buildChanges, hasRestartRequiredChanges, executeSave])
+    executeSave(computedChanges, false)
+  }, [settings, slug, computedChanges, hasRestartRequiredChanges, executeSave])
 
   const handleSaveAndRestart = useCallback(() => {
     const changes = pendingChangesRef.current
