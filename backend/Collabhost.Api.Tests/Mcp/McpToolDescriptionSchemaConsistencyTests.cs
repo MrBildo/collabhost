@@ -22,11 +22,19 @@ namespace Collabhost.Api.Tests.Mcp;
 
 // Card #306 -- structural regression guard for MCP tool description-vs-schema drift.
 //
-// Failure shape this catches (CH-5/CH-6, fixed in v1.3.0 / f25f87b):
-// a tool's [Description] text claims a key/value/slug that the enforced schema rejects.
-// Concrete example: register_app's description used to list `executablePath` as a valid
-// process key. ProcessConfiguration.Schema has no such key, so an agent following the
+// Failure shape this catches (CH-5, the input-shape drift class, fixed in v1.3.0 / f25f87b):
+// a tool's [Description] text claims a key/value/slug that the enforced input validator
+// rejects. Concrete example: register_app's description used to list `executablePath` as a
+// valid process key. ProcessConfiguration.Schema has no such key, so an agent following the
 // description got an "Unknown field." rejection from CapabilityResolver.ValidateEdits.
+//
+// Scope honesty: this guards the CH-5 input-shape class only. The CH-6 sibling class --
+// return-shape drift, where a tool's description claims a return field that the actual
+// return literal does not produce (e.g. list_apps's "status, type, and route URL" prose,
+// register_app's "writableDataPath" claim, get_app's enumerated return fields) -- is NOT
+// covered by these 5 checks. The mechanic differs: no validator enforces return shape, so
+// the cross-check target would be the C# return literal itself, not a catalog/enum/schema.
+// That is a separate piece of work with its own cost tier, deliberately out of scope here.
 //
 // Why structural and not snapshot:
 //
@@ -36,8 +44,8 @@ namespace Collabhost.Api.Tests.Mcp;
 //   keeps the rule next to the code it protects.
 // - Structural extraction (parse the JSON examples and "Valid <thing>:" prose, then check
 //   each token against the live catalog/enum/schema) gives the lowest noise and highest
-//   signal: it only fires when a description claims something the enforcement actually
-//   rejects -- which is the CH-5/CH-6 class precisely.
+//   signal: it only fires when a description claims an input shape the enforcement
+//   actually rejects -- which is the CH-5 class precisely.
 //
 // What it checks:
 //
@@ -47,8 +55,8 @@ namespace Collabhost.Api.Tests.Mcp;
 //    FieldDescriptor schema.
 // 2. Every "Valid <capability> keys: a, b, c." enumeration must be a subset of the
 //    capability's schema keys.
-// 3. Every "Valid values: ..." list (on a status-typed parameter) must be a subset of the
-//    ProcessState.ToApiString() result set.
+// 3. Every "Valid values: ..." list must be a subset of the ProcessState.ToApiString()
+//    result set. (Today the only `Valid values:` enumeration is list_apps's status filter.)
 // 4. Every quoted app-type slug in a parameter that introduces app-type identifiers must
 //    resolve via TypeStore (covers built-ins; user types are loaded at runtime and would
 //    be present in the fixture's seeded TypeStore too).
@@ -154,7 +162,7 @@ public class McpToolDescriptionSchemaConsistencyTests(ApiFixture fixture)
                             $"{entry.ToolName} ({entry.MethodLabel}): JSON example claims '{sectionKey}.{fieldKey}', "
                             + $"but {sectionKey} schema has no such field. "
                             + $"Valid keys: {string.Join(", ", schemaKeys.Order(StringComparer.Ordinal))}. "
-                            + "(This is the CH-5/CH-6 / #306 class -- description claims a key the validator rejects.)"
+                            + "(This is the CH-5 / #306 class -- description claims a key the validator rejects.)"
                         );
                     }
                 }
@@ -210,13 +218,21 @@ public class McpToolDescriptionSchemaConsistencyTests(ApiFixture fixture)
     [Fact]
     public void StatusFilterEnumeration_IsSubsetOfProcessStateApiStrings()
     {
-        // Matches the list_apps status-filter shape:
-        //   "Filter by app status. Valid values: running, stopped, crashed, backoff, fatal."
-        // We anchor on the word "status" appearing near "Valid values:" -- a status-typed param
-        // is the only place this enumeration applies in current descriptions.
+        // Matches the canonical enumeration shape:
+        //   "Valid values: running, stopped, crashed, backoff, fatal."
+        // Today `Valid values:` only appears on the list_apps status filter, so anchoring on
+        // it alone is unambiguous. An earlier draft prefix-gated on the literal "status"
+        // before "Valid values:" with `status[^.]*?Valid\s+values:` -- but the description
+        // reads "Filter by app status. Valid values: ...", and the lazy non-period quantifier
+        // [^.]*? cannot cross the period between "status" and "Valid values:". That made the
+        // pattern match zero descriptions in production -- the test passed only because no
+        // matches meant no assertions. Dropping the prefix gate fixes the dead check and
+        // makes the test fire on any future `Valid values:` enumeration regardless of
+        // surrounding prose -- a stricter, more honest guard. Process-state semantics are
+        // enforced via the subset check against ProcessState.ToApiString().
         var pattern = new Regex
         (
-            @"status[^.]*?Valid\s+values:\s*(?<list>[^.]+)\.",
+            @"Valid\s+values:\s*(?<list>[^.]+)\.",
             RegexOptions.IgnoreCase | RegexOptions.Singleline,
             TimeSpan.FromMilliseconds(200)
         );
