@@ -37,15 +37,34 @@ function formatStatus(status: AppStatus): string {
   return STATUS_LABELS[status] ?? status
 }
 
-const HEALTH_LABELS: Record<HealthStatus, string> = {
+// Card #348, D6: the backend HealthStatus enum is uniform
+// (healthy/unhealthy/degraded/unknown) for every app type because the
+// underlying signal -- a 2xx GET against a configured /health endpoint -- is
+// the same regardless of who owns the upstream process. The human-language
+// label is rendering, and "healthy" carries the wrong promise for an upstream
+// Collabhost does not run: it implies the platform is observing the upstream's
+// internal health when in fact the platform is only observing its reachability.
+// For the external-route AppType the label is split to "reachable / unreachable"
+// to match what the probe actually proves.
+const HEALTH_LABELS_MANAGED: Record<HealthStatus, string> = {
   healthy: 'Healthy',
   unhealthy: 'Unhealthy',
   degraded: 'Degraded',
   unknown: 'Unknown',
 }
 
-function formatHealthStatus(status: HealthStatus): string {
-  return HEALTH_LABELS[status] ?? status
+const HEALTH_LABELS_EXTERNAL: Record<HealthStatus, string> = {
+  healthy: 'Reachable',
+  unhealthy: 'Unreachable',
+  degraded: 'Degraded',
+  unknown: 'Unknown',
+}
+
+const EXTERNAL_ROUTE_APP_TYPE_SLUG = 'external-route'
+
+function formatHealthStatus(status: HealthStatus, appTypeSlug?: string): string {
+  const labels = appTypeSlug === EXTERNAL_ROUTE_APP_TYPE_SLUG ? HEALTH_LABELS_EXTERNAL : HEALTH_LABELS_MANAGED
+  return labels[status] ?? status
 }
 
 function formatEnumLabel(value: string): string {

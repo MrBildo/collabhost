@@ -1,6 +1,6 @@
 import { ActionBar } from '@/actions/ActionBar'
 import { ActionButton } from '@/actions/ActionButton'
-import type { StreamEntry } from '@/api/types'
+import type { DetailTab, StreamEntry } from '@/api/types'
 import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import {
   useAppDetail,
@@ -28,11 +28,16 @@ import { StatusText } from '@/status/StatusText'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
-type DetailTab = 'logs' | 'technology'
+const TAB_LABELS: Record<DetailTab, string> = {
+  logs: 'Logs',
+  technology: 'Technology',
+  health: 'Health',
+  route: 'Route',
+}
 
 function AppDetailPage() {
   const { slug } = useParams<{ slug: string }>()
-  const [activeTab, setActiveTab] = useState<DetailTab>('logs')
+  const [activeTab, setActiveTab] = useState<DetailTab | null>(null)
   const [logStream, setLogStream] = useState<LogStream>('all')
 
   const detailQuery = useAppDetail(slug ?? '')
@@ -112,27 +117,55 @@ function AppDetailPage() {
     return <ErrorBanner message="App not found" />
   }
 
-  const statItems = [
-    { label: 'PID', value: app.pid ?? '--' },
-    { label: 'Port', value: app.port ?? '--' },
-    { label: 'Uptime', value: formatUptime(app.uptimeSeconds) },
-    {
-      label: 'Restarts',
-      value: app.restartCount,
-      color: app.restartCount > 0 ? ('amber' as const) : ('default' as const),
-    },
-    {
-      label: 'Health',
-      value: app.healthStatus ? formatHealthStatus(app.healthStatus) : '--',
-      color:
-        app.healthStatus === 'healthy'
-          ? ('green' as const)
-          : app.healthStatus === 'unhealthy'
-            ? ('red' as const)
-            : ('default' as const),
-    },
-    { label: 'Memory', value: formatMemory(app.resources?.memoryMb) },
-  ]
+  // Card #348, D5: render only the tabs the backend declared, in the declared
+  // order. Fallback to ['logs', 'technology'] for shapes that predate the field
+  // (defensive -- the FE follow-up ships against a backend that always emits
+  // tabs, but the FE shouldn't crash on a stale stub).
+  const tabs: DetailTab[] = app.tabs && app.tabs.length > 0 ? app.tabs : ['logs', 'technology']
+  const activeTabResolved: DetailTab = activeTab && tabs.includes(activeTab) ? activeTab : (tabs[0] ?? 'logs')
+
+  // Card #348, D6 + spec §12: a non-process app (external-route is the first
+  // instance; future routing-only types ride the same discriminator) doesn't
+  // have a pid/port/uptime/memory to surface. The honest signal is the absence
+  // of the 'logs' tab -- every process-bound type today binds the logs tab
+  // (logs are the process's stdout/stderr stream).
+  const hasManagedProcess = tabs.includes('logs')
+
+  const statItems = hasManagedProcess
+    ? [
+        { label: 'PID', value: app.pid ?? '--' },
+        { label: 'Port', value: app.port ?? '--' },
+        { label: 'Uptime', value: formatUptime(app.uptimeSeconds) },
+        {
+          label: 'Restarts',
+          value: app.restartCount,
+          color: app.restartCount > 0 ? ('amber' as const) : ('default' as const),
+        },
+        {
+          label: 'Health',
+          value: app.healthStatus ? formatHealthStatus(app.healthStatus, app.appType.slug) : '--',
+          color:
+            app.healthStatus === 'healthy'
+              ? ('green' as const)
+              : app.healthStatus === 'unhealthy'
+                ? ('red' as const)
+                : ('default' as const),
+        },
+        { label: 'Memory', value: formatMemory(app.resources?.memoryMb) },
+      ]
+    : [
+        { label: 'Uptime', value: formatUptime(app.uptimeSeconds) },
+        {
+          label: 'Health',
+          value: app.healthStatus ? formatHealthStatus(app.healthStatus, app.appType.slug) : '--',
+          color:
+            app.healthStatus === 'healthy'
+              ? ('green' as const)
+              : app.healthStatus === 'unhealthy'
+                ? ('red' as const)
+                : ('default' as const),
+        },
+      ]
 
   const identityRows = [
     { key: 'slug', label: 'Slug', value: app.name },
@@ -287,26 +320,22 @@ function AppDetailPage() {
         )}
       </div>
 
-      {/* Tab bar */}
+      {/* Tab bar -- order and visibility driven by backend `tabs` (Card #348 D5) */}
       <div className="wm-tab-bar mb-3">
-        <button
-          type="button"
-          className={cn('wm-tab', activeTab === 'logs' && 'wm-tab--active')}
-          onClick={() => setActiveTab('logs')}
-        >
-          Logs
-        </button>
-        <button
-          type="button"
-          className={cn('wm-tab', activeTab === 'technology' && 'wm-tab--active')}
-          onClick={() => setActiveTab('technology')}
-        >
-          Technology
-        </button>
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            className={cn('wm-tab', activeTabResolved === tab && 'wm-tab--active')}
+            onClick={() => setActiveTab(tab)}
+          >
+            {TAB_LABELS[tab]}
+          </button>
+        ))}
       </div>
 
       {/* Tab content */}
-      {activeTab === 'logs' && (
+      {activeTabResolved === 'logs' && (
         <LogViewer
           entries={logEntries}
           totalBuffered={totalBuffered}
@@ -315,7 +344,98 @@ function AppDetailPage() {
           streamMode={streamMode}
         />
       )}
-      {activeTab === 'technology' && <ProbeSection probes={app.probes} />}
+      {activeTabResolved === 'technology' && <ProbeSection probes={app.probes} />}
+      {activeTabResolved === 'health' && (
+        <DetailCard
+          title="Health"
+          rows={[
+            {
+              key: 'status',
+              label: 'Status',
+              value: app.healthStatus ? (
+                <span
+                  style={{
+                    color:
+                      app.healthStatus === 'healthy'
+                        ? 'var(--wm-green)'
+                        : app.healthStatus === 'unhealthy'
+                          ? 'var(--wm-red)'
+                          : 'var(--wm-text-dim)',
+                  }}
+                >
+                  {formatHealthStatus(app.healthStatus, app.appType.slug)}
+                </span>
+              ) : (
+                <span style={{ color: 'var(--wm-text-dim)' }}>Not probed yet</span>
+              ),
+            },
+            {
+              key: 'about',
+              label: 'About',
+              value: (
+                <span style={{ color: 'var(--wm-text-dim)' }}>
+                  Probes the configured /health endpoint on the upstream target. Configure interval, timeout, and
+                  endpoint in Settings.
+                </span>
+              ),
+            },
+          ]}
+        />
+      )}
+      {activeTabResolved === 'route' && (
+        <DetailCard
+          title="Route"
+          rows={
+            app.route
+              ? [
+                  {
+                    key: 'domain',
+                    label: 'Domain',
+                    value: app.domainActive ? (
+                      <a
+                        href={`${app.route.tls ? 'https' : 'http'}://${app.route.domain}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--wm-amber)', fontWeight: 500, textDecoration: 'none' }}
+                      >
+                        {app.route.domain}
+                      </a>
+                    ) : (
+                      <span style={{ color: 'var(--wm-text-dim)' }}>
+                        {app.route.domain}
+                        <span style={{ marginLeft: 6, fontSize: 11, letterSpacing: '0.04em' }}>(disabled)</span>
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'target',
+                    label: 'Upstream',
+                    value: app.route.target ? (
+                      app.route.target
+                    ) : (
+                      <span style={{ color: 'var(--wm-text-dim)' }}>Not configured</span>
+                    ),
+                  },
+                  {
+                    key: 'tls',
+                    label: 'TLS',
+                    value: app.route.tls ? (
+                      <span style={{ color: 'var(--wm-green)' }}>Enabled</span>
+                    ) : (
+                      <span style={{ color: 'var(--wm-text-dim)' }}>Disabled</span>
+                    ),
+                  },
+                ]
+              : [
+                  {
+                    key: 'none',
+                    label: 'Route',
+                    value: <span style={{ color: 'var(--wm-text-dim)' }}>No route configured</span>,
+                  },
+                ]
+          }
+        />
+      )}
     </div>
   )
 }

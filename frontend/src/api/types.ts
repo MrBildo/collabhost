@@ -124,6 +124,17 @@ type AppListActions = {
 
 // --- App Detail ---
 
+// Probe cache lifecycle (Card #337). Distinguishes never-probed from fresh
+// from stale from not-applicable -- before #337 all four collapsed to an
+// empty Probes array and the frontend could not render distinct empty-state
+// copy. Lowercase-hyphen wire form.
+type ProbesStatus = 'fresh' | 'stale' | 'never-probed' | 'not-applicable'
+
+// Detail-page tab identifiers. Backend-authoritative (Card #348, D5) -- the
+// FE renders only the tabs the backend declares, in the declared order. New
+// AppTypes adding new tabs ship the new identifier here.
+type DetailTab = 'logs' | 'technology' | 'health' | 'route'
+
 type AppDetail = {
   id: string
   name: string
@@ -140,10 +151,25 @@ type AppDetail = {
   domain: string | null
   domainActive: boolean
   healthStatus: HealthStatus | null
+  // Card #337: cache-lifecycle state for the probes array. `fresh` + empty
+  // probes means "extractor ran and found nothing extractable"; `never-probed`
+  // means "the periodic tick hasn't run yet."
+  probesStatus: ProbesStatus
   probes: ProbeEntry[]
   resources: AppResources | null
   route: AppRoute | null
   actions: AppActions
+  // Card #326 / #322 E1: per-app writable data path (absolute, runtime-derived
+  // from COLLABHOST_DATA_PATH, never persisted). The operator points the app's
+  // writable config (e.g. a SQLite connection string) at this path so it lands
+  // inside the system-scope unit's ReadWritePaths.
+  writableDataPath: string
+  // Card #348, D5: backend-authoritative list of detail-page tabs to render,
+  // in the order they should appear. The FE does NOT derive tab visibility
+  // from appType.slug or actions shape. external-route renders
+  // ['health', 'route']; managed apps render ['logs', 'technology'] (or
+  // ['logs'] for system-service).
+  tabs: DetailTab[]
 }
 
 type AppTypeDetailRef = {
@@ -457,6 +483,8 @@ export type {
   CreateUserRequest,
   AppStatus,
   HealthStatus,
+  ProbesStatus,
+  DetailTab,
   ProbeEntry,
   DotnetRuntimeProbe,
   DotnetDependenciesProbe,
