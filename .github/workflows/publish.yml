@@ -267,6 +267,38 @@ jobs:
 
           echo "All declared plugins are baked into the binary."
 
+      # Compute the wwwroot content hash from the downloaded frontend artifact
+      # BEFORE publish. The artifact lands at backend/Collabhost.Api/wwwroot,
+      # which is the same tree dotnet publish copies into the publish output
+      # and the Stage archive step then copies into the archive. Hashing the
+      # frontend artifact and embedding that hash into the published binary
+      # locks the build-time identity the runtime can compare to. The hash
+      # algorithm MUST mirror PortalIntegrityCheck.ComputeWwwrootHash exactly:
+      # ordinal-sorted relative POSIX paths, per file "<path>\n<size>\n<sha256>\n",
+      # final SHA-256 hex digest. Card #342.
+      - name: Compute wwwroot hash
+        id: wwwroot-hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="backend/Collabhost.Api/wwwroot"
+          if [[ ! -d "${ROOT}" ]]; then
+            echo "wwwroot directory missing at ${ROOT}" >&2
+            exit 1
+          fi
+          # Enumerate, relativize (strip leading "wwwroot/"), ordinal-sort,
+          # emit "<rel>\n<size>\n<contentSha256>\n" per file, hash the stream.
+          HASH=$(cd "${ROOT}" && find . -type f -printf '%P\n' \
+            | LC_ALL=C sort \
+            | while IFS= read -r rel; do
+                size=$(stat -c %s -- "${rel}" 2>/dev/null || stat -f %z -- "${rel}")
+                fhash=$(sha256sum -- "${rel}" | cut -d' ' -f1)
+                printf '%s\n%s\n%s\n' "${rel}" "${size}" "${fhash}"
+              done \
+            | sha256sum | cut -d' ' -f1)
+          echo "wwwroot hash: ${HASH}"
+          echo "HASH=${HASH}" >> "${GITHUB_OUTPUT}"
+
       # Self-contained single-file publish. The output binary is renamed from
       # Collabhost.Api[.exe] to collabhost[.exe] by a PublishSingleFile-scoped
       # <AssemblyName> property in Collabhost.Api.csproj. That property lives in
@@ -274,12 +306,16 @@ jobs:
       # MSBuild global property propagates to every project in the restore graph
       # (Collabhost.ServiceDefaults in our case), which makes NuGet restore fail
       # with "Ambiguous project name 'collabhost'". Not trimmed, not ReadyToRun.
+      # -p:WwwrootHash embeds the staged-wwwroot hash into the binary via an
+      # AssemblyMetadataAttribute conditionally emitted by the csproj; the
+      # runtime reads it via VersionInfo.WwwrootHash (#342).
       - name: Publish
         shell: bash
         working-directory: backend
         env:
           VER: ${{ needs.extract-version.outputs.version }}
           RID: ${{ matrix.rid }}
+          WWWROOT_HASH: ${{ steps.wwwroot-hash.outputs.HASH }}
         run: |
           set -euo pipefail
 
@@ -289,9 +325,10 @@ jobs:
             --self-contained \
             -p:PublishSingleFile=true \
             -p:Version="${VER}" \
+            -p:WwwrootHash="${WWWROOT_HASH}" \
             -o "../publish/collabhost-${VER}-${RID}"
 
-      # Explicit allow-list re-stage. Copy ONLY the six contract items from the
+      # Explicit allow-list re-stage. Copy ONLY the eight contract items from the
       # publish output into a clean archive-stage directory. This is the
       # contract boundary for what ships: anything dotnet publish emits that
       # isn't listed here (collabhost.pdb, *.staticwebassets.endpoints.json,
@@ -305,6 +342,7 @@ jobs:
           RID: ${{ matrix.rid }}
           CADDY_BIN: ${{ matrix.caddy_bin }}
           COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
+          WWWROOT_HASH: ${{ steps.wwwroot-hash.outputs.HASH }}
         run: |
           set -euo pipefail
 
@@ -314,8 +352,9 @@ jobs:
           rm -rf "${STAGE}"
           mkdir -p "${STAGE}/LICENSES"
 
-          # Seven contract items: collabhost, caddy, appsettings.json,
-          # INSTALL.md, LICENSES/caddy-LICENSE, LICENSES/caddy-NOTICE, wwwroot/.
+          # Eight contract items: collabhost, caddy, appsettings.json,
+          # INSTALL.md, LICENSES/caddy-LICENSE, LICENSES/caddy-NOTICE, wwwroot/,
+          # wwwroot.sha256.
           cp "${PUB}/${COLLABHOST_BIN}"         "${STAGE}/"
           cp "${PUB}/appsettings.json"          "${STAGE}/"
           cp "caddy-build/${CADDY_BIN}"         "${STAGE}/"
@@ -325,6 +364,11 @@ jobs:
           # wwwroot/ is the dashboard's static assets. dotnet publish emits it because
           # build-frontend populates backend/Collabhost.Api/wwwroot before publish.
           cp -R "${PUB}/wwwroot"                "${STAGE}/"
+          # wwwroot.sha256 is the build-time content hash sidecar -- 64 hex chars,
+          # no trailing newline, no filename column (just the digest). Matches the
+          # hash embedded into the binary at -p:WwwrootHash time, surfaced at
+          # runtime via /api/v1/version.wwwrootHash. Card #342.
+          printf '%s' "${WWWROOT_HASH}"         > "${STAGE}/wwwroot.sha256"
 
           # Unix archives must carry the execute bit on the collabhost binary.
           # PublishSingleFile on Linux/macOS sets +x on the emitted binary, but
@@ -342,7 +386,7 @@ jobs:
       # Platform-appropriate archive. .zip on Windows via Compress-Archive,
       # .tar.gz everywhere else via native tar (locked decision 7). Both use
       # the archive-stage directory as input, which contains exactly the
-      # six allow-listed items.
+      # eight allow-listed items.
       - name: Archive (zip)
         if: matrix.ext == 'zip'
         shell: pwsh
@@ -369,7 +413,7 @@ jobs:
           ARCHIVE="collabhost-${VER}-${RID}.tar.gz"
 
           # Explicit file list rather than `tar -C dir .` globbing. Keeps the
-          # archive contract enforced at archival time: only the six named
+          # archive contract enforced at archival time: only the eight named
           # items land in the tar stream.
           tar -czf "${ARCHIVE}" \
             -C "${STAGE}" \
@@ -379,11 +423,12 @@ jobs:
             INSTALL.md \
             LICENSES/caddy-LICENSE \
             LICENSES/caddy-NOTICE \
-            wwwroot
+            wwwroot \
+            wwwroot.sha256
 
       # Contract verification: open the archive in a temp directory and
-      # assert all six items are present. Fails the leg hard if anything is
-      # missing. Cheap safety net for a workflow that can't be dry-run.
+      # assert all eight items are present. Fails the leg hard if anything
+      # is missing. Cheap safety net for a workflow that can't be dry-run.
       - name: Verify archive contents
         shell: bash
         env:
@@ -392,6 +437,7 @@ jobs:
           EXT: ${{ matrix.ext }}
           CADDY_BIN: ${{ matrix.caddy_bin }}
           COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
+          WWWROOT_HASH: ${{ steps.wwwroot-hash.outputs.HASH }}
         run: |
           set -euo pipefail
 
@@ -409,7 +455,7 @@ jobs:
           echo "Archive listing:"
           (cd "${VERIFY_DIR}" && find . -type f | sort)
 
-          # Flat-layout assertion: the six contract items must be at the
+          # Flat-layout assertion: the eight contract items must be at the
           # archive root, not nested under a wrapping "collabhost-*" dir.
           # The installer scripts (docs/install.sh, docs/install.ps1) copy
           # straight from the extract directory and assume flat layout.
@@ -427,7 +473,8 @@ jobs:
             "${CADDY_BIN}" \
             "INSTALL.md" \
             "LICENSES/caddy-LICENSE" \
-            "LICENSES/caddy-NOTICE"
+            "LICENSES/caddy-NOTICE" \
+            "wwwroot.sha256"
           do
             if [[ ! -f "${VERIFY_DIR}/${path}" ]]; then
               echo "MISSING: ${path}" >&2
@@ -447,12 +494,24 @@ jobs:
             MISSING=1
           fi
 
+          # wwwroot.sha256 content sanity: 64 hex chars, no newline. Card #342.
+          if [[ -f "${VERIFY_DIR}/wwwroot.sha256" ]]; then
+            SIDECAR=$(cat "${VERIFY_DIR}/wwwroot.sha256")
+            if [[ ! "${SIDECAR}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "MALFORMED: wwwroot.sha256 is not 64 lowercase hex chars (got '${SIDECAR}')" >&2
+              MISSING=1
+            elif [[ "${SIDECAR}" != "${WWWROOT_HASH}" ]]; then
+              echo "MISMATCH: wwwroot.sha256 (${SIDECAR}) != computed hash (${WWWROOT_HASH})" >&2
+              MISSING=1
+            fi
+          fi
+
           if [[ "${MISSING}" -ne 0 ]]; then
             echo "Archive contract verification failed." >&2
             exit 1
           fi
 
-          echo "Archive contract verified: flat layout, 7/7 items present."
+          echo "Archive contract verified: flat layout, 8/8 items present."
 
       # Per-archive SHA256 (locked decision 9). Portable `sha256sum -c` format.
       - name: Checksum

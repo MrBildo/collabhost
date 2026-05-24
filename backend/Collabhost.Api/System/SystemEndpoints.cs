@@ -96,7 +96,8 @@ public static class SystemEndpoints
             (
                 VersionInfo.Current,
                 VersionInfo.Commit,
-                VersionInfo.Platform
+                VersionInfo.Platform,
+                VersionInfo.WwwrootHash
             )
         );
 }

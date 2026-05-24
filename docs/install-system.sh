@@ -252,6 +252,14 @@ cp -R "${EXTRACT_DIR}/wwwroot" "${INSTALL_PREFIX}/wwwroot"
 chown -R root:root "${INSTALL_PREFIX}/wwwroot"
 chmod -R u=rwX,go=rX "${INSTALL_PREFIX}/wwwroot"
 
+# wwwroot.sha256 sidecar: build-time SHA-256 hash of the wwwroot/ tree, written
+# by the publish workflow. Lives at the install prefix root so the UAT runbook
+# can compare against /api/v1/version.wwwrootHash (#342). Optional for archives
+# predating #342 -- absence is silent.
+if [ -f "${EXTRACT_DIR}/wwwroot.sha256" ]; then
+  install -m 0644 -o root -g root "${EXTRACT_DIR}/wwwroot.sha256" "${INSTALL_PREFIX}/wwwroot.sha256"
+fi
+
 # ---- Config ------------------------------------------------------------------
 
 # appsettings.json + appsettings.shipped.json live in /etc/collabhost. Smart-merge

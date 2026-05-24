@@ -139,6 +139,14 @@ cp "${EXTRACT_DIR}/LICENSES/"* "${INSTALL_PATH}/LICENSES/"
 rm -rf "${INSTALL_PATH}/wwwroot"
 cp -R "${EXTRACT_DIR}/wwwroot" "${INSTALL_PATH}/"
 
+# wwwroot.sha256 sidecar: build-time SHA-256 hash of the wwwroot/ tree, written
+# by the publish workflow. Sits next to the binary so the UAT runbook can
+# compare against /api/v1/version.wwwrootHash (#342). Optional for archives
+# predating #342 -- absence is silent.
+if [ -f "${EXTRACT_DIR}/wwwroot.sha256" ]; then
+  cp "${EXTRACT_DIR}/wwwroot.sha256" "${INSTALL_PATH}/"
+fi
+
 # appsettings.json: smart-merge on upgrade, plain copy on first install.
 #
 # First install: copy the archive's shipped appsettings.json into place AND seed the sidecar

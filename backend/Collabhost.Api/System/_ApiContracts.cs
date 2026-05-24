@@ -28,5 +28,9 @@ public record VersionResponse
 (
     string Version,
     string Commit,
-    string Platform
+    string Platform,
+    // SHA-256 hex digest over the wwwroot/ tree, embedded at archive-build time and
+    // emitted as a sidecar (wwwroot.sha256) for UAT comparison. Empty string for dev
+    // builds and pre-#342 archives. Card #342.
+    string WwwrootHash
 );
