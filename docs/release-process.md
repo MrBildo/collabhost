@@ -41,6 +41,10 @@ gh release create vX.Y.Z \
 
 `install-integration.yml` fires **automatically via `workflow_run`** when `publish.yml` completes successfully — it downloads the just-shipped Release archives and exercises the live install scripts across all RIDs. This is a post-release validation, **not a PR gate** and **not a `release.published` trigger** (the `workflow_run` chaining replaced `release.published` per card #211 to avoid a parallel-fire race). Watch this run after publishing; a green Publish does not by itself prove the install scripts consume the archives correctly. PR-time archive smoke is a separate concern handled by `publish-dryrun.yml`'s `archive-smoke` job (card #184).
 
+### Pre-cut UAT archive production
+
+`publish.yml` is gated on a published GitHub Release, so it cannot produce archives against `main@<sha>` for a *pre-cut* UAT run (the runbook deviation documented in [`docs/release-uat.md`](release-uat.md) § "Pre-cut UAT (bootstrap / candidate-validation runs)"). The supported mechanism for that case is `.github/workflows/publish-dryrun.yml` dispatched manually — it builds the same eight-item archive contract with the same `wwwroot.sha256` sidecar and the same embedded `WwwrootHash`, uploaded as workflow-run artifacts instead of Release assets. See the runbook for the dispatch commands and operator workflow. (Card #352.)
+
 ## Bundled-binary CVE response
 
 Collabhost ships a Caddy binary alongside its own binary in every release archive. End users do not install Caddy separately — the installer extracts ours. **Bundling means we own Caddy's CVE response window for our users**: when upstream Caddy ships a security release, Collabhost must ship a patch release with the updated binary or end-user installs are stuck on the vulnerable version.

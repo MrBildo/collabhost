@@ -249,6 +249,8 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 
 **What it does not do:** create a tag, create or update a GitHub Release, upload to the Releases surface. If you see a `gh release` invocation in the dry-run, that's a bug -- file an issue.
 
+**Second supported use case -- pre-cut UAT archive production.** Maintainers running a *pre-cut UAT* (the runbook deviation in [`docs/release-uat.md`](docs/release-uat.md) § "Pre-cut UAT (bootstrap / candidate-validation runs)") use this same workflow to produce the archive against `main@<sha>` without cutting a tag. The dispatch commands live in the runbook; the workflow's archive output is identical to a tag-cut. (Card #352.)
+
 ## Install integration test
 
 `.github/workflows/install-integration.yml` is the consume-side complement to the dry-run. The dry-run validates that archive **builds** are correct; this workflow validates that the published install scripts (`docs/install.sh`, `docs/install.ps1`) actually consume a real GitHub Release end-to-end and that the resulting binary works as expected.

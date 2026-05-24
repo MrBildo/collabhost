@@ -3,23 +3,34 @@ name: Publish (dry-run)
 # Dry-run sibling of publish.yml. Runs the full build matrix + frontend +
 # Caddy download + archive + checksum pipeline, but uploads the produced
 # archives to a workflow-run artifact rather than a GitHub Release. Never
-# creates or modifies a tag, never touches the Releases surface. Use this
-# to verify pipeline changes (new RID, Caddy bump, install script changes,
-# matrix reshape) before cutting a real release.
+# creates or modifies a tag, never touches the Releases surface.
 #
-# Card #157, follow-up to #153.
+# Two supported use cases, same archive output:
+#
+#   1. Pipeline-change validation (card #157 origin). PR-triggered on changes
+#      to publish.yml, install scripts, Caddy pins, frontend/, or
+#      release-assets/. Catches archive-contract regressions before tag-cut.
+#
+#   2. Pre-cut UAT archive production (card #352). Operators run the workflow
+#      manually via `workflow_dispatch` against `main` (or a branch pointing
+#      at the SHA under test) and pull the produced archives from the
+#      workflow-run artifacts page. This is the supported mechanism for the
+#      runbook's "Pre-cut UAT (bootstrap / candidate-validation runs)"
+#      shape -- it produces the same eight-item archive contract that
+#      publish.yml ships (wwwroot.sha256 sidecar + embedded WwwrootHash
+#      via -p:WwwrootHash + flat layout) without going through tag-cut.
+#      Documented in docs/release-uat.md.
 #
 # Triggers:
-#   - workflow_dispatch: ad-hoc, with optional version override
+#   - workflow_dispatch: ad-hoc, with optional version override (use case 2)
 #   - pull_request: any PR that touches release-pipeline-related files
-#                   (publish.yml, this file, install scripts, caddy.version,
-#                    release-assets bundle)
+#                   (use case 1)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version stamp for the produced archives (no tag is created). Format: X.Y.Z'
+        description: 'Version stamp for the produced archives (no tag is created). For pre-cut UAT runs, use the target version (e.g. 1.5.0-rc1). Defaults to 0.0.0-dryrun.'
         required: false
         default: '0.0.0-dryrun'
   pull_request:
