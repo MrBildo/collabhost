@@ -11,6 +11,20 @@ namespace Collabhost.Api.Probes;
 // pipeline both call into this directly.
 public static class ArtifactEvidenceCollector
 {
+    // AppType slugs the collector has detection rules for. Exposed so callers
+    // (notably the /filesystem/detect-strategy endpoint in its all-types mode,
+    // card #344) can enumerate without re-stating the switch's domain. Other
+    // registered AppTypes -- system-service, external-route, user types -- have
+    // no artifact-shape signature for the collector to read, so they are
+    // intentionally absent.
+    public static readonly IReadOnlyList<string> KnownAppTypeSlugs =
+    [
+        "dotnet-app",
+        "nodejs-app",
+        "static-site",
+        "executable"
+    ];
+
     public static ArtifactEvidence Collect(string directory, string appTypeSlug) =>
         !Directory.Exists(directory)
             ? Empty(SuggestedStrategies.Manual)
