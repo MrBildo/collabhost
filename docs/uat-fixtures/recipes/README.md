@@ -50,6 +50,14 @@ All recipe output lands at `docs/uat-fixtures/build/<app-type>/<variant>/` and i
 
 All recipes pin mtimes to `2026-01-01T00:00:00Z` post-build so downstream archive hashes are stable even when filesystem timestamps would otherwise differ.
 
+## Platform verification scope
+
+All five recipes were run and smoke-tested on **Windows PowerShell** (the authoring environment). `build.sh` scripts were verified for correct shebang and LF line endings on all five types.
+
+**git-bash (Kai, C-2 review of PR #238):** `build.sh` for `static-site` and `executable` executed under git-bash and produced **byte-identical output** to the PowerShell runs. This is a meaningful Linux-shell datapoint — git-bash runs the POSIX script path and relies on the same toolchain (Go, file I/O) that a native Linux runner would.
+
+**Not yet verified:** native-Linux-runner execution of the full recipe set (an actual ubuntu-latest CI run or WSL2 invocation of all five `build.sh` scripts end-to-end). Deferred to the next UAT execution dispatch. The `dotnet-app` and `nodejs-app` scripts are the highest-risk for environment-specific behavior (SDK discovery, npm cache paths) and should be prioritized in that run.
+
 ## Detect-strategy table coverage
 
 The `release-uat.md` § 4 detect-strategy table is the authoritative output spec. Coverage matrix (each row of the runbook table mapped to a fixture-output path):
