@@ -87,12 +87,33 @@ The default UAT shape is **cut-then-UAT**: a release tag exists, `install-integr
 
 There is one explicit deviation: a **pre-cut UAT** is a runbook execution against `main@<sha>` with no tag and (therefore) no `install-integration.yml` run on the to-be-cut version. The dispatch is the operator's affirmative call — a maintainer ratifies that this run is a *candidate-validation* exercise (catch defects before cutting) rather than a release-gate run. The `install-integration.yml` precondition is **waived** for the run, and the card body records the bootstrap deviation explicitly in `context.bootstrap_note`.
 
-What is checked instead, to keep fidelity honest:
+#### Producing the pre-cut archive
 
-- **Live system surface against the running binary** — REST + MCP endpoints respond, schema migrations on the active DB are validated, CLI tools work end-to-end against the running data dir.
+The archive-dependent assertions (on-disk `wwwroot.sha256` sidecar, `/api/v1/version.wwwrootHash` populated from the build-time `AssemblyMetadataAttribute["WwwrootHash"]`, install-script path resolution) require the same archive shape that `publish.yml` produces on a tag-cut. The supported mechanism for producing that shape against `main@<sha>` without a tag is `.github/workflows/publish-dryrun.yml`, dispatched manually. The dry-run runs the same build matrix, the same wwwroot-hash computation, the same `-p:WwwrootHash` embedding, the same eight-item archive contract verification, and the same per-archive checksum step as `publish.yml`; the only divergence is the upload target — workflow-run artifacts (7-day retention) instead of the GitHub Releases surface. (Card #352.)
+
+Dispatch from the repo root:
+
+```bash
+# Common case: against current main HEAD.
+gh workflow run publish-dryrun.yml --ref main -f version=1.5.0-rc1
+
+# Against a specific historical SHA: push a temporary branch at that SHA first.
+git push origin <full-sha>:refs/heads/pre-cut-uat-<short-sha>
+gh workflow run publish-dryrun.yml --ref pre-cut-uat-<short-sha> -f version=1.5.0-rc1
+# Delete the branch after the run completes (artifacts persist 7 days).
+git push origin --delete pre-cut-uat-<short-sha>
+```
+
+The `version` input stamps the archive filenames and the embedded binary version. Use the *target* release version (e.g. `1.5.0-rc1`) so the produced archives are self-identifying when pulled down; the dry-run never creates a tag of that name. After the run completes, archives are at the workflow-run page → Artifacts section, named `archive-<rid>` (one per RID). The `archive-smoke` job inside the same run boots the linux-x64, osx-arm64, and win-x64 archives and exercises the Portal HTTP endpoints — its green status is an early signal that the produced archive is operator-installable before any UAT leg downloads it.
+
+#### Flagged-reduced steps when running before archive download
+
+If a leg runs the live-system surface against a `dotnet run` / `aspire start` dev environment rather than against archives extracted from a `publish-dryrun.yml` run, the archive-dependent assertions are recorded as follows:
+
 - **Flagged-reduced steps** — any assertion that requires the archive-installed artifact (the on-disk `wwwroot.sha256` sidecar, the `BootVersionTracker` first-boot sentinel observed from a fresh install, the install-script path resolution) is recorded as `status: skip` with `notes:` explicitly flagging the archive-required fidelity gap. The runbook does not change shape; the leg's verdict reflects what was actually validated.
+- **Live system surface against the running binary** — REST + MCP endpoints respond, schema migrations on the active DB are validated, CLI tools work end-to-end against the running data dir.
 
-When the cut produces the archive, the deferred archive-dependent steps run as a follow-up leg against the same UAT card or a sibling card per the release-cutter's choice. The pre-cut leg's verdict is the value it produces — the cut-then-UAT leg validates what the pre-cut leg necessarily could not.
+When the cut produces the archive (or a later pre-cut leg downloads the dry-run archives), the deferred archive-dependent steps run as a follow-up leg against the same UAT card or a sibling card per the release-cutter's choice. The pre-cut leg's verdict is the value it produces — the archive-leg validates what the dev-only leg necessarily could not.
 
 ---
 
