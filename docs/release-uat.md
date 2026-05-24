@@ -81,6 +81,19 @@ When the maintainer cuts the release notes (per `docs/release-process.md`), the 
 
 A green `install-integration.yml` run is a **precondition** for UAT, not a substitute. Install-integration validates that the install scripts consume the just-shipped Release archives correctly across all RIDs; UAT validates everything install-integration cannot reach — browser-rendered correctness, operator-judgment-class checks, multi-app-type integration, the "fully torn down" assertion. Confirm install-integration ran green on the release tag before starting UAT.
 
+### Pre-cut UAT (bootstrap / candidate-validation runs)
+
+The default UAT shape is **cut-then-UAT**: a release tag exists, `install-integration.yml` ran green on it, and the runbook executes against the archives that workflow produced. That is the steady state.
+
+There is one explicit deviation: a **pre-cut UAT** is a runbook execution against `main@<sha>` with no tag and (therefore) no `install-integration.yml` run on the to-be-cut version. The dispatch is the operator's affirmative call — a maintainer ratifies that this run is a *candidate-validation* exercise (catch defects before cutting) rather than a release-gate run. The `install-integration.yml` precondition is **waived** for the run, and the card body records the bootstrap deviation explicitly in `context.bootstrap_note`.
+
+What is checked instead, to keep fidelity honest:
+
+- **Live system surface against the running binary** — REST + MCP endpoints respond, schema migrations on the active DB are validated, CLI tools work end-to-end against the running data dir.
+- **Flagged-reduced steps** — any assertion that requires the archive-installed artifact (the on-disk `wwwroot.sha256` sidecar, the `BootVersionTracker` first-boot sentinel observed from a fresh install, the install-script path resolution) is recorded as `status: skip` with `notes:` explicitly flagging the archive-required fidelity gap. The runbook does not change shape; the leg's verdict reflects what was actually validated.
+
+When the cut produces the archive, the deferred archive-dependent steps run as a follow-up leg against the same UAT card or a sibling card per the release-cutter's choice. The pre-cut leg's verdict is the value it produces — the cut-then-UAT leg validates what the pre-cut leg necessarily could not.
+
 ---
 
 ## Stable contract
@@ -497,6 +510,8 @@ The "restart Collabhost itself" step in §6.2 has a different mechanic per leg. 
 
 Each shape has its own correctness story (does the per-app DB carry the right pre-restart state? does the SIGHUP reload service interfere?). Use the documented shape per leg — an operator-bot can get clever and use the wrong one.
 
+**State survives in `<dataDir>`, not in the process.** All operator-stop state (`Apps.StoppedByOperator`, #350), boot-version sentinel (`<dataDir>/.last-boot-version`), activity log, and per-app capability overrides are persisted under the leg's data directory (per the Path layout reference in the Appendix). The restart shape stops the process; the persisted state is read fresh on next boot. Verification artifact for the restart-survived assertion: `<dataDir>/.last-boot-version` is rewritten after the next preflight clears, AND the SQLite `Apps.StoppedByOperator` row reflects the pre-restart operator intent (run `sqlite3 <dataDir>/collabhost.db "SELECT Slug, StoppedByOperator FROM Apps;"` before and after — the column survives the restart by design). The `<dataDir>` preservation holds on every leg because `IHostedService.StopAsync` runs the same teardown shape on every restart — what is Windows-user-specific is only the initiator (Ctrl-C or foreground-window close), not the teardown.
+
 ### 7. Cross-leg sanity (single-bot single-session only)
 
 This section is only worth running if the same operator-bot ran all four legs in one session. If the four legs ran across multiple sessions or multiple operators, skip this — the per-leg results stand on their own.
@@ -667,11 +682,22 @@ The keyed signals indicating "things are correct" or "something is off":
 
 ### What's new to verify this cut
 
-*(empty — placeholder for the first real population)*
+**Target version:** `v1.5.0` (presumed; Bill confirms at cut time — 4 `feat:` commits since `v1.4.1` → MINOR bump).
+**Range:** `v1.4.1..main@35db08e` (pre-cut).
+**UAT card:** [#351](https://collaboard.collabot.dev/collabhost/cards/351) — first ever execution of this runbook, Windows-user leg, pre-cut bootstrap (install-integration precondition waived per S63 Bill ratify).
+
+Operator-facing surfaces shipped since `v1.4.1`:
+
+- **Verify wwwroot integrity hash plumbing (PR #232 / #342).** §0 pre-flight assertion 8 covers this — `/api/v1/version.wwwrootHash` must equal `cat <install-dir>/wwwroot.sha256`. Both must be present in the archive; both must be non-empty. New `PortalIntegrityCheck` warns (does not halt) on drift. Build-time hash flows via `AssemblyMetadataAttribute["WwwrootHash"]` → `VersionInfo.WwwrootHash` → `VersionResponse.wwwrootHash`. **Silent-failure mode 7** (consolidated list) covers the partial-strip variant the SPA-shell curl misses.
+- **Verify detect-strategy optional `appTypeSlug` (PR #233 / #344).** §4 walks both shapes — slug-provided returns the single-type `DetectStrategyResponse` (BC envelope); slug-omitted returns a `perType` map keyed by every AppType the collector has rules for. The App Create page sets `appTypeSlug` from the step-1 type-picker; a form reorder that fills the path before the type is selected no longer 400s. MCP `detect_strategy` got parity update. **Smoke check:** `curl 'http://localhost:58400/api/v1/filesystem/detect-strategy?path=<any-dir>'` (no slug) returns a JSON object with a `perType` key.
+- **Verify unified `StoppedByOperator` persistence across Collabhost restart (PR #234 / #350).** §6.2 covers this — Stop each of the four hosted types (`dotnet-app`, `nodejs-app`, `static-site`, `external-route`), restart Collabhost, ALL FOUR must stay stopped. `ProxyManager.HydrateRouteStatesFromPersistenceAsync` honors the persisted flag for routing-only types; `ProcessSupervisor.StartAsync`'s persisted-flag check honors it for process-bearing types. Issue Start on each — they come back up and stay up across a second restart (the Start clears the persisted flag). **Upgrade note:** pre-#350 stops (v1.4.x and earlier) auto-recover on first upgrade boot — call out in release notes.
+- **Verify `collabhost --update-hosts` admin CLI (PR #235 / #345).** §2.2 per-app `/etc/hosts` precondition covers this — run `sudo collabhost --update-hosts` (Linux/macOS) or elevated `collabhost --update-hosts` (Windows) after each registration. Smoke checks: (a) the CLI writes a managed `# BEGIN COLLABHOST` ... `# END COLLABHOST` block to `/etc/hosts` (Windows: `%SystemRoot%\System32\drivers\etc\hosts`); (b) re-running the CLI with no registry changes is an idempotent no-op (no rewrite); (c) `--dry-run` prints the would-be block without writing; (d) `--hosts-path <path>` overrides the destination for test rigs; (e) running unelevated detects and prints elevation guidance. **REST/MCP parity:** `POST /api/v1/apps` 201 response now carries a `helpfulNextSteps: string[]` field reminding the operator; MCP `register_app` emits the same array via `HostsHintBuilder.Compose`.
+- **Verify SSE↔polling indicator lived behavior (PR #224 / #321 — shipped S58, parked here for UAT).** On App Detail's log panel header, exercise the 2-variant pill: (a) `polling` (yellow static dot) renders when SSE never produced entries — block the SSE stream at network boundary or stop the app's stdout to observe; (b) `reconnecting` (amber pulsing dot) renders during the ~45s liveness-net window when SSE produced entries then dropped — kill the SSE connection mid-stream to observe the transition. Both variants render under `LogViewer`'s header next to the stream-status text.
 
 ### Temporary migration smoke
 
-*(empty — placeholder for the first real population)*
+- **#350 `StoppedByOperator` schema migration.** EF migration adds the column to the `Apps` table. **First upgrade boot from v1.4.x → v1.5.0:** the column is created with default `false` for every existing row, so any apps that were `Stopped` at the moment of upgrade will auto-recover on first boot if their `auto-start` capability is enabled. This is expected behavior, not a regression — Collabhost has no way to know whether a pre-#350 stop was operator-intent or transient. Document in release notes: "If you had apps deliberately stopped at v1.4.x and want them to stay stopped, re-issue Stop after the upgrade boot." Smoke check: confirm `Apps.StoppedByOperator` column exists post-upgrade (`sqlite3 <dataDir>/collabhost.db '.schema Apps' | grep -i StoppedByOperator`).
+- **#342 `wwwroot.sha256` sidecar.** The archive contract (item 7 of 8 wwwroot itself, item 8 of 8 the sidecar) lands new in v1.5.0. **Pre-#342 archives (≤ v1.4.1) do NOT carry the sidecar** — `PortalIntegrityCheck` silently no-ops on dev builds and pre-#342 archives because the embedded hash is empty. Upgrade smoke: after install of v1.5.0, `ls <install-dir>/wwwroot.sha256` MUST resolve to a single line containing a 64-char hex string.
 
 ---
 
