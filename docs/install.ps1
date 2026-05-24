@@ -515,6 +515,7 @@ try
     {
         Write-Host "Next: open a new terminal and run 'collabhost'. On first boot it prints your admin key -- copy it immediately."
     }
+    Write-Host "After registering apps, run 'Start-Process collabhost -ArgumentList ''--update-hosts'' -Verb RunAs' so <slug>.collab.internal resolves from this host. See INSTALL.md section 9.10.2."
     Write-Host "See $InstallPath\INSTALL.md for configuration, env-var overrides, and upgrade notes."
 }
 finally

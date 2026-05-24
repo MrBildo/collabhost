@@ -181,7 +181,13 @@ public record CreateAppRequest
 // surfaced on the registration response so the operator can configure the
 // app's writable state location (absolute, inside ReadWritePaths) without
 // deriving it by hand. Absolute path, runtime-derived, never persisted.
-public record CreateAppResponse(string Id, string WritableDataPath);
+//
+// HelpfulNextSteps (#345): short prose hints the operator should consider after
+// registration. Currently carries the `collabhost --update-hosts` reminder so a
+// just-registered app's `<slug>.<baseDomain>` resolves from a browser on the
+// Collabhost host. Strictly additive on the response shape -- pre-#345 clients
+// ignore it. Frontend may surface as a post-create toast (out of scope here).
+public record CreateAppResponse(string Id, string WritableDataPath, IReadOnlyList<string> HelpfulNextSteps);
 
 // --- Update Settings ---
 

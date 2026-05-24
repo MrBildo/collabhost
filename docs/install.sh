@@ -293,4 +293,5 @@ if [ -n "${IS_REINSTALL}" ]; then
 else
   echo "Next: open a new terminal and run 'collabhost'. On first boot it prints your admin key -- copy it immediately."
 fi
+echo "After registering apps, run 'sudo collabhost --update-hosts' so <slug>.collab.internal resolves from this host. See INSTALL.md section 9.10.2."
 echo "See ${INSTALL_PATH}/INSTALL.md for configuration, env-var overrides, and upgrade notes."

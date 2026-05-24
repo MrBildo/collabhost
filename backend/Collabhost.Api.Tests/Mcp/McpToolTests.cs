@@ -154,6 +154,7 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<TypeStore>(),
             sp.GetRequiredService<ProcessSupervisor>(),
             sp.GetRequiredService<ProxyManager>(),
+            sp.GetRequiredService<ProxySettings>(),
             sp.GetRequiredService<ExternalTargetSettings>(),
             sp.GetRequiredService<ICurrentUser>(),
             sp.GetRequiredService<ActivityEventStore>(),

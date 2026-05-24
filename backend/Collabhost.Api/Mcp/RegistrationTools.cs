@@ -4,7 +4,9 @@ using System.Security;
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
+using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Installation;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
@@ -27,6 +29,7 @@ public class RegistrationTools
     TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
+    ProxySettings proxySettings,
     ExternalTargetSettings externalTargetSettings,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
@@ -46,6 +49,9 @@ public class RegistrationTools
 
     private readonly ProxyManager _proxy = proxy
         ?? throw new ArgumentNullException(nameof(proxy));
+
+    private readonly ProxySettings _proxySettings = proxySettings
+        ?? throw new ArgumentNullException(nameof(proxySettings));
 
     // Card #348, D3. Carried through to CapabilityResolver.ValidateEdits when
     // a registration settings JSON carries an external-target section.
@@ -347,6 +353,10 @@ public class RegistrationTools
             _logger.LogWarning(ex, "Failed to record activity event for app.created (slug={Slug})", app.Slug);
         }
 
+        // Card #345: surface the same `collabhost --update-hosts` hint REST emits, scoped to
+        // routed app types (system-service stays silent -- no Caddy route, no hosts entry).
+        var hints = ResolveHelpfulNextSteps(appType.Slug, app.Slug, validatedOverrides);
+
         return McpResponseFormatter.Success
         (
             McpResponseFormatter.ToJson
@@ -356,10 +366,48 @@ public class RegistrationTools
                     slug = app.Slug,
                     id = app.Id.ToString(),
                     status = "stopped",
-                    writableDataPath = _dataPathResolver.ResolveFor(app.Slug)
+                    writableDataPath = _dataPathResolver.ResolveFor(app.Slug),
+                    helpfulNextSteps = hints
                 }
             )
         );
+    }
+
+    private IReadOnlyList<string> ResolveHelpfulNextSteps
+    (
+        string appTypeSlug,
+        string slug,
+        IReadOnlyList<(string SectionKey, JsonObject Overrides)> validatedOverrides
+    )
+    {
+        if (!_typeStore.HasBinding(appTypeSlug, "routing"))
+        {
+            return [];
+        }
+
+        var bindings = _typeStore.GetBindings(appTypeSlug);
+
+        if (bindings is null || !bindings.TryGetValue("routing", out var routingBindingJson))
+        {
+            return [];
+        }
+
+        string? overrideJson = null;
+
+        foreach (var (sectionKey, overrideObject) in validatedOverrides)
+        {
+            if (string.Equals(sectionKey, "routing", StringComparison.Ordinal))
+            {
+                overrideJson = overrideObject.ToJsonString();
+                break;
+            }
+        }
+
+        var routing = CapabilityResolver.Resolve<RoutingConfiguration>(routingBindingJson, overrideJson);
+
+        var hostname = CapabilityResolver.ResolveDomain(routing.DomainPattern, slug, _proxySettings.BaseDomain);
+
+        return [HostsHintBuilder.Compose(hostname)];
     }
 
     [McpServerTool
