@@ -653,6 +653,11 @@ public static class AppEndpoints
             proxy.EnableRoute(app.Slug);
             proxy.RequestSync();
 
+            // Clear the persisted operator-stop flag. Mirrors the process-bearing
+            // Start path's write-through; routing-only apps need this so the
+            // restored route state survives Collabhost restart. Card #350.
+            await store.SetStoppedByOperatorAsync(app.Id, app.Slug, false, ct);
+
             await probeService.RunProbesAsync(app.Id, ct);
 
             await activityEventStore.RecordAsync
@@ -738,6 +743,13 @@ public static class AppEndpoints
         {
             proxy.DisableRoute(app.Slug);
             proxy.RequestSync();
+
+            // Persist the operator-stop intent. Mirrors the process-bearing Stop
+            // path's write-through (via ProcessSupervisor.StopAppAsync); routing-
+            // only apps need this so the disabled route state survives Collabhost
+            // restart. ProxyManager.HydrateRouteStatesFromPersistenceAsync reads
+            // this column on boot. Card #350.
+            await store.SetStoppedByOperatorAsync(app.Id, app.Slug, true, ct);
 
             await activityEventStore.RecordAsync
             (

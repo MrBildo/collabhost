@@ -13,4 +13,12 @@ public class App
     public DateTime RegisteredAt { get; init; } = DateTime.UtcNow;
 
     public DateTime? ModifiedAt { get; set; }
+
+    // Persisted operator-stop intent. Mirrors the in-memory ManagedProcess.StoppedByOperator
+    // flag onto persistence so the state survives Collabhost restart. The in-memory flag
+    // keeps its within-lifetime crash-suppression role; this column is its persistent peer.
+    // Boot consumers: ProcessSupervisor.StartAsync (auto-start suppression for process-bearing
+    // types) and ProxyManager.HydrateRouteStatesFromPersistenceAsync (route-state restoration
+    // for routing-only types). Card #350.
+    public bool StoppedByOperator { get; set; }
 }
