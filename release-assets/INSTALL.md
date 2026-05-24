@@ -1829,6 +1829,29 @@ Collabhost host's IP, move to layer 3.
 
 **Resolve — pick one:**
 
+- **`collabhost --update-hosts`** (managed, host-local). Run on the
+  Collabhost host to write a `# BEGIN COLLABHOST` ... `# END COLLABHOST`
+  block to `/etc/hosts` (Linux / macOS) or
+  `%SystemRoot%\System32\drivers\etc\hosts` (Windows) covering the Portal
+  hostname plus every registered app slug. Re-run after registering or
+  deleting apps. Requires elevation; the command tells you the exact
+  re-run line if invoked unelevated.
+
+  ```bash
+  sudo collabhost --update-hosts                  # Linux / macOS
+  ```
+
+  ```powershell
+  Start-Process collabhost -ArgumentList '--update-hosts' -Verb RunAs
+  ```
+
+  Add `--dry-run` to preview the block without writing.
+  Add `--hosts-path <path>` to override the file location (useful for
+  testing or non-standard installs).
+
+  This only covers the Collabhost host itself — other LAN devices that
+  need to reach the dashboard use one of the options below.
+
 - **Per-device `hosts` entry** (cheapest, smallest blast radius). One line
   per app subdomain in `/etc/hosts` (Linux / macOS) or
   `C:\Windows\System32\drivers\etc\hosts` (Windows):

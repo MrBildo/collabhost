@@ -827,6 +827,8 @@ try
     Write-Host "  sc.exe query $ServiceName"
     Write-Host '  curl http://localhost:58400/api/v1/status'
     Write-Host ''
+    Write-Host "After registering apps, run 'Start-Process collabhost -ArgumentList ''--update-hosts'' -Verb RunAs' so <slug>.collab.internal resolves from this host. See $InstallPrefix\INSTALL.md section 9.10.2."
+    Write-Host ''
     Write-Host 'Uninstall with:'
     Write-Host '  .\install-system.ps1 -Uninstall              # preserves %ProgramData%\Collabhost\data\'
     Write-Host '  .\install-system.ps1 -Uninstall -PurgeData   # also clears the operator database'

@@ -33,6 +33,14 @@ if (args.Length > 0 && args[0] == "--merge-appsettings")
     return AppSettingsMergeCli.Run(args[1..], Console.Out, Console.Error);
 }
 
+// Operator-invoked subcommand: sync the managed hosts-file block to the current AppStore slug
+// set + Portal hostname. Matches the same shape as --merge-appsettings -- top-level flag at
+// args[0], dispatches before WebApplication.CreateBuilder, returns an exit code. Card #345.
+if (args.Length > 0 && args[0] == "--update-hosts")
+{
+    return await UpdateHostsCli.RunAsync(args[1..], Console.Out, Console.Error);
+}
+
 // Anchor the host's content root explicitly. Card #164 baked in the rule that we never
 // trust the operator's CWD. Card #246 (c2-A) extends that rule: when ASPNETCORE_CONTENTROOT
 // is set (system-install layout via the systemd unit), honor it; otherwise fall through to

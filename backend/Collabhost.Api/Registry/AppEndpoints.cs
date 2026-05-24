@@ -6,6 +6,7 @@ using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.HealthChecks;
+using Collabhost.Api.Installation;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Shared;
@@ -1008,6 +1009,7 @@ public static class AppEndpoints
         AppStore store,
         TypeStore typeStore,
         ProxyManager proxy,
+        ProxySettings proxySettings,
         ExternalTargetSettings externalTargetSettings,
         ICurrentUser currentUser,
         ActivityEventStore activityEventStore,
@@ -1202,11 +1204,59 @@ public static class AppEndpoints
             );
         }
 
+        // Card #345: surface a one-line hint so the operator knows about the new
+        // `collabhost --update-hosts` CLI for resolving <slug>.<baseDomain> from a
+        // browser on this host. Resolve the effective domain through the same
+        // CapabilityResolver path the routing surface uses so an operator-set
+        // DomainPattern is reflected in the hint.
+        var hints = ResolveHelpfulNextSteps(appType.Slug, app.Slug, typeStore, validatedOverrides, proxySettings);
+
         return TypedResults.Created
         (
             $"/api/v1/apps/{app.Slug}",
-            new CreateAppResponse(app.Id.ToString(), dataPathResolver.ResolveFor(app.Slug))
+            new CreateAppResponse(app.Id.ToString(), dataPathResolver.ResolveFor(app.Slug), hints)
         );
+    }
+
+    private static IReadOnlyList<string> ResolveHelpfulNextSteps
+    (
+        string appTypeSlug,
+        string slug,
+        TypeStore typeStore,
+        IReadOnlyList<(string SectionKey, JsonObject Overrides)> validatedOverrides,
+        ProxySettings proxySettings
+    )
+    {
+        // Only routed apps get the hosts hint -- a system-service or process-only registration
+        // never gets a Caddy route in the first place. typeStore.HasBinding("routing") gates.
+        if (!typeStore.HasBinding(appTypeSlug, "routing"))
+        {
+            return [];
+        }
+
+        var bindings = typeStore.GetBindings(appTypeSlug);
+
+        if (bindings is null || !bindings.TryGetValue("routing", out var routingBindingJson))
+        {
+            return [];
+        }
+
+        string? overrideJson = null;
+
+        foreach (var (sectionKey, overrideObject) in validatedOverrides)
+        {
+            if (string.Equals(sectionKey, "routing", StringComparison.Ordinal))
+            {
+                overrideJson = overrideObject.ToJsonString();
+                break;
+            }
+        }
+
+        var routing = CapabilityResolver.Resolve<RoutingConfiguration>(routingBindingJson, overrideJson);
+
+        var hostname = CapabilityResolver.ResolveDomain(routing.DomainPattern, slug, proxySettings.BaseDomain);
+
+        return [HostsHintBuilder.Compose(hostname)];
     }
 
     private static async Task<IResult> DeleteAppAsync
