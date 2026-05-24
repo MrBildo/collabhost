@@ -156,6 +156,7 @@ jobs:
           test -d "${INSTALL_DIR}/LICENSES"          || { echo "Missing: LICENSES/" >&2; exit 1; }
           test -d "${INSTALL_DIR}/wwwroot"           || { echo "Missing: wwwroot/" >&2; exit 1; }
           test -f "${INSTALL_DIR}/wwwroot/index.html" || { echo "Missing: wwwroot/index.html" >&2; exit 1; }
+          test -f "${INSTALL_DIR}/wwwroot.sha256"    || { echo "Missing: wwwroot.sha256 (#342)" >&2; exit 1; }
           echo "Install layout verified."
 
       # collabhost --version must work and must work FROM $HOME (not the install
@@ -394,7 +395,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $InstallDir = Join-Path $HOME '.collabhost\bin'
-          foreach ($name in @('collabhost.exe','caddy.exe','appsettings.json','INSTALL.md')) {
+          foreach ($name in @('collabhost.exe','caddy.exe','appsettings.json','INSTALL.md','wwwroot.sha256')) {
             if (-not (Test-Path -LiteralPath (Join-Path $InstallDir $name))) {
               throw "Missing: $name"
             }
@@ -641,6 +642,7 @@ jobs:
               test -d "${INSTALL_DIR}/LICENSES"
               test -d "${INSTALL_DIR}/wwwroot"
               test -f "${INSTALL_DIR}/wwwroot/index.html"
+              test -f "${INSTALL_DIR}/wwwroot.sha256"
               echo "Install layout verified (linux-arm64)."
 
               # --version from $HOME.
@@ -832,6 +834,9 @@ jobs:
           # Portal SPA assets -- catches #245's class (wwwroot/ missing).
           sudo test -d /opt/collabhost/wwwroot
           sudo test -f /opt/collabhost/wwwroot/index.html
+          # wwwroot.sha256 sidecar -- catches #342's class (sidecar missing means
+          # the UAT runbook cannot diff against /api/v1/version.wwwrootHash).
+          sudo test -f /opt/collabhost/wwwroot.sha256
           # Operator config -- catches #244's class (appsettings.json missing
           # from where the binary actually reads).
           sudo test -f /etc/collabhost/appsettings.json
