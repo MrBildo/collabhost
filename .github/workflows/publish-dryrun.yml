@@ -7,7 +7,7 @@ name: Publish (dry-run)
 #
 # Two supported use cases, same archive output:
 #
-#   1. Pipeline-change validation (card #157 origin). PR-triggered on changes
+#   1. Pipeline-change validation (card #157 origin, follow-up to #153). PR-triggered on changes
 #      to publish.yml, install scripts, Caddy pins, frontend/, or
 #      release-assets/. Catches archive-contract regressions before tag-cut.
 #
