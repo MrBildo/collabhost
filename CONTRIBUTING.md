@@ -245,7 +245,7 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 2. Open a PR. If your diff matches the path filters, the dry-run runs automatically.
 3. Or: navigate to **Actions -> Publish (dry-run) -> Run workflow**, pick your branch, optionally provide a version stamp.
 4. Open the workflow run page. The `archive-<rid>` artifacts contain the produced archive + per-leg `.sha256`. The `checksums-aggregated` artifact contains the combined `checksums.txt`.
-5. Download an archive, extract, and inspect. Same seven-item contract as the real workflow.
+5. Download an archive, extract, and inspect. Same eight-item contract as the real workflow.
 
 **What it does not do:** create a tag, create or update a GitHub Release, upload to the Releases surface. If you see a `gh release` invocation in the dry-run, that's a bug -- file an issue.
 
