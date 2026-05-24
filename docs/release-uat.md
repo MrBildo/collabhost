@@ -81,6 +81,19 @@ When the maintainer cuts the release notes (per `docs/release-process.md`), the 
 
 A green `install-integration.yml` run is a **precondition** for UAT, not a substitute. Install-integration validates that the install scripts consume the just-shipped Release archives correctly across all RIDs; UAT validates everything install-integration cannot reach — browser-rendered correctness, operator-judgment-class checks, multi-app-type integration, the "fully torn down" assertion. Confirm install-integration ran green on the release tag before starting UAT.
 
+### Pre-cut UAT (bootstrap / candidate-validation runs)
+
+The default UAT shape is **cut-then-UAT**: a release tag exists, `install-integration.yml` ran green on it, and the runbook executes against the archives that workflow produced. That is the steady state.
+
+There is one explicit deviation: a **pre-cut UAT** is a runbook execution against `main@<sha>` with no tag and (therefore) no `install-integration.yml` run on the to-be-cut version. The dispatch is the operator's affirmative call — a maintainer ratifies that this run is a *candidate-validation* exercise (catch defects before cutting) rather than a release-gate run. The `install-integration.yml` precondition is **waived** for the run, and the card body records the bootstrap deviation explicitly in `context.bootstrap_note`.
+
+What is checked instead, to keep fidelity honest:
+
+- **Live system surface against the running binary** — REST + MCP endpoints respond, schema migrations on the active DB are validated, CLI tools work end-to-end against the running data dir.
+- **Flagged-reduced steps** — any assertion that requires the archive-installed artifact (the on-disk `wwwroot.sha256` sidecar, the `BootVersionTracker` first-boot sentinel observed from a fresh install, the install-script path resolution) is recorded as `status: skip` with `notes:` explicitly flagging the archive-required fidelity gap. The runbook does not change shape; the leg's verdict reflects what was actually validated.
+
+When the cut produces the archive, the deferred archive-dependent steps run as a follow-up leg against the same UAT card or a sibling card per the release-cutter's choice. The pre-cut leg's verdict is the value it produces — the cut-then-UAT leg validates what the pre-cut leg necessarily could not.
+
 ---
 
 ## Stable contract
@@ -496,6 +509,8 @@ The "restart Collabhost itself" step in §6.2 has a different mechanic per leg. 
 | Windows-system | `Restart-Service Collabhost` (PowerShell, elevated) OR `sc.exe stop collabhost && sc.exe start collabhost`. |
 
 Each shape has its own correctness story (does the per-app DB carry the right pre-restart state? does the SIGHUP reload service interfere?). Use the documented shape per leg — an operator-bot can get clever and use the wrong one.
+
+**State survives in `<dataDir>`, not in the process.** All operator-stop state (`Apps.StoppedByOperator`, #350), boot-version sentinel (`<dataDir>/.last-boot-version`), activity log, and per-app capability overrides are persisted under the leg's data directory (per the Path layout reference in the Appendix). The restart shape stops the process; the persisted state is read fresh on next boot. Verification artifact for the restart-survived assertion: `<dataDir>/.last-boot-version` is rewritten after the next preflight clears, AND the SQLite `Apps.StoppedByOperator` row reflects the pre-restart operator intent (run `sqlite3 <dataDir>/collabhost.db "SELECT Slug, StoppedByOperator FROM Apps;"` before and after — the column survives the restart by design). For the Windows-user leg specifically, the foreground-process stop preserves `<dataDir>` because the process owns no files in that directory at the SQLite-WAL-checkpoint shutdown moment — the lifecycle is clean by virtue of `IHostedService.StopAsync` running the same teardown the other legs do.
 
 ### 7. Cross-leg sanity (single-bot single-session only)
 
