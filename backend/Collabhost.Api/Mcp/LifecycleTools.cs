@@ -94,6 +94,10 @@ public class LifecycleTools
             _proxy.EnableRoute(app.Slug);
             _proxy.RequestSync();
 
+            // Clear the persisted operator-stop flag (REST+MCP parity with
+            // AppEndpoints.StartAppAsync). Card #350.
+            await _appStore.SetStoppedByOperatorAsync(app.Id, app.Slug, false, ct);
+
             try
             {
                 await _activityEventStore.RecordAsync
@@ -201,6 +205,10 @@ public class LifecycleTools
         {
             _proxy.DisableRoute(app.Slug);
             _proxy.RequestSync();
+
+            // Persist the operator-stop intent (REST+MCP parity with
+            // AppEndpoints.StopAppAsync). Card #350.
+            await _appStore.SetStoppedByOperatorAsync(app.Id, app.Slug, true, ct);
 
             try
             {

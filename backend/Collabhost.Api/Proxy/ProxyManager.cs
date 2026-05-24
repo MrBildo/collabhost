@@ -176,6 +176,14 @@ public class ProxyManager
             _proxyAppSlug
         );
 
+        // Restore persisted operator-stopped route state for routing-only apps BEFORE
+        // any auto-start or sync runs. Without this, IsRouteEnabled returns true via
+        // the default-true fallback (line above) and routes the operator disabled
+        // pre-restart re-emit as live. Process-bearing routed apps are scoped out --
+        // their "stopped" signal is 502 from a dead upstream, not a torn-down route.
+        // Card #350.
+        await HydrateRouteStatesFromPersistenceAsync(cancellationToken);
+
         // Enable routes for routing-only apps (e.g. static sites) that have auto-start enabled.
         // Process-based apps are handled by ProcessSupervisor; routing-only apps need route enabling here.
         await EnableAutoStartRoutesAsync(cancellationToken);
@@ -729,6 +737,44 @@ public class ProxyManager
         return result;
     }
 
+    // Hydrate _routeStates from the persisted App.StoppedByOperator column at boot. Only
+    // routing-only AppTypes are in scope: process-bearing routed apps (dotnet-app,
+    // nodejs-app) keep their Caddy route up across operator-stop and rely on a 502 from
+    // the dead upstream as the operator-visible "stopped" signal (see
+    // docs/release-uat.md "Stop" semantics). Only `false` entries are written -- enabled
+    // apps stay implicit via IsRouteEnabled's default-true fallback (line 131), so the
+    // dict only grows by the count of operator-stopped routing-only apps. The auto-start
+    // skip for process-bearing apps lives in ProcessSupervisor.StartAsync. Card #350.
+    private async Task HydrateRouteStatesFromPersistenceAsync(CancellationToken ct)
+    {
+        var apps = await _appStore.ListAsync(ct);
+
+        foreach (var app in apps)
+        {
+            // Process-bearing routed types keep route up on operator-stop (502 signal).
+            if (_typeStore.HasBinding(app.AppTypeSlug, "process"))
+            {
+                continue;
+            }
+
+            if (!_typeStore.HasBinding(app.AppTypeSlug, "routing"))
+            {
+                continue;
+            }
+
+            if (app.StoppedByOperator)
+            {
+                _routeStates[app.Slug] = false;
+
+                _logger.LogInformation
+                (
+                    "Hydrated route-state for '{Slug}' -- disabled (operator stopped before restart)",
+                    app.Slug
+                );
+            }
+        }
+    }
+
     private async Task EnableAutoStartRoutesAsync(CancellationToken ct)
     {
         var apps = await _appStore.ListAsync(ct);
@@ -756,6 +802,22 @@ public class ProxyManager
 
             if (autoStartConfiguration is null || !autoStartConfiguration.Enabled)
             {
+                continue;
+            }
+
+            // Defensive symmetry with ProcessSupervisor.StartAsync's StoppedByOperator
+            // skip. No built-in routing-only type today carries auto-start.enabled=true,
+            // but operator-defined types could -- and the hydration above already wrote
+            // _routeStates[slug] = false, so without this skip we would log "auto-start
+            // enabling" and then immediately re-disable through the hydrated dict on the
+            // next sync. Keep the boot log honest. Card #350.
+            if (app.StoppedByOperator)
+            {
+                _logger.LogInformation
+                (
+                    "Skipping auto-start of route for '{DisplayName}' -- stopped by operator before restart",
+                    app.DisplayName
+                );
                 continue;
             }
 

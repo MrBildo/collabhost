@@ -98,6 +98,42 @@ public class AppStore
         _cache.Remove($"app:id:{app.Id}");
     }
 
+    // Partial-property write-through for the persisted operator-stop intent. Mirrors the
+    // UpdateAppAsync IsModified discipline so other fields on the row are untouched. Caller
+    // supplies the slug for cache invalidation -- the slug-keyed cache entry cannot be
+    // resolved by id alone. Card #350.
+    public async Task SetStoppedByOperatorAsync
+    (
+        Ulid appId,
+        string slug,
+        bool value,
+        CancellationToken ct
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(slug);
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        // Required-init fields are satisfied with placeholders; only StoppedByOperator
+        // is marked modified, so EF's UPDATE only touches that column.
+        var app = new App
+        {
+            Id = appId,
+            Slug = string.Empty,
+            DisplayName = string.Empty,
+            AppTypeSlug = string.Empty,
+            StoppedByOperator = value
+        };
+
+        db.Apps.Attach(app);
+        db.Entry(app).Property(a => a.StoppedByOperator).IsModified = true;
+
+        await db.SaveChangesAsync(ct);
+
+        InvalidateAppCache(slug);
+        _cache.Remove($"app:id:{appId}");
+    }
+
     public async Task<App> CreateAsync(App app, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);

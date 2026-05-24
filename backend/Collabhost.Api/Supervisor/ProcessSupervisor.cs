@@ -87,6 +87,22 @@ public class ProcessSupervisor
                     continue;
                 }
 
+                // Operator-stopped state survives Collabhost restart (card #350). If the
+                // operator stopped this app via the Stop / Kill endpoint before the
+                // restart, the persisted StoppedByOperator flag tells the supervisor to
+                // skip auto-start. The flag clears on the next Start operation. The
+                // peer hydration for routing-only apps lives in
+                // ProxyManager.HydrateRouteStatesFromPersistenceAsync.
+                if (app.StoppedByOperator)
+                {
+                    _logger.LogInformation
+                    (
+                        "Skipping auto-start for '{DisplayName}' -- stopped by operator before restart",
+                        app.DisplayName
+                    );
+                    continue;
+                }
+
                 var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
 
                 if (!hasProcess)
@@ -217,6 +233,25 @@ public class ProcessSupervisor
 
         process.MarkStoppedByOperator();
 
+        // Persist the operator-stop intent. Mirrors the in-memory MarkStoppedByOperator()
+        // call onto persistence so the state survives Collabhost restart. Best-effort --
+        // a DB failure here does not abort the stop; the in-memory flag still suppresses
+        // crash-restart within this lifetime, and the operator can re-stop after restart
+        // to converge. Card #350.
+        try
+        {
+            await _appStore.SetStoppedByOperatorAsync(appId, process.AppSlug, true, ct);
+        }
+        catch (Exception persistException)
+        {
+            _logger.LogWarning
+            (
+                persistException,
+                "Failed to persist StoppedByOperator flag for '{DisplayName}'",
+                process.DisplayName
+            );
+        }
+
         await StopProcessWithShutdownPolicyAsync(appId, process, ct);
 
         _logger.LogInformation("Stopped app '{DisplayName}'", process.DisplayName);
@@ -261,6 +296,22 @@ public class ProcessSupervisor
         await using var _ = await process.AcquireOperationLockAsync(ct);
 
         process.MarkStoppedByOperator();
+
+        // Persist the operator-stop intent (kill is operator-driven). Card #350.
+        try
+        {
+            await _appStore.SetStoppedByOperatorAsync(appId, process.AppSlug, true, ct);
+        }
+        catch (Exception persistException)
+        {
+            _logger.LogWarning
+            (
+                persistException,
+                "Failed to persist StoppedByOperator flag for '{DisplayName}' on kill",
+                process.DisplayName
+            );
+        }
+
         process.KillProcess();
 
         var previous = process.MarkStopped();
@@ -476,6 +527,26 @@ public class ProcessSupervisor
         old?.Dispose();
 
         _processes[appId] = managed;
+
+        // Clear the persisted operator-stop flag once the start has committed.
+        // Mirrors the in-memory ClearStoppedByOperator() above onto persistence so
+        // the state survives Collabhost restart. Best-effort -- a transient DB
+        // failure here does not roll back the start (the process IS running), but
+        // a subsequent restart could then skip auto-start; the operator can
+        // re-start manually to converge. Card #350.
+        try
+        {
+            await _appStore.SetStoppedByOperatorAsync(appId, app.Slug, false, ct);
+        }
+        catch (Exception persistException)
+        {
+            _logger.LogWarning
+            (
+                persistException,
+                "Failed to clear persisted StoppedByOperator flag for '{DisplayName}'",
+                app.DisplayName
+            );
+        }
 
         _logger.LogInformation
         (
