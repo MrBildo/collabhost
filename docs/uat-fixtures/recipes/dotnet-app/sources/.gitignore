@@ -1,0 +1,6 @@
+# Build-time artifacts from `dotnet publish` invocations.
+# The recipe outputs land at docs/uat-fixtures/build/dotnet-app/ (gitignored
+# repo-wide); these are the intermediate caches the SDK writes alongside the
+# project file.
+bin/
+obj/
