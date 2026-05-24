@@ -1,0 +1,6 @@
+{
+  "apiBaseUrl": "https://example.local/api",
+  "featureFlags": {
+    "enableAnalytics": false
+  }
+}

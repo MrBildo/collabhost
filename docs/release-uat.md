@@ -186,7 +186,7 @@ This order is "least machinery to most machinery." A failure at step N localizes
 
 #### 2.1 Fixture requirements per app type
 
-Fixtures are built from checked-in recipes at `docs/uat-fixtures/recipes/<app-type>/`. Each recipe's `README.md` describes what the recipe produces; the recipes themselves are scaffolded but not implemented (out of scope for the runbook PR; tracked as follow-up work). Build output lands at `docs/uat-fixtures/build/<app-type>/` (gitignored).
+Fixtures are built from checked-in recipes at `docs/uat-fixtures/recipes/<app-type>/`. Each recipe ships a `build.sh` (Linux/macOS/WSL) and a `build.ps1` (Windows PowerShell) — see `docs/uat-fixtures/recipes/README.md` for the all-five build order and per-recipe toolchain prerequisites (dotnet SDK, Node, Go). Build output lands at `docs/uat-fixtures/build/<app-type>/` (gitignored).
 
 | App type | Fixture shape | Capability surfaces exercised |
 |---|---|---|

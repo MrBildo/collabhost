@@ -1,8 +1,20 @@
 # `static-site` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `static-site` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 4. The recipes themselves are **not yet implemented** — this README describes what they must produce. Building them out is tracked as a follow-up card.
+This directory holds the recipe(s) for building the `static-site` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 4.
 
 Build output lands at `docs/uat-fixtures/build/static-site/` (gitignored).
+
+## Build
+
+```bash
+# Linux / macOS / WSL
+./build.sh
+
+# Windows PowerShell
+.\build.ps1
+```
+
+Both scripts are byte-stable across runs (pure file copy + mtime pin). Source files for each variant live under `sources/<variant>/`.
 
 ## Fixtures the recipe must produce
 

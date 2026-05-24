@@ -1,8 +1,24 @@
 # `executable` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `executable` UAT fixture(s) consumed by `docs/release-uat.md` § 2, § 3.3, and § 4. The recipes themselves are **not yet implemented** — this README describes what they must produce. Building them out is tracked as a follow-up card.
+This directory holds the recipe(s) for building the `executable` UAT fixture(s) consumed by `docs/release-uat.md` § 2, § 3.3, and § 4.
 
 Build output lands at `docs/uat-fixtures/build/executable/` (gitignored).
+
+## Build
+
+```bash
+# Linux / macOS / WSL
+./build.sh
+
+# Windows PowerShell
+.\build.ps1
+```
+
+The recipe uses **Go** (`go.mod` + `main.go` in `sources/`). Go is required on the build host (`go version` should print 1.21+). The Go program is stdlib-only — no module dependencies, fully offline-buildable.
+
+**`looks-like-dotnet/` prerequisite:** the dotnet-app recipe must have been run first (`looks-like-dotnet/` copies from `../build/dotnet-app/self-contained/`). If the source dir is missing, that variant is skipped with a warning; the `single-binary/` and `multiple-binaries/` variants still build.
+
+**Reproducibility.** `go build -trimpath -buildvcs=false -ldflags='-s -w -buildid='` produces byte-identical binaries across runs for the same Go toolchain on the same machine.
 
 ## Fixtures the recipe must produce
 

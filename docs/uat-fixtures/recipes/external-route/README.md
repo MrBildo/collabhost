@@ -1,6 +1,18 @@
 # `external-route` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `external-route` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 3.4. The recipes themselves are **not yet implemented** — this README describes what they must produce. Building them out is tracked as a follow-up card.
+This directory holds the recipe(s) for building the `external-route` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 3.4.
+
+## Build
+
+```bash
+# Linux / macOS / WSL
+./build.sh
+
+# Windows PowerShell
+.\build.ps1
+```
+
+The recipe writes the side-process working directory only — it does NOT launch the side-process. The operator launches `python3 -m http.server 11235` from the built directory explicitly before registration (see the "Cross-OS" section below for the exact launcher syntax per OS).
 
 Unlike the other recipes in this directory, `external-route` does **not** produce an artifact directory the operator points Collabhost at. Collabhost's `external-target` capability points at a `host:port` on the test box — the fixture's job is to **be that host:port**. The recipe stands up a side-process the operator launches before registration and tears down after teardown.
 

@@ -1,8 +1,20 @@
 # `nodejs-app` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `nodejs-app` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 4. The recipes themselves are **not yet implemented** — this README describes what they must produce. Building them out is tracked as a follow-up card.
+This directory holds the recipe(s) for building the `nodejs-app` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 4.
 
 Build output lands at `docs/uat-fixtures/build/nodejs-app/` (gitignored).
+
+## Build
+
+```bash
+# Linux / macOS / WSL
+./build.sh
+
+# Windows PowerShell
+.\build.ps1
+```
+
+The fixture server (`sources/with-start-script/server.js`, `sources/no-start-script/server.js`) uses **Node stdlib `http` only** — no runtime dependency on `express`. The `express` entry in `package.json` is declared purely for probe-panel coverage (drives a non-zero `NodeData.dependencies` count + notable list). `node_modules/` is **not** populated by this recipe; the runbook's `nodejs-app` walk does not depend on a working `npm install`. If a future fixture needs an actually-installed dep, populate `node_modules/` in the recipe (vendored or `npm ci`'d against a pinned lockfile).
 
 ## Fixtures the recipe must produce
 

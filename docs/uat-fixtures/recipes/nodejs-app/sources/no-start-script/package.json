@@ -1,0 +1,12 @@
+{
+  "name": "uat-nodejs-fixture-no-start",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "express": "5.1.0"
+  }
+}

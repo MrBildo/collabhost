@@ -1,0 +1,16 @@
+{
+  "name": "uat-nodejs-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "npm@10.9.0",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "5.1.0"
+  }
+}

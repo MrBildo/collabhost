@@ -1,8 +1,22 @@
 # `dotnet-app` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `dotnet-app` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 4. The recipes themselves are **not yet implemented** — this README describes what they must produce. Building them out is tracked as a follow-up card.
+This directory holds the recipe(s) for building the `dotnet-app` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 4.
 
 Build output lands at `docs/uat-fixtures/build/dotnet-app/` (gitignored). The recipe is checked in; the output is not.
+
+## Build
+
+```bash
+# Linux / macOS / WSL
+./build.sh
+
+# Windows PowerShell
+.\build.ps1
+```
+
+Three variants are produced (see "Fixtures the recipe must produce" below). NuGet restore against the configured feeds is required on first run; subsequent runs hit the local cache.
+
+**Reproducibility.** The csproj sets `<Deterministic>true</Deterministic>` and `<PathMap>` to normalise embedded paths; `-p:DebugType=none` strips PDBs from the third variant. Same-machine repeated runs produce byte-identical output for `framework-dependent/UatDotnetFixture.dll` and the self-contained binaries. Bit-for-bit reproducibility across machines requires identical SDK patch versions.
 
 ## Fixtures the recipe must produce
 
