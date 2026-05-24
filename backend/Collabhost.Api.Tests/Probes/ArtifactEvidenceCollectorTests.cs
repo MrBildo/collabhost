@@ -315,6 +315,76 @@ public class ArtifactEvidenceCollectorTests : IDisposable
         evidence.SuggestedStrategy.ShouldBe(SuggestedStrategies.Manual);
     }
 
+    // Drift guard for the KnownAppTypeSlugs <-> Collect-switch coupling. Both
+    // structures are co-located in ArtifactEvidenceCollector and the comment
+    // names the contract, but there is no compile-time link -- a slug added to
+    // the constant without a corresponding switch branch silently falls into
+    // `_ => Empty(Manual)` and the all-types endpoint (#344) reports
+    // NotApplicable for the new slug forever.
+    //
+    // This test owns a per-slug fixture map. For every entry in
+    // KnownAppTypeSlugs the map MUST contain a fixture that drives the
+    // collector to a non-default response (Fitness != NotApplicable). A slug
+    // added to the constant without a fixture entry fails the test loudly; a
+    // slug added to the switch without being added to the constant is caught
+    // structurally because the all-types endpoint will never enumerate it.
+    [Fact]
+    public void KnownAppTypeSlugs_AllProduceNonDefaultEvidence_DriftGuard()
+    {
+        var fixtures = new Dictionary<string, Action<string>>(StringComparer.Ordinal)
+        {
+            ["dotnet-app"] = dir =>
+                File.WriteAllText(Path.Combine(dir, "MyApp.runtimeconfig.json"), "{}"),
+            ["nodejs-app"] = dir =>
+                File.WriteAllText
+                (
+                    Path.Combine(dir, "package.json"),
+                    """{"scripts":{"start":"node index.js"}}"""
+                ),
+            ["static-site"] = dir =>
+                File.WriteAllText(Path.Combine(dir, "index.html"), "<html></html>"),
+            ["executable"] = dir =>
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    File.WriteAllBytes(Path.Combine(dir, "myapp.exe"), [0x4d, 0x5a]);
+                }
+                else
+                {
+                    var binary = Path.Combine(dir, "myapp");
+                    File.WriteAllBytes(binary, [0x7f, 0x45, 0x4c, 0x46]);
+                    File.SetUnixFileMode
+                    (
+                        binary,
+                        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                    );
+                }
+            }
+        };
+
+        foreach (var slug in ArtifactEvidenceCollector.KnownAppTypeSlugs)
+        {
+            fixtures.ShouldContainKey
+            (
+                slug,
+                $"KnownAppTypeSlugs includes '{slug}' but the drift-guard fixture map does not; add a fixture-writer here AND verify a corresponding branch in ArtifactEvidenceCollector.Collect."
+            );
+
+            var perSlugDir = Path.Combine(_tempDir, "drift-guard-" + slug);
+            Directory.CreateDirectory(perSlugDir);
+
+            fixtures[slug](perSlugDir);
+
+            var evidence = ArtifactEvidenceCollector.Collect(perSlugDir, slug);
+
+            evidence.Fitness.ShouldNotBe
+            (
+                AppTypeFitness.NotApplicable,
+                $"Slug '{slug}' is in KnownAppTypeSlugs but the collector returned NotApplicable for its fixture; either the switch in ArtifactEvidenceCollector.Collect is missing a branch for '{slug}', or the drift-guard fixture is no longer triggering."
+            );
+        }
+    }
+
     // --- executable (Linux-only positive coverage, card #261) ----------------
 
     // The Windows-leg tests above use the `*.exe` extension which hits the

@@ -196,7 +196,7 @@ For each app type, in the dashboard:
 - `POST /api/v1/apps` response carries `id` (ULID) AND `writableDataPath` (`<dataDir>/app-data/<slug>` — absolute, runtime-derived, NEVER persisted, per the #326 / #322 E1 decision). Assert `Path.IsPathRooted(writableDataPath)` — a regression in `AppDataPathResolver` that returns relative paths would still serialize cleanly (silent-failure).
 - `GET /api/v1/apps/{slug}/settings` returns the section set matching the app-type's capability bindings (varies by type; see per-type assertions below).
 
-**Path-picker dependency (card #344):** `GET /api/v1/filesystem/detect-strategy` requires BOTH `path` AND `appTypeSlug` query params. The App Create page sets `appTypeSlug` from the step-1 type-picker; if a future refactor reorders the form so the path is filled before the type is selected, the API call would 400. Not a bug today; the dependency is documented because a future refactor could silently break the detect-strategy hint.
+**Path-picker dependency (card #344, closed):** `GET /api/v1/filesystem/detect-strategy` accepts `path` as required and `appTypeSlug` as optional. When the slug is provided (the App Create page sets it from the step-1 type-picker), the response is the single-type `DetectStrategyResponse`. When the slug is omitted, the response carries a `perType` map keyed by every AppType the collector has rules for. A form reorder that fills the path before the type is selected no longer 400s — it just gets the per-type map and can render hints for whichever type the operator eventually picks.
 
 **Per-app `/etc/hosts` precondition (card #345):** the documented `install.sh` / `install.ps1` paths handle the Portal hostname (`collabhost.collab.internal`) but **not** per-app subdomains (`<slug>.collab.internal`). The operator must add the per-app entry to `/etc/hosts` (Linux) or `%SystemRoot%\System32\drivers\etc\hosts` (Windows) before §6 routing assertions can pass against the real domain. Operator-UX friction point tracked for future install-script work.
 
@@ -386,7 +386,7 @@ Assert: the banner renders AND its text content matches the string above (case-s
 
 ### 4. Detect-strategy suggestion verification
 
-`GET /api/v1/filesystem/detect-strategy?path=<absolute>&appTypeSlug=<slug>` returns `DetectStrategyResponse(SuggestedStrategy, paths[])` per `FilesystemEndpoints.DetectStrategy`. The strategy comes from `ArtifactEvidenceCollector.Collect`.
+`GET /api/v1/filesystem/detect-strategy?path=<absolute>&appTypeSlug=<slug>` returns `DetectStrategyResponse(SuggestedStrategy, paths[])` per `FilesystemEndpoints.DetectStrategy`. The strategy comes from `ArtifactEvidenceCollector.Collect`. (The `appTypeSlug` is optional per card #344; omitting it returns a `perType` map keyed by every AppType the collector has rules for. The per-app-type assertions below exercise the slug-provided shape.)
 
 **Expected suggestion per app type × fixture shape:**
 
