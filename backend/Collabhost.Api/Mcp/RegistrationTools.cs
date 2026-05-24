@@ -573,11 +573,11 @@ public class RegistrationTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Analyzes a directory and reports evidence relevant to the chosen app type -- runtime configs, project files, single-file binaries, package manifests, static-site entry points, or executables. Returns a strategy hint plus the list of evidence files found. The 'notApplicable' strategy is returned for app types that don't go through process discovery (static-site, executable directories with no clear binary). Use this after choosing an app type and install directory, before calling register_app, to understand what configuration Collabhost will auto-discover vs. what must be specified manually.")]
+    [Description("Analyzes a directory and reports evidence relevant to a chosen app type -- runtime configs, project files, single-file binaries, package manifests, static-site entry points, or executables. When appTypeSlug is provided, returns a single { strategy, evidenceFiles } for that type. When omitted, returns { perType: { <slug>: { strategy, evidenceFiles } } } with one entry per app type the analyzer has rules for (dotnet-app, nodejs-app, static-site, executable) -- useful when you want to discover what's in a directory before committing to an app type. The 'notApplicable' strategy is returned for app types that don't go through process discovery (static-site, executable directories with no clear binary). Use this before calling register_app to understand what configuration Collabhost will auto-discover vs. what must be specified manually.")]
     public async Task<CallToolResult> DetectStrategyAsync
     (
         [Description("Absolute filesystem path to analyze.")] string path,
-        [Description("App type slug (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable'). Use list_app_types to see valid values.")] string appTypeSlug,
+        [Description("App type slug (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable'). Use list_app_types to see valid values. Optional -- omit to receive a per-type map covering every analyzed app type.")] string? appTypeSlug = null,
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
         CancellationToken ct = default
     )
@@ -592,11 +592,6 @@ public class RegistrationTools
         if (string.IsNullOrWhiteSpace(path))
         {
             return McpResponseFormatter.InvalidParameters("path is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(appTypeSlug))
-        {
-            return McpResponseFormatter.InvalidParameters("appTypeSlug is required.");
         }
 
         if (!path.IsValidPath())
@@ -626,8 +621,44 @@ public class RegistrationTools
             );
         }
 
+        var payload = string.IsNullOrWhiteSpace(appTypeSlug)
+            ? CollectPerType(fullPath)
+            : CollectSingle(fullPath, appTypeSlug);
+
+        return McpResponseFormatter.Success(McpResponseFormatter.ToJson(payload));
+    }
+
+    private static object CollectSingle(string fullPath, string appTypeSlug)
+    {
         var evidence = ArtifactEvidenceCollector.Collect(fullPath, appTypeSlug);
 
+        return new
+        {
+            strategy = evidence.SuggestedStrategy,
+            evidenceFiles = ToPaths(evidence)
+        };
+    }
+
+    private static object CollectPerType(string fullPath)
+    {
+        var perType = new Dictionary<string, object>(StringComparer.Ordinal);
+
+        foreach (var slug in ArtifactEvidenceCollector.KnownAppTypeSlugs)
+        {
+            var evidence = ArtifactEvidenceCollector.Collect(fullPath, slug);
+
+            perType[slug] = new
+            {
+                strategy = evidence.SuggestedStrategy,
+                evidenceFiles = ToPaths(evidence)
+            };
+        }
+
+        return new { perType };
+    }
+
+    private static List<string> ToPaths(ArtifactEvidence evidence)
+    {
         var paths = new List<string>(evidence.Signals.Count);
 
         foreach (var signal in evidence.Signals)
@@ -635,13 +666,7 @@ public class RegistrationTools
             paths.Add(signal.Path);
         }
 
-        var result = new
-        {
-            strategy = evidence.SuggestedStrategy,
-            evidenceFiles = paths
-        };
-
-        return McpResponseFormatter.Success(McpResponseFormatter.ToJson(result));
+        return paths;
     }
 
     private static CallToolResult BrowseRoots()

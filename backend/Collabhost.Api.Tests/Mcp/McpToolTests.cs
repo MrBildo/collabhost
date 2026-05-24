@@ -299,6 +299,30 @@ public class McpToolTests(ApiFixture fixture)
         (result.IsError ?? false).ShouldBeTrue();
     }
 
+    // Card #344: omitting appTypeSlug returns the per-type map shape (REST/MCP parity).
+    [Fact]
+    public async Task DetectStrategy_OmittedAppTypeSlug_ReturnsPerTypeMap()
+    {
+        var dir = Path.GetTempPath();
+
+        var (tools, scope) = CreateRegistrationTools();
+        using var _ = scope;
+
+        var result = await tools.DetectStrategyAsync(dir, appTypeSlug: null, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeFalse();
+
+        var text = GetFirstText(result);
+
+        // The shape should carry a perType object with one entry per
+        // collector-known app type.
+        text.ShouldContain("perType");
+        text.ShouldContain("dotnet-app");
+        text.ShouldContain("nodejs-app");
+        text.ShouldContain("static-site");
+        text.ShouldContain("executable");
+    }
+
     // -------- Registration: register_app persists artifact location --------
 
     [Fact]
