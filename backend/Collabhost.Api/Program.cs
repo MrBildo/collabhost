@@ -550,6 +550,34 @@ app.Lifetime.ApplicationStarted.Register
                 outcome.WwwrootPath,
                 string.Join(' ', outcome.RecoverySteps)
             );
+
+            // Skip integrity check when reachability failed -- there is no meaningful
+            // content to hash, and PortalReachabilityCheck has already surfaced the
+            // operator-actionable warning. Card #342.
+            return;
+        }
+
+        // Portal integrity check. Compares the on-disk wwwroot/ content hash against the
+        // hash embedded into the binary at archive-build time. Drift = soft warning, not a
+        // halt: legitimate operator customization is a real shape. Empty embedded hash
+        // (dev builds, pre-#342 archives) is silent by design. Card #342.
+        var integrity = PortalIntegrityCheck.Validate
+        (
+            app.Environment.ContentRootPath,
+            VersionInfo.WwwrootHash,
+            app.Logger
+        );
+
+        if (integrity.Status == PortalIntegrityStatus.Drift)
+        {
+            app.Logger.LogWarning
+            (
+                "Portal integrity check: Drift at {WwwrootPath} (expected {ExpectedHash}, actual {ActualHash}). {RecoverySteps}",
+                integrity.WwwrootPath,
+                integrity.ExpectedHash,
+                integrity.ActualHash,
+                string.Join(' ', integrity.RecoverySteps)
+            );
         }
     }
 );

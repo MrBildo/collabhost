@@ -51,4 +51,32 @@ public class VersionInfoTests
     [Fact]
     public void Platform_IsNonEmpty() =>
         VersionInfo.Platform.ShouldNotBeNullOrWhiteSpace();
+
+    // The Lazy-resolved property must never throw or return null. In a test build
+    // (no WwwrootHash MSBuild property) the AssemblyMetadataAttribute is not emitted,
+    // so the returned value is empty string. In an archive-published build it is the
+    // 64-hex digest. Either way, a non-null string. Card #342.
+    [Fact]
+    public void WwwrootHash_IsNonNullString() =>
+        VersionInfo.WwwrootHash.ShouldNotBeNull();
+
+    [Fact]
+    public void WwwrootHash_WhenEmpty_DoesNotContainWhitespace()
+    {
+        // Defensive: if the attribute reads as empty (dev build), the value is the empty
+        // string, not whitespace. PortalIntegrityCheck.Validate treats whitespace and empty
+        // identically (both -> Unknown), but the contract here is "empty exactly."
+        var value = VersionInfo.WwwrootHash;
+
+        if (value.Length == 0)
+        {
+            value.ShouldBe(string.Empty);
+        }
+        else
+        {
+            // Non-empty values must look like a SHA-256 hex digest -- 64 lowercase hex.
+            value.Length.ShouldBe(64);
+            value.ShouldMatch("^[0-9a-f]{64}$");
+        }
+    }
 }

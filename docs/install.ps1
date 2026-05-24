@@ -320,6 +320,16 @@ try
     }
     Copy-Item -LiteralPath (Join-Path $ExtractDir 'wwwroot') -Destination $InstallPath -Recurse -Force
 
+    # wwwroot.sha256 sidecar: build-time SHA-256 hash of the wwwroot/ tree,
+    # written by the publish workflow. Sits next to the binary so the UAT
+    # runbook can compare against /api/v1/version.wwwrootHash (#342). Optional
+    # for archives predating #342 -- absence is silent.
+    $WwwrootSidecarSrc = Join-Path $ExtractDir 'wwwroot.sha256'
+    if (Test-Path -LiteralPath $WwwrootSidecarSrc)
+    {
+        Copy-Item -LiteralPath $WwwrootSidecarSrc -Destination $InstallPath -Force
+    }
+
     # appsettings.json: smart-merge on upgrade, plain copy on first install.
     #
     # First install: copy the archive's shipped appsettings.json into place AND seed the sidecar

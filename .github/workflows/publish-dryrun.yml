@@ -276,15 +276,50 @@ jobs:
 
           echo "All declared plugins are baked into the binary."
 
+      # Mirrors publish.yml "Compute wwwroot hash" -- see that step for the
+      # algorithm contract (must match PortalIntegrityCheck.ComputeWwwrootHash)
+      # and the portability notes. Card #342.
+      - name: Compute wwwroot hash
+        id: wwwroot-hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="backend/Collabhost.Api/wwwroot"
+          if [[ ! -d "${ROOT}" ]]; then
+            echo "wwwroot directory missing at ${ROOT}" >&2
+            exit 1
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha_cmd() { sha256sum "$1" | cut -d' ' -f1; }
+            sha_stream() { sha256sum | cut -d' ' -f1; }
+          else
+            sha_cmd() { shasum -a 256 "$1" | cut -d' ' -f1; }
+            sha_stream() { shasum -a 256 | cut -d' ' -f1; }
+          fi
+          stat_size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
+          HASH=$(cd "${ROOT}" && find . -type f \
+            | sed 's|^\./||' \
+            | LC_ALL=C sort \
+            | while IFS= read -r rel; do
+                size=$(stat_size "${rel}")
+                fhash=$(sha_cmd "${rel}")
+                printf '%s\n%s\n%s\n' "${rel}" "${size}" "${fhash}"
+              done \
+            | sha_stream)
+          echo "wwwroot hash: ${HASH}"
+          echo "HASH=${HASH}" >> "${GITHUB_OUTPUT}"
+
       # Mirrors publish.yml: self-contained single-file publish. AssemblyName
       # rename happens via PublishSingleFile-scoped property in the csproj
       # (see publish.yml comment block for the global-property landmine).
+      # -p:WwwrootHash embeds the staged-wwwroot hash into the binary (#342).
       - name: Publish
         shell: bash
         working-directory: backend
         env:
           VER: ${{ needs.resolve-version.outputs.version }}
           RID: ${{ matrix.rid }}
+          WWWROOT_HASH: ${{ steps.wwwroot-hash.outputs.HASH }}
         run: |
           set -euo pipefail
 
@@ -294,6 +329,7 @@ jobs:
             --self-contained \
             -p:PublishSingleFile=true \
             -p:Version="${VER}" \
+            -p:WwwrootHash="${WWWROOT_HASH}" \
             -o "../publish/collabhost-${VER}-${RID}"
 
       - name: Stage archive
@@ -303,6 +339,7 @@ jobs:
           RID: ${{ matrix.rid }}
           CADDY_BIN: ${{ matrix.caddy_bin }}
           COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
+          WWWROOT_HASH: ${{ steps.wwwroot-hash.outputs.HASH }}
         run: |
           set -euo pipefail
 
@@ -319,6 +356,8 @@ jobs:
           cp "release-assets/caddy-LICENSE"     "${STAGE}/LICENSES/"
           cp "release-assets/caddy-NOTICE"      "${STAGE}/LICENSES/"
           cp -R "${PUB}/wwwroot"                "${STAGE}/"
+          # wwwroot.sha256 sidecar -- see publish.yml Stage archive for contract. Card #342.
+          printf '%s' "${WWWROOT_HASH}"         > "${STAGE}/wwwroot.sha256"
 
           if [[ "${RID}" != win-x64 ]]; then
             chmod +x "${STAGE}/${COLLABHOST_BIN}"
@@ -362,7 +401,8 @@ jobs:
             INSTALL.md \
             LICENSES/caddy-LICENSE \
             LICENSES/caddy-NOTICE \
-            wwwroot
+            wwwroot \
+            wwwroot.sha256
 
       - name: Verify archive contents
         shell: bash
@@ -372,6 +412,7 @@ jobs:
           EXT: ${{ matrix.ext }}
           CADDY_BIN: ${{ matrix.caddy_bin }}
           COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
+          WWWROOT_HASH: ${{ steps.wwwroot-hash.outputs.HASH }}
         run: |
           set -euo pipefail
 
@@ -402,7 +443,8 @@ jobs:
             "${CADDY_BIN}" \
             "INSTALL.md" \
             "LICENSES/caddy-LICENSE" \
-            "LICENSES/caddy-NOTICE"
+            "LICENSES/caddy-NOTICE" \
+            "wwwroot.sha256"
           do
             if [[ ! -f "${VERIFY_DIR}/${path}" ]]; then
               echo "MISSING: ${path}" >&2
@@ -421,12 +463,24 @@ jobs:
             MISSING=1
           fi
 
+          # wwwroot.sha256 content sanity: 64 hex chars, no newline. Card #342.
+          if [[ -f "${VERIFY_DIR}/wwwroot.sha256" ]]; then
+            SIDECAR=$(cat "${VERIFY_DIR}/wwwroot.sha256")
+            if [[ ! "${SIDECAR}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "MALFORMED: wwwroot.sha256 is not 64 lowercase hex chars (got '${SIDECAR}')" >&2
+              MISSING=1
+            elif [[ "${SIDECAR}" != "${WWWROOT_HASH}" ]]; then
+              echo "MISMATCH: wwwroot.sha256 (${SIDECAR}) != computed hash (${WWWROOT_HASH})" >&2
+              MISSING=1
+            fi
+          fi
+
           if [[ "${MISSING}" -ne 0 ]]; then
             echo "Archive contract verification failed." >&2
             exit 1
           fi
 
-          echo "Archive contract verified: flat layout, 7/7 items present."
+          echo "Archive contract verified: flat layout, 8/8 items present."
 
       - name: Checksum
         shell: bash
@@ -587,7 +641,7 @@ jobs:
           Write-Host 'Extracted layout:'
           Get-ChildItem -LiteralPath $installDir | Select-Object Mode,Length,Name
 
-      # Verify the seven contract items survived the round-trip through
+      # Verify the eight contract items survived the round-trip through
       # upload-artifact + download-artifact + extract. Same checks as install.sh
       # post-extract -- redundant with the build-matrix "Verify archive contents"
       # step above, but that step verifies the freshly-built archive; this step
@@ -605,6 +659,7 @@ jobs:
           test -f "${INSTALL_DIR}/INSTALL.md"         || { echo "Missing: INSTALL.md" >&2; exit 1; }
           test -d "${INSTALL_DIR}/LICENSES"           || { echo "Missing: LICENSES/" >&2; exit 1; }
           test -f "${INSTALL_DIR}/wwwroot/index.html" || { echo "Missing: wwwroot/index.html" >&2; exit 1; }
+          test -f "${INSTALL_DIR}/wwwroot.sha256"     || { echo "Missing: wwwroot.sha256" >&2; exit 1; }
           echo "Install layout verified."
 
       - name: Verify install layout (Windows)
@@ -613,7 +668,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $installDir = Join-Path $HOME '.collabhost\bin'
-          foreach ($name in @('collabhost.exe','caddy.exe','appsettings.json','INSTALL.md')) {
+          foreach ($name in @('collabhost.exe','caddy.exe','appsettings.json','INSTALL.md','wwwroot.sha256')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installDir $name))) {
               throw "Missing: $name"
             }

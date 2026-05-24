@@ -34,7 +34,7 @@ gh release create vX.Y.Z \
 
 - Parses the tag (must match `vX.Y.Z` or `vX.Y.Z-<pre-release>`, SemVer 2.0 §9; build metadata `+...` is rejected).
 - Builds the frontend once and runs the per-RID build matrix (`linux-x64`, `linux-arm64`, `osx-arm64`, `win-x64`).
-- Stages the **seven-item archive contract** per RID (collabhost binary, caddy binary, `appsettings.json`, `INSTALL.md`, `LICENSES/caddy-LICENSE`, `LICENSES/caddy-NOTICE`, `wwwroot/`) into a flat layout, archives it, and computes a per-leg `.sha256`.
+- Stages the **eight-item archive contract** per RID (collabhost binary, caddy binary, `appsettings.json`, `INSTALL.md`, `LICENSES/caddy-LICENSE`, `LICENSES/caddy-NOTICE`, `wwwroot/`, `wwwroot.sha256`) into a flat layout, archives it, and computes a per-leg `.sha256`. The `wwwroot.sha256` sidecar is a 64-hex digest of the staged `wwwroot/` tree, embedded into the binary at the same time via `-p:WwwrootHash=…` (surfaced at runtime as `/api/v1/version.wwwrootHash`); the sidecar lets UAT and operators detect partial-strip or post-install tampering by comparing the on-disk file to the running binary's reported value (#342).
 - Uploads `collabhost-<ver>-<rid>.<ext>` + its `.sha256` to the Release as assets (`--clobber`), then aggregates all per-leg sums into a single `checksums.txt` uploaded to the Release.
 
 ### Post-release validation
