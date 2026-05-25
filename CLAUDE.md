@@ -22,6 +22,8 @@ These rules are non-negotiable and apply to every agent, every dispatch, every c
    - When a breaking change is genuinely required, the operator must be told: an explicit migration step in the installer or release notes, a deprecation window where both shapes work, or a tool that performs the transformation. Silent breakage is not an option.
    - **Historical reference — pre-production posture (in force from project start through v0.1.x):** *"We are still in a pre-production state. Anyone currently using Collabhost is well aware of the possibility of breaking changes. So regarding setting migration concerns, they are nil. I want everyone to be clear, surface migration concerns, but don't plan around them, prioritize, scope, or design for them unless I tell you to. At some point we will have those concerns. That is not today or tomorrow."* — Bill Wheelock, 2026-04-29. The "at some point" arrived at the v1.0.0 tag.
 
+4. **Every bot loads `.agents/GLOSSARY.md` at session start, alongside this file and per-bot workspace files.** The glossary is the central hub for team terms, conventions, and operator-anchored rules — including the human-speak vs bot-speak communication-mode rule. Load it before doing work, not after needing it. The file is gitignored; bots read it from their own checkout. Concise by design — bots may extend or prune entries on their own terms.
+
 ## Coding Conventions
 
 ### Skills agents must use
