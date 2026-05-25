@@ -3,6 +3,20 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <!-- Required by [LibraryImport] source generator in LinuxNativeMethods.cs -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Disable SDK static-web-assets gzip/brotli sidecar emission. The Publish
+         workflow computes the wwwroot hash BEFORE dotnet publish runs (over the
+         frontend artifact, 4 files); leaving SDK compression on makes the
+         publish output wwwroot/ carry .gz/.br sidecars (12 files), which then
+         ship in the archive. PortalIntegrityCheck recomputes the hash at
+         runtime over the on-disk wwwroot/, so the shipped sidecars cause the
+         runtime hash to structurally never match the build-embedded hash and
+         the integrity check warns drift on every release archive. Turning the
+         compression module off (Microsoft.NET.Sdk.StaticWebAssets.targets
+         only imports it when CompressionEnabled='true') keeps pre-publish and
+         post-publish wwwroot/ byte-identical. The sidecars are inert at
+         runtime today (Caddy gzips on the fly, not from pre-compressed files),
+         so removing them is no operator-visible loss. Card #357. -->
+    <CompressionEnabled>false</CompressionEnabled>
   </PropertyGroup>
 
   <!-- Rename the published binary from Collabhost.Api[.exe] to collabhost[.exe]
