@@ -61,6 +61,34 @@ public class ProcessSupervisorStopAsyncTests
         hungHandle.KillCount.ShouldBe(1);
     }
 
+    // Covers #358: a host shutdown that signals the host CT before (or during) the per-process
+    // lock-acquire must not turn a clean graceful shutdown into an unhandled TaskCanceledException
+    // at the host boundary. Pre-fix the closure's AcquireOperationLockAsync(cancellationToken)
+    // would throw synchronously via SemaphoreSlim.WaitAsync(ct); Task.WhenAll aggregated it out of
+    // StopAsync, the host re-threw, and systemd marked the unit `failed (result: core-dump)`
+    // instead of `inactive`. Post-fix the lock-acquire passes CancellationToken.None and the
+    // shutdown completes cleanly.
+    [Fact]
+    public async Task StopAsync_HostCtAlreadyCancelled_CompletesCleanlyWithoutPropagatingCancellation()
+    {
+        var supervisor = CreateSupervisor();
+
+        // A non-running process is sufficient: the lock-acquire is the line under test, and
+        // the IsRunning branch below it is not exercised. Using a non-running process also
+        // avoids any interaction with StopProcessWithShutdownPolicyAsync, which legitimately
+        // honors the host CT on the inner stop work.
+        var process = new ManagedProcess(Ulid.NewUlid(), "test-app", "Test App");
+
+        InjectProcess(supervisor, process);
+
+        // Simulate the host's linked shutdown token already cancelled at the moment StopAsync runs.
+        using var alreadyCancelled = new CancellationTokenSource();
+        await alreadyCancelled.CancelAsync();
+
+        // Must NOT throw -- the late-shutdown lock-acquire is no longer host-CT-propagating.
+        await Should.NotThrowAsync(async () => await supervisor.StopAsync(alreadyCancelled.Token));
+    }
+
     [Fact]
     public async Task StopAsync_CancelsPendingRestartDelay_BeforeIteratingProcesses()
     {
