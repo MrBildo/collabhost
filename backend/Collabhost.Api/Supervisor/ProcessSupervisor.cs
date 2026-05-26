@@ -179,7 +179,21 @@ public class ProcessSupervisor
             {
                 var (appId, process) = kvp;
 
-                await using var _ = await process.AcquireOperationLockAsync(cancellationToken);
+                // The lock-acquire here must not propagate the host's shutdown CT. The host's
+                // linked shutdown token may already be signalled (host shutdown timeout, a second
+                // SIGTERM, an internal sibling-service cancellation) by the time this closure runs.
+                // SemaphoreSlim.WaitAsync(ct) with a signalled token throws TaskCanceledException
+                // synchronously; aggregated through Task.WhenAll it escapes StopAsync as an
+                // unhandled exception, and systemd marks the unit `failed (result: core-dump)`
+                // instead of `inactive` -- even though the graceful shutdown work below has
+                // already completed cleanly. The lock is uncontended at this point (the API has
+                // stopped accepting requests; restart-retry closures hold no lock; pending
+                // restart-delay tasks were cancelled in the loop above), so an unconditional
+                // acquire is safe. The host CT is still honoured on the actual stop work
+                // (StopProcessWithShutdownPolicyAsync below) -- propagation belongs ON the stop
+                // work, not on the bookkeeping lock-acquire. Mirrors the grace-period site
+                // below at the AcquireOperationLockAsync(CancellationToken.None) call. (#358)
+                await using var _ = await process.AcquireOperationLockAsync(CancellationToken.None);
 
                 if (process.IsRunning)
                 {
