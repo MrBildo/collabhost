@@ -7,6 +7,7 @@ using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
+using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 
 using ModelContextProtocol.Protocol;
@@ -25,6 +26,7 @@ public class LifecycleTools
     TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
+    RuntimeConfigFileWriter runtimeConfigFileWriter,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
     McpRequestAuthenticator authenticator,
@@ -42,6 +44,13 @@ public class LifecycleTools
 
     private readonly ProxyManager _proxy = proxy
         ?? throw new ArgumentNullException(nameof(proxy));
+
+    // Card #365: mirror REST AppEndpoints.StartAppAsync's routing-only branch so
+    // MCP start_app fires the runtime-config-file writer before EnableRoute. The
+    // original #336 commit added the writer call to REST but not to MCP -- the
+    // MCP path was structurally never wired to the writer.
+    private readonly RuntimeConfigFileWriter _runtimeConfigFileWriter = runtimeConfigFileWriter
+        ?? throw new ArgumentNullException(nameof(runtimeConfigFileWriter));
 
     private readonly ICurrentUser _currentUser = currentUser
         ?? throw new ArgumentNullException(nameof(currentUser));
@@ -91,6 +100,21 @@ public class LifecycleTools
         // Routing-only apps (e.g. static sites): enable route instead of starting a process
         if (!hasProcess && hasRouting)
         {
+            // Render runtime-config-file BEFORE enabling the route (Card #336).
+            // Ordering matters: if we enabled the route first, Caddy could serve a
+            // stale on-disk value for an arbitrary window before the writer landed
+            // the new file. Mirrors AppEndpoints.StartAppAsync's REST routing-only
+            // branch -- the original #336 commit added the writer call to REST but
+            // never to MCP, leaving the MCP trigger structurally absent. Card #365.
+            try
+            {
+                await _runtimeConfigFileWriter.RenderAsync(app, ct);
+            }
+            catch (RuntimeConfigFileWriteException ex)
+            {
+                return McpResponseFormatter.InvalidParameters(ex.Message);
+            }
+
             _proxy.EnableRoute(app.Slug);
             _proxy.RequestSync();
 

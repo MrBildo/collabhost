@@ -552,9 +552,17 @@ public static class AppEndpoints
         // start-time write; this handles edits while the route is already live.
         // Write failure surfaces as a 409 with the override already persisted --
         // operator-actionable (the save did happen; the file on disk did not).
-        // Card #336, Marcus precondition #4.
+        //
+        // Gate uses IsRouteEnabled (default-true when _routeStates has no entry),
+        // NOT IsRouteExplicitlyEnabled (default-false). A routing-only app whose
+        // route is up by default-fallback -- the production-common case for an
+        // app that was running before Collabhost restarted and has never been
+        // operator-stop/start-cycled since boot -- must still re-render on a
+        // settings change. The narrower IsRouteExplicitlyEnabled gate (added
+        // #350-era) defeated this in the production-common case and shipped
+        // #336's rsync-clobber-protection as structurally inert. Card #365.
         if (request.Changes.ContainsKey("runtime-config-file")
-            && proxy.IsRouteExplicitlyEnabled(app.Slug))
+            && proxy.IsRouteEnabled(app.Slug))
         {
             try
             {
