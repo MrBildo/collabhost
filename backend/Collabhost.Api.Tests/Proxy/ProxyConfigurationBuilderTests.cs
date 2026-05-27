@@ -1454,6 +1454,128 @@ public class ProxyConfigurationBuilderTests
         reverseProxy["upstreams"]![0]!["dial"]!.GetValue<string>().ShouldBe("192.168.1.50:11235");
     }
 
+    // -------- Card #360: per-handler trusted_proxies on reverse_proxy --------
+
+    [Fact]
+    public void Build_ReverseProxyRoute_EmitsTrustedProxiesEmptyArray()
+    {
+        // Card #360: every reverse_proxy handler carries `trusted_proxies: []`
+        // so Caddy 2.10+ honors the documented X-Forwarded-For propagation
+        // contract (trust nothing inbound, set XFF from the immediate peer).
+        var routes = new List<RouteEntry>
+        {
+            new("my-app", DefaultDomain("my-app"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+
+        handler["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+
+        var trustedProxies = handler["trusted_proxies"]!.AsArray();
+        trustedProxies.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Build_SelfRoute_EmitsTrustedProxiesEmptyArray()
+    {
+        // The Portal self-route is a reverse_proxy too -- same defended-edge
+        // posture applies. Card #360.
+        var config = ProxyConfigurationBuilder.Build([], _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![0]!["handle"]![0]!;
+
+        handler["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+
+        var trustedProxies = handler["trusted_proxies"]!.AsArray();
+        trustedProxies.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Build_ReverseProxyRoute_WithSecurityHeaders_TrustedProxiesEmittedInsideSubroute()
+    {
+        // Subroute-wrap path (security-headers bound): the reverse_proxy is
+        // nested inside the subroute. The trusted_proxies field must travel
+        // with it. Card #360.
+        var spec = new SecurityHeadersConfiguration
+        {
+            EnableHsts = false,
+            Headers = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["X-Content-Type-Options"] = "nosniff"
+            }
+        };
+
+        var routes = new List<RouteEntry>
+        {
+            new("api", DefaultDomain("api"), ServeMode.ReverseProxy, Port: 5000, SpaFallback: false, ArtifactDirectory: null, Enabled: true, ResponseHeaders: null, SecurityHeaders: spec)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+        var reverseProxy = subrouteHandlers[1]!["handle"]![0]!;
+
+        reverseProxy["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+
+        var trustedProxies = reverseProxy["trusted_proxies"]!.AsArray();
+        trustedProxies.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Build_ExternalRoute_EmitsTrustedProxiesEmptyArray()
+    {
+        // External-target routes (Card #348) share the reverse_proxy emission
+        // path -- same XFF contract applies. Card #360.
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "crawl4ai",
+                DefaultDomain("crawl4ai"),
+                ServeMode.ReverseProxy,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: null,
+                Enabled: true,
+                ResponseHeaders: null,
+                SecurityHeaders: null,
+                ExternalDial: "192.168.1.50:11235",
+                ExternalScheme: "http"
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var handler = GetRoutes(config)![1]!["handle"]![0]!;
+
+        handler["handler"]!.GetValue<string>().ShouldBe("reverse_proxy");
+
+        var trustedProxies = handler["trusted_proxies"]!.AsArray();
+        trustedProxies.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_DoesNotEmitTrustedProxies()
+    {
+        // file_server has no upstream -- trusted_proxies is a reverse_proxy
+        // concept only. Negative test guards against accidental field bleed.
+        // Card #360.
+        var routes = new List<RouteEntry>
+        {
+            new("docs", DefaultDomain("docs"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+        var fileHandler = subrouteHandlers[1]!["handle"]![0]!;
+
+        fileHandler["handler"]!.GetValue<string>().ShouldBe("file_server");
+        fileHandler.AsObject().ContainsKey("trusted_proxies").ShouldBeFalse();
+    }
+
     [Fact]
     public void Build_DisabledExternalRoute_EmitsServiceUnavailableStub()
     {

@@ -155,7 +155,11 @@ public static class ProxyConfigurationBuilder
                         {
                             ["dial"] = $"localhost:{hostingSettings.ListenPort.ToString(CultureInfo.InvariantCulture)}"
                         }
-                    }
+                    },
+                    // Trust nothing inbound -- see BuildReverseProxyRoute for the
+                    // full rationale. Same defended-edge posture applies to the
+                    // Portal route. Card #360.
+                    ["trusted_proxies"] = new JsonArray()
                 }
             },
             ["terminal"] = true
@@ -202,6 +206,18 @@ public static class ProxyConfigurationBuilder
                 route.Port?.ToString(CultureInfo.InvariantCulture) ?? "0"
             );
 
+        // Emit `trusted_proxies: []` on every reverse_proxy handler. Caddy 2.10+
+        // requires explicit per-handler trusted_proxies configuration for
+        // upstream X-Forwarded-For propagation in scenarios where the immediate
+        // peer is not the real client. With an empty list no source is trusted:
+        // Caddy treats the immediate peer IP as the real client and sets
+        // X-Forwarded-For from it on every outbound request to the upstream,
+        // ignoring any prior X-Forwarded-* values. This is the defended edge-
+        // proxy posture -- Collabhost IS the edge today, no upstream proxy
+        // should be trusted by default. Operators running Collabhost behind
+        // another proxy (Cloudflare Tunnel, on-prem LB, Tailscale Funnel) will
+        // need a future operator-configurable `TrustedProxyRanges` setting --
+        // separate scope, follow-up. Card #360.
         var reverseProxyHandler = new JsonObject
         {
             ["handler"] = "reverse_proxy",
@@ -211,7 +227,8 @@ public static class ProxyConfigurationBuilder
                 {
                     ["dial"] = dial
                 }
-            }
+            },
+            ["trusted_proxies"] = new JsonArray()
         };
 
         // HTTPS upstream needs Caddy's transport block so the proxy speaks
