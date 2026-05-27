@@ -79,7 +79,7 @@ public class TypeStoreUserTypeTests : IDisposable
 
         await store.LoadAsync();
 
-        store.ListTypes().Count.ShouldBe(7);
+        store.ListTypes().Count.ShouldBe(8);
 
         var customType = store.GetBySlug("custom-app");
         customType.ShouldNotBeNull();
@@ -125,7 +125,7 @@ public class TypeStoreUserTypeTests : IDisposable
 
         await store.LoadAsync();
 
-        store.ListTypes().Count.ShouldBe(6);
+        store.ListTypes().Count.ShouldBe(7);
         store.ListTypes().ShouldAllBe(type => type.IsBuiltIn);
     }
 
@@ -137,7 +137,7 @@ public class TypeStoreUserTypeTests : IDisposable
 
         await store.LoadAsync();
 
-        store.ListTypes().Count.ShouldBe(6);
+        store.ListTypes().Count.ShouldBe(7);
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public class TypeStoreUserTypeTests : IDisposable
 
         await store.LoadAsync();
 
-        store.ListTypes().Count.ShouldBe(6);
+        store.ListTypes().Count.ShouldBe(7);
 
         store.StartWatching();
 
@@ -205,11 +205,11 @@ public class TypeStoreUserTypeTests : IDisposable
             // Wait for the FileSystemWatcher + debounce (500ms) + processing time
             await WaitForConditionAsync
             (
-                () => store.ListTypes().Count == 7,
+                () => store.ListTypes().Count == 8,
                 5000
             );
 
-            store.ListTypes().Count.ShouldBe(7);
+            store.ListTypes().Count.ShouldBe(8);
 
             var customType = store.GetBySlug("custom-app");
             customType.ShouldNotBeNull();
@@ -230,7 +230,7 @@ public class TypeStoreUserTypeTests : IDisposable
 
         await store.LoadAsync();
 
-        store.ListTypes().Count.ShouldBe(7);
+        store.ListTypes().Count.ShouldBe(8);
 
         store.StartWatching();
 
@@ -243,7 +243,7 @@ public class TypeStoreUserTypeTests : IDisposable
             await Task.Delay(2000);
 
             // Old snapshot should be preserved
-            store.ListTypes().Count.ShouldBe(7);
+            store.ListTypes().Count.ShouldBe(8);
             store.GetBySlug("custom-app").ShouldNotBeNull();
         }
         finally
@@ -263,7 +263,7 @@ public class TypeStoreUserTypeTests : IDisposable
 
         await store.LoadAsync();
 
-        store.ListTypes().Count.ShouldBe(7);
+        store.ListTypes().Count.ShouldBe(8);
 
         store.StartWatching();
 
@@ -273,11 +273,11 @@ public class TypeStoreUserTypeTests : IDisposable
 
             await WaitForConditionAsync
             (
-                () => store.ListTypes().Count == 6,
+                () => store.ListTypes().Count == 7,
                 5000
             );
 
-            store.ListTypes().Count.ShouldBe(6);
+            store.ListTypes().Count.ShouldBe(7);
             store.GetBySlug("custom-app").ShouldBeNull();
         }
         finally
@@ -304,7 +304,7 @@ public class TypeStoreUserTypeTests : IDisposable
 
             await WaitForConditionAsync
             (
-                () => store.ListTypes().Count == 7,
+                () => store.ListTypes().Count == 8,
                 5000
             );
 
@@ -344,7 +344,7 @@ public class TypeStoreUserTypeTests : IDisposable
             );
 
             receivedEvent.ShouldNotBeNull();
-            receivedEvent.BuiltInCount.ShouldBe(6);
+            receivedEvent.BuiltInCount.ShouldBe(7);
             receivedEvent.UserCount.ShouldBe(1);
             receivedEvent.BindingCount.ShouldBeGreaterThan(0);
         }
@@ -394,7 +394,7 @@ public class TypeStoreUserTypeTests : IDisposable
 
         await store.LoadAsync();
 
-        store.ListTypes().Count.ShouldBe(7);
+        store.ListTypes().Count.ShouldBe(8);
 
         store.StartWatching();
 
@@ -412,8 +412,8 @@ public class TypeStoreUserTypeTests : IDisposable
 
             await Task.Delay(2000);
 
-            // Snapshot should be preserved with the 7 types (6 built-in + 1 valid user)
-            store.ListTypes().Count.ShouldBe(7);
+            // Snapshot should be preserved with the 8 types (7 built-in + 1 valid user)
+            store.ListTypes().Count.ShouldBe(8);
         }
         finally
         {
@@ -459,8 +459,8 @@ public class TypeStoreUserTypeTests : IDisposable
             reloadCount.ShouldBeGreaterThan(0);
             reloadCount.ShouldBeLessThanOrEqualTo(3);
 
-            // All 5 user types should be loaded (6 built-in + 5 user)
-            store.ListTypes().Count.ShouldBe(11);
+            // All 5 user types should be loaded (7 built-in + 5 user)
+            store.ListTypes().Count.ShouldBe(12);
         }
         finally
         {

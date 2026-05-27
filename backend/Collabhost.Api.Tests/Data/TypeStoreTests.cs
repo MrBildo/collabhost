@@ -44,13 +44,13 @@ public class TypeStoreTests
     }
 
     [Fact]
-    public async Task LoadAsync_LoadsAllSixBuiltInTypes()
+    public async Task LoadAsync_LoadsAllSevenBuiltInTypes()
     {
         var store = CreateTypeStore();
 
         await store.LoadAsync();
 
-        store.ListTypes().Count.ShouldBe(6);
+        store.ListTypes().Count.ShouldBe(7);
     }
 
     [Theory]
@@ -60,6 +60,7 @@ public class TypeStoreTests
     [InlineData("system-service")]
     [InlineData("executable")]
     [InlineData("external-route")]
+    [InlineData("internal-service")]
     public async Task LoadAsync_LoadsExpectedSlugs(string slug)
     {
         var store = CreateTypeStore();
@@ -110,6 +111,7 @@ public class TypeStoreTests
     [InlineData("nodejs-app", false)]
     [InlineData("static-site", false)]
     [InlineData("executable", false)]
+    [InlineData("internal-service", false)]
     [InlineData("system-service", true)]
     public async Task LoadAsync_SetsIsInternalFromJson(string slug, bool expected)
     {
@@ -142,6 +144,7 @@ public class TypeStoreTests
     [InlineData("static-site", 4)]
     [InlineData("system-service", 5)]
     [InlineData("executable", 8)]
+    [InlineData("internal-service", 5)]
     public async Task GetBindings_ReturnsCorrectBindingCount(string slug, int expectedCount)
     {
         var store = CreateTypeStore();
@@ -180,6 +183,15 @@ public class TypeStoreTests
     [InlineData("system-service", "port-injection", false)]
     [InlineData("system-service", "security-headers", false)]
     [InlineData("executable", "health-check", false)]
+    [InlineData("internal-service", "process", true)]
+    [InlineData("internal-service", "artifact", true)]
+    [InlineData("internal-service", "restart", true)]
+    [InlineData("internal-service", "auto-start", true)]
+    [InlineData("internal-service", "environment-defaults", true)]
+    [InlineData("internal-service", "routing", false)]
+    [InlineData("internal-service", "port-injection", false)]
+    [InlineData("internal-service", "health-check", false)]
+    [InlineData("internal-service", "security-headers", false)]
     [InlineData("dotnet-app", "security-headers", true)]
     [InlineData("nodejs-app", "security-headers", true)]
     [InlineData("static-site", "security-headers", true)]
