@@ -41,6 +41,7 @@ on:
       - 'docs/install.ps1'
       - 'docs/install-system.ps1'
       - 'docs/install-system.sh'
+      - 'docs/install-lib.sh'
       - 'caddy.version'
       - 'caddy-plugins.txt'
       - 'xcaddy.version'
