@@ -8,6 +8,7 @@ using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
+using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 
 using ModelContextProtocol.Protocol;
@@ -28,6 +29,7 @@ public class ConfigurationTools
     ProxyManager proxy,
     ProxySettings proxySettings,
     ExternalTargetSettings externalTargetSettings,
+    RuntimeConfigFileWriter runtimeConfigFileWriter,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
     McpRequestAuthenticator authenticator,
@@ -54,6 +56,14 @@ public class ConfigurationTools
     // the operator's public-hosts opt-in.
     private readonly ExternalTargetSettings _externalTargetSettings = externalTargetSettings
         ?? throw new ArgumentNullException(nameof(externalTargetSettings));
+
+    // Card #365: mirror REST AppEndpoints.UpdateSettingsAsync's writer trigger so
+    // MCP update_settings re-renders the runtime-config-file when its capability
+    // values change and the route is currently up. The original #336 commit
+    // added the writer call to REST but not to MCP -- the MCP path was
+    // structurally never wired to the writer.
+    private readonly RuntimeConfigFileWriter _runtimeConfigFileWriter = runtimeConfigFileWriter
+        ?? throw new ArgumentNullException(nameof(runtimeConfigFileWriter));
 
     private readonly ICurrentUser _currentUser = currentUser
         ?? throw new ArgumentNullException(nameof(currentUser));
@@ -360,6 +370,28 @@ public class ConfigurationTools
 
         _appStore.Invalidate(slug);
         _appStore.InvalidateOverrides(app.Id);
+
+        // Re-render the runtime-config file when its capability values change and
+        // the route is currently enabled. Mirrors REST AppEndpoints.UpdateSettingsAsync
+        // (post-Card-#365 semantic: IsRouteEnabled, not IsRouteExplicitlyEnabled --
+        // see that comment for the full rationale). Write failure surfaces in the
+        // MCP response as a partial-success (override persisted, file on disk did
+        // not update -- operator-actionable). Card #365.
+        if (changesObject.ContainsKey("runtime-config-file")
+            && _proxy.IsRouteEnabled(app.Slug))
+        {
+            try
+            {
+                await _runtimeConfigFileWriter.RenderAsync(app, ct);
+            }
+            catch (RuntimeConfigFileWriteException ex)
+            {
+                return McpResponseFormatter.InvalidParameters
+                (
+                    "Settings saved, but failed to write runtime-config file: " + ex.Message
+                );
+            }
+        }
 
         var changedCapabilities = changesObject.Select(kvp => kvp.Key)
             .Where(k => !string.Equals(k, "identity", StringComparison.Ordinal))

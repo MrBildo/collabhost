@@ -11,6 +11,7 @@ using Collabhost.Api.Platform;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
+using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 using Collabhost.Api.Tests.Fixtures;
 
@@ -112,6 +113,7 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<TypeStore>(),
             sp.GetRequiredService<ProcessSupervisor>(),
             sp.GetRequiredService<ProxyManager>(),
+            sp.GetRequiredService<RuntimeConfigFileWriter>(),
             sp.GetRequiredService<ICurrentUser>(),
             sp.GetRequiredService<ActivityEventStore>(),
             sp.GetRequiredService<McpRequestAuthenticator>(),
@@ -134,6 +136,7 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<ProxyManager>(),
             sp.GetRequiredService<ProxySettings>(),
             sp.GetRequiredService<ExternalTargetSettings>(),
+            sp.GetRequiredService<RuntimeConfigFileWriter>(),
             sp.GetRequiredService<ICurrentUser>(),
             sp.GetRequiredService<ActivityEventStore>(),
             sp.GetRequiredService<McpRequestAuthenticator>(),
