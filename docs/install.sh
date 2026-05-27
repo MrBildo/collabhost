@@ -30,8 +30,8 @@ TAG="${COLLABHOST_VERSION:-}"
 # ---- Locate + source shared lib ----------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=_install-lib.sh
-. "${SCRIPT_DIR}/_install-lib.sh"
+# shellcheck source=install-lib.sh
+. "${SCRIPT_DIR}/install-lib.sh"
 
 # ---- Arg parsing -------------------------------------------------------------
 
