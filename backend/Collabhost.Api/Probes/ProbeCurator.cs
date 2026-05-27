@@ -23,7 +23,36 @@ public static class ProbeCurator
         node,
         typeScript,
         staticSite: null,
+        staticSiteFramework: null,
         executable: null,
+        projectRoot,
+        artifactDirectory
+    );
+
+    // Pre-#359 signature retained for tests that don't supply the static-site
+    // framework data. Defers to the canonical 10-arg overload with null framework
+    // data so the existing AppType-aware behavior is preserved.
+    public static List<ProbeEntry> Curate
+    (
+        string? appTypeSlug,
+        ArtifactEvidence? evidence,
+        RawDotnetData? dotnet,
+        RawNodeData? node,
+        RawTypeScriptData? typeScript,
+        RawStaticSiteData? staticSite,
+        RawExecutableData? executable,
+        string? projectRoot,
+        string artifactDirectory
+    ) => Curate
+    (
+        appTypeSlug,
+        evidence,
+        dotnet,
+        node,
+        typeScript,
+        staticSite,
+        staticSiteFramework: null,
+        executable,
         projectRoot,
         artifactDirectory
     );
@@ -36,6 +65,7 @@ public static class ProbeCurator
         RawNodeData? node,
         RawTypeScriptData? typeScript,
         RawStaticSiteData? staticSite,
+        RawStaticSiteFrameworkData? staticSiteFramework,
         RawExecutableData? executable,
         string? projectRoot,
         string artifactDirectory
@@ -95,6 +125,16 @@ public static class ProbeCurator
             CurateStaticSite(staticSite, results);
         }
 
+        // Card #359 -- emit the framework panel for static-site apps when the
+        // built-output fingerprint extractor produced a result. This is the
+        // symmetric complement to the dotnet-runtime probe (both read shipped
+        // artifacts). The nodejs-app React panel above stays package.json-keyed
+        // and unchanged.
+        if (allowStatic && staticSiteFramework is not null)
+        {
+            CurateStaticSiteFramework(staticSiteFramework, results);
+        }
+
         if (allowExecutable && executable is not null)
         {
             CurateExecutable(executable, results);
@@ -104,6 +144,24 @@ public static class ProbeCurator
 
         return results;
     }
+
+    private static void CurateStaticSiteFramework(RawStaticSiteFrameworkData data, List<ProbeEntry> results) =>
+        results.Add
+        (
+            new ProbeEntry
+            (
+                "static-site-framework",
+                "Framework",
+                new StaticSiteFrameworkData
+                (
+                    data.Framework,
+                    data.BuildTool,
+                    data.MetaFramework,
+                    data.Confidence,
+                    data.EvidenceSource
+                )
+            )
+        );
 
     private static void CurateStaticSite(RawStaticSiteData data, List<ProbeEntry> results) =>
         results.Add

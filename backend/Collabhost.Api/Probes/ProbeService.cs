@@ -177,6 +177,12 @@ public class ProbeService
 
         var staticSite = StaticSiteExtractor.Extract(artifactDirectory);
 
+        // Card #359 -- built-output framework fingerprint. Always run the
+        // extractor; the curator's allowStatic gate is the policy decision
+        // about whether to surface the result. Running unconditionally keeps
+        // the extractor-vs-curator split clean (extractors are policy-free).
+        var staticSiteFramework = StaticSiteFrameworkExtractor.Extract(artifactDirectory);
+
         var executable = evidence is not null
             ? ExecutableExtractor.Extract(artifactDirectory, evidence)
             : null;
@@ -189,6 +195,7 @@ public class ProbeService
             node,
             typeScript,
             staticSite,
+            staticSiteFramework,
             executable,
             projectRoot,
             artifactDirectory

@@ -100,6 +100,28 @@ public record StaticSiteData
     bool HasNestedAssets
 );
 
+// --- Static Site Framework (Card #359) ---
+//
+// Surfaced as the `static-site-framework` probe entry, distinct from the generic
+// `static-site` shape probe. Lights up when the curator can identify the
+// framework or build tool from the shipped artifact -- nodejs-app's React panel
+// stays package.json-keyed and unchanged. The fields are intentionally surface
+// in plain English so the operator can read them in the Technology pane without
+// a dictionary:
+//   Framework        -- react / vue / svelte / astro / static-only / unknown
+//   BuildTool        -- vite / webpack / parcel / esbuild / unbundled / unknown
+//   MetaFramework    -- next / nuxt / astro / sveltekit / remix (or null)
+//   Confidence       -- high / medium / low
+//   EvidenceSource   -- which fingerprint matched, surfaced verbatim
+public record StaticSiteFrameworkData
+(
+    string Framework,
+    string BuildTool,
+    string? MetaFramework,
+    string Confidence,
+    string EvidenceSource
+);
+
 // --- Executable ---
 //
 // IsManagedDotnet is the soft-nudge channel for the executable-detected-as-.NET
