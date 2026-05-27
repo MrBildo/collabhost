@@ -45,5 +45,6 @@ public class AppTypeListTests(ApiFixture fixture)
         slugs.ShouldContain("nodejs-app");
         slugs.ShouldContain("static-site");
         slugs.ShouldContain("executable");
+        slugs.ShouldContain("internal-service");
     }
 }
