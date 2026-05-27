@@ -16,6 +16,7 @@ public static class StaticSiteExtractor
         "_next",
         "_astro",
         "_app",
+        "_nuxt",
         "static"
     ];
 

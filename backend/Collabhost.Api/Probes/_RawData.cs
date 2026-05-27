@@ -73,6 +73,22 @@ public record RawStaticSiteData
     bool HasNestedAssets
 );
 
+// --- Static Site Framework Raw Data (Card #359) ---
+//
+// Framework / build-tool fingerprint extracted from the built artifact: index.html
+// markers, meta-framework output directories (_next, _astro, _app, _nuxt), and
+// assets/ filename patterns (content-hashed Vite, runtime~ Webpack). Symmetric
+// with the dotnet runtime-config probe -- both read the shipped output, not the
+// source repo.
+public record RawStaticSiteFrameworkData
+(
+    string Framework,
+    string BuildTool,
+    string? MetaFramework,
+    string Confidence,
+    string EvidenceSource
+);
+
 // --- Executable Raw Data ---
 
 public record RawExecutableData
