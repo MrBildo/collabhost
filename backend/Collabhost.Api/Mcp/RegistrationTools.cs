@@ -85,7 +85,7 @@ public class RegistrationTools
     public async Task<CallToolResult> RegisterAppAsync
     (
         [Description("Display name for the application (e.g., 'My API Server').")] string name,
-        [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'system-service', 'external-route').")] string appTypeSlug,
+        [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'system-service', 'external-route', 'internal-service').")] string appTypeSlug,
         // installDirectory loosened to conditionally-required per Card #348 D4.
         // For app types that bind process or artifact (dotnet-app, nodejs-app, static-site,
         // executable, system-service) the directory is still required and validated below

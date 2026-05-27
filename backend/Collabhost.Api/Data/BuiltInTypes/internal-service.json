@@ -1,7 +1,7 @@
 {
   "slug": "internal-service",
   "displayName": "Internal Service",
-  "description": "Managed process that does not serve HTTP -- databases, key-value stores, message brokers, custom-protocol services. Collabhost runs and supervises the process; no Caddy route is generated.",
+  "description": "Supervised non-HTTP process (databases, message brokers, custom-protocol services). No proxy route.",
   "bindings": {
     "artifact": {
       "location": ""

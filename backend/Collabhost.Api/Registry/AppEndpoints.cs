@@ -376,6 +376,7 @@ public static class AppEndpoints
             "dotnet-app" or "nodejs-app" or "executable" => ["logs", "technology"],
             "static-site" => ["logs", "technology"],
             "system-service" => ["logs"],
+            "internal-service" => ["logs"],
             "external-route" => ["health", "route"],
             _ => ["logs", "technology"]
         };

@@ -6,10 +6,12 @@ public static class McpServerInstructions
         Collabhost -- self-hosted application platform managing local services and workers.
 
         Apps are identified by slug (lowercase, hyphenated, e.g. 'my-api-server').
-        Six app types: dotnet-app, nodejs-app, static-site, executable, system-service, external-route.
+        Seven app types: dotnet-app, nodejs-app, static-site, executable, system-service, external-route, internal-service.
         Static sites toggle Caddy routing on start/stop -- no process involved.
         external-route is the right type for services Collabhost does not run (Docker, LAN, Tailscale):
         register with external-target carrying the upstream host + port + optional scheme.
+        internal-service is the right type for non-HTTP managed processes (databases, message brokers,
+        custom-protocol services): Collabhost runs and supervises the process, no Caddy route is generated.
         Each running app gets a route: {slug}.<configured-base-domain>.
 
         Authentication (Card #332):

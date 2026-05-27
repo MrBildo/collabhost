@@ -63,7 +63,7 @@ public class LifecycleTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Starts a registered application. For process-based apps (dotnet-app, nodejs-app, executable), this spawns the process and allocates a port. For static sites, this enables the Caddy proxy route (no process is involved). The app must be in 'stopped' or 'crashed' status. Returns immediately after initiating the start. The process may take a few seconds to reach 'running' status. Use get_app to check the current status. Starting an already-running app is a safe no-op.")]
+    [Description("Starts a registered application. For process-based apps (dotnet-app, nodejs-app, executable, system-service, internal-service), this spawns the process; for types that bind port-injection it also allocates a port. For static sites, this enables the Caddy proxy route (no process is involved). For external-route, this enables the Caddy proxy route to the operator-declared upstream (no process is involved). The app must be in 'stopped' or 'crashed' status. Returns immediately after initiating the start. The process may take a few seconds to reach 'running' status. Use get_app to check the current status. Starting an already-running app is a safe no-op.")]
     public async Task<CallToolResult> StartAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
