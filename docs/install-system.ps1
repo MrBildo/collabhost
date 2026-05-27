@@ -354,7 +354,7 @@ if (-not $Tag)
 # Accepts vX.Y.Z and SemVer 2.0 §9 pre-release tags (e.g. v1.2.1-rc1, v2.0.0-beta.3).
 # Build metadata (+...) is intentionally rejected -- archive filenames use the version
 # as a path segment and '+' is friction across tools. Keep this pattern in sync with
-# publish.yml, install-integration.yml, _install-lib.sh, and install.ps1.
+# publish.yml, install-integration.yml, install-lib.sh, and install.ps1.
 if ($Tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$')
 {
     throw "Invalid release tag '$Tag' -- expected vX.Y.Z or vX.Y.Z-<pre-release>."
@@ -553,7 +553,7 @@ try
     # appsettings.json: smart-merge on upgrade, plain copy on first install.
     # Same shape as install.ps1 -- the binary owns the merge logic via
     # `collabhost --merge-appsettings`. Q6 ruling: copy the pattern; defer the
-    # _install-lib.ps1 extraction to v1.4.
+    # install-lib.ps1 extraction to v1.4.
     $ShippedSrc      = Join-Path $ExtractDir 'appsettings.json'
     $CollabhostExe   = Join-Path $BinDir 'collabhost.exe'
 
