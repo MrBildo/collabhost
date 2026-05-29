@@ -322,7 +322,8 @@ public class StoppedByOperatorPersistenceTests : IAsyncLifetime
             new HostingSettings { ListenAddress = "localhost", ListenPort = 58400 },
             new Collabhost.Api.Portal.PortalSettings { Subdomain = "collabhost" },
             activityEventStore,
-            new Collabhost.Api.StaticSite.RuntimeConfigFileWriter(capabilityStore, NullLogger<Collabhost.Api.StaticSite.RuntimeConfigFileWriter>.Instance),
+            new Collabhost.Api.StaticSite.RuntimeConfigFileWriter(capabilityStore, new Collabhost.Api.Registry.AppDataPathResolver(Path.GetTempPath()), NullLogger<Collabhost.Api.StaticSite.RuntimeConfigFileWriter>.Instance),
+            new Collabhost.Api.Registry.AppDataPathResolver(Path.GetTempPath()),
             TimeProvider.System,
             NullLogger<ProxyManager>.Instance
         );

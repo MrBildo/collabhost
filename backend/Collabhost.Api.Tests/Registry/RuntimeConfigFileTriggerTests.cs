@@ -2,7 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 
+using Collabhost.Api.Registry;
 using Collabhost.Api.Tests.Fixtures;
+
+using Microsoft.Extensions.DependencyInjection;
 
 using Shouldly;
 
@@ -39,7 +42,9 @@ namespace Collabhost.Api.Tests.Registry;
 // The ApiFixture's WebApplicationFactory<Program> is the integration host; we
 // register a static-site with an artifact-location pointing at a temp dir then
 // drive the HTTP endpoints through HttpClient. The writer's on-disk output is
-// the assertion -- we read the rendered config.json back from the temp dir.
+// the assertion -- we read the rendered config.json back from the WRITABLE DATA
+// dir (#369), resolved via the host's own AppDataPathResolver (the same path
+// production writes to), NOT the artifact dir.
 [Collection("Api")]
 public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
 {
@@ -94,7 +99,7 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
 
             startResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-            var targetPath = Path.Combine(_artifactDirectory, "config.json");
+            var targetPath = ResolveConfigTargetPath(slug);
 
             File.Exists(targetPath).ShouldBeTrue
             (
@@ -159,7 +164,7 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
 
             updateResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-            var targetPath = Path.Combine(_artifactDirectory, "config.json");
+            var targetPath = ResolveConfigTargetPath(slug);
             var parsed = JsonNode.Parse(await File.ReadAllTextAsync(targetPath))!.AsObject();
 
             parsed["apiBaseUrl"]!.GetValue<string>().ShouldBe
@@ -200,7 +205,7 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
             await _fixture.Client.SendAsync(stopRequest);
 
             // Confirm the start wrote the file (sanity for the test's pre-state).
-            var targetPath = Path.Combine(_artifactDirectory, "config.json");
+            var targetPath = ResolveConfigTargetPath(slug);
             File.Exists(targetPath).ShouldBeTrue("Pre-state: start_app should have rendered the file");
 
             // Delete the prior write so we can detect a re-render (which must not happen).
@@ -238,6 +243,16 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
         {
             await DeleteAppAsync(slug);
         }
+    }
+
+    // #369: the writer renders into the app's writable data dir, not the
+    // artifact dir. Resolve the target via the host's own AppDataPathResolver
+    // so the assertion tracks the production path.
+    private string ResolveConfigTargetPath(string slug)
+    {
+        var resolver = _fixture.Services.GetRequiredService<AppDataPathResolver>();
+
+        return Path.Combine(resolver.ResolveFor(slug), "config.json");
     }
 
     private async Task<string> RegisterStaticSiteWithValuesAsync(string apiBaseUrl)

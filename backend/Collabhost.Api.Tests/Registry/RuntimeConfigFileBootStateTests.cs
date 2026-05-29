@@ -186,7 +186,11 @@ public class RuntimeConfigFileBootStateTests(ApiFixture fixture) : IAsyncLifetim
                 + "must succeed. Body: " + await updateResponse.Content.ReadAsStringAsync()
             );
 
-            var targetPath = Path.Combine(_artifactDirectory, "config.json");
+            // #369: the writer renders into the app's writable data dir, resolved
+            // via the host's AppDataPathResolver (the production path), not the
+            // artifact dir.
+            var dataPathResolver = _fixture.Services.GetRequiredService<AppDataPathResolver>();
+            var targetPath = Path.Combine(dataPathResolver.ResolveFor(slug), "config.json");
 
             File.Exists(targetPath).ShouldBeTrue
             (

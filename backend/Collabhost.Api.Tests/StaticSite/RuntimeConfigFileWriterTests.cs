@@ -44,6 +44,8 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
     private RuntimeConfigFileWriter _writer = null!;
     private SqliteConnection _connection = null!;
     private string _tempArtifactDir = null!;
+    private string _tempDataDir = null!;
+    private AppDataPathResolver _dataPathResolver = null!;
 
     public async Task InitializeAsync()
     {
@@ -80,9 +82,18 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
             NullLogger<CapabilityStore>.Instance
         );
 
+        _tempDataDir = Path.Combine
+        (
+            Path.GetTempPath(),
+            "collabhost-test-rcf-data-" + Guid.NewGuid().ToString("N")
+        );
+
+        _dataPathResolver = new AppDataPathResolver(_tempDataDir);
+
         _writer = new RuntimeConfigFileWriter
         (
             _capabilityStore,
+            _dataPathResolver,
             NullLogger<RuntimeConfigFileWriter>.Instance
         );
 
@@ -97,15 +108,18 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
 
     public Task DisposeAsync()
     {
-        if (Directory.Exists(_tempArtifactDir))
+        foreach (var dir in new[] { _tempArtifactDir, _tempDataDir })
         {
-            try
+            if (Directory.Exists(dir))
             {
-                Directory.Delete(_tempArtifactDir, recursive: true);
-            }
-            catch (IOException)
-            {
-                // Best-effort cleanup; tests should not fail on temp-dir teardown.
+                try
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+                catch (IOException)
+                {
+                    // Best-effort cleanup; tests should not fail on temp-dir teardown.
+                }
             }
         }
 
@@ -237,8 +251,11 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
-    public async Task RenderAsync_NonEmptyValues_WritesFile()
+    public async Task RenderAsync_NonEmptyValues_WritesToWritableDataDir_NotArtifactDir()
     {
+        // #369: the writer renders into the app's writable data dir, NOT the
+        // (read-only on a Standard install) artifact dir. This is the seam test
+        // whose ABSENCE let #336 ship the EROFS defect.
         var app = await CreateStaticSiteAppAsync();
 
         await _appStore.SaveOverrideAsync
@@ -251,23 +268,55 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
 
         await _writer.RenderAsync(app, CancellationToken.None);
 
-        var targetPath = Path.Combine(_tempArtifactDir, "config.json");
-        var json = await File.ReadAllTextAsync(targetPath, CancellationToken.None);
+        var writableTarget = _dataPathResolver.ResolveFor(app.Slug);
+        var targetPath = Path.Combine(writableTarget, "config.json");
 
+        var json = await File.ReadAllTextAsync(targetPath, CancellationToken.None);
         var parsed = JsonNode.Parse(json)!.AsObject();
 
         parsed["apiBaseUrl"]!.GetValue<string>().ShouldBe("https://api.example.com");
+
+        // The artifact dir is never written.
+        File.Exists(Path.Combine(_tempArtifactDir, "config.json")).ShouldBeFalse();
     }
 
     [Fact]
-    public async Task RenderAsync_NonEmptyValues_OverwritesPriorFile()
+    public async Task RenderAsync_NonEmptyValues_CreatesWritableSubtree()
     {
-        // Once the operator types values the platform takes over -- subsequent
-        // write replaces any prior on-disk content. Tests the deployment-takes-
-        // over-by-explicit-action shape from the design.
+        // #369 dir-ensure: {dataRoot}/app-data/{slug}/ is not created by anything
+        // else on the platform; the writer must create it before the atomic write.
         var app = await CreateStaticSiteAppAsync();
 
-        var targetPath = Path.Combine(_tempArtifactDir, "config.json");
+        var writableTarget = _dataPathResolver.ResolveFor(app.Slug);
+        Directory.Exists(writableTarget).ShouldBeFalse();
+
+        await _appStore.SaveOverrideAsync
+        (
+            app.Id,
+            "runtime-config-file",
+            """{"values":{"apiBaseUrl":"https://api.example.com"}}""",
+            CancellationToken.None
+        );
+
+        await _writer.RenderAsync(app, CancellationToken.None);
+
+        Directory.Exists(writableTarget).ShouldBeTrue();
+        File.Exists(Path.Combine(writableTarget, "config.json")).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task RenderAsync_NonEmptyValues_OverwritesPriorWritableFile()
+    {
+        // Once the operator types values the platform takes over -- subsequent
+        // write replaces any prior content at the writable target. Tests the
+        // deployment-takes-over-by-explicit-action shape against the #369
+        // writable-dir target.
+        var app = await CreateStaticSiteAppAsync();
+
+        var writableTarget = _dataPathResolver.ResolveFor(app.Slug);
+        Directory.CreateDirectory(writableTarget);
+
+        var targetPath = Path.Combine(writableTarget, "config.json");
 
         await File.WriteAllTextAsync
         (
@@ -293,11 +342,14 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
-    public async Task RenderAsync_NonEmptyValues_ArtifactDirMissing_Throws()
+    public async Task RenderAsync_NonEmptyValues_ArtifactDirMissing_StillWritesToWritableDir()
     {
-        // Loud failure: the operator typed values but the artifact dir does
-        // not exist on disk. Marcus precondition #7 -- non-empty values with
-        // missing dir is an operator-actionable error, not a silent skip.
+        // #369: the writer no longer gates on the artifact dir. Whether the
+        // served files are deployed is route-enable's concern, not the writer's.
+        // The write lands under the writable data dir regardless of the artifact
+        // dir's state. This is the cross-platform-safe core of the seam test --
+        // the artifact dir being missing (or read-only on Linux) does not block
+        // the write, because the write never touches it.
         var app = await CreateStaticSiteAppAsync();
 
         await _appStore.SaveOverrideAsync
@@ -316,18 +368,21 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
             CancellationToken.None
         );
 
-        await Should.ThrowAsync<RuntimeConfigFileWriteException>
+        await Should.NotThrowAsync
         (
             () => _writer.RenderAsync(app, CancellationToken.None)
         );
+
+        var targetPath = Path.Combine(_dataPathResolver.ResolveFor(app.Slug), "config.json");
+        File.Exists(targetPath).ShouldBeTrue();
     }
 
     [Fact]
     public async Task RenderAsync_EmptyValues_ArtifactDirMissing_DoesNotThrow()
     {
-        // Empty values + missing dir is fine -- the no-op branch fires before
-        // any artifact-dir check. The operator never opted in; the platform
-        // never tries to write. Marcus precondition #7.
+        // Empty values + missing artifact dir is fine -- the no-op branch fires
+        // before any path resolution. The operator never opted in; the platform
+        // never tries to write.
         var app = await CreateStaticSiteAppAsync();
 
         await _appStore.SaveOverrideAsync
