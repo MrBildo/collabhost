@@ -337,13 +337,13 @@ public class RuntimeConfigFileWriter
         // Reject Windows-style drive roots (e.g. "C:\...").
         if (path.Length >= 2 && path[1] == ':')
         {
-            return $"path must be relative to the artifact directory, not absolute ('{path}').";
+            return $"path must be relative to the configured root directory, not absolute ('{path}').";
         }
 
         // Reject UNC paths.
         if (path.StartsWith(@"\\", StringComparison.Ordinal))
         {
-            return $"path must be relative to the artifact directory, not a UNC path ('{path}').";
+            return $"path must be relative to the configured root directory, not a UNC path ('{path}').";
         }
 
         // Tokenize and check for ".." segments. The leading '/' (if present)
