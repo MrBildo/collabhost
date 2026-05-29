@@ -304,6 +304,26 @@ public static class ProxyConfigurationBuilder
             BuildFileServerRootHandler(route)
         };
 
+        // Runtime-config-file overlay (#369). A terminal, path-scoped subroute
+        // that serves the config path from the writable data dir, inserted
+        // immediately after the blanket artifact root and ahead of every other
+        // handler. It is self-contained: it sets ITS OWN root (writable), its
+        // own no-cache header, and runs file_server as the responder -- so the
+        // request for the config path is served-and-done inside this branch.
+        //
+        // CRITICAL: this branch must not let vars.root bleed into the SPA-
+        // fallback try_files. The path match scopes the nested subroute to the
+        // config path only; for every other request the match fails, the nested
+        // subroute never executes, and vars.root stays the artifact root set
+        // above -- so BuildSpaFallbackHandler still stats the artifact tree to
+        // decide the /index.html rewrite. Asserted in the proxy-emission tests.
+        var overlayHandler = BuildRuntimeConfigOverlayHandler(route);
+
+        if (overlayHandler is not null)
+        {
+            subrouteHandlers.Add(overlayHandler);
+        }
+
         // Blanket security-headers handler (Card #309) inserted BEFORE the
         // path-matched response-header handlers (Card #308). Caddy's
         // `response.set` is last-write-wins on the response-commit deferred-
@@ -380,6 +400,91 @@ public static class ProxyConfigurationBuilder
                 }
             }
         };
+
+    // Terminal, path-scoped overlay that serves the runtime-config file from the
+    // app's writable data dir (#369). Returns null when the capability is not
+    // declared (both fields null) -- the migration-safe default that keeps the
+    // file-server shape byte-identical to before this field existed.
+    //
+    // Shape: an outer route matched on the config path whose handle is a nested
+    // subroute carrying, in order, a vars handler that sets the writable root, a
+    // headers handler that sets no-cache, and a file_server responder. Wrapping
+    // the root switch plus responder inside a path-matched subroute is what keeps
+    // the root from bleeding to the rest of the chain -- the nested subroute only
+    // runs for the matched config path; every other request skips it and keeps
+    // the artifact root. file_server is a responder, so the matched request is
+    // served-and-done, terminal in effect.
+    //
+    // The no-cache header rides INSIDE this branch (not the #308 path-header
+    // handler) so the overlay is self-contained -- it does not depend on a
+    // separate header handler firing first in the chain ordering (#369 Q1 / Remy
+    // cross-critique).
+    private static JsonObject? BuildRuntimeConfigOverlayHandler(RouteEntry route)
+    {
+        if (string.IsNullOrEmpty(route.RuntimeConfigFilePath)
+            || string.IsNullOrEmpty(route.RuntimeConfigWritableRoot))
+        {
+            return null;
+        }
+
+        var innerSubrouteHandlers = new JsonArray
+        {
+            new JsonObject
+            {
+                ["handle"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["handler"] = "vars",
+                        ["root"] = route.RuntimeConfigWritableRoot
+                    }
+                }
+            },
+            new JsonObject
+            {
+                ["handle"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["handler"] = "headers",
+                        ["response"] = new JsonObject
+                        {
+                            ["set"] = new JsonObject
+                            {
+                                ["Cache-Control"] = new JsonArray { "no-cache" }
+                            }
+                        }
+                    }
+                }
+            },
+            new JsonObject
+            {
+                ["handle"] = new JsonArray
+                {
+                    new JsonObject { ["handler"] = "file_server" }
+                }
+            }
+        };
+
+        return new JsonObject
+        {
+            ["match"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["path"] = new JsonArray { route.RuntimeConfigFilePath }
+                }
+            },
+            ["handle"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["handler"] = "subroute",
+                    ["routes"] = innerSubrouteHandlers
+                }
+            }
+        };
+    }
 
     // Builds one path-matched `headers` handler per declared path. The
     // RouteEntry carries flattened "<path>::<HeaderName>" keys; rules are
@@ -760,5 +865,16 @@ public record RouteEntry
     // ExternalDial is set and unspecified) or "https". When "https", the
     // builder emits a Caddy transport block so the proxy speaks TLS to the
     // upstream. Ignored when ExternalDial is null. Card #348.
-    string? ExternalScheme = null
+    string? ExternalScheme = null,
+    // Runtime-config-file overlay (#369). Both null = capability not declared on
+    // this app's type -> NO new emission, byte-identical to the pre-#369 file-
+    // server shape (the migration-safe default, asserted in tests). When BOTH
+    // are non-null, BuildFileServerRoute emits a terminal, path-scoped overlay
+    // subroute that serves RuntimeConfigFilePath from RuntimeConfigWritableRoot
+    // ahead of the artifact-rooted blanket file_server. The handler MUST be
+    // terminal so its root switch never bleeds into the SPA-fallback try_files
+    // (which stats vars.root to decide the /index.html rewrite). File-server
+    // routes only.
+    string? RuntimeConfigFilePath = null,
+    string? RuntimeConfigWritableRoot = null
 );

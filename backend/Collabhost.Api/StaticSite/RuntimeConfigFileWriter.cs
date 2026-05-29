@@ -5,7 +5,29 @@ using Collabhost.Api.Registry;
 namespace Collabhost.Api.StaticSite;
 
 // Writes the operator-managed runtime-config file for a static-site app to disk.
-// Card #336.
+// Card #336; write target corrected to the app's writable data dir in #369.
+//
+// Write target -- the app's WRITABLE DATA DIRECTORY, not the served artifact dir
+// (#369). RenderAsync writes to AppDataPathResolver.ResolveFor(slug) =
+// {dataRoot}/app-data/{slug}/{path}, which lives inside the system-scope unit's
+// ReadWritePaths with zero unit change -- the "told, not discovered" standard
+// model (CLAUDE.md Standard Hosting #1 + #3). #336 originally wrote into the
+// artifact dir, which is read-only on a Standard-compliant install
+// (ProtectSystem=strict + read-only deploy), so the atomic-rename temp sidecar
+// hit EROFS and the clobber-protection promise was structurally undeliverable.
+// ProxyConfigurationBuilder serves the writable copy via a path-scoped overlay
+// root ahead of the artifact-rooted file_server.
+//
+// IMPORTER SOURCE vs WRITER TARGET DIVERGENCE (migration scaffolding, #369).
+// ImportFromDiskAsync still READS from the artifact dir; RenderAsync now WRITES
+// to the writable dir. The asymmetry is intentional: the artifact dir is where
+// legacy/bundled config.json files live (placed by a pre-#369 write, or
+// hand-bundled by the operator), and the writable dir is the platform-owned
+// state. This is a migration affordance with a sunset, NOT a durable invariant
+// -- do not DRY the two roots into one path helper. Revisit if/when bundled-
+// default import is removed or generalized (#369 Q4); at that point the importer
+// source may move or the importer may be retired. ValidatePath and the leading-
+// slash strip ARE shared (one path-traversal guard, parameterized root only).
 //
 // Trigger points (both load-bearing -- see Marcus's S55 #5 design review,
 // preconditions 3 + 4):
@@ -22,7 +44,9 @@ namespace Collabhost.Api.StaticSite;
 // == 0`. Three migration states (no override row / override row without `values`
 // key / override row with `values: {}`) all converge to this branch through the
 // CapabilityResolver. Asserted in tests; load-bearing for CLAUDE.md Rule 3
-// (operator-maintained config.json must not be silently overwritten).
+// (operator-maintained config.json must not be silently overwritten). The
+// invariant governs the writer NOT destroying an existing file; it is not a
+// serving-semantics rule (#369 Q1).
 //
 // Delete-after-write semantics: when the operator transitions from non-empty
 // Values to empty Values, the writer no-ops on the next trigger and the file on
@@ -32,15 +56,17 @@ namespace Collabhost.Api.StaticSite;
 //
 // Atomic write: render to a temp file in the same directory then File.Move with
 // overwrite. Cross-platform-safe-enough for v1 -- atomic on Linux (rename(2)),
-// best-effort-atomic on Windows (MoveFileEx + MOVEFILE_REPLACE_EXISTING).
+// best-effort-atomic on Windows (MoveFileEx + MOVEFILE_REPLACE_EXISTING). The
+// temp sidecar now lands in the writable dir, which is granted-writable, so the
+// EROFS that #369 fixed cannot recur.
 //
-// Composes with #308's `/config.json::Cache-Control: no-cache` default on the
-// static-site routing capability: every value change is visible at the next
-// portal fetch with no Caddy reload required. Without that header, A would
-// need a Caddy reload on every write; with it, the writer alone suffices.
+// Composes with the overlay branch's `Cache-Control: no-cache` header (#369
+// moved it into the overlay route): every value change is visible at the next
+// portal fetch with no Caddy reload required.
 public class RuntimeConfigFileWriter
 (
     CapabilityStore capabilityStore,
+    AppDataPathResolver dataPathResolver,
     ILogger<RuntimeConfigFileWriter> logger
 )
 {
@@ -51,6 +77,9 @@ public class RuntimeConfigFileWriter
 
     private readonly CapabilityStore _capabilityStore = capabilityStore
         ?? throw new ArgumentNullException(nameof(capabilityStore));
+
+    private readonly AppDataPathResolver _dataPathResolver = dataPathResolver
+        ?? throw new ArgumentNullException(nameof(dataPathResolver));
 
     private readonly ILogger<RuntimeConfigFileWriter> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -84,20 +113,6 @@ public class RuntimeConfigFileWriter
             return;
         }
 
-        var artifactConfig = await _capabilityStore.ResolveAsync<ArtifactConfiguration>
-        (
-            "artifact", app, ct
-        );
-
-        if (artifactConfig is null || string.IsNullOrWhiteSpace(artifactConfig.Location))
-        {
-            throw new RuntimeConfigFileWriteException
-            (
-                $"Cannot render runtime-config-file for app '{app.Slug}': "
-                + "artifact location is not configured."
-            );
-        }
-
         var validationError = ValidatePath(config.Path);
 
         if (validationError is not null)
@@ -108,17 +123,14 @@ public class RuntimeConfigFileWriter
             );
         }
 
-        if (!Directory.Exists(artifactConfig.Location))
-        {
-            throw new RuntimeConfigFileWriteException
-            (
-                $"Cannot render runtime-config-file for app '{app.Slug}': "
-                + $"artifact directory does not exist at '{artifactConfig.Location}'. "
-                + "Deploy the app's files before non-empty values can be applied."
-            );
-        }
+        // Write to the app's writable data dir, not the read-only artifact dir
+        // (#369). No artifact-dir-exists gate here -- whether the served files
+        // are deployed is route-enable's concern (ProxyManager skips a
+        // FileServer route with no artifact dir), not the writer's. The writer
+        // owns one thing: render operator values into the granted state dir.
+        var writableRoot = _dataPathResolver.ResolveFor(app.Slug);
 
-        var targetPath = ResolveTargetPath(artifactConfig.Location, config.Path);
+        var targetPath = ResolveTargetPath(writableRoot, config.Path);
 
         var json = JsonSerializer.Serialize
         (
@@ -128,13 +140,25 @@ public class RuntimeConfigFileWriter
 
         var targetDirectory = Path.GetDirectoryName(targetPath);
 
-        if (!string.IsNullOrEmpty(targetDirectory) && !Directory.Exists(targetDirectory))
+        // Ensure the writable subtree exists. AppDataPathResolver is pure path
+        // composition (no I/O, test-asserted); the writer is the I/O owner, so
+        // the dir-ensure lives here. {dataRoot}/app-data/{slug}/ is not created
+        // by anything else on the platform.
+        if (!string.IsNullOrEmpty(targetDirectory))
         {
-            throw new RuntimeConfigFileWriteException
-            (
-                $"Cannot render runtime-config-file for app '{app.Slug}': "
-                + $"target directory does not exist at '{targetDirectory}'."
-            );
+            try
+            {
+                Directory.CreateDirectory(targetDirectory);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new RuntimeConfigFileWriteException
+                (
+                    $"Cannot render runtime-config-file for app '{app.Slug}': "
+                    + $"failed to create target directory at '{targetDirectory}': {ex.Message}",
+                    ex
+                );
+            }
         }
 
         // Atomic write: render to temp in the same directory, then move with
@@ -174,6 +198,13 @@ public class RuntimeConfigFileWriter
     // entries plus a list of skipped non-flat keys (nested objects, arrays, nulls,
     // non-string primitives). Used by the importer endpoint to pre-populate
     // operator overrides from an existing config.json.
+    //
+    // SOURCE = the ARTIFACT dir (deliberately divergent from RenderAsync's
+    // writable-dir target -- see class docstring, #369). Legacy/bundled files
+    // live in the artifact dir; this importer is the migration affordance that
+    // lifts them into operator override Values, which RenderAsync then writes to
+    // the writable dir. Migration scaffolding with a sunset, not a durable
+    // invariant.
     //
     // Bill ruling, S55 #6: importer ships in v1, flat-JSON only, surfaces a
     // warning naming skipped non-flat entries.
@@ -217,6 +248,8 @@ public class RuntimeConfigFileWriter
             );
         }
 
+        // Artifact-dir source, by design (#369) -- the divergence from
+        // RenderAsync's writable-dir target is intentional migration scaffolding.
         var sourcePath = ResolveTargetPath(artifactConfig.Location, config.Path);
 
         if (!File.Exists(sourcePath))
@@ -290,8 +323,10 @@ public class RuntimeConfigFileWriter
 
     // Returns null when the path is valid; otherwise a human-readable reason.
     // Rejects absolute paths and any ".." segment to prevent escape from the
-    // artifact directory. Leading '/' is permitted as a convention -- it's
-    // treated as a path-relative-to-artifact-root in ResolveTargetPath.
+    // resolved root directory. Leading '/' is permitted as a convention -- it's
+    // treated as a path-relative-to-root in ResolveTargetPath. Shared by both
+    // RenderAsync (writable root) and ImportFromDiskAsync (artifact root): one
+    // path-traversal guard, parameterized root only (#369).
     private static string? ValidatePath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -326,14 +361,15 @@ public class RuntimeConfigFileWriter
         return null;
     }
 
-    private static string ResolveTargetPath(string artifactLocation, string relativePath)
+    private static string ResolveTargetPath(string rootDirectory, string relativePath)
     {
         // Strip a single leading '/' or '\\' so Path.Combine treats the path as
-        // relative to the artifact directory (Path.Combine would otherwise
-        // return the absolute path).
+        // relative to the root directory (Path.Combine would otherwise return
+        // the absolute path). Root-agnostic: callers pass the writable root
+        // (RenderAsync) or the artifact root (ImportFromDiskAsync) -- #369.
         var stripped = relativePath.TrimStart('/', '\\');
 
-        return Path.Combine(artifactLocation, stripped);
+        return Path.Combine(rootDirectory, stripped);
     }
 
     private void TryDeleteTemp(string tempPath)

@@ -29,6 +29,7 @@ public class ProxyManager
     PortalSettings portalSettings,
     ActivityEventStore activityEventStore,
     RuntimeConfigFileWriter runtimeConfigFileWriter,
+    AppDataPathResolver dataPathResolver,
     TimeProvider timeProvider,
     ILogger<ProxyManager> logger
 ) : IHostedService, IDisposable
@@ -65,6 +66,9 @@ public class ProxyManager
 
     private readonly RuntimeConfigFileWriter _runtimeConfigFileWriter = runtimeConfigFileWriter
         ?? throw new ArgumentNullException(nameof(runtimeConfigFileWriter));
+
+    private readonly AppDataPathResolver _dataPathResolver = dataPathResolver
+        ?? throw new ArgumentNullException(nameof(dataPathResolver));
 
     // Injected so the post-launch admin-API probe loop runs on virtual time under test.
     // Production wires TimeProvider.System; tests wire FakeTimeProvider so the deadline,
@@ -655,6 +659,8 @@ public class ProxyManager
 
             string? artifactDirectory = null;
             IReadOnlyDictionary<string, string>? responseHeaders = null;
+            string? runtimeConfigFilePath = null;
+            string? runtimeConfigWritableRoot = null;
 
             if (routingConfiguration.ServeMode == ServeMode.FileServer)
             {
@@ -681,6 +687,29 @@ public class ProxyManager
                 responseHeaders = routingConfiguration.ResponseHeaders.Count > 0
                     ? new Dictionary<string, string>(routingConfiguration.ResponseHeaders, StringComparer.Ordinal)
                     : null;
+
+                // Runtime-config-file overlay (#369). When the type declares the
+                // capability, the builder emits a path-scoped overlay that serves
+                // the config path from the writable data dir ahead of the
+                // artifact-rooted file_server. The writer renders into the same
+                // writable dir, so the served copy survives an artifact-dir
+                // redeploy. Both null when the capability is absent -> no overlay
+                // emission (the migration-safe default).
+                if (_typeStore.HasBinding(app.AppTypeSlug, "runtime-config-file"))
+                {
+                    var runtimeConfig = await _capabilityStore.ResolveAsync<RuntimeConfigFileConfiguration>
+                    (
+                        "runtime-config-file",
+                        app,
+                        ct
+                    );
+
+                    if (runtimeConfig is not null && !string.IsNullOrWhiteSpace(runtimeConfig.Path))
+                    {
+                        runtimeConfigFilePath = NormalizeConfigPath(runtimeConfig.Path);
+                        runtimeConfigWritableRoot = _dataPathResolver.ResolveFor(app.Slug);
+                    }
+                }
             }
 
             // Resolve security-headers for every routed app type (Card #309).
@@ -729,13 +758,23 @@ public class ProxyManager
                     responseHeaders,
                     securityHeaders,
                     externalDial,
-                    externalScheme
+                    externalScheme,
+                    runtimeConfigFilePath,
+                    runtimeConfigWritableRoot
                 )
             );
         }
 
         return result;
     }
+
+    // Normalize the runtime-config-file path to the leading-slash form Caddy's
+    // `path` matcher expects (e.g. "config.json" -> "/config.json"). The
+    // capability default is already "/config.json"; an operator-edited value
+    // without a leading slash is tolerated here so the overlay matches. Mirrors
+    // the leading-slash convention #308 uses for ResponseHeaders match keys.
+    private static string NormalizeConfigPath(string path) =>
+        path.StartsWith('/') ? path : "/" + path;
 
     // Hydrate _routeStates from the persisted App.StoppedByOperator column at boot. Only
     // routing-only AppTypes are in scope: process-bearing routed apps (dotnet-app,

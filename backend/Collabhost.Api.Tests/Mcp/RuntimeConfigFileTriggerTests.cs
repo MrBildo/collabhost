@@ -2,6 +2,7 @@ using System.IO.Pipelines;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 
+using Collabhost.Api.Registry;
 using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -171,7 +172,7 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
                 "MCP start_app on a routing-only app must succeed. Body: " + RenderContent(result)
             );
 
-            var targetPath = Path.Combine(_artifactDirectory, "config.json");
+            var targetPath = ResolveConfigTargetPath(slug);
 
             File.Exists(targetPath).ShouldBeTrue
             (
@@ -216,7 +217,7 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
             );
 
             // Clear the prior write so we can detect a fresh MCP-driven render.
-            var targetPath = Path.Combine(_artifactDirectory, "config.json");
+            var targetPath = ResolveConfigTargetPath(slug);
             File.Delete(targetPath);
 
             // Now exercise MCP update_settings with a runtime-config-file change.
@@ -264,6 +265,15 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
         {
             await DeleteAppAsync(_fixture.Client, slug);
         }
+    }
+
+    // #369: the writer renders into the app's writable data dir, resolved via the
+    // host's AppDataPathResolver -- the same path production writes to.
+    private string ResolveConfigTargetPath(string slug)
+    {
+        var resolver = _fixture.Services.GetRequiredService<AppDataPathResolver>();
+
+        return Path.Combine(resolver.ResolveFor(slug), "config.json");
     }
 
     private async Task<string> RegisterStaticSiteAsync(string apiBaseUrl)

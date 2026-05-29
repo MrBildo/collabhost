@@ -1,27 +1,32 @@
 namespace Collabhost.Api.Capabilities.Configurations;
 
-// Managed runtime-config file for static-site apps. Card #336.
+// Managed runtime-config file for static-site apps. Card #336; write target
+// corrected to the writable data dir in #369.
 //
 // Static-site apps have no process channel (the env-var delivery half doesn't
 // exist for them), so the platform-managed equivalent for runtime configuration
-// is a file the platform writes into the served artifact directory. The portal
-// SPA fetches this file at runtime to learn its API base URL (and similar).
+// is a file the platform writes into the app's WRITABLE DATA DIRECTORY
+// ({dataRoot}/app-data/{slug}/). The portal SPA fetches this file at runtime to
+// learn its API base URL (and similar). The reverse proxy serves the writable
+// copy via a path-scoped overlay root ahead of the artifact-rooted file_server
+// (#369), so the served path is unchanged while the file lives in a granted-
+// writable location that survives an artifact-dir redeploy.
 //
-// The capability composes with #308's `/config.json::Cache-Control: no-cache`
-// default on the static-site routing capability: every operator value change
-// is reflected at the next portal fetch with no Caddy reload required. Without
-// that header, every write would also need a route resync; with it, the writer
-// alone suffices.
+// The capability composes with the overlay branch's `Cache-Control: no-cache`
+// header (#369): every operator value change is reflected at the next portal
+// fetch with no Caddy reload required.
 //
 // Empty-`Values` is the load-bearing migration safety: when `Values.Count == 0`
 // the writer no-ops, preserving any operator-maintained file on disk. The
 // moment the operator types a key-value pair the platform takes over (writes
 // the full file, overwriting prior content). This is the deployment-takes-over-
 // by-explicit-action shape required by CLAUDE.md Rule 3 (no silent overwrite,
-// no silent deletion).
+// no silent deletion). It governs the writer's behavior toward an existing
+// file -- it is not a serving-semantics rule (#369 Q1).
 public class RuntimeConfigFileConfiguration
 {
-    // Relative path under the app's artifact directory; locked at registration
+    // Relative path under the app's writable data directory (served at the same
+    // path under the site via the overlay root -- #369); locked at registration
     // because path drift would leave the prior file on disk and start serving
     // from a new one. Validated server-side to reject absolute paths and
     // parent-directory traversal segments.
@@ -60,8 +65,9 @@ public class RuntimeConfigFileConfiguration
             FieldType.Text,
             new FieldEditableLocked("Set during registration"),
             RequiresRestart: false,
-            HelpText: "Relative path under the app's artifact directory where the file is written. "
-                + "Must not be absolute and must not contain '..'. Default is \"/config.json\"."
+            HelpText: "Relative path under the app's writable data directory where the file is written "
+                + "(served at the same path under the site). Must not be absolute and must not contain "
+                + "'..'. Default is \"/config.json\"."
         ),
         new
         (
@@ -71,9 +77,10 @@ public class RuntimeConfigFileConfiguration
             new FieldEditableAlways(),
             RequiresRestart: false,
             HelpText: "Key-value entries serialized as a flat JSON object and written to the configured "
-                + "path inside the artifact directory. When empty, the platform leaves any existing file "
-                + "on disk untouched (operator-maintained content is preserved). When non-empty, the "
-                + "platform owns the file -- the next start or save renders this map as the file contents.",
+                + "path inside the app's writable data directory. When empty, the platform leaves any "
+                + "existing file on disk untouched (operator-maintained content is preserved). When "
+                + "non-empty, the platform owns the file -- the next start or save renders this map as "
+                + "the file contents.",
             KeyPattern: CapabilityResolver.RuntimeConfigFileKeyPatternString,
             KeyPatternMessage: CapabilityResolver.RuntimeConfigFileKeyPatternMessage
         ),

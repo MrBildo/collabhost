@@ -1603,4 +1603,172 @@ public class ProxyConfigurationBuilderTests
         handler["handler"]!.GetValue<string>().ShouldBe("static_response");
         handler["status_code"]!.GetValue<string>().ShouldBe("503");
     }
+
+    // ----- Card #369: runtime-config-file writable-overlay emission -----
+
+    [Fact]
+    public void Build_FileServerRoute_NoRuntimeConfig_ShapeUnchanged()
+    {
+        // Migration-safe default: both runtime-config fields null -> the file-
+        // server subroute is byte-identical to the pre-#369 shape (vars root +
+        // file_server, count 2). No overlay branch emitted.
+        var routes = new List<RouteEntry>
+        {
+            new("docs", DefaultDomain("docs"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true)
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+        subrouteHandlers.Count.ShouldBe(2);
+        subrouteHandlers[0]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("vars");
+        subrouteHandlers[1]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("file_server");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_OnlyOneRuntimeConfigFieldProvided_NoOverlayEmitted()
+    {
+        // Defensive: a half-populated pair (path without writable root, or vice
+        // versa) must not emit a malformed overlay. Both-or-nothing.
+        var pathOnly = new List<RouteEntry>
+        {
+            new("docs", DefaultDomain("docs"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true, RuntimeConfigFilePath: "/config.json", RuntimeConfigWritableRoot: null)
+        };
+
+        var rootOnly = new List<RouteEntry>
+        {
+            new("docs", DefaultDomain("docs"), ServeMode.FileServer, Port: null, SpaFallback: false, ArtifactDirectory: "/srv/docs", Enabled: true, RuntimeConfigFilePath: null, RuntimeConfigWritableRoot: "/var/lib/collabhost/data/app-data/docs")
+        };
+
+        foreach (var routes in new[] { pathOnly, rootOnly })
+        {
+            var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+            var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+            subrouteHandlers.Count.ShouldBe(2);
+        }
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_WithRuntimeConfig_EmitsPathScopedOverlayRootedAtWritableDir()
+    {
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "portal",
+                DefaultDomain("portal"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: false,
+                ArtifactDirectory: "/srv/portal",
+                Enabled: true,
+                RuntimeConfigFilePath: "/config.json",
+                RuntimeConfigWritableRoot: "/var/lib/collabhost/data/app-data/portal"
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        // 0 = blanket artifact vars root, 1 = overlay, 2 = file_server.
+        subrouteHandlers.Count.ShouldBe(3);
+        subrouteHandlers[0]!["handle"]![0]!["root"]!.GetValue<string>().ShouldBe("/srv/portal");
+
+        var overlay = subrouteHandlers[1]!;
+
+        // Overlay is path-scoped to the config path.
+        overlay["match"]![0]!["path"]![0]!.GetValue<string>().ShouldBe("/config.json");
+
+        // Overlay handle is a nested subroute whose first inner handler sets the
+        // WRITABLE root -- the root switch is confined inside this branch.
+        var innerHandlers = overlay["handle"]![0]!["routes"]!.AsArray();
+        innerHandlers[0]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("vars");
+        innerHandlers[0]!["handle"]![0]!["root"]!.GetValue<string>()
+            .ShouldBe("/var/lib/collabhost/data/app-data/portal");
+
+        // No-cache header rides inside the overlay branch (self-contained).
+        innerHandlers[1]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("headers");
+        innerHandlers[1]!["handle"]![0]!["response"]!["set"]!["Cache-Control"]![0]!
+            .GetValue<string>().ShouldBe("no-cache");
+
+        // file_server responder terminates the matched request inside the branch.
+        innerHandlers[2]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("file_server");
+    }
+
+    [Fact]
+    public void Build_FileServerRoute_RuntimeConfigWithSpaFallback_SpaFallbackStillSeesArtifactRoot()
+    {
+        // ROOT-BLEED REGRESSION GUARD (#369, HIGH). The overlay sets the writable
+        // root, but that switch is confined to the overlay's path-matched nested
+        // subroute. The SPA-fallback handler sits at the chain level where the
+        // root is STILL the artifact root (set at index 0). If the overlay leaked
+        // its root chain-wide, the SPA fallback would stat the writable dir, find
+        // no /index.html, and deep-link routing would break on the exact app this
+        // card fixes. We assert the root the SPA fallback SEES, not merely that
+        // the handler is present.
+        var routes = new List<RouteEntry>
+        {
+            new
+            (
+                "portal",
+                DefaultDomain("portal"),
+                ServeMode.FileServer,
+                Port: null,
+                SpaFallback: true,
+                ArtifactDirectory: "/srv/portal",
+                Enabled: true,
+                RuntimeConfigFilePath: "/config.json",
+                RuntimeConfigWritableRoot: "/var/lib/collabhost/data/app-data/portal"
+            )
+        };
+
+        var config = ProxyConfigurationBuilder.Build(routes, _defaultSettings, _defaultHosting, _defaultPortal);
+
+        var subrouteHandlers = GetRoutes(config)![1]!["handle"]![0]!["routes"]!.AsArray();
+
+        // 0 = artifact vars root, 1 = overlay, 2 = SPA fallback, 3 = file_server.
+        subrouteHandlers.Count.ShouldBe(4);
+
+        // The chain-level root (index 0) is the ARTIFACT dir -- this is the root
+        // every chain-level handler after the overlay sees, including the SPA
+        // fallback. The overlay does NOT mutate it.
+        var chainLevelRootHandler = subrouteHandlers[0]!["handle"]![0]!;
+        chainLevelRootHandler["handler"]!.GetValue<string>().ShouldBe("vars");
+        chainLevelRootHandler["root"]!.GetValue<string>().ShouldBe("/srv/portal");
+
+        // The overlay (index 1) is a SELF-CONTAINED path-matched subroute -- its
+        // writable root lives inside its nested routes, never at the chain level.
+        var overlay = subrouteHandlers[1]!;
+        overlay["match"]![0]!["path"]![0]!.GetValue<string>().ShouldBe("/config.json");
+        overlay["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("subroute");
+
+        // The SPA fallback (index 2) sits AFTER the overlay at the chain level.
+        // Because the overlay never set a chain-level root, the root in scope for
+        // this handler is still /srv/portal (the artifact dir at index 0).
+        var spaFallback = subrouteHandlers[2]!;
+        spaFallback["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("rewrite");
+        var tryFiles = spaFallback["match"]![0]!["file"]!["try_files"]!.AsArray();
+        tryFiles[1]!.GetValue<string>().ShouldBe("/index.html");
+
+        // No chain-level handler from the overlay onward re-sets the root -- only
+        // the overlay's NESTED subroute touches a root, scoped inside its path
+        // match. Assert no chain-level sibling `vars` handler bled out.
+        for (var i = 1; i < subrouteHandlers.Count; i++)
+        {
+            foreach (var inner in subrouteHandlers[i]!["handle"]!.AsArray())
+            {
+                var innerObject = inner!.AsObject();
+
+                if (innerObject.TryGetPropertyValue("handler", out var handlerNode)
+                    && string.Equals(handlerNode!.GetValue<string>(), "vars", StringComparison.Ordinal))
+                {
+                    Assert.Fail($"Chain-level vars handler at index {i.ToString(System.Globalization.CultureInfo.InvariantCulture)} -- root would bleed into the SPA fallback.");
+                }
+            }
+        }
+
+        subrouteHandlers[3]!["handle"]![0]!["handler"]!.GetValue<string>().ShouldBe("file_server");
+    }
 }
