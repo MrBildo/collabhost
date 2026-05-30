@@ -4,6 +4,7 @@ using System.Globalization;
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
@@ -26,6 +27,7 @@ public class LifecycleTools
     TypeStore typeStore,
     ProcessSupervisor supervisor,
     ProxyManager proxy,
+    ProbeService probeService,
     RuntimeConfigFileWriter runtimeConfigFileWriter,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
@@ -44,6 +46,14 @@ public class LifecycleTools
 
     private readonly ProxyManager _proxy = proxy
         ?? throw new ArgumentNullException(nameof(proxy));
+
+    // Card #366: mirror REST AppEndpoints.StartAppAsync's RunProbesAsync call so
+    // MCP start_app refreshes probe-derived metadata (surfaced via get_app) on
+    // both the routing-only and process-bearing branches. The original #336/#332
+    // MCP path took no ProbeService dep at all -- the REST path called probes on
+    // both start branches; the MCP path called probes on neither.
+    private readonly ProbeService _probeService = probeService
+        ?? throw new ArgumentNullException(nameof(probeService));
 
     // Card #365: mirror REST AppEndpoints.StartAppAsync's routing-only branch so
     // MCP start_app fires the runtime-config-file writer before EnableRoute. The
@@ -122,6 +132,11 @@ public class LifecycleTools
             // AppEndpoints.StartAppAsync). Card #350.
             await _appStore.SetStoppedByOperatorAsync(app.Id, app.Slug, false, ct);
 
+            // Refresh probe-derived metadata so get_app reflects the current
+            // artifact state. Mirrors AppEndpoints.StartAppAsync's routing-only
+            // branch; the MCP path took no ProbeService dep before Card #366.
+            await _probeService.RunProbesAsync(app.Id, ct);
+
             try
             {
                 await _activityEventStore.RecordAsync
@@ -155,6 +170,9 @@ public class LifecycleTools
         try
         {
             var managed = await _supervisor.StartAppAsync(app.Id, ct);
+
+            // Refresh probe-derived metadata (REST+MCP parity). Card #366.
+            await _probeService.RunProbesAsync(app.Id, ct);
 
             try
             {
