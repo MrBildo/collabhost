@@ -43,5 +43,23 @@ internal sealed class EnvironmentPoison : IDisposable
 
 // xUnit collection: serializes every test class that mutates the process-global
 // environment so concurrent poisoning cannot race.
+//
+// Note on the #354/#378 isolation invariant (canonical statement: ApiFixture.cs, "Api" collection):
+// the members here poison the SAME two vars (COLLABHOST_DATA_PATH / ASPNETCORE_CONTENTROOT) as
+// UpdateHostsCliTests does, and DisableParallelization serializes them only WITHIN this collection --
+// it does NOT serialize them against the "Api" collection, which runs in parallel with this one.
+// They are nonetheless safe to stay out of "Api" because they point at STATIC, never-deleted paths
+// (/opt/collabhost, /var/lib/collabhost/data, Path.GetTempPath()): the *ProcessRunnerEnvironmentIsolationTests
+// even hold the poisoned value across a multi-second real subprocess spawn-and-await, but a concurrent
+// "Api" host boot that resolved one of those paths fails DETERMINISTICALLY (StartupPreflight halt on a
+// non-writable path), never the intermittent create-then-DELETE flake that motivated #354. The flake
+// requires a path that gets torn down mid-run; a consistently-absent or consistently-writable path
+// cannot produce it.
+//
+// FORWARD AWARENESS: this dormancy is conditional on the static-path property. If any member here is
+// ever extended to (a) boot a Program.Main host or a subprocess that resolves these vars AND (b) point
+// them at a create-then-delete dir, the #354 flake resurfaces from a poisoner OUTSIDE "Api". At that
+// point that test must join [Collection("Api")] per the invariant -- do not give it its own
+// DisableParallelization collection (that protects only against itself, not the Api boots).
 [CollectionDefinition(nameof(EnvironmentPoisoningCollection), DisableParallelization = true)]
 public sealed class EnvironmentPoisoningCollection;
