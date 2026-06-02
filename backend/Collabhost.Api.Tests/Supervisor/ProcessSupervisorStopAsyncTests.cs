@@ -51,11 +51,19 @@ public class ProcessSupervisorStopAsyncTests
         await supervisor.StopAsync(hostBudget.Token);
         stopwatch.Stop();
 
-        // Polling loop is 250ms granular; allow a small tolerance over the 1s host budget.
-        // Tolerance bumped to 3s under #315 (Rule 9 expansion, Kai's PR #220 finding) after
-        // a 2.068s observed wall time on Windows-latest CI (3.4% over a 2s ceiling) -- same
-        // Windows-CI timing-flake family as the WindowsProcessRunnerTests stdio-capture race.
-        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(3));
+        // Range assertion, not a bare upper bound. Two failure modes must both fail this test:
+        //   Lower bound (>= 500ms): proves the host token actually gated the wait. An instant
+        //     return would mean the host budget never applied -- the very regression #191 fixed --
+        //     yet a lone "less than X" ceiling passes vacuously on instant return. The floor sits
+        //     safely below the 1s host budget so an early-firing timer on a fast runner does not
+        //     false-fail, but well above zero so a dropped-token regression is caught.
+        //   Upper bound (< 8s): the kill must land once the budget elapses, not after the full
+        //     10s default ShutdownTimeoutSeconds (the bug case). The ceiling is wide enough to
+        //     absorb shared-runner contention -- prior single-bound forms flaked at 2.068s (vs a
+        //     2s ceiling) and 4.28s (vs a 3s ceiling) on Windows-latest -- while staying clear of
+        //     the 10s bug signature, so a genuine regression still fails loudly.
+        stopwatch.Elapsed.ShouldBeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(500));
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(8));
 
         // The hung process must be hard-killed once the host budget elapses.
         hungHandle.KillCount.ShouldBe(1);
