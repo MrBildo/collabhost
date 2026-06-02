@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Collabhost.Api.Proxy;
 
 // LoadConfigAsync result. Carries the failure detail (error body + status) when Caddy
@@ -24,17 +26,46 @@ public interface ICaddyClient
 public class CaddyClient
 (
     HttpClient httpClient,
+    ProxySettings settings,
     ILogger<CaddyClient> logger
 ) : ICaddyClient
 {
     private readonly HttpClient _httpClient = httpClient
         ?? throw new ArgumentNullException(nameof(httpClient));
 
+    private readonly ProxySettings _settings = settings
+        ?? throw new ArgumentNullException(nameof(settings));
+
     private readonly ILogger<CaddyClient> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
+    // The admin port is claimed lazily at supervisor start (after pin hydration),
+    // so it is not known when this client is constructed at DI time. The base
+    // address is therefore set on first request, by which point the proxy process
+    // has started and ProxySettings.AdminPort is assigned. Set once -- the port is
+    // stable for the process lifetime.
+    private void EnsureBaseAddress()
+    {
+        if (_httpClient.BaseAddress is not null)
+        {
+            return;
+        }
+
+        _httpClient.BaseAddress = new Uri
+        (
+            string.Format
+            (
+                CultureInfo.InvariantCulture,
+                "http://localhost:{0}",
+                _settings.AdminPort
+            )
+        );
+    }
+
     public async Task<bool> IsReadyAsync(CancellationToken ct = default)
     {
+        EnsureBaseAddress();
+
         // Narrow catches for readiness probe: only transport-level / timeout failures
         // are expected during Caddy warm-up. Any other exception (programmer error,
         // auth config error) must propagate so we don't silently hide real bugs
@@ -62,6 +93,8 @@ public class CaddyClient
 
     public async Task<LoadConfigResult> LoadConfigAsync(JsonObject config, CancellationToken ct = default)
     {
+        EnsureBaseAddress();
+
         try
         {
             var response = await _httpClient.PostAsJsonAsync("load", config, ct);
@@ -100,6 +133,8 @@ public class CaddyClient
 
     public async Task<JsonObject?> GetConfigAsync(CancellationToken ct = default)
     {
+        EnsureBaseAddress();
+
         try
         {
             var response = await _httpClient.GetAsync(new Uri("config/", UriKind.Relative), ct);

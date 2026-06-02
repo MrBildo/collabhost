@@ -22,6 +22,7 @@ public class ProcessSupervisor
     IEventBus<ProcessStateChangedEvent> eventBus,
     IEnumerable<IProcessArgumentProvider> argumentProviders,
     IEnumerable<IProcessEnvironmentProvider> environmentProviders,
+    IEnumerable<IReservedPortInitializer> reservedPortInitializers,
     HostedAppBundleDirectory hostedAppBundleDirectory,
     PortAllocator portAllocator,
     ActivityEventStore activityEventStore,
@@ -51,6 +52,9 @@ public class ProcessSupervisor
 
     private readonly IProcessEnvironmentProvider[] _environmentProviders =
         [.. (environmentProviders ?? throw new ArgumentNullException(nameof(environmentProviders)))];
+
+    private readonly IReservedPortInitializer[] _reservedPortInitializers =
+        [.. (reservedPortInitializers ?? throw new ArgumentNullException(nameof(reservedPortInitializers)))];
 
     private readonly HostedAppBundleDirectory _hostedAppBundleDirectory = hostedAppBundleDirectory
         ?? throw new ArgumentNullException(nameof(hostedAppBundleDirectory));
@@ -85,6 +89,16 @@ public class ProcessSupervisor
             // could be handed that number while the pinned app is down, and the
             // pinned app would fail to bind when it next starts.
             await HydratePinnedPortReservationsAsync(apps, cancellationToken);
+
+            // Infrastructure consumers (the proxy admin port) claim their ports now
+            // -- after every pin is reserved, before anything auto-starts -- so their
+            // allocation excludes pinned ports and cannot be handed a number a pin
+            // owns. The proxy process may itself be auto-started in the loop below,
+            // and it reads its admin port at start; the port must be set before that.
+            foreach (var initializer in _reservedPortInitializers)
+            {
+                initializer.Initialize(_portAllocator);
+            }
 
             foreach (var app in apps)
             {
@@ -531,9 +545,39 @@ public class ProcessSupervisor
             {
                 effectivePort = portInjectionConfiguration.FixedPort;
                 _portAllocator.Reserve(appId, effectivePort);
+
+                // A reservation only keeps Collabhost from internally reassigning
+                // the port -- it says nothing about an owner OUTSIDE Collabhost
+                // (another host service, a container, a leftover process). The
+                // pinned app is about to be told to bind this exact number; if it
+                // is already taken the child would fail to bind and crash-loop
+                // opaquely. Validate live availability here, at the point of bind,
+                // and hard-fail attributably instead of letting it loop.
+                if (!PortAllocator.IsPortAvailable(effectivePort))
+                {
+                    var reason = string.Format
+                    (
+                        CultureInfo.InvariantCulture,
+                        "Cannot start app: pinned port {0} is already in use by another "
+                        + "process on this machine. Free the port or change the pinned "
+                        + "port in the app's settings, then start the app again.",
+                        effectivePort
+                    );
+
+                    ParkErrorProcess(appId, app, reason, ProcessState.Fatal);
+
+                    throw new InvalidOperationException(reason);
+                }
             }
             else
             {
+                // No pin (or an unpin: FixedPort went N->0). Release any prior
+                // reservation this app held so unpinning returns the port to the
+                // automatic pool in the same session, symmetric with delete --
+                // not only on the next reboot. Release is a no-op when nothing
+                // was reserved, so the unpinned-from-the-start case is unaffected.
+                _portAllocator.Release(appId);
+
                 effectivePort = await _portAllocator.AllocateAsync(ct);
             }
 
@@ -1252,9 +1296,29 @@ public class ProcessSupervisor
         GC.SuppressFinalize(this);
     }
 
-    private void ParkErrorProcess(Ulid appId, App app, string errorMessage)
+    // Parks an app in a non-running terminal state with an operator-facing reason
+    // in its log buffer, without ever launching a process. Used for start-time
+    // preconditions that fail before spawn (missing artifact, pinned-port
+    // collision). The default Stopped state matches the historical
+    // configuration-error parks. Pass ProcessState.Fatal for a hard precondition
+    // failure that must not be masked by the restart cycle -- nothing was started,
+    // so there is no exit event to drive a retry, and Fatal surfaces "manual
+    // restart required" to the operator while still allowing a deliberate retry
+    // once the conflict is cleared.
+    private void ParkErrorProcess
+    (
+        Ulid appId,
+        App app,
+        string errorMessage,
+        ProcessState state = ProcessState.Stopped
+    )
     {
         var errorProcess = new ManagedProcess(app.Id, app.Slug, app.DisplayName);
+
+        if (state == ProcessState.Fatal)
+        {
+            errorProcess.MarkFatal();
+        }
 
         GetOrCreateLogBuffer(app.Id).Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, errorMessage));
 

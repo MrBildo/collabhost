@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Sockets;
+
 using Collabhost.Api.Supervisor;
 
 using Shouldly;
@@ -113,5 +116,55 @@ public class PortAllocatorTests
         (
             async () => await allocator.AllocateAsync(cts.Token)
         );
+    }
+
+    [Fact]
+    public async Task IsPortAvailable_ReturnsTrueForAFreePort()
+    {
+        // Allocate a port, then immediately release it so nothing is bound -- the
+        // probe should report it free.
+        var allocator = new PortAllocator();
+        var freePort = await allocator.AllocateAsync(CancellationToken.None);
+
+        PortAllocator.IsPortAvailable(freePort).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void IsPortAvailable_ReturnsFalseWhenSomethingElseHoldsThePort()
+    {
+        // Bind a loopback listener to simulate an owner OUTSIDE the allocator's
+        // reservation registry (another host service, a container, a leftover) --
+        // exactly the case a reservation cannot see. The probe must report it taken.
+        using var occupier = new TcpListener(IPAddress.Loopback, 0);
+        occupier.Start();
+        var heldPort = ((IPEndPoint)occupier.LocalEndpoint).Port;
+
+        PortAllocator.IsPortAvailable(heldPort).ShouldBeFalse();
+
+        occupier.Stop();
+    }
+
+    [Fact]
+    public void AllocateInfrastructurePort_NeverReturnsAReservedPort()
+    {
+        // The proxy admin port is drawn through this path. It must honor the same
+        // reservation registry as managed-app allocation so a pinned port can never
+        // be handed to the admin API.
+        var allocator = new PortAllocator();
+
+        for (var port = 40000; port <= 40100; port++)
+        {
+            allocator.Reserve(Ulid.NewUlid(), port);
+        }
+
+        for (var i = 0; i < 200; i++)
+        {
+            var allocated = allocator.AllocateInfrastructurePort();
+
+            allocator.IsReserved(allocated).ShouldBeFalse
+            (
+                "Infrastructure allocation returned a reserved port."
+            );
+        }
     }
 }

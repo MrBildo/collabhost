@@ -334,6 +334,7 @@ public class ProxyManagerVerifyCaddyReadyTests
             eventBus,
             [],
             [],
+            [],
             new HostedAppBundleDirectory(Path.GetTempPath(), NullLogger<HostedAppBundleDirectory>.Instance),
             new PortAllocator(),
             activityEventStore,

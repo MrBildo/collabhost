@@ -28,8 +28,6 @@ public class PortAllocator
         return Task.FromResult(AllocateFreePort());
     }
 
-    public static int AllocatePort() => FindFreePort();
-
     // Reserve a fixed port for an app, holding it back from automatic
     // allocation. Idempotent for the same app+port; re-pinning an app to a
     // different port replaces its prior reservation.
@@ -40,6 +38,42 @@ public class PortAllocator
     public void Release(Ulid appId) => _reservationsByApp.TryRemove(appId, out _);
 
     public bool IsReserved(int port) => _reservationsByApp.Values.Contains(port);
+
+    // Probe whether a specific port can be bound on loopback right now. A
+    // reservation only protects a pinned port from Collabhost's own automatic
+    // allocation -- it says nothing about whether something OUTSIDE Collabhost
+    // (another host service, a container, a leftover process) already holds the
+    // port. A pinned app is told to bind a fixed number; if that number is taken
+    // by an external owner the child process would fail to bind and crash-loop
+    // opaquely. This probe lets the supervisor validate availability before the
+    // app starts and hard-fail attributably instead. Loopback only, matching the
+    // interface managed apps bind. Returns false on any bind failure (in-use,
+    // permission, transient) -- the supervisor treats any negative as "not free."
+    public static bool IsPortAvailable(int port)
+    {
+        try
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, port);
+
+            listener.Start();
+            listener.Stop();
+
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+    }
+
+    // Allocate a free port for an infrastructure consumer (e.g. the proxy admin
+    // API) through the same reservation registry every managed app uses, so the
+    // "a reserved port is never handed out" guarantee covers the proxy admin port
+    // too, not just the app-start path. This replaced a static, reservation-blind
+    // allocation that ran at DI-registration time before any pin existed.
+    // Synchronous because the only callers run at supervisor start, off the
+    // request path.
+    public int AllocateInfrastructurePort() => AllocateFreePort();
 
     // Find a free port the kernel offers that is not currently reserved for a
     // pinned app. The kernel can legitimately offer a reserved port number when
