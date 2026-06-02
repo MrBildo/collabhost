@@ -10,11 +10,25 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Installation;
 
+// Joins the "Api" collection so xUnit serializes this class against every in-process
+// WebApplicationFactory<Program> boot in that collection. This class poisons the
+// process-global COLLABHOST_DATA_PATH / ASPNETCORE_CONTENTROOT env vars (the CLI's input
+// channel) and tears down the GUID-scoped scratch dir they point at on teardown. Those two
+// vars win over UseSetting in a host boot (env > config -- DataRegistration.ResolveConnectionString
+// reads COLLABHOST_DATA_PATH first; Program.cs reads ASPNETCORE_CONTENTROOT first), so a host
+// boot running CONCURRENTLY in another collection would resolve its data dir / content root to
+// this class's scratch dir and then race the dir teardown -- the #354/#378 pollution flake
+// (SQLite "unable to open", FileSystemWatcher "directory does not exist",
+// WebApplicationFactory "server has not been started"). Cross-collection parallelism is xUnit's
+// default; only co-membership in one collection serializes against it. Card #354.
+[Collection("Api")]
 public class UpdateHostsCliTests : IAsyncLifetime
 {
     private string _scratchDir = string.Empty;
     private string _dataDir = string.Empty;
     private string _hostsPath = string.Empty;
+    private string? _originalDataPath;
+    private string? _originalContentRoot;
 
     public async Task InitializeAsync()
     {
@@ -34,15 +48,20 @@ public class UpdateHostsCliTests : IAsyncLifetime
         await using var db = new AppDbContext(options);
         await db.Database.EnsureCreatedAsync();
 
-        // Point the CLI's config-load path at our scratch data dir via env var.
+        // Point the CLI's config-load path at our scratch data dir via env var. Capture the
+        // prior values first so DisposeAsync restores them instead of blindly clearing -- a
+        // blind clear would erase a developer shell's real COLLABHOST_DATA_PATH.
+        _originalDataPath = Environment.GetEnvironmentVariable("COLLABHOST_DATA_PATH");
+        _originalContentRoot = Environment.GetEnvironmentVariable("ASPNETCORE_CONTENTROOT");
+
         Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", _dataDir);
         Environment.SetEnvironmentVariable("ASPNETCORE_CONTENTROOT", _scratchDir);
     }
 
     public Task DisposeAsync()
     {
-        Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", null);
-        Environment.SetEnvironmentVariable("ASPNETCORE_CONTENTROOT", null);
+        Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", _originalDataPath);
+        Environment.SetEnvironmentVariable("ASPNETCORE_CONTENTROOT", _originalContentRoot);
 
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 

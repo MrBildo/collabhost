@@ -12,6 +12,15 @@ namespace Collabhost.Api.Tests.Platform;
 // (or its env-var override), not fall through to Kestrel's default :5000 while Caddy dials
 // :58400. Separately, the dev path (ASPNETCORE_URLS set, which is what launchSettings.json
 // and Aspire both produce) must continue to win -- the fix is a *fallback*, not an override.
+//
+// Joins the "Api" collection so these subprocess launches are serialized against the
+// process-global env poisoning in UpdateHostsCliTests (also "Api"). The subprocess sets
+// COLLABHOST_DATA_PATH explicitly but NOT ASPNETCORE_CONTENTROOT, and ProcessStartInfo.Environment
+// inherits the parent process env -- so a concurrent --update-hosts test's leaked
+// ASPNETCORE_CONTENTROOT would anchor this subprocess's content root to the leaked scratch dir,
+// which then gets torn down and aborts the launched host before it prints its listening address.
+// This is the #378 subprocess face of the #354 pollution flake. Card #354.
+[Collection("Api")]
 public class KestrelListenPortTests
 {
     [Fact]

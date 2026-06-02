@@ -18,6 +18,14 @@ namespace Collabhost.Api.Tests.Portal;
 // can't host these because PortalSpaFallbackMiddleware queries
 // IWebHostEnvironment.WebRootFileProvider (fixed at host construction time) and the
 // missing-shell degraded-mode test mutates the seeded wwwroot.
+//
+// Joins the "Api" collection so these in-process WebApplicationFactory<Program> boots are
+// serialized against the process-global env poisoning in UpdateHostsCliTests (also "Api").
+// Without that, a concurrent --update-hosts test's leaked COLLABHOST_DATA_PATH /
+// ASPNETCORE_CONTENTROOT (env > config, so they defeat the UseSetting calls below) would
+// redirect this host's data dir / content root to a scratch dir that then gets torn down
+// mid-boot -- the #354/#378 pollution flake.
+[Collection("Api")]
 public sealed class PortalMiddlewareTests : IAsyncLifetime
 {
     private const string _adminKey = "01PORTAL0TEST0KEY00000000";
@@ -33,7 +41,14 @@ public sealed class PortalMiddlewareTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Null the env vars that win over the UseSetting calls below (env > config), so neither a
+        // developer shell nor a leaked value from another test redirects this host's data dir /
+        // content root / user-types dir away from this class's per-test temp dirs. The
+        // COLLABHOST_DATA_PATH / ASPNETCORE_CONTENTROOT nulls also defend against the #354/#378
+        // pollution flake.
         Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", null);
+        Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", null);
+        Environment.SetEnvironmentVariable("ASPNETCORE_CONTENTROOT", null);
 
         _dbDirectory = Path.Combine
         (

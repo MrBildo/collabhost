@@ -32,11 +32,16 @@ public class ApiFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Null the env var so a developer shell with COLLABHOST_USER_TYPES_PATH set does not
-        // shadow the UseSetting path below. Env var takes precedence in TypeStoreRegistration
-        // (env > config > default) so without this the test would silently use the developer's
-        // path instead of the per-test temp dir.
+        // Null the env vars so a developer shell -- or a leak from another test -- does not
+        // shadow the UseSetting paths below. Each of these wins over config (env > config) in
+        // the resolvers Program.cs / DataRegistration / TypeStoreRegistration use, so without
+        // the explicit null the host would silently bind its data dir / content root / user-types
+        // dir to the inherited value instead of this fixture's per-test temp dirs. The
+        // COLLABHOST_DATA_PATH / ASPNETCORE_CONTENTROOT nulls also defend against the #354/#378
+        // pollution flake (UpdateHostsCliTests leaks both, pointing at a torn-down scratch dir).
         Environment.SetEnvironmentVariable("COLLABHOST_USER_TYPES_PATH", null);
+        Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", null);
+        Environment.SetEnvironmentVariable("ASPNETCORE_CONTENTROOT", null);
 
         _dbDirectory = Path.Combine
         (
