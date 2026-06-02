@@ -18,6 +18,16 @@ namespace Collabhost.Api.Tests.Platform;
 // COLLABHOST_CONFIG_PATH lets the operator load appsettings.json from /etc/collabhost
 // without a parallel symlink. The two new tests below cover the env-var-set path; the
 // fallback path (env vars unset) is covered by Startup_FromUnrelatedCwd_*.
+//
+// Joins the "Api" collection so these subprocess launches are serialized against the
+// process-global env poisoning in UpdateHostsCliTests (also "Api"). ProcessStartInfo.Environment
+// is pre-seeded from THIS (parent) process's environment, so a concurrent --update-hosts test's
+// leaked ASPNETCORE_CONTENTROOT would be inherited by the Startup_FromUnrelatedCwd subprocess
+// (which deliberately leaves it unset to test the BaseDirectory fallback). The subprocess would
+// then anchor its content root to the leaked scratch dir and -- once that dir is torn down --
+// abort at startup before printing the "Content root path:" line, surfacing as a null read.
+// This is the #378 ContentRootTests face of the #354 pollution flake. Card #354.
+[Collection("Api")]
 public class ContentRootTests
 {
     [Fact]
