@@ -187,5 +187,27 @@ file sealed class NoopBootVersionWriter : IBootVersionWriter
     }
 }
 
+// Isolation invariant for env-var poisoners (#354/#378):
+//
+// A test that sets COLLABHOST_DATA_PATH or ASPNETCORE_CONTENTROOT MUST join [Collection("Api")]
+// IF it creates-then-deletes the directory those vars point at. Both vars win over UseSetting in a
+// host boot (env > config), so a concurrent ApiFixture/WebApplicationFactory<Program> boot -- or a
+// subprocess launcher whose child inherits the parent env -- resolves its data dir / content root to
+// the poisoner's scratch dir and then races the teardown delete. That create-then-DELETE TOCTOU is
+// the flake. Co-membership in this collection is the only thing that serializes a poisoner against
+// those boots: xUnit runs collections in PARALLEL by default, and DisableParallelization on a
+// *separate* collection serializes only within that collection, not across to this one.
+//
+// Poisoners that set the same two vars but point ONLY at static, never-deleted paths are safe to run
+// in parallel and correctly stay OUT of this collection. They fail DETERMINISTICALLY, not flakily: a
+// concurrent boot that resolved, say, /var/lib/collabhost/data would hit a StartupPreflight halt
+// (non-writable path -> attributable error), never the intermittent dir-vanishes-mid-boot crash. The
+// three pre-existing same-var poisoners outside this collection are each safe on that basis --
+// ChildProcessEnvironmentTests and *ProcessRunnerEnvironmentIsolationTests (#330, /opt/collabhost +
+// /var/lib/collabhost/data) and DataRegistrationTests (Path.GetTempPath(), which is writable -> a
+// concurrent boot resolving it is simply harmless). Their non-coverage is documented at the source
+// in EnvironmentPoison.cs. Do NOT "fix" them by adding them to this collection -- that needlessly
+// serializes the #330 isolation suite against every Api boot for no race. The discriminator is
+// create-then-delete, not "touches the same var."
 [CollectionDefinition("Api")]
 public class ApiCollection : ICollectionFixture<ApiFixture> { }
