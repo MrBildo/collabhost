@@ -39,11 +39,16 @@ public class CaddyClient
     private readonly ILogger<CaddyClient> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
+    private readonly Lock _baseAddressLock = new();
+
     // The admin port is claimed lazily at supervisor start (after pin hydration),
     // so it is not known when this client is constructed at DI time. The base
     // address is therefore set on first request, by which point the proxy process
     // has started and ProxySettings.AdminPort is assigned. Set once -- the port is
-    // stable for the process lifetime.
+    // stable for the process lifetime. The lock guards the check-then-assign on the
+    // shared singleton HttpClient: a single concurrent caller today, but an
+    // unguarded null-check-then-assign on shared mutable state is a footgun the
+    // moment a second admin caller is ever added.
     private void EnsureBaseAddress()
     {
         if (_httpClient.BaseAddress is not null)
@@ -51,15 +56,23 @@ public class CaddyClient
             return;
         }
 
-        _httpClient.BaseAddress = new Uri
-        (
-            string.Format
+        lock (_baseAddressLock)
+        {
+            if (_httpClient.BaseAddress is not null)
+            {
+                return;
+            }
+
+            _httpClient.BaseAddress = new Uri
             (
-                CultureInfo.InvariantCulture,
-                "http://localhost:{0}",
-                _settings.AdminPort
-            )
-        );
+                string.Format
+                (
+                    CultureInfo.InvariantCulture,
+                    "http://localhost:{0}",
+                    _settings.AdminPort
+                )
+            );
+        }
     }
 
     public async Task<bool> IsReadyAsync(CancellationToken ct = default)

@@ -553,6 +553,12 @@ public class ProcessSupervisor
                 // is already taken the child would fail to bind and crash-loop
                 // opaquely. Validate live availability here, at the point of bind,
                 // and hard-fail attributably instead of letting it loop.
+                // "Attributable" means the port was held at probe time: the probe
+                // releases the port before the child binds it, so a port stolen in
+                // the sub-millisecond window between probe and child-bind is an
+                // inherent TOCTOU that falls to the normal crash path, not this
+                // Fatal hard-stop. The probe still deterministically catches the
+                // common case -- a port already held by another owner at start.
                 if (!PortAllocator.IsPortAvailable(effectivePort))
                 {
                     var reason = string.Format
