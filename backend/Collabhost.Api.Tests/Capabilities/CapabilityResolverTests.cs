@@ -161,6 +161,86 @@ public class CapabilityResolverTests
     }
 
     [Fact]
+    public void ValidateEdits_FixedPort_ValidValue_ReturnsNoError()
+    {
+        var overrides = new JsonObject
+        {
+            ["fixedPort"] = 8888
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("port-injection", overrides, false);
+
+        errors.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void ValidateEdits_FixedPort_Zero_ReturnsNoError()
+    {
+        // Zero is the "no pin" sentinel -- a legitimate value meaning automatic
+        // allocation, not an out-of-range error.
+        var overrides = new JsonObject
+        {
+            ["fixedPort"] = 0
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("port-injection", overrides, false);
+
+        errors.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void ValidateEdits_FixedPort_AboveMaximum_ReturnsError()
+    {
+        var overrides = new JsonObject
+        {
+            ["fixedPort"] = 70000
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("port-injection", overrides, false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("fixedPort");
+        errors[0].ShouldContain("less than or equal to 65535");
+    }
+
+    [Fact]
+    public void ValidateEdits_FixedPort_Negative_ReturnsError()
+    {
+        var overrides = new JsonObject
+        {
+            ["fixedPort"] = -1
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("port-injection", overrides, false);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("fixedPort");
+        errors[0].ShouldContain("greater than or equal to 0");
+    }
+
+    [Fact]
+    public void Resolve_FixedPortOverride_FlowsThroughToConfiguration()
+    {
+        var defaults = """{"environmentVariableName":"PORT","portFormat":"{port}","fixedPort":0}""";
+        var overrides = """{"fixedPort":8888}""";
+
+        var resolved = CapabilityResolver.Resolve<PortInjectionConfiguration>(defaults, overrides);
+
+        resolved.FixedPort.ShouldBe(8888);
+        resolved.EnvironmentVariableName.ShouldBe("PORT");
+    }
+
+    [Fact]
+    public void Resolve_NoFixedPort_DefaultsToZeroMeaningAutomaticAllocation()
+    {
+        var defaults = """{"environmentVariableName":"PORT","portFormat":"{port}"}""";
+
+        var resolved = CapabilityResolver.Resolve<PortInjectionConfiguration>(defaults, null);
+
+        resolved.FixedPort.ShouldBe(0);
+    }
+
+    [Fact]
     public void ValidateEdits_LockedField_AllowedForNewApp()
     {
         var overrides = new JsonObject

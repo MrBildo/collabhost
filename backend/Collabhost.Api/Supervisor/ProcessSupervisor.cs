@@ -23,6 +23,7 @@ public class ProcessSupervisor
     IEnumerable<IProcessArgumentProvider> argumentProviders,
     IEnumerable<IProcessEnvironmentProvider> environmentProviders,
     HostedAppBundleDirectory hostedAppBundleDirectory,
+    PortAllocator portAllocator,
     ActivityEventStore activityEventStore,
     ILogger<ProcessSupervisor> logger
 ) : IHostedService, IDisposable
@@ -54,6 +55,9 @@ public class ProcessSupervisor
     private readonly HostedAppBundleDirectory _hostedAppBundleDirectory = hostedAppBundleDirectory
         ?? throw new ArgumentNullException(nameof(hostedAppBundleDirectory));
 
+    private readonly PortAllocator _portAllocator = portAllocator
+        ?? throw new ArgumentNullException(nameof(portAllocator));
+
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
 
@@ -74,6 +78,13 @@ public class ProcessSupervisor
         try
         {
             var apps = await _appStore.ListAsync(cancellationToken);
+
+            // Reserve every pinned port before any automatic allocation runs.
+            // A pinned app that is stopped (or not set to auto-start) still owns
+            // its port -- otherwise an automatic allocation for a different app
+            // could be handed that number while the pinned app is down, and the
+            // pinned app would fail to bind when it next starts.
+            await HydratePinnedPortReservationsAsync(apps, cancellationToken);
 
             foreach (var app in apps)
             {
@@ -153,6 +164,33 @@ public class ProcessSupervisor
         }
 
         _logger.LogInformation("Process supervisor started");
+    }
+
+    private async Task HydratePinnedPortReservationsAsync
+    (
+        IReadOnlyCollection<App> apps,
+        CancellationToken ct
+    )
+    {
+        foreach (var app in apps)
+        {
+            var portInjectionConfiguration = await _capabilityStore.ResolveAsync<PortInjectionConfiguration>
+            (
+                "port-injection", app, ct
+            );
+
+            if (portInjectionConfiguration is { FixedPort: > 0 } pinned)
+            {
+                _portAllocator.Reserve(app.Id, pinned.FixedPort);
+
+                _logger.LogInformation
+                (
+                    "Reserved fixed port {Port} for '{DisplayName}'",
+                    pinned.FixedPort,
+                    app.DisplayName
+                );
+            }
+        }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -354,6 +392,10 @@ public class ProcessSupervisor
         _logBuffers.TryRemove(appId, out _);
         _restartPolicies.TryRemove(appId, out _);
 
+        // A deleted app's pinned-port reservation (if any) returns to the
+        // automatic-allocation pool. No-op when the app was never pinned.
+        _portAllocator.Release(appId);
+
         if (_processes.TryRemove(appId, out var process))
         {
             process.Dispose();
@@ -478,16 +520,30 @@ public class ProcessSupervisor
 
         if (portInjectionConfiguration is not null)
         {
-            var portAllocator = new PortAllocator();
-            var allocatedPort = await portAllocator.AllocateAsync(ct);
+            int effectivePort;
 
-            managed.AssignPort(allocatedPort);
+            // A non-zero FixedPort pins the app to a stable address so consumers
+            // that reach it at localhost:<port> survive its restarts without
+            // re-pointing. Reserve it so automatic allocation for any other app
+            // can never be handed the same number. Zero (the default) keeps the
+            // historical behavior: the platform picks a free port automatically.
+            if (portInjectionConfiguration.FixedPort > 0)
+            {
+                effectivePort = portInjectionConfiguration.FixedPort;
+                _portAllocator.Reserve(appId, effectivePort);
+            }
+            else
+            {
+                effectivePort = await _portAllocator.AllocateAsync(ct);
+            }
+
+            managed.AssignPort(effectivePort);
 
             var formattedPortValue = portInjectionConfiguration.PortFormat
                 .Replace
                 (
                     "{port}",
-                    allocatedPort.ToString(CultureInfo.InvariantCulture),
+                    effectivePort.ToString(CultureInfo.InvariantCulture),
                     StringComparison.OrdinalIgnoreCase
                 );
 

@@ -228,6 +228,7 @@ public class ProcessSupervisorRestartCancellationTests
             argumentProviders: [],
             environmentProviders: [],
             new HostedAppBundleDirectory(Path.GetTempPath(), NullLogger<HostedAppBundleDirectory>.Instance),
+            new PortAllocator(),
             activityEventStore,
             logger
         );

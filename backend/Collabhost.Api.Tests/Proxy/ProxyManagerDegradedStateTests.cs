@@ -242,6 +242,7 @@ public class ProxyManagerDegradedStateTests : IAsyncLifetime
             [],
             [],
             new HostedAppBundleDirectory(Path.GetTempPath(), NullLogger<HostedAppBundleDirectory>.Instance),
+            new PortAllocator(),
             activityEventStore,
             NullLogger<ProcessSupervisor>.Instance
         );
