@@ -51,11 +51,24 @@ public class ProcessSupervisorStopAsyncTests
         await supervisor.StopAsync(hostBudget.Token);
         stopwatch.Stop();
 
-        // Polling loop is 250ms granular; allow a small tolerance over the 1s host budget.
-        // Tolerance bumped to 3s under #315 (Rule 9 expansion, Kai's PR #220 finding) after
-        // a 2.068s observed wall time on Windows-latest CI (3.4% over a 2s ceiling) -- same
-        // Windows-CI timing-flake family as the WindowsProcessRunnerTests stdio-capture race.
-        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(3));
+        // Range assertion, not a bare upper bound. The floor and the ceiling guard two
+        // DIFFERENT regressions -- don't conflate them:
+        //   Lower bound (>= 500ms): guards "graceful wait was skipped entirely." If the
+        //     graceful-shutdown poll were bypassed (e.g. straight to KillProcess), Stop
+        //     would return near-instantly. A lone "less than X" ceiling passes vacuously
+        //     on that instant return, so the floor is what gives the test discriminating
+        //     power -- it proves the host budget actually gated a real wait. The floor sits
+        //     safely below the 1s host budget so an early-firing timer on a fast runner
+        //     does not false-fail, but well above zero so a skipped wait is caught.
+        //   Upper bound (< 8s): guards the #191 dropped-host-token regression. That bug
+        //     ignores the host token and blows through to the full 10s default
+        //     ShutdownTimeoutSeconds. The kill must land once the 1s host budget elapses,
+        //     not after 10s. The ceiling is wide enough to absorb shared-runner contention
+        //     -- prior single-bound forms flaked at 2.068s (vs a 2s ceiling) and 4.28s
+        //     (vs a 3s ceiling) on Windows-latest -- while staying 2s clear of the 10s bug
+        //     signature, so a genuine #191 regression still fails loudly.
+        stopwatch.Elapsed.ShouldBeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(500));
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(8));
 
         // The hung process must be hard-killed once the host budget elapses.
         hungHandle.KillCount.ShouldBe(1);
@@ -144,7 +157,9 @@ public class ProcessSupervisorStopAsyncTests
             eventBus,
             argumentProviders: [],
             environmentProviders: [],
+            reservedPortInitializers: [],
             new HostedAppBundleDirectory(Path.GetTempPath(), NullLogger<HostedAppBundleDirectory>.Instance),
+            new PortAllocator(),
             activityEventStore,
             NullLogger<ProcessSupervisor>.Instance
         );

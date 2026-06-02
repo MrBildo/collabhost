@@ -1,5 +1,3 @@
-using System.Globalization;
-
 using Collabhost.Api.Supervisor;
 
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -14,16 +12,15 @@ public static class ProxyRegistration
         {
             var proxySettings = ResolveSettings(configuration);
 
-            proxySettings.AdminPort = PortAllocator.AllocatePort();
-
+            // AdminPort is NOT allocated here anymore. It is claimed at supervisor
+            // start (via ProxyAdminPortInitializer) after every pinned port has been
+            // reserved, so the admin port is drawn from -- and excluded from -- the
+            // same pool managed apps use. Allocating it at DI-registration time used a
+            // static, reservation-blind allocator that ran before any pin existed; that
+            // hole is what the #373 completeness contract (item 2) closes.
             services.AddSingleton(proxySettings);
 
-            var adminBaseAddress = string.Format
-            (
-                CultureInfo.InvariantCulture,
-                "http://localhost:{0}",
-                proxySettings.AdminPort
-            );
+            services.AddSingleton<IReservedPortInitializer, ProxyAdminPortInitializer>();
 
             // CaddyClient talks to a localhost admin API and ProxyManager.VerifyCaddyReadyAsync
             // already runs its own retry loop (5s budget, 1s per-attempt, 200ms delay). The
@@ -37,11 +34,17 @@ public static class ProxyRegistration
             // Registering the client manually -- bypassing AddHttpClient -- means
             // ConfigureHttpClientDefaults does not touch it. Caddy admin is localhost and
             // long-lived; a plain HttpClient is the right shape here.
+            //
+            // The admin port is no longer known at DI time (it is claimed at supervisor
+            // start, after pin hydration), so the base address is resolved lazily on the
+            // client's first request rather than baked into the HttpClient here. By the
+            // time any admin call runs the proxy process has started and the port is set.
             services.AddSingleton<ICaddyClient>
             (
                 provider => new CaddyClient
                 (
-                    new HttpClient { BaseAddress = new Uri(adminBaseAddress) },
+                    new HttpClient(),
+                    provider.GetRequiredService<ProxySettings>(),
                     provider.GetRequiredService<ILogger<CaddyClient>>()
                 )
             );

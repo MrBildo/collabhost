@@ -305,7 +305,9 @@ public class StoppedByOperatorPersistenceTests : IAsyncLifetime
             eventBus,
             [],
             [],
+            [],
             bundleDirectory,
+            new PortAllocator(),
             activityEventStore,
             NullLogger<ProcessSupervisor>.Instance
         );
@@ -373,7 +375,9 @@ public class StoppedByOperatorPersistenceTests : IAsyncLifetime
             eventBus,
             [],
             [],
+            [],
             bundleDirectory,
+            new PortAllocator(),
             activityEventStore,
             NullLogger<ProcessSupervisor>.Instance
         );

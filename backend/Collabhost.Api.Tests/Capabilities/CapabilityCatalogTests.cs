@@ -105,6 +105,7 @@ public class CapabilityCatalogTests
     [InlineData("process", "maxStartupRetries", false)]
     [InlineData("port-injection", "environmentVariableName", true)]
     [InlineData("port-injection", "portFormat", true)]
+    [InlineData("port-injection", "fixedPort", true)]
     [InlineData("routing", "domainPattern", true)]
     [InlineData("routing", "serveMode", true)]
     [InlineData("routing", "spaFallback", true)]
