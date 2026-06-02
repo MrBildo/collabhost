@@ -1255,6 +1255,24 @@ release notes are present. If they are not, the smart-merge silently bailed
 out (see §8.2 for what runs and when); reconcile by hand against
 `appsettings.shipped.json` in the install directory.
 
+**Re-apply runtime-config values for static sites after the upgrade.** For
+every static-site app that has runtime-config-file values configured, re-apply
+those values so the config-file overlay is (re)materialized, then confirm the
+config path serves. Using the dashboard settings page (or the `get_settings` /
+`update_settings` MCP tools) for each affected app:
+
+1. Read the app's runtime-config-file `values` map (`get_settings <slug>`).
+2. Write that same `values` map back unchanged (`update_settings <slug>`). No
+   restart is required — the overlay file is materialized on the settings write.
+3. Verify `https://<slug>.<base-domain>/<config-path>` returns `200` with the
+   expected JSON, and that the single-page app loads.
+
+This is **required on the first upgrade onto v1.6.3+** for any site whose values
+were set on an earlier version — those values were never written to disk, so the
+now-active overlay route returns `404` (shadowing the on-disk config) until the
+values are re-applied. The step is cheap and worth running on every upgrade
+thereafter.
+
 To upgrade Collabhost, re-run the install script. The installer is
 **merge-safe by construction:**
 
