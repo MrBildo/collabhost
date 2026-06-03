@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
@@ -12,6 +13,15 @@
     <NoWarn>$(NoWarn);CA1873;CS1591;S3881;S6966</NoWarn>
   </PropertyGroup>
 
+  <!-- Deterministic CI builds. GitHub Actions sets CI=true in every workflow
+       (ci.yml and publish.yml), so this turns on path-normalization +
+       deterministic output for shipped binaries without the workflows passing
+       an explicit MSBuild property. Local dev builds (CI unset) leave it off so
+       inner-loop debugging keeps absolute source paths. -->
+  <PropertyGroup Condition="'$(CI)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
   <PropertyGroup>
     <Authors>Bill Wheelock</Authors>
     <Copyright>Copyright (c) 2026 Bill Wheelock</Copyright>
@@ -20,10 +30,8 @@
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Meziantou.Analyzer" Version="3.0.28" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" />
-    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.22.0.136894" PrivateAssets="all" />
-  </ItemGroup>
+  <!-- Solution-wide analyzers moved to Directory.Packages.props as
+       GlobalPackageReference entries (CPM-native channel for dev dependencies
+       every project consumes; auto-applies PrivateAssets=All). -->
 
 </Project>
