@@ -63,18 +63,26 @@ public class ProxyManagerVerifyCaddyReadyTests
 
         (await probeTask).ShouldBeTrue();
         caddy.CallCount.ShouldBe(3);
-        // Range assertion (#381 / #347 precedent): the honest virtual-time minimum is
-        // exactly two 200ms inter-attempt delays before the third (successful) probe call.
-        // The floor (>= 400ms) is the load-bearing guard: it catches the real regression --
-        // the probe returning too fast because it skipped the inter-attempt backoff or the
-        // readyAfterCalls gate broke and it returned on an earlier call. The clock can only
-        // advance in 200ms steps (DriveProbeLoopAsync), so 400ms is the exact honest minimum
-        // and the floor is tight. The ceiling absorbs the driver/continuation race: under a
-        // contended runner the driver can pump extra Advance(200ms) steps before the probe's
-        // thread-pool continuation drains, inflating the *virtual* elapsed past 400ms. 2s is
-        // ~8 honest steps of headroom yet stays well clear of the 5s never-ready deadline
-        // signature -- and CallCount == 3 above already pins that the probe returned on the
-        // third call rather than running to exhaustion.
+        // Range assertion (#381 / #347 precedent; driver hardened in #394): the honest
+        // virtual-time minimum is exactly two 200ms inter-attempt delays before the third
+        // (successful) probe call. The floor (>= 400ms) is the load-bearing guard: it catches
+        // the real regression -- the probe returning too fast because it skipped the
+        // inter-attempt backoff or the readyAfterCalls gate broke and it returned on an
+        // earlier call. The clock can only advance in 200ms steps (DriveProbeLoopAsync), so
+        // 400ms is the exact honest minimum and the floor is tight; over-advance can only
+        // inflate elapsed UP, never below the floor, so the floor is also flake-proof.
+        //
+        // The ceiling is the backstop for *residual* driver/continuation race. #394 hardened
+        // DriveProbeLoopAsync's drain (bounded spin, ~20 scheduling opportunities per advance
+        // vs the prior single fixed yield), which makes the over-advance that blew this
+        // assertion under CI contention vanishingly unlikely -- so on a hardened driver this
+        // lands at 400ms. The ceiling is deliberately KEPT (not tightened to a point assert)
+        // because the determinism guarantee for the floor comes from the over-advance-only-
+        // inflates asymmetry, not from the drain being provably perfect; tightening to an
+        // exact == 400ms would re-bet on driver perfection and re-open the exact flake class
+        // #347/#355/#381 patched. 2s is ample headroom yet stays well clear of the 5s
+        // never-ready deadline signature -- and CallCount == 3 above already pins that the
+        // probe returned on the third call rather than running to exhaustion.
         elapsed.ShouldBeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(400));
         elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2));
     }
@@ -375,22 +383,52 @@ public class ProxyManagerVerifyCaddyReadyTests
     // Drives a probe-loop task to completion under a FakeTimeProvider clock by advancing
     // time in 200ms steps (the probe loop's inter-attempt delay) until the task completes.
     //
-    // The probe's `await Task.Delay(..., timeProvider, ct)` continuation runs on the thread
-    // pool when the FakeTimeProvider fires its timer. The test thread can't directly observe
-    // that continuation; a short real-wall-clock yield (Task.Delay(1)) gives the runtime a
-    // chance to schedule and run the continuation before the next Advance. The 1ms cost is
-    // bounded by the iteration count, not by virtual time, so this stays deterministic.
+    // FakeTimeProvider.Advance fires due timer callbacks synchronously, which *completes* the
+    // probe's `Task.Delay(200ms, clock)` -- but the probe's continuation (its next
+    // IsReadyAsync call, then re-parking at the next Task.Delay, or completing) runs
+    // asynchronously on the thread pool. The driver must let that continuation drain before
+    // the next Advance: if it advances again while the continuation is still in flight, the
+    // probe hasn't re-parked yet, so the extra Advance pumps a 200ms quantum that no
+    // Task.Delay consumed -- inflating the measured virtual `elapsed`. That over-advance is
+    // the root of the #347 / #355 / #381 sibling flakes. The original driver yielded a single
+    // fixed Task.Delay(1) between advances; under CI contention 1ms is too short for the
+    // thread-pool continuation to be scheduled and run, so the driver over-advances and the
+    // virtual elapsed is inflated past tight point-assertions.
     //
-    // Bounded to 100 iterations (~20s of virtual time, well past the probe's 5s budget) so
-    // a buggy probe loop fails fast instead of hanging the test.
+    // The fix is a *bounded drain spin* between advances: give the continuation many
+    // scheduling opportunities instead of one, breaking out the instant the probe completes.
+    // On an uncontended runner the continuation drains in the first yield or two; under
+    // contention the spin keeps yielding (bounded) until the continuation has had room to run.
+    // Crucially the spin's exit condition is "the probe has had room to drain," not "the probe
+    // has completed" -- a mid-flight probe that is *correctly* parked at its next delay reads
+    // !IsCompleted until the clock advances again, so a wait-for-completion spin would burn its
+    // whole budget every iteration. The drain spin instead yields a bounded budget (breaking
+    // out early on completion), then lets the caller advance for the next quantum.
+    //
+    // The drain budget is real-wall and bounded per advance (20 yields x ~1ms), so total
+    // real-wall cost is bounded by (advance count x budget), never by virtual time -- the
+    // method stays deterministic. Over-advance only ever ADDS advances (inflates virtual
+    // elapsed up); it can never push elapsed below the honest floor. So the drain is strictly
+    // an improvement -- it removes the inflation that blew the ceiling, and the floor stays
+    // safe regardless.
+    //
+    // The outer loop is bounded to 100 advances (~20s of virtual time, well past the probe's
+    // 5s budget) so a buggy probe loop fails fast instead of hanging the test.
     private static async Task DriveProbeLoopAsync(Task probeTask, FakeTimeProvider clock)
     {
         for (var i = 0; i < 100; i++)
         {
-            // Real-time yield: lets the probe's thread-pool continuation drain before we
-            // Advance again. Required for assertions that depend on the probe having
-            // actually observed the post-advance state (cancellation, deadline expiry).
-            await Task.Delay(1);
+            // Bounded drain: let the probe's thread-pool continuation from the previous
+            // Advance settle before advancing again. Twenty independent scheduling
+            // opportunities make a missed thread-pool slot under contention vanishingly
+            // unlikely, where the prior single fixed yield was not enough. The uncontended
+            // path breaks on the first or second check; the budget is only ever fully spent
+            // for a probe genuinely parked and waiting for the next quantum (where spending
+            // it is harmless -- we advance next).
+            for (var drain = 0; drain < 20 && !probeTask.IsCompleted; drain++)
+            {
+                await Task.Delay(1);
+            }
 
             if (probeTask.IsCompleted)
             {
@@ -401,7 +439,10 @@ public class ProxyManagerVerifyCaddyReadyTests
         }
 
         // Final drain after the last advance.
-        await Task.Delay(1);
+        for (var drain = 0; drain < 20 && !probeTask.IsCompleted; drain++)
+        {
+            await Task.Delay(1);
+        }
 
         probeTask.IsCompleted.ShouldBeTrue
         (
