@@ -590,6 +590,59 @@ app.Lifetime.ApplicationStarted.Register
     }
 );
 
+// Runtime-config overlay orphan preflight (#377). Catches the upgrade footgun
+// where an app's config overlay route is active and its runtime-config values
+// are registered, but the overlay file was never written to the writable data
+// dir -- so the served config path 404s and the SPA breaks until the operator
+// re-applies the values. Soft warning, never halt: we surface the affected app
+// and the remedy, we do NOT auto-import (no silent takeover of an operator-
+// maintained surface).
+//
+// Runs from ApplicationStarted so it observes post-boot reality -- the proxy's
+// route states are hydrated and any auto-start renders have already run by the
+// time all IHostedService.StartAsync calls complete. The async fact-gather is
+// awaited synchronously here: this is one-shot boot diagnostics on a thread-pool
+// thread with no SynchronizationContext, and the whole body is guarded so a
+// diagnostic failure can never destabilize boot.
+app.Lifetime.ApplicationStarted.Register
+(
+    () =>
+    {
+        try
+        {
+            var orphanOutcome = RuntimeConfigOverlayOrphanCheck.ValidateAsync
+            (
+                app.Services.GetRequiredService<AppStore>(),
+                app.Services.GetRequiredService<CapabilityStore>(),
+                app.Services.GetRequiredService<TypeStore>(),
+                app.Services.GetRequiredService<ProxyManager>(),
+                app.Services.GetRequiredService<AppDataPathResolver>(),
+                CancellationToken.None
+            ).GetAwaiter().GetResult();
+
+            if (orphanOutcome.Status == RuntimeConfigOverlayOrphanStatus.OrphansFound)
+            {
+                foreach (var orphan in orphanOutcome.Orphans)
+                {
+                    app.Logger.LogWarning
+                    (
+                        "Runtime-config overlay for app '{Slug}' is serving but its config file is missing at {ExpectedFilePath}. "
+                        + "The config path will return 404 and the app's frontend may fail to load until you re-apply its runtime-config values. "
+                        + "Open the app's settings and save the runtime-config values again (or import them) to write the file.",
+                        orphan.Slug,
+                        orphan.ExpectedFilePath
+                    );
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Diagnostics-only: a failure here must not affect boot. Log and move on.
+            app.Logger.LogWarning(ex, "Runtime-config overlay orphan check failed to run");
+        }
+    }
+);
+
 // Emit a log line on graceful shutdown so operators can confirm the signal was received.
 // Without this, a process going silent after SIGINT/SIGTERM is indistinguishable from
 // the signal not having been delivered -- both cases look identical in a truncated log
