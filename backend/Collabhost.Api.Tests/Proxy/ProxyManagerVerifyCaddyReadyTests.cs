@@ -63,8 +63,20 @@ public class ProxyManagerVerifyCaddyReadyTests
 
         (await probeTask).ShouldBeTrue();
         caddy.CallCount.ShouldBe(3);
-        // Two 200ms inter-attempt delays before the third (successful) probe call.
-        elapsed.ShouldBe(TimeSpan.FromMilliseconds(400));
+        // Range assertion (#381 / #347 precedent): the honest virtual-time minimum is
+        // exactly two 200ms inter-attempt delays before the third (successful) probe call.
+        // The floor (>= 400ms) is the load-bearing guard: it catches the real regression --
+        // the probe returning too fast because it skipped the inter-attempt backoff or the
+        // readyAfterCalls gate broke and it returned on an earlier call. The clock can only
+        // advance in 200ms steps (DriveProbeLoopAsync), so 400ms is the exact honest minimum
+        // and the floor is tight. The ceiling absorbs the driver/continuation race: under a
+        // contended runner the driver can pump extra Advance(200ms) steps before the probe's
+        // thread-pool continuation drains, inflating the *virtual* elapsed past 400ms. 2s is
+        // ~8 honest steps of headroom yet stays well clear of the 5s never-ready deadline
+        // signature -- and CallCount == 3 above already pins that the probe returned on the
+        // third call rather than running to exhaustion.
+        elapsed.ShouldBeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(400));
+        elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2));
     }
 
     [Fact]
