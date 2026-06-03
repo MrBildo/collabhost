@@ -56,8 +56,8 @@
        AppHost SDK attribute itself is pinned in global.json (msbuild-sdks),
        which CPM cannot govern. -->
   <ItemGroup>
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.4.0" />
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.0" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.4.1" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.1" />
   </ItemGroup>
 
   <!-- Test infrastructure (Collabhost.Api.Tests, Collabhost.AppHost.Tests).
