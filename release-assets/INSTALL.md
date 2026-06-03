@@ -243,6 +243,7 @@ Then `.\startup.ps1`.
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
 | `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. | URL (no trailing slash) | `http://localhost:9000/releases/v1.3.0` |
+| `COLLABHOST_INSTALL_SCRIPT_BASE_URL` | Install-script only — base URL for the script/lib mirror, the host the installer self-fetches `install-lib.sh` from when it is not co-located beside the script (the `curl ... \| bash` and standalone-download paths). Overrides the default GitHub Pages URL. Useful for testing install scripts against a local mirror. | URL (no trailing slash) | `http://localhost:9000/collabhost` |
 
 **Caddy binary resolution — two-tier precedence (highest first):**
 

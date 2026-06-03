@@ -13,6 +13,9 @@
 # Environment:
 #   COLLABHOST_VERSION=vX.Y.Z        -- pin to a specific release (same as --version)
 #   COLLABHOST_INSTALL_BASE_URL=URL  -- override the archive download base URL (default: GitHub Releases)
+#   COLLABHOST_INSTALL_SCRIPT_BASE_URL=URL  -- override the script/lib download base URL; the host this
+#                                              script self-fetches install-lib.sh from when it is not
+#                                              co-located (default: GitHub Pages)
 #
 # Verifies archive SHA-256 against the release's checksums.txt before extracting.
 # Preserves existing appsettings.json and data/ on re-run (upgrade-safe).
@@ -108,8 +111,10 @@ Options:
   --help                Print this message and exit
 
 Environment:
-  COLLABHOST_VERSION           Same as --version
-  COLLABHOST_INSTALL_BASE_URL  Override archive download base URL (default: GitHub Releases)
+  COLLABHOST_VERSION                  Same as --version
+  COLLABHOST_INSTALL_BASE_URL         Override archive download base URL (default: GitHub Releases)
+  COLLABHOST_INSTALL_SCRIPT_BASE_URL  Override script/lib download base URL -- the host this script
+                                      self-fetches install-lib.sh from when not co-located (default: GitHub Pages)
 
 For system-scope installs (root-owned /opt/collabhost layout + dedicated
 service user + system-level systemd unit), see install-system.sh.
