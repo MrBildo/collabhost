@@ -355,6 +355,21 @@ jobs:
               exit 1
             }
             echo "HTTP smoke check passed: status, root, deep link."
+
+            # wwwroot hash content-match (#342 / #396). The sidecar exists for
+            # exactly this comparison: the on-disk wwwroot.sha256 must equal the
+            # running binary's reported /api/v1/version.wwwrootHash (the value
+            # embedded at -p:WwwrootHash build time). A mismatch means the
+            # shipped wwwroot tree drifted from the binary's embedded identity --
+            # PortalIntegrityCheck would flag Drift on this install. Closes the
+            # sidecar<->running-binary link of the hash contract chain.
+            SIDECAR_HASH="$(cat "${INSTALL_DIR}/wwwroot.sha256")"
+            ENDPOINT_HASH="$(curl -fsSL "http://localhost:${PORT}/api/v1/version" | jq -r '.wwwrootHash')"
+            if [[ "${SIDECAR_HASH}" != "${ENDPOINT_HASH}" ]]; then
+              echo "wwwroot hash mismatch (#342): sidecar='${SIDECAR_HASH}' != /api/v1/version.wwwrootHash='${ENDPOINT_HASH}'." >&2
+              exit 1
+            fi
+            echo "wwwroot hash content-match verified: sidecar == /api/v1/version.wwwrootHash."
           fi
 
           # Bounded stop ladder: SIGINT -> 5s grace -> SIGTERM -> 3s grace -> SIGKILL.
@@ -565,6 +580,20 @@ jobs:
             if ($deep.Content -notmatch '(?i)<!doctype html') { throw 'SPA fallback not wired: /apps returned non-HTML.' }
 
             Write-Host 'HTTP smoke check passed: status, root, deep link.'
+
+            # wwwroot hash content-match (#342 / #396). On-disk wwwroot.sha256 must
+            # equal the running binary's reported /api/v1/version.wwwrootHash (the
+            # value embedded at -p:WwwrootHash build time). A mismatch means the
+            # shipped wwwroot drifted from the binary's embedded identity --
+            # PortalIntegrityCheck would flag Drift. Closes the
+            # sidecar<->running-binary link of the hash contract chain.
+            $sidecarHash = (Get-Content -LiteralPath (Join-Path $InstallDir 'wwwroot.sha256') -Raw).Trim()
+            $version = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/version"
+            $endpointHash = ($version.Content | ConvertFrom-Json).wwwrootHash
+            if ($sidecarHash -ne $endpointHash) {
+              throw "wwwroot hash mismatch (#342): sidecar='$sidecarHash' != /api/v1/version.wwwrootHash='$endpointHash'."
+            }
+            Write-Host 'wwwroot hash content-match verified: sidecar == /api/v1/version.wwwrootHash.'
           }
 
           # Stop the process (Windows has no clean SIGINT for our P/Invoke
@@ -626,7 +655,7 @@ jobs:
             bash -euxo pipefail -c '
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends \
-                ca-certificates curl tar gzip mawk grep coreutils libicu72 >/dev/null
+                ca-certificates curl tar gzip mawk grep coreutils libicu72 jq >/dev/null
 
               export HOME=/root
               cd /tmp
@@ -741,6 +770,17 @@ jobs:
                 DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
                 echo "${DEEP_BODY}" | grep -qi "<!doctype html" || { echo "SPA fallback not wired" >&2; exit 1; }
                 echo "HTTP smoke check passed (linux-arm64)."
+
+                # wwwroot hash content-match (#342 / #396). On-disk wwwroot.sha256
+                # must equal the running binary'\''s /api/v1/version.wwwrootHash --
+                # the sidecar<->running-binary link of the hash contract chain.
+                SIDECAR_HASH="$(cat "${INSTALL_DIR}/wwwroot.sha256")"
+                ENDPOINT_HASH="$(curl -fsSL "http://localhost:${PORT}/api/v1/version" | jq -r ".wwwrootHash")"
+                if [ "${SIDECAR_HASH}" != "${ENDPOINT_HASH}" ]; then
+                  echo "wwwroot hash mismatch (#342): sidecar=${SIDECAR_HASH} != endpoint=${ENDPOINT_HASH}" >&2
+                  exit 1
+                fi
+                echo "wwwroot hash content-match verified (linux-arm64)."
               fi
 
               kill -INT "${PID}" 2>/dev/null || true
@@ -950,6 +990,31 @@ jobs:
             exit 1
           fi
           echo "/api/v1/status shape verified (proxyState=running, portalReachable=true)."
+
+      # Layer 2 -- wwwroot hash content-match (#342 / #396). The wwwroot.sha256
+      # sidecar exists for exactly this comparison: the on-disk hash must equal
+      # the running binary's reported /api/v1/version.wwwrootHash (the value
+      # embedded at -p:WwwrootHash build time). A mismatch means the shipped
+      # wwwroot tree drifted from the binary's embedded identity, which would
+      # make PortalIntegrityCheck flag Drift on this install. The layout step
+      # above only proves the sidecar EXISTS; this proves its CONTENT matches the
+      # booted binary -- closing the sidecar<->running-binary link of the hash
+      # contract chain end-to-end against a real published archive.
+      - name: Verify wwwroot hash content-match
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIDECAR_HASH="$(sudo cat /opt/collabhost/wwwroot.sha256)"
+          ENDPOINT_HASH="$(curl -fsSL http://localhost:58400/api/v1/version | jq -r '.wwwrootHash')"
+          echo "Sidecar:  ${SIDECAR_HASH}"
+          echo "Endpoint: ${ENDPOINT_HASH}"
+          if [[ "${SIDECAR_HASH}" != "${ENDPOINT_HASH}" ]]; then
+            echo "wwwroot hash mismatch (#342): sidecar != /api/v1/version.wwwrootHash." >&2
+            echo "The shipped wwwroot tree drifted from the binary's embedded identity;" >&2
+            echo "PortalIntegrityCheck would report Drift on this install." >&2
+            exit 1
+          fi
+          echo "wwwroot hash content-match verified (sidecar == /api/v1/version.wwwrootHash)."
 
       # Layer 2 -- Caddy actually bound 80/443 as the collabhost user (NOT root).
       # ss -tlnp shows owning user; /proc/<pid>/status confirms UID. Catches
