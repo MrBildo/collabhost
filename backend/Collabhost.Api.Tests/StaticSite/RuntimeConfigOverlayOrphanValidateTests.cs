@@ -74,13 +74,19 @@ public class RuntimeConfigOverlayOrphanValidateTests(ApiFixture fixture) : IAsyn
     [Fact]
     public async Task ValidateAsync_RouteActive_ValuesRegistered_FileAbsent_ReportsOrphan()
     {
-        var (app, _) = await SeedStaticSiteAsync(values: "https://api.example.com", writeFile: false);
+        var (app, expectedFilePath) = await SeedStaticSiteAsync(values: "https://api.example.com", writeFile: false);
 
         // Route is active by default: no DisableRoute call, no StoppedByOperator.
         var outcome = await ValidateAsync();
 
         outcome.Status.ShouldBe(RuntimeConfigOverlayOrphanStatus.OrphansFound);
         outcome.Orphans.ShouldContain(o => o.Slug == app.Slug);
+
+        // Lock the path-drift property: the check's ExpectedFilePath must match the
+        // writable-dir target the writer resolves (RuntimeConfigFileWriter.ResolveTargetPath).
+        // The two computations are independent; this assertion fails loudly if one drifts
+        // from the other, so the operator-facing warning never names a wrong remedy path.
+        outcome.Orphans.Single(o => o.Slug == app.Slug).ExpectedFilePath.ShouldBe(expectedFilePath);
     }
 
     [Fact]

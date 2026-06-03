@@ -627,7 +627,7 @@ app.Lifetime.ApplicationStarted.Register
                     app.Logger.LogWarning
                     (
                         "Runtime-config overlay for app '{Slug}' is serving but its config file is missing at {ExpectedFilePath}. "
-                        + "The config path will return 404 and the app's frontend may fail to load until you re-apply its runtime-config values. "
+                        + "Requests for the config path return 404, so the app's frontend loads without its runtime config and breaks until you re-apply the values. "
                         + "Open the app's settings and save the runtime-config values again (or import them) to write the file.",
                         orphan.Slug,
                         orphan.ExpectedFilePath
