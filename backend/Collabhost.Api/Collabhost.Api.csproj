@@ -56,22 +56,22 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <!-- WindowsServices: integrates the .NET host with the Windows Service Control Manager
          (SCM). When the binary is launched by the SCM, WindowsServiceLifetime is wired in
          place of the default console lifetime so SERVICE_CONTROL_STOP and status reporting
          flow through correctly. The package is platform-neutral at the package level; the
          lifetime is only registered when WindowsServiceHelpers.IsWindowsService() returns
          true, which it never does on Linux, macOS, or Windows-from-shell. Card #237 Q4. -->
-    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.5" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />
-    <PackageReference Include="Ulid" Version="1.4.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="Ulid" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Collabhost.ServiceDefaults\Collabhost.ServiceDefaults.csproj" />
