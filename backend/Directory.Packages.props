@@ -51,12 +51,13 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
   </ItemGroup>
 
-  <!-- Aspire (orchestration + Aspire-flavored test host). Preview train; the
+  <!-- Aspire (orchestration + Aspire-flavored test host). 13.4 stable is the sole
+       supported line (13.3 EOL'd 2026-06-01); these publish to nuget.org. The
        AppHost SDK attribute itself is pinned in global.json (msbuild-sdks),
        which CPM cannot govern. -->
   <ItemGroup>
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.3.0-preview.1.26171.1" />
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.3.0-preview.1.26171.1" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.4.0" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.0" />
   </ItemGroup>
 
   <!-- Test infrastructure (Collabhost.Api.Tests, Collabhost.AppHost.Tests).
