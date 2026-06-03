@@ -288,36 +288,15 @@ jobs:
 
           echo "All declared plugins are baked into the binary."
 
-      # Mirrors publish.yml "Compute wwwroot hash" -- see that step for the
-      # algorithm contract (must match PortalIntegrityCheck.ComputeWwwrootHash)
-      # and the portability notes. Card #342.
+      # Mirrors publish.yml "Compute wwwroot hash" -- both call the shared script
+      # tools/compute-wwwroot-hash.sh (the single bash implementation, also
+      # shelled by the C#<->bash dual-compute seam test). Cards #342, #395.
       - name: Compute wwwroot hash
         id: wwwroot-hash
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="backend/Collabhost.Api/wwwroot"
-          if [[ ! -d "${ROOT}" ]]; then
-            echo "wwwroot directory missing at ${ROOT}" >&2
-            exit 1
-          fi
-          if command -v sha256sum >/dev/null 2>&1; then
-            sha_cmd() { sha256sum "$1" | cut -d' ' -f1; }
-            sha_stream() { sha256sum | cut -d' ' -f1; }
-          else
-            sha_cmd() { shasum -a 256 "$1" | cut -d' ' -f1; }
-            sha_stream() { shasum -a 256 | cut -d' ' -f1; }
-          fi
-          stat_size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
-          HASH=$(cd "${ROOT}" && find . -type f \
-            | sed 's|^\./||' \
-            | LC_ALL=C sort \
-            | while IFS= read -r rel; do
-                size=$(stat_size "${rel}")
-                fhash=$(sha_cmd "${rel}")
-                printf '%s\n%s\n%s\n' "${rel}" "${size}" "${fhash}"
-              done \
-            | sha_stream)
+          HASH=$(bash tools/compute-wwwroot-hash.sh "backend/Collabhost.Api/wwwroot")
           echo "wwwroot hash: ${HASH}"
           echo "HASH=${HASH}" >> "${GITHUB_OUTPUT}"
 

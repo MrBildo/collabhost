@@ -277,39 +277,18 @@ jobs:
       # ordinal-sorted relative POSIX paths, per file "<path>\n<size>\n<sha256>\n",
       # final SHA-256 hex digest. Card #342.
       #
-      # Portability notes:
-      # - find -printf '%P\n' is GNU-only; BSD find (macOS leg) does not have it.
-      #   Use `find . -type f` and strip the leading './' instead.
-      # - sha256sum is GNU coreutils; macOS only has `shasum -a 256`. Same
-      #   command-runtime detect the existing Checksum step uses.
-      # - stat -c is GNU; stat -f is BSD. Try GNU first, fall back to BSD.
+      # The algorithm + cross-OS portability handling lives in the shared script
+      # tools/compute-wwwroot-hash.sh -- the SINGLE bash implementation, also
+      # shelled by the C#<->bash dual-compute seam test so the two sides cannot
+      # drift (Card #395). The hash runs on windows-latest, macos-latest, ubuntu;
+      # the script's runtime-detect (sha256sum/shasum, stat -c/-f) covers BSD
+      # userland on the macOS leg.
       - name: Compute wwwroot hash
         id: wwwroot-hash
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="backend/Collabhost.Api/wwwroot"
-          if [[ ! -d "${ROOT}" ]]; then
-            echo "wwwroot directory missing at ${ROOT}" >&2
-            exit 1
-          fi
-          if command -v sha256sum >/dev/null 2>&1; then
-            sha_cmd() { sha256sum "$1" | cut -d' ' -f1; }
-            sha_stream() { sha256sum | cut -d' ' -f1; }
-          else
-            sha_cmd() { shasum -a 256 "$1" | cut -d' ' -f1; }
-            sha_stream() { shasum -a 256 | cut -d' ' -f1; }
-          fi
-          stat_size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
-          HASH=$(cd "${ROOT}" && find . -type f \
-            | sed 's|^\./||' \
-            | LC_ALL=C sort \
-            | while IFS= read -r rel; do
-                size=$(stat_size "${rel}")
-                fhash=$(sha_cmd "${rel}")
-                printf '%s\n%s\n%s\n' "${rel}" "${size}" "${fhash}"
-              done \
-            | sha_stream)
+          HASH=$(bash tools/compute-wwwroot-hash.sh "backend/Collabhost.Api/wwwroot")
           echo "wwwroot hash: ${HASH}"
           echo "HASH=${HASH}" >> "${GITHUB_OUTPUT}"
 
