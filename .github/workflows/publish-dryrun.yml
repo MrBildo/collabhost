@@ -564,6 +564,155 @@ jobs:
           path: checksums.txt
           retention-days: 7
 
+  # Self-fetch guard: PR-time validation that the .sh installers can source
+  # their shared install-lib.sh when run from a published-path-shaped layout --
+  # the script alone (no co-located lib) and piped on stdin. This is the
+  # operator's actual entry point (the documented one-liners) and was the blind
+  # spot that let the lib-sourcing bug ship: the rest of CI runs the installers
+  # from the co-located repo checkout (docs/install.sh with docs/install-lib.sh
+  # right beside it), so ${script_dir}/install-lib.sh always resolves and the
+  # self-fetch fallback is never exercised. Same failure shape as the install
+  # regressions that motivated install-integration.yml -- a contract verified
+  # in isolation, never against the real published path.
+  #
+  # The property this job enforces, per installer:
+  #   POSITIVE -- run the script alone from a clean directory (and again piped
+  #     on stdin, where $0 is "bash"), pointed at a local HTTP server that
+  #     stands in for the publish host. The script MUST self-fetch install-lib.sh
+  #     and proceed past sourcing (verified via --help reaching exit 0 plus the
+  #     "Fetching installer library from" progress line, which prints only on
+  #     the self-fetch path). A regression to co-located-only sourcing makes the
+  #     source fail from a clean dir -> non-zero exit -> this job goes red.
+  #   NEGATIVE -- point the script at a server that serves the script but NOT
+  #     the lib (lib URL 404s). The script MUST fail loud: non-zero exit plus the
+  #     "Failed to fetch install-lib.sh" diagnostic -- never a silent abort.
+  #
+  # Cheap and hermetic: a Python stdlib HTTP server + a few bash invocations,
+  # no archive, no binary, no Caddy build, no QEMU. That is why it lives PR-time
+  # here rather than release-time in install-integration.yml -- it adds seconds,
+  # not the per-PR emulation tax that kept the linux-arm64 leg release-only.
+  # --help short-circuits arg-parsing before install-system.sh's sudo re-exec,
+  # so both installers are exercised unprivileged.
+  selffetch-guard:
+    name: Installer self-fetch guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Self-fetch from a clean (non-co-located) layout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          WORK="$(mktemp -d)"
+          PUB="${WORK}/pub"
+          mkdir -p "${PUB}"
+          # Publish host: serves all three scripts side by side, the way GitHub
+          # Pages does. NOT the repo checkout -- the clean dirs below are where
+          # the scripts actually run, with no lib beside them.
+          cp docs/install.sh docs/install-system.sh docs/install-lib.sh "${PUB}/"
+
+          # Publish host that is MISSING the lib (for the fail-loud negative).
+          NOLIB="${WORK}/nolib"
+          mkdir -p "${NOLIB}"
+          cp docs/install.sh docs/install-system.sh "${NOLIB}/"
+
+          # Quiet stdlib HTTP server bound to an OS-assigned port; it writes the
+          # chosen port to a file so the harness need not parse server stderr.
+          # Built with printf so Python's indentation is independent of this
+          # YAML block's indentation (a heredoc would carry the block indent into
+          # the file and break Python).
+          {
+            printf '%s\n' 'import http.server, os, socketserver, sys'
+            printf '%s\n' 'class Q(http.server.SimpleHTTPRequestHandler):'
+            printf '%s\n' '    def log_message(self, *a): pass'
+            printf '%s\n' 'os.chdir(sys.argv[1])'
+            printf '%s\n' 'with socketserver.TCPServer(("127.0.0.1", 0), Q) as h:'
+            printf '%s\n' '    open(sys.argv[2], "w").write(str(h.server_address[1]))'
+            printf '%s\n' '    h.serve_forever()'
+          } > "${WORK}/serve.py"
+
+          start_server() {
+            # $1 = doc root, $2 = port-file. Echoes "PID PORT".
+            local root="$1" portfile="$2" pid port
+            python3 "${WORK}/serve.py" "${root}" "${portfile}" &
+            pid=$!
+            port=""
+            for _ in $(seq 1 50); do
+              if [[ -s "${portfile}" ]]; then port="$(cat "${portfile}")"; break; fi
+              sleep 0.1
+            done
+            if [[ -z "${port}" ]]; then
+              echo "HTTP server did not report a port within 5s." >&2
+              kill "${pid}" 2>/dev/null || true
+              return 1
+            fi
+            echo "${pid} ${port}"
+          }
+
+          read -r PUB_PID PUB_PORT < <(start_server "${PUB}" "${WORK}/pub.port")
+          read -r NOLIB_PID NOLIB_PORT < <(start_server "${NOLIB}" "${WORK}/nolib.port")
+          BASE="http://127.0.0.1:${PUB_PORT}"
+          NOLIB_BASE="http://127.0.0.1:${NOLIB_PORT}"
+          trap 'kill "${PUB_PID}" "${NOLIB_PID}" 2>/dev/null || true; rm -rf "${WORK}"' EXIT
+          echo "Publish host: ${BASE}    Lib-missing host: ${NOLIB_BASE}"
+
+          FAILED=0
+          pass() { echo "  ok: $1"; }
+          fail() { echo "  FAIL: $1" >&2; FAILED=1; }
+
+          # --- Positive: standalone from a clean dir (script alone, no lib) -----
+          for script in install.sh install-system.sh; do
+            CLEAN="${WORK}/clean-${script}"
+            mkdir -p "${CLEAN}"
+            curl -fsSL "${BASE}/${script}" -o "${CLEAN}/${script}"
+            if [[ -f "${CLEAN}/install-lib.sh" ]]; then
+              fail "${script}: install-lib.sh unexpectedly co-located in clean dir"
+              continue
+            fi
+            OUT="$(COLLABHOST_INSTALL_SCRIPT_BASE_URL="${BASE}" bash "${CLEAN}/${script}" --help 2>&1)" && RC=0 || RC=$?
+            if [[ "${RC}" -eq 0 ]] && grep -q 'Fetching installer library from' <<<"${OUT}"; then
+              pass "${script}: standalone self-fetch fired, --help reached (exit 0)"
+            else
+              fail "${script}: standalone self-fetch did not fire (rc=${RC}). A regression to co-located-only sourcing would land here."
+              printf '%s\n' "${OUT}" >&2
+            fi
+          done
+
+          # --- Positive: piped on stdin ($0 == "bash", no script dir) ----------
+          for script in install.sh install-system.sh; do
+            OUT="$(curl -fsSL "${BASE}/${script}" | COLLABHOST_INSTALL_SCRIPT_BASE_URL="${BASE}" bash -s -- --help 2>&1)" && RC=0 || RC=$?
+            if [[ "${RC}" -eq 0 ]] && grep -q 'Fetching installer library from' <<<"${OUT}"; then
+              pass "${script}: piped self-fetch fired, --help reached (exit 0)"
+            else
+              fail "${script}: piped self-fetch did not fire (rc=${RC})."
+              printf '%s\n' "${OUT}" >&2
+            fi
+          done
+
+          # --- Negative: lib host serves the script but not the lib (404) ------
+          # curl -f turns the 404 into a fast non-zero exit. The script must
+          # surface it (fail-loud), not abort silently.
+          for script in install.sh install-system.sh; do
+            CLEAN="${WORK}/neg-${script}"
+            mkdir -p "${CLEAN}"
+            curl -fsSL "${BASE}/${script}" -o "${CLEAN}/${script}"
+            OUT="$(COLLABHOST_INSTALL_SCRIPT_BASE_URL="${NOLIB_BASE}" bash "${CLEAN}/${script}" --help 2>&1)" && RC=0 || RC=$?
+            if [[ "${RC}" -ne 0 ]] && grep -q 'Failed to fetch install-lib.sh' <<<"${OUT}"; then
+              pass "${script}: lib 404 => non-zero exit + 'Failed to fetch' message"
+            else
+              fail "${script}: expected fail-loud on unreachable lib (rc=${RC})."
+              printf '%s\n' "${OUT}" >&2
+            fi
+          done
+
+          if [[ "${FAILED}" -ne 0 ]]; then
+            echo "Self-fetch guard failed -- the published install path cannot source its shared library." >&2
+            exit 1
+          fi
+          echo "Self-fetch guard passed: both .sh installers self-fetch from a clean layout and fail loud when the lib host is unreachable."
+
   # Archive smoke: PR-time end-to-end validation that THIS PR's archive boots
   # and serves the Portal correctly. Pairs THIS PR's archive (built by
   # build-matrix above) with the smoke checks that previously lived in
