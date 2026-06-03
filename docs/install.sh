@@ -29,9 +29,69 @@ TAG="${COLLABHOST_VERSION:-}"
 
 # ---- Locate + source shared lib ----------------------------------------------
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=install-lib.sh
-. "${SCRIPT_DIR}/install-lib.sh"
+# The shared lib is sourced two ways:
+#
+#   1. Co-located: when install-lib.sh sits next to this script (a git clone, or
+#      a deliberate two-file download), source it directly. This is also the path
+#      CI exercises -- it runs the checked-out script from the repo where the lib
+#      is co-located in docs/.
+#
+#   2. Self-fetched: the documented one-liners run this script standalone --
+#      `curl ... install.sh -o install.sh; bash install.sh` or
+#      `curl ... install.sh | bash`. Neither brings the lib along, and under a
+#      pipe $0 is "bash" so there is no script directory to look in. In that
+#      case, fetch the lib from the same host this script is published on and
+#      source the downloaded copy. Operators never need to fetch a second file
+#      by hand.
+#
+# COLLABHOST_INSTALL_SCRIPT_BASE_URL overrides the publish host (for a mirror or
+# for testing). It is the script/lib host (GitHub Pages), distinct from
+# COLLABHOST_INSTALL_BASE_URL, which overrides the archive host (GitHub Releases).
+INSTALL_SCRIPT_BASE_URL="${COLLABHOST_INSTALL_SCRIPT_BASE_URL:-https://mrbildo.github.io/collabhost}"
+
+source_install_lib() {
+  # $0 is the script path when run as a file, or "bash" under a pipe. dirname of
+  # "bash" is ".", so the co-located check simply misses under a pipe and we fall
+  # through to the fetch -- exactly the behavior we want.
+  local script_dir
+  script_dir="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || script_dir=""
+
+  if [ -n "${script_dir}" ] && [ -f "${script_dir}/install-lib.sh" ]; then
+    # shellcheck source=install-lib.sh
+    . "${script_dir}/install-lib.sh"
+    return 0
+  fi
+
+  # Self-fetch. curl + mktemp are needed here, before require_common_tools runs.
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "install.sh needs curl to fetch its shared library (install-lib.sh)." >&2
+    echo "  Install curl and retry, or download both files side by side:" >&2
+    echo "    curl -fsSL ${INSTALL_SCRIPT_BASE_URL}/install-lib.sh -o install-lib.sh" >&2
+    echo "    curl -fsSL ${INSTALL_SCRIPT_BASE_URL}/install.sh -o install.sh" >&2
+    exit 1
+  fi
+  if ! command -v mktemp >/dev/null 2>&1; then
+    echo "install.sh needs mktemp to stage its shared library (install-lib.sh)." >&2
+    exit 1
+  fi
+
+  local lib_url="${INSTALL_SCRIPT_BASE_URL}/install-lib.sh"
+  local lib_tmp
+  lib_tmp="$(mktemp)"
+  echo "Fetching installer library from ${lib_url}..."
+  if ! curl -fsSL --retry 3 --retry-delay 2 "${lib_url}" -o "${lib_tmp}"; then
+    rm -f "${lib_tmp}"
+    echo "Failed to fetch install-lib.sh from ${lib_url}." >&2
+    echo "  Check your network, or set COLLABHOST_INSTALL_SCRIPT_BASE_URL to a reachable mirror." >&2
+    exit 1
+  fi
+
+  # shellcheck source=install-lib.sh
+  . "${lib_tmp}"
+  rm -f "${lib_tmp}"
+}
+
+source_install_lib
 
 # ---- Arg parsing -------------------------------------------------------------
 
