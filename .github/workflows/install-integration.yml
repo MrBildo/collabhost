@@ -326,51 +326,63 @@ jobs:
             fi
             sleep 1
           done
+          # Fail loud if the admin-key line never appeared. Asserted BEFORE the
+          # smoke block (#398): an empty FOUND used to fall through a guarded
+          # `if FOUND` block, silently skipping every assertion inside and only
+          # failing at the tail -- a no-key boot (a real failure shape) read as a
+          # clean pass for the whole smoke block. Failing here makes a missing
+          # admin-key line fail the job loudly, and lets the smoke assertions
+          # below run unconditionally.
+          if [[ -z "${FOUND}" ]]; then
+            echo "Admin-key bootstrap line not seen within 60s." >&2
+            echo "--- log tail ---" >&2
+            tail -100 "${LOG}" >&2
+            exit 1
+          fi
+
           # HTTP smoke check (Portal). Always-on now -- this workflow is
           # release-time / dispatch-only, so the archive being installed is
           # always one this PR's scripts are paired with. PR-time smoke lives
           # in publish-dryrun.yml's archive-smoke job. Card #184.
-          if [[ -n "${FOUND}" ]]; then
-            PORT=58400
-            for _ in $(seq 1 30); do
-              if curl -fsSL "http://localhost:${PORT}/api/v1/status" >/dev/null 2>&1; then
-                break
-              fi
-              sleep 1
-            done
-            STATUS_BODY="$(curl -fsSL "http://localhost:${PORT}/api/v1/status")"
-            echo "${STATUS_BODY}" | grep -q '"status"' || {
-              echo "Status endpoint did not return expected JSON: ${STATUS_BODY}" >&2
-              exit 1
-            }
-            DASH_BODY="$(curl -fsSL "http://localhost:${PORT}/")"
-            echo "${DASH_BODY}" | grep -qi '<!doctype html' || {
-              echo "Dashboard root did not return HTML; wwwroot likely missing or unwired." >&2
-              echo "${DASH_BODY}" | head -50 >&2
-              exit 1
-            }
-            DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
-            echo "${DEEP_BODY}" | grep -qi '<!doctype html' || {
-              echo "SPA fallback not wired: /apps returned non-HTML." >&2
-              exit 1
-            }
-            echo "HTTP smoke check passed: status, root, deep link."
-
-            # wwwroot hash content-match (#342 / #396). The sidecar exists for
-            # exactly this comparison: the on-disk wwwroot.sha256 must equal the
-            # running binary's reported /api/v1/version.wwwrootHash (the value
-            # embedded at -p:WwwrootHash build time). A mismatch means the
-            # shipped wwwroot tree drifted from the binary's embedded identity --
-            # PortalIntegrityCheck would flag Drift on this install. Closes the
-            # sidecar<->running-binary link of the hash contract chain.
-            SIDECAR_HASH="$(cat "${INSTALL_DIR}/wwwroot.sha256")"
-            ENDPOINT_HASH="$(curl -fsSL "http://localhost:${PORT}/api/v1/version" | jq -r '.wwwrootHash')"
-            if [[ "${SIDECAR_HASH}" != "${ENDPOINT_HASH}" ]]; then
-              echo "wwwroot hash mismatch (#342): sidecar='${SIDECAR_HASH}' != /api/v1/version.wwwrootHash='${ENDPOINT_HASH}'." >&2
-              exit 1
+          PORT=58400
+          for _ in $(seq 1 30); do
+            if curl -fsSL "http://localhost:${PORT}/api/v1/status" >/dev/null 2>&1; then
+              break
             fi
-            echo "wwwroot hash content-match verified: sidecar == /api/v1/version.wwwrootHash."
+            sleep 1
+          done
+          STATUS_BODY="$(curl -fsSL "http://localhost:${PORT}/api/v1/status")"
+          echo "${STATUS_BODY}" | grep -q '"status"' || {
+            echo "Status endpoint did not return expected JSON: ${STATUS_BODY}" >&2
+            exit 1
+          }
+          DASH_BODY="$(curl -fsSL "http://localhost:${PORT}/")"
+          echo "${DASH_BODY}" | grep -qi '<!doctype html' || {
+            echo "Dashboard root did not return HTML; wwwroot likely missing or unwired." >&2
+            echo "${DASH_BODY}" | head -50 >&2
+            exit 1
+          }
+          DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
+          echo "${DEEP_BODY}" | grep -qi '<!doctype html' || {
+            echo "SPA fallback not wired: /apps returned non-HTML." >&2
+            exit 1
+          }
+          echo "HTTP smoke check passed: status, root, deep link."
+
+          # wwwroot hash content-match (#342 / #396). The sidecar exists for
+          # exactly this comparison: the on-disk wwwroot.sha256 must equal the
+          # running binary's reported /api/v1/version.wwwrootHash (the value
+          # embedded at -p:WwwrootHash build time). A mismatch means the
+          # shipped wwwroot tree drifted from the binary's embedded identity --
+          # PortalIntegrityCheck would flag Drift on this install. Closes the
+          # sidecar<->running-binary link of the hash contract chain.
+          SIDECAR_HASH="$(cat "${INSTALL_DIR}/wwwroot.sha256")"
+          ENDPOINT_HASH="$(curl -fsSL "http://localhost:${PORT}/api/v1/version" | jq -r '.wwwrootHash')"
+          if [[ "${SIDECAR_HASH}" != "${ENDPOINT_HASH}" ]]; then
+            echo "wwwroot hash mismatch (#342): sidecar='${SIDECAR_HASH}' != /api/v1/version.wwwrootHash='${ENDPOINT_HASH}'." >&2
+            exit 1
           fi
+          echo "wwwroot hash content-match verified: sidecar == /api/v1/version.wwwrootHash."
 
           # Bounded stop ladder: SIGINT -> 5s grace -> SIGTERM -> 3s grace -> SIGKILL.
           # Mirrors the linux-arm64 (QEMU) leg exactly. Worst-case bounded at ~8s.
@@ -381,12 +393,6 @@ jobs:
           kill -KILL "${PID}" 2>/dev/null || true
           wait "${PID}" 2>/dev/null || true
 
-          if [[ -z "${FOUND}" ]]; then
-            echo "Admin-key bootstrap line not seen within 60s." >&2
-            echo "--- log tail ---" >&2
-            tail -100 "${LOG}" >&2
-            exit 1
-          fi
           echo "Admin-key bootstrap line emitted."
 
   install-windows:
@@ -555,46 +561,57 @@ jobs:
             }
             Start-Sleep -Seconds 1
           }
-          # HTTP smoke check (Portal). Always-on now -- see Unix leg comment. Card #184.
-          if ($found) {
-            $port = 58400
-            $ok = $false
-            for ($i = 0; $i -lt 30; $i++) {
-              try {
-                Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status" -ErrorAction Stop | Out-Null
-                $ok = $true
-                break
-              } catch {
-                Start-Sleep -Seconds 1
-              }
-            }
-            if (-not $ok) { throw 'Status endpoint never came up after 30s.' }
-
-            $status = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status"
-            if ($status.Content -notmatch '"status"') { throw "Unexpected /status body: $($status.Content)" }
-
-            $dash = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/"
-            if ($dash.Content -notmatch '(?i)<!doctype html') { throw 'Dashboard root did not return HTML.' }
-
-            $deep = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/apps"
-            if ($deep.Content -notmatch '(?i)<!doctype html') { throw 'SPA fallback not wired: /apps returned non-HTML.' }
-
-            Write-Host 'HTTP smoke check passed: status, root, deep link.'
-
-            # wwwroot hash content-match (#342 / #396). On-disk wwwroot.sha256 must
-            # equal the running binary's reported /api/v1/version.wwwrootHash (the
-            # value embedded at -p:WwwrootHash build time). A mismatch means the
-            # shipped wwwroot drifted from the binary's embedded identity --
-            # PortalIntegrityCheck would flag Drift. Closes the
-            # sidecar<->running-binary link of the hash contract chain.
-            $sidecarHash = (Get-Content -LiteralPath (Join-Path $InstallDir 'wwwroot.sha256') -Raw).Trim()
-            $version = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/version"
-            $endpointHash = ($version.Content | ConvertFrom-Json).wwwrootHash
-            if ($sidecarHash -ne $endpointHash) {
-              throw "wwwroot hash mismatch (#342): sidecar='$sidecarHash' != /api/v1/version.wwwrootHash='$endpointHash'."
-            }
-            Write-Host 'wwwroot hash content-match verified: sidecar == /api/v1/version.wwwrootHash.'
+          # Fail loud if the admin-key line never appeared. Asserted BEFORE the
+          # smoke block (#398): an empty $found used to fall through a guarded
+          # `if ($found)` block, silently skipping every assertion inside and
+          # only failing at the tail -- a no-key boot (a real failure shape) read
+          # as a clean pass for the whole smoke block. Throwing here makes a
+          # missing admin-key line fail the job loudly, and lets the smoke
+          # assertions below run unconditionally.
+          if (-not $found) {
+            Write-Host '--- stdout tail ---'
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 100 }
+            throw 'Admin-key bootstrap line not seen within 60s.'
           }
+
+          # HTTP smoke check (Portal). Always-on now -- see Unix leg comment. Card #184.
+          $port = 58400
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status" -ErrorAction Stop | Out-Null
+              $ok = $true
+              break
+            } catch {
+              Start-Sleep -Seconds 1
+            }
+          }
+          if (-not $ok) { throw 'Status endpoint never came up after 30s.' }
+
+          $status = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/status"
+          if ($status.Content -notmatch '"status"') { throw "Unexpected /status body: $($status.Content)" }
+
+          $dash = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/"
+          if ($dash.Content -notmatch '(?i)<!doctype html') { throw 'Dashboard root did not return HTML.' }
+
+          $deep = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/apps"
+          if ($deep.Content -notmatch '(?i)<!doctype html') { throw 'SPA fallback not wired: /apps returned non-HTML.' }
+
+          Write-Host 'HTTP smoke check passed: status, root, deep link.'
+
+          # wwwroot hash content-match (#342 / #396). On-disk wwwroot.sha256 must
+          # equal the running binary's reported /api/v1/version.wwwrootHash (the
+          # value embedded at -p:WwwrootHash build time). A mismatch means the
+          # shipped wwwroot drifted from the binary's embedded identity --
+          # PortalIntegrityCheck would flag Drift. Closes the
+          # sidecar<->running-binary link of the hash contract chain.
+          $sidecarHash = (Get-Content -LiteralPath (Join-Path $InstallDir 'wwwroot.sha256') -Raw).Trim()
+          $version = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:$port/api/v1/version"
+          $endpointHash = ($version.Content | ConvertFrom-Json).wwwrootHash
+          if ($sidecarHash -ne $endpointHash) {
+            throw "wwwroot hash mismatch (#342): sidecar='$sidecarHash' != /api/v1/version.wwwrootHash='$endpointHash'."
+          }
+          Write-Host 'wwwroot hash content-match verified: sidecar == /api/v1/version.wwwrootHash.'
 
           # Stop the process (Windows has no clean SIGINT for our P/Invoke
           # process group from PS without GenerateConsoleCtrlEvent gymnastics;
@@ -605,11 +622,6 @@ jobs:
             $proc.WaitForExit(5000) | Out-Null
           }
 
-          if (-not $found) {
-            Write-Host '--- stdout tail ---'
-            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 100 }
-            throw 'Admin-key bootstrap line not seen within 60s.'
-          }
           Write-Host 'Admin-key bootstrap line emitted.'
 
   install-linux-arm64:
@@ -754,34 +766,45 @@ jobs:
                 fi
                 sleep 1
               done
-              # HTTP smoke check (Portal). Always-on now -- see native-leg comment. Card #184.
-              if [ -n "${FOUND}" ]; then
-                PORT=58400
-                for _ in $(seq 1 60); do
-                  if curl -fsSL "http://localhost:${PORT}/api/v1/status" >/dev/null 2>&1; then
-                    break
-                  fi
-                  sleep 1
-                done
-                STATUS_BODY="$(curl -fsSL "http://localhost:${PORT}/api/v1/status")"
-                echo "${STATUS_BODY}" | grep -q "\"status\"" || { echo "Unexpected /status body" >&2; exit 1; }
-                DASH_BODY="$(curl -fsSL "http://localhost:${PORT}/")"
-                echo "${DASH_BODY}" | grep -qi "<!doctype html" || { echo "Dashboard root not HTML" >&2; exit 1; }
-                DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
-                echo "${DEEP_BODY}" | grep -qi "<!doctype html" || { echo "SPA fallback not wired" >&2; exit 1; }
-                echo "HTTP smoke check passed (linux-arm64)."
-
-                # wwwroot hash content-match (#342 / #396). On-disk wwwroot.sha256
-                # must equal the running binary'\''s /api/v1/version.wwwrootHash --
-                # the sidecar<->running-binary link of the hash contract chain.
-                SIDECAR_HASH="$(cat "${INSTALL_DIR}/wwwroot.sha256")"
-                ENDPOINT_HASH="$(curl -fsSL "http://localhost:${PORT}/api/v1/version" | jq -r ".wwwrootHash")"
-                if [ "${SIDECAR_HASH}" != "${ENDPOINT_HASH}" ]; then
-                  echo "wwwroot hash mismatch (#342): sidecar=${SIDECAR_HASH} != endpoint=${ENDPOINT_HASH}" >&2
-                  exit 1
-                fi
-                echo "wwwroot hash content-match verified (linux-arm64)."
+              # Fail loud if the admin-key line never appeared. Asserted BEFORE
+              # the smoke block (#398): an empty FOUND used to fall through a
+              # guarded "if FOUND" block, silently skipping every assertion
+              # inside and only failing at the tail -- a no-key boot (a real
+              # failure shape) read as a clean pass for the whole smoke block.
+              # Failing here makes a missing admin-key line fail the job loudly,
+              # and lets the smoke assertions below run unconditionally.
+              if [ -z "${FOUND}" ]; then
+                echo "Admin-key bootstrap line not seen within 180s (QEMU)." >&2
+                tail -100 "${LOG}" >&2
+                exit 1
               fi
+
+              # HTTP smoke check (Portal). Always-on now -- see native-leg comment. Card #184.
+              PORT=58400
+              for _ in $(seq 1 60); do
+                if curl -fsSL "http://localhost:${PORT}/api/v1/status" >/dev/null 2>&1; then
+                  break
+                fi
+                sleep 1
+              done
+              STATUS_BODY="$(curl -fsSL "http://localhost:${PORT}/api/v1/status")"
+              echo "${STATUS_BODY}" | grep -q "\"status\"" || { echo "Unexpected /status body" >&2; exit 1; }
+              DASH_BODY="$(curl -fsSL "http://localhost:${PORT}/")"
+              echo "${DASH_BODY}" | grep -qi "<!doctype html" || { echo "Dashboard root not HTML" >&2; exit 1; }
+              DEEP_BODY="$(curl -fsSL "http://localhost:${PORT}/apps")"
+              echo "${DEEP_BODY}" | grep -qi "<!doctype html" || { echo "SPA fallback not wired" >&2; exit 1; }
+              echo "HTTP smoke check passed (linux-arm64)."
+
+              # wwwroot hash content-match (#342 / #396). On-disk wwwroot.sha256
+              # must equal the running binary'\''s /api/v1/version.wwwrootHash --
+              # the sidecar<->running-binary link of the hash contract chain.
+              SIDECAR_HASH="$(cat "${INSTALL_DIR}/wwwroot.sha256")"
+              ENDPOINT_HASH="$(curl -fsSL "http://localhost:${PORT}/api/v1/version" | jq -r ".wwwrootHash")"
+              if [ "${SIDECAR_HASH}" != "${ENDPOINT_HASH}" ]; then
+                echo "wwwroot hash mismatch (#342): sidecar=${SIDECAR_HASH} != endpoint=${ENDPOINT_HASH}" >&2
+                exit 1
+              fi
+              echo "wwwroot hash content-match verified (linux-arm64)."
 
               kill -INT "${PID}" 2>/dev/null || true
               for _ in $(seq 1 10); do kill -0 "${PID}" 2>/dev/null || break; sleep 0.5; done
@@ -789,11 +812,6 @@ jobs:
               for _ in $(seq 1 6); do kill -0 "${PID}" 2>/dev/null || break; sleep 0.5; done
               kill -KILL "${PID}" 2>/dev/null || true
               wait "${PID}" 2>/dev/null || true
-              if [ -z "${FOUND}" ]; then
-                echo "Admin-key bootstrap line not seen within 180s (QEMU)." >&2
-                tail -100 "${LOG}" >&2
-                exit 1
-              fi
               echo "Admin-key bootstrap line emitted (linux-arm64)."
             '
 
