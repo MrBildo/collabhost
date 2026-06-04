@@ -19,7 +19,7 @@ public class AppHostFixture : IAsyncLifetime
 
     public HttpClient ApiClient { get; private set; } = null!;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // Create a temp directory for the SQLite database
         _dbDirectory = Path.Combine(Path.GetTempPath(), "collabhost-smoke", Guid.NewGuid().ToString("N"));
@@ -85,8 +85,10 @@ public class AppHostFixture : IAsyncLifetime
         ApiClient = _app.CreateHttpClient("api");
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         if (_app is not null)
         {
             await _app.DisposeAsync();

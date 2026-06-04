@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 
 using Xunit;
+using Xunit.Sdk;
 
 namespace Collabhost.Api.Tests.Portal;
 
@@ -232,7 +233,7 @@ public class PortalIntegrityCheckTests : IDisposable
         actual.ShouldBe(expected);
     }
 
-    [SkippableFact]
+    [Fact]
     public void ComputeWwwrootHash_DualCompute_CSharpEqualsBashScript()
     {
         // The seam check the known-vector test cannot make: run the REAL C#
@@ -246,7 +247,7 @@ public class PortalIntegrityCheckTests : IDisposable
         // separator normalization), ordinal sort across multiple path depths,
         // and varied content sizes.
         var scriptPath = LocateRepoToolScript("compute-wwwroot-hash.sh");
-        Skip.If
+        Assert.SkipWhen
         (
             scriptPath is null,
             "tools/compute-wwwroot-hash.sh not found by walking up from the test "
@@ -312,7 +313,7 @@ public class PortalIntegrityCheckTests : IDisposable
     private static string RunBashHashScript(string scriptPath, string wwwrootPath)
     {
         var bashPath = ResolveBash();
-        Skip.If
+        Assert.SkipWhen
         (
             bashPath is null,
             "No usable bash found (Git Bash on Windows / bash on PATH) -- skipping the "
@@ -347,7 +348,7 @@ public class PortalIntegrityCheckTests : IDisposable
         }
         catch (Win32Exception)
         {
-            throw new SkipException
+            throw SkipException.ForSkip
             (
                 "bash could not be started -- skipping the C#<->bash dual-compute seam "
                 + "check. CI runs it on ubuntu (native bash) and windows-latest (Git Bash)."
@@ -356,7 +357,7 @@ public class PortalIntegrityCheckTests : IDisposable
 
         if (process is null)
         {
-            throw new SkipException("Failed to start bash for the dual-compute seam check.");
+            throw SkipException.ForSkip("Failed to start bash for the dual-compute seam check.");
         }
 
         var stdout = process.StandardOutput.ReadToEnd();

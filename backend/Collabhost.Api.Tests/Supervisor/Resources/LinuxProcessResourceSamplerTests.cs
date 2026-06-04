@@ -13,11 +13,11 @@ namespace Collabhost.Api.Tests.Supervisor.Resources;
 [SupportedOSPlatform("linux")]
 public class LinuxProcessResourceSamplerTests
 {
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void Sample_CurrentProcess_ReturnsMemoryAndHandleCount()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var sampler = new LinuxProcessResourceSampler(NullLogger<LinuxProcessResourceSampler>.Instance);
 
@@ -29,11 +29,11 @@ public class LinuxProcessResourceSamplerTests
         snapshot.HandleCount.Value.ShouldBeGreaterThan(0);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void Sample_FirstCall_ReturnsNullCpuPercent()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var sampler = new LinuxProcessResourceSampler(NullLogger<LinuxProcessResourceSampler>.Instance);
 
@@ -43,11 +43,11 @@ public class LinuxProcessResourceSamplerTests
         snapshot.CpuPercent.ShouldBeNull();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Sample_SecondCall_ReturnsCpuPercent()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var sampler = new LinuxProcessResourceSampler(NullLogger<LinuxProcessResourceSampler>.Instance);
         var pid = Environment.ProcessId;
@@ -64,11 +64,11 @@ public class LinuxProcessResourceSamplerTests
         snapshot.CpuPercent.Value.ShouldBeGreaterThanOrEqualTo(0);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void Sample_NonexistentPid_ReturnsNull()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var sampler = new LinuxProcessResourceSampler(NullLogger<LinuxProcessResourceSampler>.Instance);
 
@@ -79,11 +79,11 @@ public class LinuxProcessResourceSamplerTests
         snapshot.ShouldBeNull();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void Forget_RemovesPriorSample()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var sampler = new LinuxProcessResourceSampler(NullLogger<LinuxProcessResourceSampler>.Instance);
         var pid = Environment.ProcessId;

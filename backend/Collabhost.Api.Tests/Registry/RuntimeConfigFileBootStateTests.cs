@@ -56,7 +56,7 @@ public class RuntimeConfigFileBootStateTests(ApiFixture fixture) : IAsyncLifetim
 
     private string _artifactDirectory = null!;
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         _artifactDirectory = Path.Combine
         (
@@ -66,11 +66,13 @@ public class RuntimeConfigFileBootStateTests(ApiFixture fixture) : IAsyncLifetim
 
         Directory.CreateDirectory(_artifactDirectory);
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         if (Directory.Exists(_artifactDirectory))
         {
             try
@@ -83,7 +85,7 @@ public class RuntimeConfigFileBootStateTests(ApiFixture fixture) : IAsyncLifetim
             }
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

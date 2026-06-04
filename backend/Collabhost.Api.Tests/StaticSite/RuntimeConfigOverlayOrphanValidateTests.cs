@@ -34,7 +34,7 @@ public class RuntimeConfigOverlayOrphanValidateTests(ApiFixture fixture) : IAsyn
     private readonly List<App> _createdApps = [];
     private readonly List<string> _writableDirsToClean = [];
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         _artifactDirectory = Path.Combine
         (
@@ -44,11 +44,13 @@ public class RuntimeConfigOverlayOrphanValidateTests(ApiFixture fixture) : IAsyn
 
         Directory.CreateDirectory(_artifactDirectory);
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         var appStore = _fixture.Services.GetRequiredService<AppStore>();
 
         foreach (var app in _createdApps)
