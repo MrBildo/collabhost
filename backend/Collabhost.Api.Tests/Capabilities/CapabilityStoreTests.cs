@@ -25,7 +25,7 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
     private CapabilityStore _capabilityStore = null!;
     private SqliteConnection _connection = null!;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _typeStore = new TypeStore
         (
@@ -62,7 +62,12 @@ public class CapabilityStoreTests : IAsyncLifetime, IDisposable
         );
     }
 
-    public Task DisposeAsync() => _connection.DisposeAsync().AsTask();
+    public async ValueTask DisposeAsync()
+    {
+        GC.SuppressFinalize(this);
+
+        await _connection.DisposeAsync();
+    }
 
     public void Dispose()
     {

@@ -5,5 +5,8 @@
   },
   "msbuild-sdks": {
     "Aspire.AppHost.Sdk": "13.4.1"
+  },
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
   }
 }

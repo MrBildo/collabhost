@@ -20,7 +20,7 @@ public class UserSeedServiceTests : IAsyncLifetime
     private TestDbContextFactory _dbFactory = null!;
     private ActivityEventStore _activityEventStore = null!;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _dataDirectory = Path.Combine
         (
@@ -46,8 +46,10 @@ public class UserSeedServiceTests : IAsyncLifetime
         _activityEventStore = new ActivityEventStore(_dbFactory, NullLogger<ActivityEventStore>.Instance);
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         if (Directory.Exists(_dataDirectory))
         {
             try
@@ -60,7 +62,7 @@ public class UserSeedServiceTests : IAsyncLifetime
             }
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     private UserSeedService CreateService(string? configuredAdminKey) =>

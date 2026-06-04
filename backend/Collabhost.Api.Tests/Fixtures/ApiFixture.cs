@@ -30,7 +30,7 @@ public class ApiFixture : IAsyncLifetime
         _wwwrootDirectory
             ?? throw new InvalidOperationException("ApiFixture not initialized.");
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // Null the env vars so a developer shell -- or a leak from another test -- does not
         // shadow the UseSetting paths below. Each of these wins over config (env > config) in
@@ -121,8 +121,10 @@ public class ApiFixture : IAsyncLifetime
         Client = _factory.CreateClient();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         Client.Dispose();
 
         await _factory.DisposeAsync();

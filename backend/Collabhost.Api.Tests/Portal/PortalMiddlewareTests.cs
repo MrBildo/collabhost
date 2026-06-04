@@ -39,7 +39,7 @@ public sealed class PortalMiddlewareTests : IAsyncLifetime
     private static readonly string _seededIndexHtml =
         "<!doctype html><html><body data-test=\"portal-seeded-shell\"></body></html>";
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // Null the env vars that win over the UseSetting calls below (env > config), so neither a
         // developer shell nor a leaked value from another test redirects this host's data dir /
@@ -103,7 +103,7 @@ public sealed class PortalMiddlewareTests : IAsyncLifetime
         _client = _factory.CreateClient();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         _client.Dispose();
         await _factory.DisposeAsync();

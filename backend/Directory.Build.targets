@@ -5,8 +5,15 @@
     VSTHRD200 — xUnit [Fact] / [Theory] methods conventionally don't carry an `Async`
                 suffix (community norm predates the analyzer). Suppressing project-wide
                 avoids per-class #pragma noise on test classes with async methods.
+    MA0040 — pass a CancellationToken. Under xUnit v3 every test gets an ambient
+             TestContext.Current.CancellationToken; MA0040 then fires on every test
+             `await` site that doesn't thread it. The rule's value (production
+             cancellation hygiene) is marginal inside a test body, and the noise is
+             per-await. Test-scoped suppression only — product code keeps MA0040 as
+             error. Threading TestContext.Current.CancellationToken through test
+             awaits is tracked as optional follow-up #399.
   -->
   <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
-    <NoWarn>$(NoWarn);CA1707;VSTHRD200</NoWarn>
+    <NoWarn>$(NoWarn);CA1707;VSTHRD200;MA0040</NoWarn>
   </PropertyGroup>
 </Project>
