@@ -1,8 +1,6 @@
 using System.Globalization;
 
-using Collabhost.Api.Authorization;
-
-namespace Collabhost.Api.Data;
+namespace Collabhost.Api.Authorization;
 
 public class UserConfiguration : IEntityTypeConfiguration<User>
 {

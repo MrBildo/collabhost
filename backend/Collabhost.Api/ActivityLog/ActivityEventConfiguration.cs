@@ -1,8 +1,6 @@
 using System.Globalization;
 
-using Collabhost.Api.ActivityLog;
-
-namespace Collabhost.Api.Data;
+namespace Collabhost.Api.ActivityLog;
 
 public class ActivityEventConfiguration : IEntityTypeConfiguration<ActivityEvent>
 {
