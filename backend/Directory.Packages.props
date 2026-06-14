@@ -62,16 +62,25 @@
 
   <!-- Test infrastructure (Collabhost.Api.Tests, Collabhost.AppHost.Tests).
        Mvc.Testing + Configuration are part of the 10.0.x BCL servicing band
-       above and are held at the same 10.0.8 patch. -->
+       above and are held at the same 10.0.8 patch.
+
+       xUnit v3 (#393): xunit.v3 is the v3 meta-package (replaces the v2 `xunit`).
+       Microsoft Testing Platform is the dotnet-test runner — selected via the
+       solution-root global.json `test.runner` key. xunit.v3 3.1.0 defaults to
+       MTP v1 (the 4.0.0 line defaults to MTP v2); stay on 3.x. We keep
+       xunit.runner.visualstudio (3.x, VSTest+MTP capable) and Microsoft.NET.Test.Sdk
+       for the VSTest coexistence window — a runner rollback is then a one-line
+       global.json deletion, not an un-migration. Xunit.SkippableFact was removed:
+       it targets v2 only (no v3 package); v3 has built-in skipping
+       (Assert.SkipWhen/SkipUnless + Xunit.Sdk.SkipException). -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.5.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
-    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.v3" Version="3.1.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.0" />
-    <PackageVersion Include="Xunit.SkippableFact" Version="1.5.61" />
   </ItemGroup>
 
 </Project>

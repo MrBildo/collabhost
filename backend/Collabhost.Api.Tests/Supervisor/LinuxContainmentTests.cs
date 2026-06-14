@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Shouldly;
 
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Collabhost.Api.Tests.Supervisor;
 
@@ -61,8 +60,8 @@ public class LinuxContainmentTests(ITestOutputHelper output)
 
     private static void SkipIfNotLinuxWithCgroup()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
-        Skip.IfNot(CgroupV2Available(), "cgroup v2 not available or not writable");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(CgroupV2Available(), "cgroup v2 not available or not writable");
     }
 
     private static string GetSelfCgroupPath()
@@ -82,7 +81,7 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         throw new InvalidOperationException("Could not determine self cgroup path");
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void CreateContainer_CreatesCgroupDirectory()
     {
@@ -102,7 +101,7 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         Directory.Exists(cgroupPath).ShouldBeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void AssignProcess_WritesPidToCgroupProcs()
     {
@@ -143,7 +142,7 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         }
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void Terminate_KillsAllProcessesInCgroup()
     {
@@ -179,7 +178,7 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         process.HasExited.ShouldBeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void Dispose_RemovesCgroupDirectory()
     {
@@ -205,7 +204,7 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         Directory.Exists(cgroupPath).ShouldBeFalse();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void IsSupported_KillOnClose_WhenCgroupAvailable_ReturnsTrue()
     {
@@ -216,7 +215,7 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         containment.IsSupported(ContainmentCapability.KillOnClose).ShouldBeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void IsSupported_NonKillCapabilities_ReturnsFalse()
     {
@@ -229,12 +228,12 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         containment.IsSupported(ContainmentCapability.ResourceAccounting).ShouldBeFalse();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task CreateContainer_StartsOrphanKillWatcherInsideCgroup()
     {
         SkipIfNotLinuxWithCgroup();
-        Skip.IfNot(SetprivAvailable(), "setpriv --pdeathsig not available");
+        Assert.SkipUnless(SetprivAvailable(), "setpriv --pdeathsig not available");
 
         using var containment = new LinuxContainment(_logger);
 
@@ -269,12 +268,12 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         }
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task OrphanKillMechanism_KillsCgroupOnAbruptParentDeath()
     {
         SkipIfNotLinuxWithCgroup();
-        Skip.IfNot(SetprivAvailable(), "setpriv --pdeathsig not available");
+        Assert.SkipUnless(SetprivAvailable(), "setpriv --pdeathsig not available");
 
         // This test verifies the kernel-level mechanism that LinuxContainment relies on:
         // setpriv --pdeathsig SIGTERM + bash trap + cgroup.kill atomically tears down a
@@ -410,7 +409,7 @@ public class LinuxContainmentTests(ITestOutputHelper output)
         }
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public void CleanupStaleCgroups_RemovesOrphanedDirectories()
     {

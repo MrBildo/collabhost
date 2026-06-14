@@ -46,7 +46,7 @@ public class ProxyAppSeederAtomicityTests : IAsyncLifetime
     private ActivityEventStore _activityEventStore = null!;
     private string _fakeBinaryPath = null!;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _dataDirectory = Path.Combine
         (
@@ -106,8 +106,10 @@ public class ProxyAppSeederAtomicityTests : IAsyncLifetime
         await File.WriteAllBytesAsync(_fakeBinaryPath, []);
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         _typeStore?.Dispose();
 
         if (_dataDirectory is not null && Directory.Exists(_dataDirectory))
@@ -122,7 +124,7 @@ public class ProxyAppSeederAtomicityTests : IAsyncLifetime
             }
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     private ProxyAppSeeder CreateSeeder(string? binaryPath = null) =>

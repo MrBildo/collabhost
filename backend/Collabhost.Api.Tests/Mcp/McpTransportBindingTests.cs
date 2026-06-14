@@ -59,7 +59,7 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
     private Task? _serverRunTask;
     private CancellationTokenSource? _serverCts;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // Resolve the production-configured McpServerOptions. The DI container has already
         // populated ToolCollection from the WithTools<DiscoveryTools/LifecycleTools/...>
@@ -109,8 +109,10 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
         _client = await McpClient.CreateAsync(clientTransport, cancellationToken: CancellationToken.None);
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         if (_client is not null)
         {
             await _client.DisposeAsync();

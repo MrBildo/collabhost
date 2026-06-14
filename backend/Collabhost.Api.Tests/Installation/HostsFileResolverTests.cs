@@ -18,7 +18,7 @@ public class HostsFileResolverTests : IAsyncLifetime
     private string _dataDir = string.Empty;
     private string _dbPath = string.Empty;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _scratchDir = Path.Combine(Path.GetTempPath(), $"collabhost-resolver-{Guid.NewGuid():N}");
         _dataDir = Path.Combine(_scratchDir, "data");
@@ -34,8 +34,10 @@ public class HostsFileResolverTests : IAsyncLifetime
         await db.Database.EnsureCreatedAsync();
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         // Force connection-pool drain so the .db file can be removed.
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 
@@ -51,7 +53,7 @@ public class HostsFileResolverTests : IAsyncLifetime
             }
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

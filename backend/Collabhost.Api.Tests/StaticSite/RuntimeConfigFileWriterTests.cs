@@ -47,7 +47,7 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
     private string _tempDataDir = null!;
     private AppDataPathResolver _dataPathResolver = null!;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _typeStore = new TypeStore
         (
@@ -106,8 +106,10 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
         Directory.CreateDirectory(_tempArtifactDir);
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         foreach (var dir in new[] { _tempArtifactDir, _tempDataDir })
         {
             if (Directory.Exists(dir))
@@ -123,7 +125,7 @@ public class RuntimeConfigFileWriterTests : IAsyncLifetime, IDisposable
             }
         }
 
-        return _connection.DisposeAsync().AsTask();
+        return _connection.DisposeAsync();
     }
 
     public void Dispose()

@@ -14,11 +14,11 @@ namespace Collabhost.Api.Tests.Supervisor.Resources;
 [SupportedOSPlatform("windows")]
 public class WindowsProcessResourceSamplerTests
 {
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public void Sample_RunningProcess_ReturnsMemoryAndHandleCount()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var sampler = new WindowsProcessResourceSampler(NullLogger<WindowsProcessResourceSampler>.Instance);
 
@@ -30,11 +30,11 @@ public class WindowsProcessResourceSamplerTests
         snapshot.HandleCount.Value.ShouldBeGreaterThan(0);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public void Sample_FirstCall_ReturnsNullCpuPercent()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var sampler = new WindowsProcessResourceSampler(NullLogger<WindowsProcessResourceSampler>.Instance);
 
@@ -46,11 +46,11 @@ public class WindowsProcessResourceSamplerTests
         snapshot.CpuPercent.ShouldBeNull();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public void Sample_SecondCall_ReturnsCpuPercent()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var sampler = new WindowsProcessResourceSampler(NullLogger<WindowsProcessResourceSampler>.Instance);
         var pid = Environment.ProcessId;
@@ -73,11 +73,11 @@ public class WindowsProcessResourceSamplerTests
         snapshot.CpuPercent.Value.ShouldBeGreaterThanOrEqualTo(0);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public void Sample_NonexistentPid_ReturnsNull()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var sampler = new WindowsProcessResourceSampler(NullLogger<WindowsProcessResourceSampler>.Instance);
 
@@ -88,11 +88,11 @@ public class WindowsProcessResourceSamplerTests
         snapshot.ShouldBeNull();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public void Forget_RemovesPriorSample()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var sampler = new WindowsProcessResourceSampler(NullLogger<WindowsProcessResourceSampler>.Instance);
         var pid = Environment.ProcessId;
