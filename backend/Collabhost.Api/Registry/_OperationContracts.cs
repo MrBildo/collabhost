@@ -140,3 +140,17 @@ public sealed record CreateAppOutcome
     string Slug,
     IReadOnlyList<string> Hints
 );
+
+// --- Delete ---
+
+// The normalized input DeleteAppOperation receives. Trivial like the lifecycle commands -- the only
+// input a delete needs is the slug (both surfaces take it directly from the route arg / tool arg).
+public sealed record DeleteAppCommand(string Slug);
+
+// The surface-agnostic outcome of a delete. Carries the slug and the display name because the MCP
+// tool's success message names both ("Deleted app '{slug}' ({displayName}). This action cannot be
+// undone."); the REST endpoint needs neither (it returns 204 No Content) and reads only IsSuccess.
+// The captured display name comes from the operation's pre-delete capture (the row is gone by the
+// time the outcome is built). Co-located with the commands by cohesion (§7), the same way
+// AppActionOutcome / UpdateSettingsOutcome / CreateAppOutcome are.
+public sealed record DeleteAppOutcome(string Slug, string DisplayName);

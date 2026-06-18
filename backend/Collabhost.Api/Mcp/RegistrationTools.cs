@@ -1,15 +1,12 @@
 using System.ComponentModel;
 using System.Security;
 
-using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Operations;
 using Collabhost.Api.Probes;
-using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
-using Collabhost.Api.Supervisor;
 
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -25,53 +22,48 @@ public class RegistrationTools
 (
     AppStore appStore,
     TypeStore typeStore,
-    ProcessSupervisor supervisor,
-    ProxyManager proxy,
     CreateAppOperation createAppOperation,
+    DeleteAppOperation deleteAppOperation,
     ICurrentUser currentUser,
-    ActivityEventStore activityEventStore,
     AppDataPathResolver dataPathResolver,
-    McpRequestAuthenticator authenticator,
-    ILogger<RegistrationTools> logger
+    McpRequestAuthenticator authenticator
 )
 {
-    // register_app migrated to the operation spine (code-structure-conventions §8): its exists-check,
-    // section validation, create, save-overrides, route toggle, event recording, and hint computation
-    // all moved into CreateAppOperation. The deps that body held -- ProxySettings,
-    // ExternalTargetSettings -- leave this ctor with it. AppStore / ProxyManager / ICurrentUser /
-    // ActivityEventStore / ProcessSupervisor / ILogger stay because delete_app still uses them, and
-    // TypeStore stays for both delete_app and register_app's MCP-surface directoryRequired gate.
+    // Both write tools are migrated to the operation spine (code-structure-conventions §8).
+    // register_app's full create sequence lives in CreateAppOperation, and delete_app's full
+    // stop-then-delete sequence (including the probe-cache invalidation REST always had and MCP did
+    // not) lives in DeleteAppOperation. The deps those two bodies held that nothing else in this tool
+    // needs left the ctor with them -- ProcessSupervisor, ProxyManager, ActivityEventStore, and the
+    // ILogger that delete_app was the last consumer of, plus register_app's earlier ProxySettings and
+    // ExternalTargetSettings. What remains is exactly the surface's own concerns. AppStore backs
+    // delete_app's MCP-surface AppNotFound pre-check, the shape REST does not return. TypeStore backs
+    // register_app's MCP-surface directoryRequired gate. ICurrentUser backs delete_app's admin-only
+    // double-check at the destructive call site. AppDataPathResolver backs register_app's
+    // writableDataPath. Then the two operations and the authenticator.
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
 
     private readonly TypeStore _typeStore = typeStore
         ?? throw new ArgumentNullException(nameof(typeStore));
 
-    private readonly ProcessSupervisor _supervisor = supervisor
-        ?? throw new ArgumentNullException(nameof(supervisor));
-
-    private readonly ProxyManager _proxy = proxy
-        ?? throw new ArgumentNullException(nameof(proxy));
-
     // The migrated registration operation injected directly (code-structure-conventions §8: no
     // dispatcher). register_app adapts its raw input into the command, calls this, and maps the result.
     private readonly CreateAppOperation _createAppOperation = createAppOperation
         ?? throw new ArgumentNullException(nameof(createAppOperation));
 
+    // The migrated delete operation injected directly (code-structure-conventions §8: no dispatcher).
+    // delete_app adapts the slug into the command, calls this, and maps the result.
+    private readonly DeleteAppOperation _deleteAppOperation = deleteAppOperation
+        ?? throw new ArgumentNullException(nameof(deleteAppOperation));
+
     private readonly ICurrentUser _currentUser = currentUser
         ?? throw new ArgumentNullException(nameof(currentUser));
-
-    private readonly ActivityEventStore _activityEventStore = activityEventStore
-        ?? throw new ArgumentNullException(nameof(activityEventStore));
 
     private readonly AppDataPathResolver _dataPathResolver = dataPathResolver
         ?? throw new ArgumentNullException(nameof(dataPathResolver));
 
     private readonly McpRequestAuthenticator _authenticator = authenticator
         ?? throw new ArgumentNullException(nameof(authenticator));
-
-    private readonly ILogger<RegistrationTools> _logger = logger
-        ?? throw new ArgumentNullException(nameof(logger));
 
     [McpServerTool
     (
@@ -321,6 +313,12 @@ public class RegistrationTools
             );
         }
 
+        // The not-found pre-check is an MCP-surface concern kept above the operation call: MCP
+        // returns its own AppNotFound shape (a specific "use list_apps" message), where REST returns
+        // an empty 404 -- a genuine surface divergence that stays at the surface, exactly as the
+        // lifecycle adapters do. The operation re-loads inside the same request scope and runs the
+        // stop-then-delete sequence; this adapter only adapts the slug into the command and maps the
+        // result back to the MCP shape.
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -328,84 +326,9 @@ public class RegistrationTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        // Capture before delete -- app won't exist after _appStore.DeleteAppAsync
-        var appId = app.Id.ToString();
-        var appSlug = app.Slug;
-        var appDisplayName = app.DisplayName;
+        var result = await _deleteAppOperation.ExecuteAsync(new DeleteAppCommand(slug), ct);
 
-        // Stop if running (10s graceful timeout, force-kill fallback)
-        var process = _supervisor.GetProcess(app.Id);
-
-        if (process is not null && process.IsRunning)
-        {
-            try
-            {
-                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-                await _supervisor.StopAppAsync(app.Id, timeoutCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Timeout expired -- force kill
-                try
-                {
-                    await _supervisor.KillAppAsync(app.Id, CancellationToken.None);
-                }
-                catch (InvalidOperationException)
-                {
-                    // Already stopped
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                // Already stopped
-            }
-        }
-
-        // Routing-only apps (static-site, external-route): disable the Caddy route
-        // before the row is deleted. Without this, the route survives in Caddy until
-        // the next sync pass re-derives the live set from AppStore.ListAsync -- a small
-        // window where Caddy still routes to an app that no longer exists.
-        // Card #348 polish: REST DeleteAppAsync got this fix-along in the initial PR.
-        // MCP delete_app is the symmetric closure (same marginal cost, same surface).
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
-        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
-
-        if (!hasProcess && hasRouting)
-        {
-            _proxy.DisableRoute(appSlug);
-            _proxy.RequestSync();
-        }
-
-        await _appStore.DeleteAppAsync(app.Id, ct);
-
-        _supervisor.CleanupDeletedApp(app.Id, appSlug);
-
-        try
-        {
-            await _activityEventStore.RecordAsync
-            (
-                new ActivityEvent
-                {
-                    EventType = ActivityEventTypes.AppDeleted,
-                    ActorId = _currentUser.UserId.ToString(),
-                    ActorName = _currentUser.User.Name,
-                    AppId = appId,
-                    AppSlug = appSlug,
-                    MetadataJson = JsonSerializer.Serialize(new { displayName = appDisplayName })
-                },
-                ct
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record activity event for app.deleted (slug={Slug})", appSlug);
-        }
-
-        return McpResponseFormatter.Success
-        (
-            $"Deleted app '{appSlug}' ({appDisplayName}). This action cannot be undone."
-        );
+        return result.ToCallToolResult();
     }
 
     [McpServerTool
@@ -706,4 +629,31 @@ file static class CreateAppOperationResultMapping
             OperationFailureKind.NotFound => McpResponseFormatter.AppTypeNotFound(appTypeSlug),
             _ => McpResponseFormatter.InvalidParameters(result.Error ?? string.Empty),
         };
+}
+
+// File-scoped mapping from the surface-agnostic delete outcome back to the MCP result shape (§7: the
+// surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
+// OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the success arm is gated
+// on IsSuccess FIRST -- FailureKind is only read on the failure path. The success shape is the exact
+// "Deleted app '{slug}' ({displayName}). This action cannot be undone." message the pre-migration body
+// returned. The MCP-specific not-found (AppNotFound) is handled by the pre-load in the tool body above
+// this mapping, so NotFound cannot reach here on the normal path; any failure that does reach here maps
+// to InvalidParameters, the single MCP error shape (the operation never produces Validation/Conflict on
+// the delete path -- surfacing the operation's message verbatim is the right defensive shape).
+file static class DeleteAppOperationResultMapping
+{
+    public static CallToolResult ToCallToolResult(this OperationResult<DeleteAppOutcome> result)
+    {
+        if (result.IsSuccess)
+        {
+            var outcome = result.Value!;
+
+            return McpResponseFormatter.Success
+            (
+                $"Deleted app '{outcome.Slug}' ({outcome.DisplayName}). This action cannot be undone."
+            );
+        }
+
+        return McpResponseFormatter.InvalidParameters(result.Error ?? string.Empty);
+    }
 }

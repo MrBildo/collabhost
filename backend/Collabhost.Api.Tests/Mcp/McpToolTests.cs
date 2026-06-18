@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Mcp;
@@ -14,7 +13,6 @@ using Collabhost.Api.Supervisor;
 using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 using ModelContextProtocol.Protocol;
 
@@ -149,14 +147,11 @@ public class McpToolTests(ApiFixture fixture)
         (
             sp.GetRequiredService<AppStore>(),
             sp.GetRequiredService<TypeStore>(),
-            sp.GetRequiredService<ProcessSupervisor>(),
-            sp.GetRequiredService<ProxyManager>(),
             sp.GetRequiredService<CreateAppOperation>(),
+            sp.GetRequiredService<DeleteAppOperation>(),
             sp.GetRequiredService<ICurrentUser>(),
-            sp.GetRequiredService<ActivityEventStore>(),
             sp.GetRequiredService<AppDataPathResolver>(),
-            sp.GetRequiredService<McpRequestAuthenticator>(),
-            sp.GetRequiredService<ILogger<RegistrationTools>>()
+            sp.GetRequiredService<McpRequestAuthenticator>()
         );
 
         return (tools, scope);

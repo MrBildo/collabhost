@@ -1,11 +1,10 @@
 using System.Globalization;
 
-using Collabhost.Api.ActivityLog;
-using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.HealthChecks;
+using Collabhost.Api.Operations;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Shared;
@@ -465,103 +464,23 @@ public static class AppEndpoints
         return TypedResults.Ok(new LogsResponse(entries, buffer.Count));
     }
 
+    // DELETE /api/v1/apps/{slug} migrated to the operation spine (code-structure-conventions §8):
+    // the stop-then-delete sequence -- stop-if-running (10s timeout + force-kill fallback),
+    // routing-only route disable, delete, supervisor cleanup, probe-cache invalidation, app.deleted
+    // event -- all moved into DeleteAppOperation. This endpoint is a thin adapter: adapt the route
+    // slug into the command, call the injected operation directly (no dispatcher), and map
+    // OperationResult<DeleteAppOutcome> back to exactly the empty 404 / 204 No Content the
+    // pre-migration handler returned.
     private static async Task<IResult> DeleteAppAsync
     (
         string slug,
-        AppStore store,
-        TypeStore typeStore,
-        ProcessSupervisor supervisor,
-        ProxyManager proxy,
-        ProbeService probeService,
-        ICurrentUser currentUser,
-        ActivityEventStore activityEventStore,
+        DeleteAppOperation operation,
         CancellationToken ct
     )
     {
-        var app = await store.GetBySlugAsync(slug, ct);
+        var result = await operation.ExecuteAsync(new DeleteAppCommand(slug), ct);
 
-        if (app is null)
-        {
-            return TypedResults.NotFound();
-        }
-
-        // Capture before delete -- app won't exist after store.DeleteAppAsync
-        var appId = app.Id.ToString();
-        var appSlug = app.Slug;
-        var appDisplayName = app.DisplayName;
-        var appTypeSlug = app.AppTypeSlug;
-
-        // Stop if running (10s timeout, force-kill fallback)
-        var process = supervisor.GetProcess(app.Id);
-
-        if (process is not null && process.IsRunning)
-        {
-            try
-            {
-                using var timeoutCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-                await supervisor.StopAppAsync(app.Id, timeoutCancellation.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Timeout expired -- force kill
-                try
-                {
-                    await supervisor.KillAppAsync(app.Id, CancellationToken.None);
-                }
-                catch (InvalidOperationException)
-                {
-                    // Already stopped
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                // Already stopped
-            }
-        }
-
-        // Routing-only apps (static-site, external-route): explicitly disable
-        // the route before the row is deleted. Without this, the route survives
-        // in Caddy until the next SyncRoutesAsync pass re-derives the live set
-        // from AppStore.ListAsync -- a small window where Caddy still routes to
-        // an app that no longer exists. Card #348 fix-along; in-scope per
-        // CLAUDE.md Rule 9 marginal-cost test (the PR already touches the
-        // proxy surface, the delete site is the natural symmetric closure).
-        var hasProcess = typeStore.HasBinding(appTypeSlug, "process");
-        var hasRouting = typeStore.HasBinding(appTypeSlug, "routing");
-
-        if (!hasProcess && hasRouting)
-        {
-            proxy.DisableRoute(appSlug);
-            proxy.RequestSync();
-        }
-
-        await store.DeleteAppAsync(app.Id, ct);
-
-        supervisor.CleanupDeletedApp(app.Id, appSlug);
-
-        // Early hygiene on delete -- release this app's cached probe entry
-        // immediately rather than letting it squat in the cache until the next
-        // periodic prune tick. The cache is keyed by ULID, so a recreated app
-        // with the same slug always gets a fresh entry regardless. Card #337
-        // fix-along.
-        probeService.InvalidateProbeCache(app.Id);
-
-        await activityEventStore.RecordAsync
-        (
-            new ActivityEvent
-            {
-                EventType = ActivityEventTypes.AppDeleted,
-                ActorId = currentUser.UserId.ToString(),
-                ActorName = currentUser.User.Name,
-                AppId = appId,
-                AppSlug = appSlug,
-                MetadataJson = JsonSerializer.Serialize(new { displayName = appDisplayName })
-            },
-            ct
-        );
-
-        return TypedResults.NoContent();
+        return result.ToHttpResult();
     }
 
     internal static ProcessState ResolveStatus
@@ -594,3 +513,28 @@ public static class AppEndpoints
 }
 #pragma warning restore MA0011
 #pragma warning restore MA0076
+
+// File-scoped mapping from the surface-agnostic delete outcome back to the REST result shape (§7:
+// the surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
+// OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the success arm is
+// gated on IsSuccess FIRST -- FailureKind is only read on the failure path. The pre-migration
+// handler returned an empty 204 No Content on success and an empty 404 on a missing slug; the
+// operation only ever returns Success or NotFound, so those are the two arms that fire. Validation
+// and Conflict are mapped defensively (the operation never produces them on the delete path) so a
+// future operation change surfaces honestly rather than silently collapsing to 404.
+file static class DeleteAppResultMapping
+{
+    // K-1: IsSuccess gates FIRST -- FailureKind (defaults to ordinal-0 NotFound) is read only in the
+    // ternary's else branch, never on success. The single-statement success arm (NoContent) collapses
+    // to a ternary per IDE0046 (the ReloadProxy precedent), unlike the lifecycle mapper whose
+    // multi-statement success arm stays an if-block.
+    public static IResult ToHttpResult(this OperationResult<DeleteAppOutcome> result) =>
+        result.IsSuccess
+            ? TypedResults.NoContent()
+            : result.FailureKind switch
+            {
+                OperationFailureKind.NotFound => TypedResults.NotFound(),
+                OperationFailureKind.Validation => TypedResults.Problem(result.Error, statusCode: 400),
+                _ => TypedResults.Problem(result.Error, statusCode: 409),
+            };
+}

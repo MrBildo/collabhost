@@ -302,6 +302,62 @@ public class ProbeTriggerTests(ApiFixture fixture) : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task DeleteApp_InvalidatesProbeCache()
+    {
+        // CATCHES the #406 spine PR 7 parity-fix: pre-migration MCP delete_app NEVER invalidated the
+        // probe cache (RegistrationTools took no ProbeService dependency), where REST DeleteAppAsync
+        // always did (Card #337). Unifying both surfaces onto DeleteAppOperation -- which calls
+        // InvalidateProbeCache once -- closes the drift. This drives MCP delete_app across the real
+        // stream transport and asserts the cache transitions Fresh -> NeverProbed. Against the
+        // pre-fix shape (no InvalidateProbeCache reaching the MCP path) the entry would survive ->
+        // RED. The op-level DeleteAppOperationTests proves the operation invalidates; this proves the
+        // MCP surface reaches it -- the F-1 discipline (the op-level test is blind to which surface
+        // calls the operation, so the behavior change gets a surface test).
+        var (slug, appId) = await RegisterStaticSiteAsync();
+
+        var probeService = _fixture.Services.GetRequiredService<ProbeService>();
+
+        // Prime the cache to Fresh so the delete has a live entry to invalidate.
+        await probeService.RunProbesAsync(appId, CancellationToken.None);
+
+        probeService.GetCachedProbes(appId, "static-site").Status
+            .ShouldBe
+            (
+                ProbeCacheStatus.Fresh,
+                "Test setup: the cache must be Fresh before the MCP delete (the static-site has a "
+                + "real artifact, so RunProbesAsync populates it)."
+            );
+
+        var result = await _client!.CallToolAsync
+        (
+            "delete_app",
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["slug"] = slug,
+                ["authKey"] = ApiFixture.AdminKey
+            },
+            cancellationToken: CancellationToken.None
+        );
+
+        (result.IsError ?? false).ShouldBeFalse
+        (
+            "MCP delete_app must succeed. Body: " + RenderContent(result)
+        );
+
+        probeService.GetCachedProbes(appId, "static-site").Status
+            .ShouldBe
+            (
+                ProbeCacheStatus.NeverProbed,
+                "MCP delete_app MUST invalidate the probe cache (#406 parity-fix: it now shares "
+                + "DeleteAppOperation with REST, which always called InvalidateProbeCache). Pre-fix "
+                + "the MCP path took no ProbeService dep -- the entry survives against that shape."
+            );
+
+        // No finally-delete: this test's whole point is that delete_app removed the app. A second
+        // REST delete would 404 (harmless), but omitting it keeps the test's intent unambiguous.
+    }
+
     private async Task<(string Slug, Ulid AppId)> RegisterStaticSiteAsync()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];

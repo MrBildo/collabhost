@@ -10,23 +10,29 @@ namespace Collabhost.Api.Tests.Architecture;
 // try/catch-to-result -- those live in the base or the stores it calls); the concrete operation
 // lives in its OWNING subsystem folder, never in the shared Operations/ spine folder.
 //
-// FORWARD FORM (the #406 spine arc, mid-migration). The operations land PR-by-PR (PR 2:
-// restart + kill; PR 3: start/stop; reload-proxy; settings; register; PR 7: delete + the count-
-// guard flip). This test is authored in the forward, non-vacuous-as-operations-appear shape: it
-// asserts the §9 placement rule and the §8 leaf-body-negative rule for WHATEVER concrete
-// IOperation<,> implementations exist at any moment, so it stays honest as each operation lands --
-// the first mis-placed or non-intent-only leaf reds it. It deliberately does NOT yet carry the
-// exactly-8 count guard: that guard reds-for-the-wrong-reason against a partial set (N != 8) and
-// tightens to real-enforcing in the final PR once all eight operations exist. The current set is
-// asserted explicitly below (by name) so this file's forward stance is visible, not silent, and a
-// premature or missing operation shows up in a reviewed diff -- the additive PR-by-PR analogue of
-// the eventual count guard.
+// REAL-ENFORCING FORM (the #406 spine arc, FLIPPED at PR 7 once all eight operations exist). Through
+// PRs 1-6 this file ran in a forward shape -- it asserted the §9 placement and §8 leaf-body-negative
+// rules over WHATEVER concrete IOperation<,> implementations existed at any moment (honest, non-
+// vacuous as each operation landed), plus a by-name set-shape list that grew PR-by-PR. That forward
+// set-shape deliberately did NOT carry the exactly-8 count guard: asserting "== 8" against a partial
+// set is red-for-the-wrong-reason. PR 7 lands the 8th operation (DeleteApp) and tightens that set-
+// shape into the real-enforcing exactly-8 count guard below. The count IS the mutation-proof primitive
+// (§11's RegistrationFilePresence precedent): a silently-broken detector that matches zero goes RED on
+// the count guard rather than passing vacuously on an empty set; a 9th operation that forgets to join,
+// or a regressed/removed operation, reds it too.
 //
-// Both rules are phrased over the leaf set the base's implementations define -- the enumerable
+// All three rules are phrased over the leaf set the base's implementations define -- the enumerable
 // asset §8 names as the reason the base earns its place over a plain injected service.
 public class OperationSpineTests
 {
     private const string _operationsSpineNamespace = "Operations";
+
+    // The exactly-8 count: the eight mutating REST<->MCP twin actions the #406 arc migrated onto the
+    // spine -- the lifecycle four (start/stop/restart/kill), reload-proxy, update-settings, create/
+    // register, and delete. The plan's §2.3 honest-scope picture: 8 operations migrate, 2 mutating-
+    // but-single-surface (CreateUser/DeactivateUser, no MCP twin) are surfaced-and-left out of the
+    // spine, ~32 read-only handlers are definitively out. So the set is exactly these eight.
+    private const int _expectedOperationCount = 8;
 
     // The leaf-body-negative tokens (§8). A token appearing in an operation leaf's source file is
     // plumbing that belongs in the base or a store, not in the intent-only leaf body. Phrased
@@ -42,21 +48,48 @@ public class OperationSpineTests
         "new ActivityEvent",      // events are stamped via the base RecordAsync helper, never hand-built in a leaf
     ];
 
-    // The forward set-shape assertion: the concrete operations migrated so far, named explicitly.
-    // PR 2 added RestartAppOperation + KillAppOperation (the two cleanest, process-only lifecycle
-    // ops); PR 3 added StartAppOperation + StopAppOperation (the dual-branch lifecycle pair --
-    // routing-only vs process); PR 4 added ReloadProxyOperation (the trivial app-less op, and the
-    // first spine op outside Registry/ -- it lives in Proxy/, its owning subsystem per §9); PR 5 added
-    // UpdateSettingsOperation (the heaviest single body -- the merge/validate/save loop plus the
-    // partial-success conflict-with-value render path); PR 6 adds CreateAppOperation (THE divergence op
-    // -- per-surface input adapters over a shared, surface-blind core; the section-assembly diverges,
-    // the create sequence does not). This makes the mid-migration stance visible -- the placement and
-    // leaf-negative facts below do real work on exactly these operations now, and each later PR extends
-    // this list in a reviewed diff (a premature or dropped operation reds here). It is NOT the count
-    // guard (that asserts exactly 8 and lands in the final PR 7, alongside DeleteApp); it pins the
-    // current arc state. Seven of eight migrated; DeleteApp remains.
+    // §8/§9 count guard (the keystone -- the forward set-shape flipped to real-enforcing at PR 7).
+    // The concrete IOperation<,> implementation set must be non-empty AND equal exactly 8 -- the
+    // mutation-proof primitive (§11's RegistrationFilePresence precedent). Non-empty: if the
+    // reflection detector silently matches zero (a broken interface check, a namespace-scope
+    // regression), this goes RED rather than the placement / leaf-negative facts passing vacuously
+    // on an empty set. Exactly 8: a 9th operation that should have been surfaced-and-left (a single-
+    // surface mutation forced onto the spine -- the pool-by-kind move §9 forbids), or a regressed /
+    // removed operation, reds it with the actual set named.
     [Fact]
-    public void Spine_holds_exactly_the_operations_migrated_so_far()
+    public void Spine_holds_exactly_eight_operations()
+    {
+        var operations = ConcreteOperationTypes()
+            .Select(type => type.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        operations.ShouldNotBeEmpty
+        (
+            "§8/§9: the concrete IOperation<,> set is empty -- the reflection detector matched zero, "
+                + "so the placement and leaf-negative facts would pass vacuously. The detector is broken."
+        );
+
+        operations.Length.ShouldBe
+        (
+            _expectedOperationCount,
+            "§8/§9: the concrete IOperation<,> set must be exactly the eight migrated REST<->MCP twin "
+                + "operations. A different count means an operation was added without being surfaced-"
+                + "and-left (pool-by-kind, §9-forbidden) or one regressed. Found "
+                + operations.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ": "
+                + string.Join(", ", operations)
+        );
+    }
+
+    // The explicit by-name set -- the eight operations the arc migrated, named so a diff that adds or
+    // drops one is reviewed against this list, not only against the count. The lifecycle four
+    // (start/stop/restart/kill, PRs 2-3), reload-proxy (PR 4, the app-less op in Proxy/), update-
+    // settings (PR 5, the heaviest body), create/register (PR 6, THE divergence op), and delete (PR 7,
+    // this PR). Redundant-with-count by design: the count guard above is the mutation-proof primitive,
+    // this names which eight so a swap (one removed, one added -- same count) still reds.
+    [Fact]
+    public void Spine_holds_exactly_the_eight_named_operations()
     {
         var operations = ConcreteOperationTypes()
             .Select(type => type.Name)
@@ -67,6 +100,7 @@ public class OperationSpineTests
         (
             [
                 "CreateAppOperation",
+                "DeleteAppOperation",
                 "KillAppOperation",
                 "ReloadProxyOperation",
                 "RestartAppOperation",
@@ -74,9 +108,35 @@ public class OperationSpineTests
                 "StopAppOperation",
                 "UpdateSettingsOperation"
             ],
-            "§8/§9 mid-migration: the concrete IOperation<,> set should be exactly the operations "
-                + "migrated through PR 6. Each later PR adds to this list. Found: "
+            "§8/§9: the concrete IOperation<,> set should be exactly the eight migrated operations. "
+                + "Found: "
                 + string.Join(", ", operations)
+        );
+    }
+
+    // §8/§11: every concrete IOperation<,> is registered EXPLICITLY in its subsystem's
+    // _Registration.cs -- central-explicit DI, no assembly-scan (§11). For each operation, resolve
+    // the _Registration.cs co-located in its source folder (the operation file and its subsystem's
+    // registration share a folder, so this needs no namespace->folder mapping -- it sidesteps the
+    // System/-vs-Platform divergence by construction) and assert its source text contains an
+    // AddScoped<TheOperation> registration. An operation that exists but is never registered (the
+    // "forgot to register" failure §11 names as a loud, CI-catchable class) reds here with the
+    // offender named -- the enumeration asset §8 says the base earns its place for.
+    [Fact]
+    public void Every_operation_is_registered_in_its_subsystem_registration_file()
+    {
+        var offenders = ConcreteOperationTypes()
+            .Where(type => !IsRegisteredInSubsystem(type))
+            .Select(type => type.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        offenders.ShouldBeEmpty
+        (
+            "§8/§11 requires every IOperation<,> to be registered explicitly (AddScoped<Op>) in its "
+                + "subsystem's _Registration.cs -- no assembly-scan. These operations are not "
+                + "registered in their subsystem's _Registration.cs: "
+                + string.Join(", ", offenders)
         );
     }
 
@@ -149,6 +209,32 @@ public class OperationSpineTests
 
         return relative is not null
             && relative.Split('.')[0].Equals(_operationsSpineNamespace, StringComparison.Ordinal);
+    }
+
+    // True when the operation's subsystem _Registration.cs (co-located in the operation's source
+    // folder) registers it explicitly with AddScoped<TheOperation>. Resolving via the operation's
+    // OWN source file means no namespace->folder mapping is needed -- the operation and its
+    // subsystem registration share a folder, so the System/-vs-Platform namespace divergence cannot
+    // bite here.
+    private static bool IsRegisteredInSubsystem(Type type)
+    {
+        var sourceFile = DeclaringSourceFile(type);
+
+        if (sourceFile is null)
+        {
+            return false;
+        }
+
+        var registrationFile = Path.Combine(Path.GetDirectoryName(sourceFile)!, "_Registration.cs");
+
+        if (!File.Exists(registrationFile))
+        {
+            return false;
+        }
+
+        var registrationSource = File.ReadAllText(registrationFile);
+
+        return registrationSource.Contains("AddScoped<" + type.Name + ">", StringComparison.Ordinal);
     }
 
     // Resolve the operation's source file across the whole Api tree (reflection carries no file
