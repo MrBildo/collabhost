@@ -62,6 +62,12 @@ public static class ProxyRegistration
             services.AddSingleton<ProxyManager>();
             services.AddHostedService(provider => provider.GetRequiredService<ProxyManager>());
 
+            // The reload-proxy operation (code-structure-conventions §8/§9 -- a concrete
+            // IOperation<,> registered in its OWNING subsystem's _Registration.cs, explicitly,
+            // no assembly-scan). Scoped to match the per-request ICurrentUser the Operation<,>
+            // base actor-stamps with, exactly as the Registry lifecycle operations register.
+            services.AddScoped<ReloadProxyOperation>();
+
             return services;
         }
     }

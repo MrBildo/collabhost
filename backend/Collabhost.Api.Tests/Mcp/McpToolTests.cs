@@ -136,6 +136,7 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<ProxySettings>(),
             sp.GetRequiredService<ExternalTargetSettings>(),
             sp.GetRequiredService<RuntimeConfigFileWriter>(),
+            sp.GetRequiredService<ReloadProxyOperation>(),
             sp.GetRequiredService<ICurrentUser>(),
             sp.GetRequiredService<ActivityEventStore>(),
             sp.GetRequiredService<McpRequestAuthenticator>(),
@@ -459,6 +460,29 @@ public class McpToolTests(ApiFixture fixture)
         var text = GetFirstText(result);
 
         text.ShouldContain("no-such-app-abc");
+    }
+
+    // -------- Configuration: reload_proxy (operation-spine adapter, #406 PR 4) --------
+    //
+    // reload_proxy now adapts the marker command, calls the injected ReloadProxyOperation (the
+    // trivial app-less op: RequestSync + the actor-stamped proxy.reloaded event), and maps the
+    // result back. This direct-call test is the MCP-observable oracle the migration must preserve:
+    // the fixed "reload requested" success message, byte-identical to pre-migration. (RequestSync
+    // only enqueues a channel write -- no Caddy contact -- so this runs without a live proxy.)
+
+    [Fact]
+    public async Task ReloadProxy_ReturnsFixedSuccessMessage()
+    {
+        var (tools, scope) = CreateConfigurationTools();
+        using var _ = scope;
+
+        var result = await tools.ReloadProxyAsync(authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeFalse();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("reload requested");
     }
 
     // -------- Registration: detect_strategy --------
