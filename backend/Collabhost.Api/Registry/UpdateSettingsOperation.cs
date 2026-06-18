@@ -32,10 +32,10 @@ namespace Collabhost.Api.Registry;
 // either (REST returned a 409 Problem, never the fresh AppSettings) and recorded NO event, so the
 // fact that the settings persisted is communicated exactly as before: through the message prefix.
 //
-// The three command flags carry the GENUINE per-surface divergence (see _OperationContracts.cs):
-// ValidateMergedOverrides + RefreshProbesOnArtifactChange are REST-true / MCP-false confirmed drift
-// (preserved, not fixed -- PR 5 is byte-for-byte); RejectUnknownSection is REST-false (skip) /
-// MCP-true (mid-loop reject) intended divergence.
+// The three command flags carry the per-surface divergence (see _OperationContracts.cs):
+// ValidateMergedOverrides + RefreshProbesOnArtifactChange are now BOTH-true on both surfaces (the
+// #406 settings parity-fix closed the former REST-true / MCP-false drift); RejectUnknownSection is
+// REST-false (skip) / MCP-true (mid-loop reject) intended divergence.
 public sealed class UpdateSettingsOperation
 (
     AppStore store,
@@ -183,9 +183,8 @@ public sealed class UpdateSettingsOperation
 
             // Cross-field validation on the post-merge effective override (the #365-era two-step
             // operator path: e.g. save STS in headers first, later toggle EnableHsts -- neither delta
-            // alone trips the in-flight ValidateEdits, the merged state does). REST runs it; the
-            // pre-migration MCP path never did -- preserved here via the command flag (drift surfaced,
-            // not fixed; see _OperationContracts.cs).
+            // alone trips the in-flight ValidateEdits, the merged state does). Both surfaces run it
+            // (the #406 settings parity-fix flipped the MCP flag true; see _OperationContracts.cs).
             if (command.ValidateMergedOverrides)
             {
                 var mergedValidationErrors = CapabilityResolver.ValidateMergedOverrides
@@ -211,9 +210,9 @@ public sealed class UpdateSettingsOperation
         _store.Invalidate(app.Slug);
         _store.InvalidateOverrides(app.Id);
 
-        // Re-probe when artifact config changes (location or project root). REST does this; the
-        // pre-migration MCP path never did -- preserved via the command flag (drift, surfaced not
-        // fixed).
+        // Re-probe when artifact config changes (location or project root). Both surfaces do this
+        // (the #406 settings parity-fix flipped the MCP flag true; the pre-migration MCP path never
+        // re-probed -- the confirmed drift this fix closed).
         if (command.RefreshProbesOnArtifactChange && command.Changes.ContainsKey("artifact"))
         {
             _probeService.InvalidateProbeCache(app.Id);

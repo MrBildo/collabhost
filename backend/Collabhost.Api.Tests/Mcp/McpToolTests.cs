@@ -478,14 +478,14 @@ public class McpToolTests(ApiFixture fixture)
         text.ShouldContain("reload requested");
     }
 
-    // -------- Configuration: update_settings (operation-spine adapter, #406 PR 5) --------
+    // -------- Configuration: update_settings (operation-spine adapter, #406 PR 5 + parity-fix) --------
     //
-    // update_settings now parses its raw `settings` string into a JsonObject, adapts it into the
+    // update_settings parses its raw `settings` string into a JsonObject, adapts it into the
     // normalized UpdateSettingsCommand (MCP flags: ValidateMergedOverrides + RefreshProbesOnArtifact-
-    // Change false, RejectUnknownSection true), calls the injected UpdateSettingsOperation, and maps
-    // the result back. These direct-call tests are the MCP-observable oracle the migration must
-    // preserve byte-for-byte: the fixed success message, the unknown-section reject, and the
-    // app-not-found shape.
+    // Change TRUE since the #406 settings parity-fix, RejectUnknownSection true), calls the injected
+    // UpdateSettingsOperation, and maps the result back. The byte-preserved shapes (fixed success
+    // message, unknown-section reject, app-not-found) are pinned below; the HSTS-collision reject is
+    // the NEW parity behavior (the merged-validation flip -- pre-fix MCP silently accepted it).
 
     [Fact]
     public async Task UpdateSettings_ValidChange_ReturnsFixedSuccessMessage()
@@ -566,6 +566,70 @@ public class McpToolTests(ApiFixture fixture)
         var text = GetFirstText(result);
 
         text.ShouldContain("no-such-app-xyz");
+    }
+
+    // NEW behavior (#406 settings parity-fix -- the one sanctioned behavior change of the spine arc):
+    // MCP update_settings now runs CapabilityResolver.ValidateMergedOverrides (ValidateMergedOverrides
+    // flag flipped false -> true, matching REST). This rejects the two-step HSTS double-emission
+    // collision -- save a Strict-Transport-Security entry in the headers map, then later turn on
+    // enableHsts -- that neither in-flight ValidateEdits delta trips alone but the merged state does.
+    //
+    // PRE-FIX this silently SUCCEEDED on MCP (the pre-migration path never ran merged-validation),
+    // producing a security-header double-emission REST had always rejected. This test asserts the new
+    // parity: the second MCP edit now returns an error naming the collision. A static-site binds
+    // security-headers, so CreateTestAppAsync is the vehicle; the in-flight first edit (headers only)
+    // succeeds, the second edit (enableHsts only) is what the merged check now rejects.
+    [Fact]
+    public async Task UpdateSettings_TwoStepHstsCollision_NowRejected()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateConfigurationTools();
+            using var _ = scope;
+
+            // Step 1: author a Strict-Transport-Security entry in the freeform headers map. The
+            // in-flight delta carries no enableHsts, so ValidateEdits' cross-field check does not trip
+            // -- this save succeeds (pre-fix and post-fix alike).
+            var firstResult = await tools.UpdateSettingsAsync
+            (
+                slug,
+                "{\"security-headers\":{\"headers\":{\"Strict-Transport-Security\":\"max-age=600\"}}}",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (firstResult.IsError ?? false).ShouldBeFalse
+            (
+                "First edit (headers map only) must succeed -- the collision needs the merged state. "
+                + "Body: " + GetFirstText(firstResult)
+            );
+
+            // Step 2: turn on enableHsts. The in-flight delta carries no headers map, so ValidateEdits
+            // alone still passes -- only the post-merge ValidateMergedOverrides sees BOTH and rejects.
+            var secondResult = await tools.UpdateSettingsAsync
+            (
+                slug,
+                "{\"security-headers\":{\"enableHsts\":true}}",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (secondResult.IsError ?? false).ShouldBeTrue
+            (
+                "MCP update_settings MUST now reject the merged HSTS double-emission collision "
+                + "(ValidateMergedOverrides flag flipped true by the #406 parity-fix). Pre-fix the "
+                + "MCP path ran no merged-validation and this silently succeeded. Body: "
+                + GetFirstText(secondResult)
+            );
+
+            GetFirstText(secondResult).ShouldContain("Strict-Transport-Security");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
     }
 
     // -------- Registration: detect_strategy --------

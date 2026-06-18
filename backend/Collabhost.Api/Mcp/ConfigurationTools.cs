@@ -267,21 +267,27 @@ public class ConfigurationTools
         }
 
         // Migrated to the operation spine (code-structure-conventions §8): adapt the parsed changes
-        // into the normalized command (MCP flags: ValidateMergedOverrides + RefreshProbesOnArtifact-
-        // Change FALSE -- the pre-migration MCP path ran neither; RejectUnknownSection TRUE -- MCP
-        // rejects an unknown section mid-loop where REST skips), call the injected operation directly
-        // (no dispatcher), and map the result back to exactly the CallToolResult this tool returned
-        // before. The shared identity -> validate -> merge -> save -> render -> event loop now lives
-        // once in UpdateSettingsOperation. The pre-migration outer try/catch around the event record
-        // is dropped with the migrated body: ActivityEventStore.RecordAsync already swallows all
-        // exceptions internally (catch Exception -> LogWarning), so the wrapper was dead defensive
-        // code -- dropping it is an observable no-op (same as the start/stop/reload migrations).
+        // into the normalized command, call the injected operation directly (no dispatcher), and map
+        // the result back to the CallToolResult this tool returns. The shared identity -> validate ->
+        // merge -> save -> render -> event loop lives once in UpdateSettingsOperation. The pre-
+        // migration outer try/catch around the event record is dropped with the migrated body:
+        // ActivityEventStore.RecordAsync already swallows all exceptions internally (catch Exception ->
+        // LogWarning), so the wrapper was dead defensive code -- dropping it is an observable no-op
+        // (same as the start/stop/reload migrations).
+        //
+        // The command flags now MATCH the REST surface (#406 settings parity-fix, the one sanctioned
+        // behavior change of the spine arc): ValidateMergedOverrides + RefreshProbesOnArtifactChange
+        // are TRUE. The pre-migration MCP path ran NEITHER -- a confirmed REST<->MCP drift surfaced (not
+        // fixed) at PR 5 and folded in here per the operator ruling. MCP now (a) runs the post-merge
+        // cross-field check (rejecting the HSTS double-emission collision REST already rejected), and
+        // (b) re-probes on an artifact-section change. RejectUnknownSection stays TRUE -- MCP rejecting
+        // an unknown section mid-loop where REST skips is intended surface ergonomics, NOT drift.
         var command = new UpdateSettingsCommand
         (
             slug,
             changesObject,
-            ValidateMergedOverrides: false,
-            RefreshProbesOnArtifactChange: false,
+            ValidateMergedOverrides: true,
+            RefreshProbesOnArtifactChange: true,
             RejectUnknownSection: true
         );
 
