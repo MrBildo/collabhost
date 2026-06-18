@@ -112,15 +112,11 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<AppStore>(),
             sp.GetRequiredService<TypeStore>(),
             sp.GetRequiredService<ProcessSupervisor>(),
-            sp.GetRequiredService<ProxyManager>(),
-            sp.GetRequiredService<ProbeService>(),
-            sp.GetRequiredService<RuntimeConfigFileWriter>(),
-            sp.GetRequiredService<ICurrentUser>(),
-            sp.GetRequiredService<ActivityEventStore>(),
+            sp.GetRequiredService<StartAppOperation>(),
+            sp.GetRequiredService<StopAppOperation>(),
             sp.GetRequiredService<RestartAppOperation>(),
             sp.GetRequiredService<KillAppOperation>(),
-            sp.GetRequiredService<McpRequestAuthenticator>(),
-            sp.GetRequiredService<ILogger<LifecycleTools>>()
+            sp.GetRequiredService<McpRequestAuthenticator>()
         );
 
         return (tools, scope);
@@ -237,6 +233,100 @@ public class McpToolTests(ApiFixture fixture)
         var text = GetFirstText(result);
 
         text.ShouldContain("no-such-app-xyz");
+    }
+
+    // -------- Lifecycle: start_app / stop_app (operation-spine adapters, #406 PR 3) --------
+    //
+    // start_app and stop_app now adapt the slug into a command, call the injected
+    // StartAppOperation / StopAppOperation (dual-branch: routing-only vs process), and map the
+    // result back. These direct-call tests are the MCP-observable oracle the migration must
+    // preserve. A static-site (CreateTestAppAsync) is routing-only, so its start/stop runs the
+    // routing-only branch end-to-end and returns the { slug, status, appType } success shape
+    // byte-identical to pre-migration; the unknown-slug path keeps the MCP-surface AppNotFound shape
+    // (kept above the operation, where REST returns an empty 404). The process branch's live success
+    // needs a real running process (out of reach in this fixture); the routing-only success + the
+    // not-found shape are what change here and what these pin.
+
+    [Fact]
+    public async Task StartApp_RoutingOnly_ReturnsRunningSuccessShape()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateLifecycleTools();
+            using var _ = scope;
+
+            var result = await tools.StartAppAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeFalse();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain(slug);
+            text.ShouldContain("running");
+            text.ShouldContain("static-site");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task StartApp_UnknownApp_ReturnsAppNotFound()
+    {
+        var (tools, scope) = CreateLifecycleTools();
+        using var _ = scope;
+
+        var result = await tools.StartAppAsync("no-such-app-start", authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-start");
+    }
+
+    [Fact]
+    public async Task StopApp_RoutingOnly_ReturnsStoppedSuccessShape()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateLifecycleTools();
+            using var _ = scope;
+
+            var result = await tools.StopAppAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeFalse();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain(slug);
+            text.ShouldContain("stopped");
+            text.ShouldContain("static-site");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task StopApp_UnknownApp_ReturnsAppNotFound()
+    {
+        var (tools, scope) = CreateLifecycleTools();
+        using var _ = scope;
+
+        var result = await tools.StopAppAsync("no-such-app-stop", authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-stop");
     }
 
     // -------- Lifecycle: restart_app / kill_app (operation-spine adapters, #406 PR 2) --------
