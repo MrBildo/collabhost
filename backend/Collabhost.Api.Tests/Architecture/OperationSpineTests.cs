@@ -45,12 +45,14 @@ public class OperationSpineTests
     // The forward set-shape assertion: the concrete operations migrated so far, named explicitly.
     // PR 2 added RestartAppOperation + KillAppOperation (the two cleanest, process-only lifecycle
     // ops); PR 3 added StartAppOperation + StopAppOperation (the dual-branch lifecycle pair --
-    // routing-only vs process); PR 4 adds ReloadProxyOperation (the trivial app-less op, and the
-    // first spine op outside Registry/ -- it lives in Proxy/, its owning subsystem per §9). This
-    // makes the mid-migration stance visible -- the placement and leaf-negative facts below do real
-    // work on exactly these operations now, and each later PR extends this list in a reviewed diff
-    // (a premature or dropped operation reds here). It is NOT the count guard (that asserts exactly
-    // 8 and lands in the final PR); it pins the current arc state.
+    // routing-only vs process); PR 4 added ReloadProxyOperation (the trivial app-less op, and the
+    // first spine op outside Registry/ -- it lives in Proxy/, its owning subsystem per §9); PR 5 adds
+    // UpdateSettingsOperation (the heaviest single body -- the merge/validate/save loop plus the
+    // partial-success conflict-with-value render path). This makes the mid-migration stance visible --
+    // the placement and leaf-negative facts below do real work on exactly these operations now, and
+    // each later PR extends this list in a reviewed diff (a premature or dropped operation reds here).
+    // It is NOT the count guard (that asserts exactly 8 and lands in the final PR); it pins the
+    // current arc state.
     [Fact]
     public void Spine_holds_exactly_the_operations_migrated_so_far()
     {
@@ -61,9 +63,16 @@ public class OperationSpineTests
 
         operations.ShouldBe
         (
-            ["KillAppOperation", "ReloadProxyOperation", "RestartAppOperation", "StartAppOperation", "StopAppOperation"],
+            [
+                "KillAppOperation",
+                "ReloadProxyOperation",
+                "RestartAppOperation",
+                "StartAppOperation",
+                "StopAppOperation",
+                "UpdateSettingsOperation"
+            ],
             "§8/§9 mid-migration: the concrete IOperation<,> set should be exactly the operations "
-                + "migrated through PR 4. Each later PR adds to this list. Found: "
+                + "migrated through PR 5. Each later PR adds to this list. Found: "
                 + string.Join(", ", operations)
         );
     }
