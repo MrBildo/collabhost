@@ -76,14 +76,21 @@ public abstract class Operation<TCommand, TResult>
         );
     }
 
+    // Record an app-less activity event, stamped with the acting user. For an operation that
+    // acts on no app (the proxy reload -- proxy.reloaded carries no AppId/AppSlug). Keeps actor
+    // stamping in the base so the app-less leaf stays intent-only and never hand-builds an event.
+    protected Task RecordAsync(string eventType, CancellationToken ct) =>
+        RecordAsync(eventType, appId: null, appSlug: null, metadataJson: null, ct);
+
     // Record an activity event against an app's id + slug directly, stamped with the acting
     // user. For the case the live entity is gone by the time the event is recorded (delete,
-    // which removes the row before emitting app.deleted) or carries metadata.
+    // which removes the row before emitting app.deleted) or carries metadata. AppId/AppSlug are
+    // nullable so the app-less overload above shares this single recorder.
     protected Task RecordAsync
     (
         string eventType,
-        string appId,
-        string appSlug,
+        string? appId,
+        string? appSlug,
         string? metadataJson,
         CancellationToken ct
     )

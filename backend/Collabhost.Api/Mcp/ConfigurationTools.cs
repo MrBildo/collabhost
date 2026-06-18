@@ -6,6 +6,7 @@ using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Operations;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.StaticSite;
@@ -30,6 +31,7 @@ public class ConfigurationTools
     ProxySettings proxySettings,
     ExternalTargetSettings externalTargetSettings,
     RuntimeConfigFileWriter runtimeConfigFileWriter,
+    ReloadProxyOperation reloadProxyOperation,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore,
     McpRequestAuthenticator authenticator,
@@ -64,6 +66,12 @@ public class ConfigurationTools
     // structurally never wired to the writer.
     private readonly RuntimeConfigFileWriter _runtimeConfigFileWriter = runtimeConfigFileWriter
         ?? throw new ArgumentNullException(nameof(runtimeConfigFileWriter));
+
+    // The migrated reload-proxy operation injected directly (code-structure-conventions §8: no
+    // dispatcher). reload_proxy adapts the marker command, calls the operation, and maps the
+    // result; update_settings remains a body of its own (the heaviest single tool, spine PR 5).
+    private readonly ReloadProxyOperation _reloadProxyOperation = reloadProxyOperation
+        ?? throw new ArgumentNullException(nameof(reloadProxyOperation));
 
     private readonly ICurrentUser _currentUser = currentUser
         ?? throw new ArgumentNullException(nameof(currentUser));
@@ -447,33 +455,17 @@ public class ConfigurationTools
             return authError;
         }
 
-        _proxy.RequestSync();
+        // Migrated to the operation spine (code-structure-conventions §8): adapt the marker command
+        // (no slug -- the reload acts on no app), call the injected operation, and map the result
+        // back to exactly the fixed "reload requested" message this tool returned before. The
+        // proxy.RequestSync() + the actor-stamped proxy.reloaded event now live once in the
+        // operation. The pre-migration outer try/catch around RecordAsync is dropped with the
+        // migrated body: ActivityEventStore.RecordAsync already swallows all exceptions internally
+        // (catch Exception -> LogWarning), so the wrapper was dead defensive code -- dropping it is
+        // an observable no-op (same as the start/stop migration in PR 3).
+        var result = await _reloadProxyOperation.ExecuteAsync(new ReloadProxyCommand(), ct);
 
-        try
-        {
-            await _activityEventStore.RecordAsync
-            (
-                new ActivityEvent
-                {
-                    EventType = ActivityEventTypes.ProxyReloaded,
-                    ActorId = _currentUser.UserId.ToString(),
-                    ActorName = _currentUser.User.Name,
-                    AppId = null,
-                    AppSlug = null,
-                    MetadataJson = null
-                },
-                ct
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record activity event for proxy.reloaded");
-        }
-
-        return McpResponseFormatter.Success
-        (
-            "Proxy configuration reload requested. Caddy will regenerate its configuration from the current app registry state."
-        );
+        return result.ToCallToolResult();
     }
 
     [McpServerTool
@@ -606,6 +598,26 @@ public class ConfigurationTools
 
         return McpResponseFormatter.Success(McpResponseFormatter.ToJson(result));
     }
+}
+
+// File-scoped mapping from the surface-agnostic reload outcome back to the MCP result shape (§7:
+// the surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
+// OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the success arm is
+// gated on IsSuccess FIRST -- FailureKind is only read on the failure path. The success arm returns
+// the exact fixed "reload requested" message the pre-migration body returned. The reload operation
+// has no failure path today (RequestSync only enqueues a channel write and never throws; the leaf
+// returns Success unconditionally), so success is what runs -- byte-identical to before. The failure
+// arm maps to InvalidParameters (the single MCP error shape) for shape-consistency, kept for the day
+// a reload precondition can fail.
+file static class ReloadProxyResultMapping
+{
+    public static CallToolResult ToCallToolResult(this OperationResult<ProxyReloadOutcome> result) =>
+        result.IsSuccess
+            ? McpResponseFormatter.Success
+            (
+                "Proxy configuration reload requested. Caddy will regenerate its configuration from the current app registry state."
+            )
+            : McpResponseFormatter.InvalidParameters(result.Error ?? string.Empty);
 }
 
 file static class ConfigurationToolExtensions
