@@ -456,11 +456,10 @@ The failure class behind three production rollbacks (#322) was one shape repeate
 | Project | Path | Relationship |
 |---------|------|-------------|
 | **Collaboard** | `../collaboard` | Kanban tracking via MCP. Work tracked on `collabhost` board. |
-| **Collabot** | `../collabot` | Agent platform. Will consume Collabhost for service orchestration. |
-| **Collabot TUI** | `../collabot-tui` | Terminal UI for Collabot. |
-| **Ecosystem** | `../ecosystem` | Shared tooling. Collabhost may consume ecosystem scripts. |
-| **Research Lab** | `../lab` | Research workspace. Architecture decisions researched here. |
-| **Knowledge Base** | `../kb` | Conventions and patterns. |
+| **Scout** | `../scout` | Web fetch/search tooling via MCP; runs as a Collabhost-hosted app. |
+| **Ecosystem** | `../ecosystem` | Shared tooling, conventions, and the suite skills source. Collabhost may consume ecosystem scripts. |
+
+_Suite consolidated 2026-06-14: the former **Collabot**, **Collabot TUI**, **Research Lab** (`lab`), and **Knowledge Base** (`kb`) projects were retired — their repos now live under `collab/archived/`. The active suite is **collabhost · collaboard · scout · ecosystem**; conventions live under `ecosystem/projects/conventions/` (front door: `ecosystem/docs/skills-registry.md`), not the retired KB._
 
 ## Persistence Rules
 
