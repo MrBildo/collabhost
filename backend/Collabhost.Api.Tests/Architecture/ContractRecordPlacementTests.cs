@@ -41,10 +41,11 @@ public class ContractRecordPlacementTests
     ];
 
     // The count of public *Request/*Response/*Command/*Arguments types in the Api assembly.
-    // 13 today (measured S86 + re-confirmed): 12 already in a *Contracts.cs plus the one this
-    // PR extracts. The count guard keeps the placement assertion honest -- a detector that
-    // matches zero would let placement pass vacuously.
-    private const int _expectedContractRecordCount = 13;
+    // 15 today: 13 from the T4 P2 baseline plus the two *Command records the #406 spine PR 2 adds
+    // (RestartAppCommand + KillAppCommand, in Registry/_OperationContracts.cs). Each later spine PR
+    // that adds a public *Command record bumps this count. The count guard keeps the placement
+    // assertion honest -- a detector that matches zero would let placement pass vacuously.
+    private const int _expectedContractRecordCount = 15;
 
     // Mutation-proof reading 1: guard the detector. If the public-contract detector silently
     // matches zero, this is the test that goes RED rather than placement passing vacuously.
