@@ -70,7 +70,7 @@ public class ProcessSupervisor
 
     private readonly ConcurrentDictionary<Ulid, ManagedProcess> _processes = new();
     private readonly ConcurrentDictionary<Ulid, RestartPolicy> _restartPolicies = new();
-    private readonly ConcurrentDictionary<Ulid, RingBuffer<LogEntry>> _logBuffers = new();
+    private readonly ProcessLogBufferStore _logBufferStore = new();
     private Timer? _graceTimer;
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -267,7 +267,7 @@ public class ProcessSupervisor
 
         _processes.Clear();
         _restartPolicies.Clear();
-        _logBuffers.Clear();
+        _logBufferStore.Clear();
 
         _logger.LogInformation("Process supervisor stopped");
     }
@@ -399,11 +399,11 @@ public class ProcessSupervisor
     public IReadOnlyCollection<ManagedProcess> GetProcesses() => [.. _processes.Values];
 
     public RingBuffer<LogEntry> GetOrCreateLogBuffer(Ulid appId) =>
-        _logBuffers.GetOrAdd(appId, _ => new RingBuffer<LogEntry>(1000));
+        _logBufferStore.GetOrCreate(appId);
 
     public void CleanupDeletedApp(Ulid appId, string appSlug)
     {
-        _logBuffers.TryRemove(appId, out _);
+        _logBufferStore.Remove(appId);
         _restartPolicies.TryRemove(appId, out _);
 
         // A deleted app's pinned-port reservation (if any) returns to the
