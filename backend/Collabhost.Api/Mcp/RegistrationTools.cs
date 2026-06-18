@@ -170,6 +170,16 @@ public class RegistrationTools
         // live in the operation; this adapter only produces the divergent input shape.
         var (overrides, parseError) = AssembleOverrides(appType, installDirectory, settings);
 
+        // Deliberate, disclosed ordering -- Card #406 PR 6, finding F-1. The settings-JSON parse runs
+        // HERE at the adapter, BEFORE the operation's exists-check. Pre-migration the MCP exists-check
+        // ran first, so a doubly-invalid request -- an existing slug AND malformed settings JSON --
+        // returned the exists conflict, where it now surfaces the parse error first. This reorder is
+        // FORCED by the spine and is not a regression: the parse builds the command the operation
+        // consumes, so it cannot run after the operation. Do NOT preserve the old order by adding a
+        // surface-level exists-check here -- that would duplicate the operation's exists-check and
+        // re-leak core logic into the adapter, the exact anti-pattern this migration removed. Zero
+        // state-impact -- both inputs were always errors, so only WHICH error surfaces first changed,
+        // and only on the MCP surface.
         if (parseError is not null)
         {
             return McpResponseFormatter.InvalidParameters(parseError);
