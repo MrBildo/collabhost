@@ -4,7 +4,6 @@ using System.Text.Json;
 
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
-using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
@@ -152,8 +151,7 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<TypeStore>(),
             sp.GetRequiredService<ProcessSupervisor>(),
             sp.GetRequiredService<ProxyManager>(),
-            sp.GetRequiredService<ProxySettings>(),
-            sp.GetRequiredService<ExternalTargetSettings>(),
+            sp.GetRequiredService<CreateAppOperation>(),
             sp.GetRequiredService<ICurrentUser>(),
             sp.GetRequiredService<ActivityEventStore>(),
             sp.GetRequiredService<AppDataPathResolver>(),

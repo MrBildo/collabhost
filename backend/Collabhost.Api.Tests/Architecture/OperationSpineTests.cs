@@ -46,13 +46,15 @@ public class OperationSpineTests
     // PR 2 added RestartAppOperation + KillAppOperation (the two cleanest, process-only lifecycle
     // ops); PR 3 added StartAppOperation + StopAppOperation (the dual-branch lifecycle pair --
     // routing-only vs process); PR 4 added ReloadProxyOperation (the trivial app-less op, and the
-    // first spine op outside Registry/ -- it lives in Proxy/, its owning subsystem per §9); PR 5 adds
+    // first spine op outside Registry/ -- it lives in Proxy/, its owning subsystem per §9); PR 5 added
     // UpdateSettingsOperation (the heaviest single body -- the merge/validate/save loop plus the
-    // partial-success conflict-with-value render path). This makes the mid-migration stance visible --
-    // the placement and leaf-negative facts below do real work on exactly these operations now, and
-    // each later PR extends this list in a reviewed diff (a premature or dropped operation reds here).
-    // It is NOT the count guard (that asserts exactly 8 and lands in the final PR); it pins the
-    // current arc state.
+    // partial-success conflict-with-value render path); PR 6 adds CreateAppOperation (THE divergence op
+    // -- per-surface input adapters over a shared, surface-blind core; the section-assembly diverges,
+    // the create sequence does not). This makes the mid-migration stance visible -- the placement and
+    // leaf-negative facts below do real work on exactly these operations now, and each later PR extends
+    // this list in a reviewed diff (a premature or dropped operation reds here). It is NOT the count
+    // guard (that asserts exactly 8 and lands in the final PR 7, alongside DeleteApp); it pins the
+    // current arc state. Seven of eight migrated; DeleteApp remains.
     [Fact]
     public void Spine_holds_exactly_the_operations_migrated_so_far()
     {
@@ -64,6 +66,7 @@ public class OperationSpineTests
         operations.ShouldBe
         (
             [
+                "CreateAppOperation",
                 "KillAppOperation",
                 "ReloadProxyOperation",
                 "RestartAppOperation",
@@ -72,7 +75,7 @@ public class OperationSpineTests
                 "UpdateSettingsOperation"
             ],
             "§8/§9 mid-migration: the concrete IOperation<,> set should be exactly the operations "
-                + "migrated through PR 5. Each later PR adds to this list. Found: "
+                + "migrated through PR 6. Each later PR adds to this list. Found: "
                 + string.Join(", ", operations)
         );
     }
