@@ -23,6 +23,8 @@ public static class RegistryRegistration
             // registration). Scoped because the Operation<,> base injects the scoped
             // ICurrentUser for actor stamping. Both surfaces (REST endpoint, MCP tool)
             // inject the concrete operation directly and call it -- no dispatcher.
+            services.AddScoped<StartAppOperation>();
+            services.AddScoped<StopAppOperation>();
             services.AddScoped<RestartAppOperation>();
             services.AddScoped<KillAppOperation>();
 

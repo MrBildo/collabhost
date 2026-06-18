@@ -8,8 +8,12 @@ namespace Collabhost.Api.Registry;
 // PRs 3-7 of the #406 arc add their operations' commands here (start/stop/settings/create/delete).
 
 // The normalized input each lifecycle operation receives. The surface (REST route arg, MCP tool
-// arg) adapts its raw input into the command; for the process-only lifecycle operations the only
-// input is the slug, already normalized.
+// arg) adapts its raw input into the command; for the lifecycle operations the only input is the
+// slug, already normalized.
+public sealed record StartAppCommand(string Slug);
+
+public sealed record StopAppCommand(string Slug);
+
 public sealed record RestartAppCommand(string Slug);
 
 public sealed record KillAppCommand(string Slug);
