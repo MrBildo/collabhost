@@ -10,15 +10,17 @@ namespace Collabhost.Api.Tests.Architecture;
 // try/catch-to-result -- those live in the base or the stores it calls); the concrete operation
 // lives in its OWNING subsystem folder, never in the shared Operations/ spine folder.
 //
-// FORWARD FORM (PR 1 of the #406 spine arc). The operations do not exist yet -- they land
-// PR-by-PR (lifecycle, start/stop, reload-proxy, settings, register, delete). This test is
-// authored in the forward, non-vacuous-as-operations-appear shape: it asserts the §9 placement
-// rule and the §8 leaf-body-negative rule for WHATEVER concrete IOperation<,> implementations
-// exist at any moment, so it stays honest as each operation lands -- the first mis-placed or
-// non-intent-only leaf reds it. It deliberately does NOT yet carry the exactly-8 count guard:
-// that guard reds-for-the-wrong-reason against a partial set (0 != 8), and tightens to real-
-// enforcing in the final PR once all eight operations exist. The set-shape today (zero
-// operations) is asserted explicitly below so this file's forward stance is visible, not silent.
+// FORWARD FORM (the #406 spine arc, mid-migration). The operations land PR-by-PR (PR 2:
+// restart + kill; PR 3: start/stop; reload-proxy; settings; register; PR 7: delete + the count-
+// guard flip). This test is authored in the forward, non-vacuous-as-operations-appear shape: it
+// asserts the §9 placement rule and the §8 leaf-body-negative rule for WHATEVER concrete
+// IOperation<,> implementations exist at any moment, so it stays honest as each operation lands --
+// the first mis-placed or non-intent-only leaf reds it. It deliberately does NOT yet carry the
+// exactly-8 count guard: that guard reds-for-the-wrong-reason against a partial set (N != 8) and
+// tightens to real-enforcing in the final PR once all eight operations exist. The current set is
+// asserted explicitly below (by name) so this file's forward stance is visible, not silent, and a
+// premature or missing operation shows up in a reviewed diff -- the additive PR-by-PR analogue of
+// the eventual count guard.
 //
 // Both rules are phrased over the leaf set the base's implementations define -- the enumerable
 // asset §8 names as the reason the base earns its place over a plain injected service.
@@ -40,21 +42,26 @@ public class OperationSpineTests
         "new ActivityEvent",      // events are stamped via the base RecordAsync helper, never hand-built in a leaf
     ];
 
-    // The forward set-shape assertion: zero concrete operations exist in PR 1 (the spine base
-    // only). This makes the forward stance explicit -- when this number stops being zero, the
-    // placement and leaf-negative facts below start doing real work on the new operations. It is
-    // NOT the count guard (that asserts exactly 8 and lands in the final PR); it pins the PR-1
-    // starting point so a premature operation is visible in a reviewed diff.
+    // The forward set-shape assertion: the concrete operations migrated so far, named explicitly.
+    // PR 2 added RestartAppOperation + KillAppOperation (the two cleanest, process-only lifecycle
+    // ops). This makes the mid-migration stance visible -- the placement and leaf-negative facts
+    // below do real work on exactly these operations now, and each later PR extends this list in a
+    // reviewed diff (a premature or dropped operation reds here). It is NOT the count guard (that
+    // asserts exactly 8 and lands in the final PR); it pins the current arc state.
     [Fact]
-    public void Spine_base_only_no_concrete_operations_exist_yet()
+    public void Spine_holds_exactly_the_operations_migrated_so_far()
     {
-        var operations = ConcreteOperationTypes();
+        var operations = ConcreteOperationTypes()
+            .Select(type => type.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
-        operations.ShouldBeEmpty
+        operations.ShouldBe
         (
-            "§8/§9 PR 1 is the spine base only -- no concrete IOperation<,> should exist yet. "
-                + "The first operations land in PR 2. Found: "
-                + string.Join(", ", operations.Select(type => type.Name).Order(StringComparer.Ordinal))
+            ["KillAppOperation", "RestartAppOperation"],
+            "§8/§9 mid-migration: the concrete IOperation<,> set should be exactly the operations "
+                + "migrated through PR 2. Each later PR adds to this list. Found: "
+                + string.Join(", ", operations)
         );
     }
 

@@ -117,6 +117,8 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<RuntimeConfigFileWriter>(),
             sp.GetRequiredService<ICurrentUser>(),
             sp.GetRequiredService<ActivityEventStore>(),
+            sp.GetRequiredService<RestartAppOperation>(),
+            sp.GetRequiredService<KillAppOperation>(),
             sp.GetRequiredService<McpRequestAuthenticator>(),
             sp.GetRequiredService<ILogger<LifecycleTools>>()
         );
@@ -235,6 +237,97 @@ public class McpToolTests(ApiFixture fixture)
         var text = GetFirstText(result);
 
         text.ShouldContain("no-such-app-xyz");
+    }
+
+    // -------- Lifecycle: restart_app / kill_app (operation-spine adapters, #406 PR 2) --------
+    //
+    // restart_app and kill_app now adapt the slug into a command, call the injected
+    // RestartAppOperation / KillAppOperation, and map the result back. These direct-call tests are
+    // the MCP-observable oracle the migration must preserve: the "only process-based apps support
+    // ..." Validation guard is an MCP-surface pre-check kept above the operation (REST has none),
+    // and the unknown-slug path maps to AppNotFound. The success path on a LIVE process needs a
+    // real running process (out of reach in this fixture, as the pre-migration suite's absence of
+    // any restart/kill surface test reflects); the surface-guard + not-found shapes are what
+    // change here and what these pin byte-identical to pre-migration.
+
+    [Fact]
+    public async Task RestartApp_StaticSite_ReturnsValidationErrorPreservingMcpMessage()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateLifecycleTools();
+            using var _ = scope;
+
+            var result = await tools.RestartAppAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeTrue();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain("only process-based apps support restart");
+            text.ShouldContain(slug);
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task RestartApp_UnknownApp_ReturnsAppNotFound()
+    {
+        var (tools, scope) = CreateLifecycleTools();
+        using var _ = scope;
+
+        var result = await tools.RestartAppAsync("no-such-app-restart", authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-restart");
+    }
+
+    [Fact]
+    public async Task KillApp_StaticSite_ReturnsValidationErrorPreservingMcpMessage()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateLifecycleTools();
+            using var _ = scope;
+
+            var result = await tools.KillAppAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeTrue();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain("only process-based apps support kill");
+            text.ShouldContain(slug);
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task KillApp_UnknownApp_ReturnsAppNotFound()
+    {
+        var (tools, scope) = CreateLifecycleTools();
+        using var _ = scope;
+
+        var result = await tools.KillAppAsync("no-such-app-kill", authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-kill");
     }
 
     // -------- Configuration: get_settings --------
