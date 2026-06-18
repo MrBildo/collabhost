@@ -28,6 +28,7 @@ public static class RegistryRegistration
             services.AddScoped<RestartAppOperation>();
             services.AddScoped<KillAppOperation>();
             services.AddScoped<UpdateSettingsOperation>();
+            services.AddScoped<CreateAppOperation>();
 
             return services;
         }

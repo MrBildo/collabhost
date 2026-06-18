@@ -4,7 +4,6 @@ using System.Text.Json;
 
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
-using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
@@ -152,8 +151,7 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<TypeStore>(),
             sp.GetRequiredService<ProcessSupervisor>(),
             sp.GetRequiredService<ProxyManager>(),
-            sp.GetRequiredService<ProxySettings>(),
-            sp.GetRequiredService<ExternalTargetSettings>(),
+            sp.GetRequiredService<CreateAppOperation>(),
             sp.GetRequiredService<ICurrentUser>(),
             sp.GetRequiredService<ActivityEventStore>(),
             sp.GetRequiredService<AppDataPathResolver>(),
@@ -697,6 +695,57 @@ public class McpToolTests(ApiFixture fixture)
         finally
         {
             await DeleteTestAppAsync(appName);
+
+            if (Directory.Exists(installDirectory))
+            {
+                Directory.Delete(installDirectory, true);
+            }
+        }
+    }
+
+    // Card #406 PR 6, F-1 lock-test: the disclosed, deliberate parse-before-exists ordering on the MCP
+    // surface. A doubly-invalid register_app -- an EXISTING slug AND malformed settings JSON -- now
+    // surfaces the JSON-parse error (built at the adapter, before the operation runs), NOT the
+    // exists-conflict (owned by CreateAppOperation, never reached on this path). Pre-migration the MCP
+    // exists-check ran first and returned the conflict. The reorder is forced by the spine (the parse
+    // builds the command the operation consumes) and is zero state-impact; this test pins which error
+    // surfaces so the divergence can't silently flip back if someone "restores" a surface-level
+    // exists-check. The directoryRequired gate passes (valid installDirectory) so the parse is reached.
+    [Fact]
+    public async Task RegisterApp_ExistingSlugAndMalformedSettings_ReturnsParseErrorNotExistsError()
+    {
+        var existingSlug = await CreateTestAppAsync();
+        var installDirectory = Path.Combine(Path.GetTempPath(), $"collabhost-test-{Guid.NewGuid():N}");
+
+        Directory.CreateDirectory(installDirectory);
+
+        try
+        {
+            var (tools, scope) = CreateRegistrationTools();
+            using var _ = scope;
+
+            // name derives to the EXISTING slug (CreateTestAppAsync seeds name == slug, already
+            // lowercase + hyphenated, so name.ToLowerInvariant().Replace(' ', '-') is identity).
+            var result = await tools.RegisterAppAsync
+            (
+                existingSlug,
+                "static-site",
+                installDirectory,
+                settings: "{bad json",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeTrue();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain("Invalid JSON in settings parameter");
+            text.ShouldNotContain("already exists");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(existingSlug);
 
             if (Directory.Exists(installDirectory))
             {

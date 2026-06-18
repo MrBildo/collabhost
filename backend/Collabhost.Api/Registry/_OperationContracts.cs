@@ -85,3 +85,57 @@ public sealed record UpdateSettingsCommand
 // so neither surface needs anything but the slug to produce its result. Co-located with the commands
 // by cohesion (§7), the same way AppActionOutcome is.
 public sealed record UpdateSettingsOutcome(string Slug);
+
+// --- Create ---
+
+// The normalized input CreateAppOperation receives. The two registration surfaces have very
+// different RAW inputs (REST's typed nested dictionary with a "discovery" virtual section; MCP's
+// `name` + flat `installDirectory` + raw JSON-string `settings`), and the genuine REST<->MCP
+// divergence is ENTIRELY at the input edge -- each surface ASSEMBLES its raw input into this one
+// normalized command, and the shared operation core is byte-identical across both. There are NO
+// flags (unlike UpdateSettingsCommand): Create/Register has no mid-body divergence -- the create
+// sequence (exists -> type -> validate -> create -> save -> route -> events -> hints) is identical
+// on both surfaces, so the divergence is fully resolved at the adapters and nothing rides the
+// command to gate in-body behavior.
+//
+//   - Slug: a VALID slug by construction -- the adapter validated (REST: Slug.Validate(request.Name))
+//     or derived-then-validated (MCP: name -> lowercase -> spaces-to-hyphens -> Slug.Validate) it,
+//     and it carries the FINAL PERSISTED form (REST request.Name.Trim().ToLowerInvariant(); MCP the
+//     already-lowercased derivedSlug). The operation does NOT re-run Slug.Validate or re-transform --
+//     it asserts uniqueness (ExistsBySlugAsync) and creates with this slug verbatim. The slug-shape
+//     check + the derive transform are the single-surface concerns that stay at each surface (the
+//     derive-vs-take-as-given asymmetry and its divergent error prose live at the MCP adapter).
+//   - DisplayName: REST takes it as-given; MCP uses name.Trim() (the MCP `name` IS the display name).
+//   - AppTypeSlug: the slug string, NOT a resolved AppType -- the operation does the GetBySlug lookup
+//     itself (shared core: both surfaces look it up and reject null, so the lookup + its not-found
+//     mapping live once in the operation).
+//   - Overrides: the RAW, section-assembled (but NOT yet validated) JsonObject keyed by capability
+//     section ("process", "artifact", "routing", "external-target", ...), each value a JsonObject of
+//     field->value. Validation runs ONCE inside the operation (CapabilityResolver.ValidateEdits,
+//     isNewApp: true) -- the same placement UpdateSettingsOperation uses. The adapter's job is to
+//     PRODUCE this object (REST folds its "discovery" section into "process"; MCP injects
+//     installDirectory into process.workingDirectory / artifact.location); the operation VALIDATES
+//     and persists it. This matches UpdateSettingsCommand.Changes' JsonObject-of-sections shape.
+public sealed record CreateAppCommand
+(
+    string Slug,
+    string DisplayName,
+    string AppTypeSlug,
+    JsonObject Overrides
+);
+
+// The surface-agnostic outcome of a registration. Carries the id, the slug, and the helpful-next-
+// steps hints. The hints are computed ONCE in the operation -- folding the ~40-line
+// ResolveHelpfulNextSteps method that was duplicated near-verbatim across BOTH surface files
+// (AppRegistrationEndpoints + RegistrationTools) into the shared core (the §8 dedup target). Each
+// surface emits the hint list verbatim (REST -> CreateAppResponse.HelpfulNextSteps; MCP ->
+// helpfulNextSteps). writableDataPath is NOT on the outcome -- it is dataPathResolver.ResolveFor(slug),
+// a trivial pure call each surface makes from outcome.Slug (both surfaces hold AppDataPathResolver).
+// Co-located with the commands by cohesion (§7), the same way AppActionOutcome / UpdateSettingsOutcome
+// are.
+public sealed record CreateAppOutcome
+(
+    Ulid Id,
+    string Slug,
+    IReadOnlyList<string> Hints
+);
