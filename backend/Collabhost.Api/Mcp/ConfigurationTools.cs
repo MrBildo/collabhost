@@ -57,7 +57,7 @@ public class ConfigurationTools
     private readonly ExternalTargetSettings _externalTargetSettings = externalTargetSettings
         ?? throw new ArgumentNullException(nameof(externalTargetSettings));
 
-    // Card #365: mirror REST AppEndpoints.UpdateSettingsAsync's writer trigger so
+    // Card #365: mirror REST AppSettingsEndpoints.SaveAppSettingsAsync's writer trigger so
     // MCP update_settings re-renders the runtime-config-file when its capability
     // values change and the route is currently up. The original #336 commit
     // added the writer call to REST but not to MCP -- the MCP path was
@@ -372,7 +372,7 @@ public class ConfigurationTools
         _appStore.InvalidateOverrides(app.Id);
 
         // Re-render the runtime-config file when its capability values change and
-        // the route is currently enabled. Mirrors REST AppEndpoints.UpdateSettingsAsync
+        // the route is currently enabled. Mirrors REST AppSettingsEndpoints.SaveAppSettingsAsync
         // (post-Card-#365 semantic: IsRouteEnabled, not IsRouteExplicitlyEnabled --
         // see that comment for the full rationale). Write failure surfaces in the
         // MCP response as a partial-success (override persisted, file on disk did
