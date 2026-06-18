@@ -40,17 +40,16 @@ public sealed record AppActionOutcome
 // JSON string), and into the same JsonObject the operation's shared validate -> merge -> save loop
 // walks.
 //
-// The two bool flags carry the GENUINE pre-migration REST<->MCP divergence as per-call command
-// input -- they are not feature toggles smeared into the operation, they are what each surface
-// asks the operation to do, made visible in each adapter's command construction:
+// The three bool flags carry per-call command input -- they are not feature toggles smeared into
+// the operation, they are what each surface asks the operation to do, made visible in each
+// adapter's command construction:
 //
-//   - ValidateMergedOverrides: REST runs CapabilityResolver.ValidateMergedOverrides on the
-//     post-merge effective override (the #365-era two-step-operator-path cross-field check); the
-//     pre-migration MCP path NEVER did. REST adapter passes true, MCP adapter passes false.
+//   - ValidateMergedOverrides: run CapabilityResolver.ValidateMergedOverrides on the post-merge
+//     effective override (the #365-era two-step-operator-path cross-field check that rejects the
+//     HSTS double-emission collision). BOTH adapters now pass true (#406 settings parity-fix).
 //
-//   - RefreshProbesOnArtifactChange: REST re-probes (InvalidateProbeCache + RunProbesAsync) when
-//     the `artifact` section changes; the pre-migration MCP path NEVER did. REST adapter passes
-//     true, MCP adapter passes false.
+//   - RefreshProbesOnArtifactChange: re-probe (InvalidateProbeCache + RunProbesAsync) when the
+//     `artifact` section changes. BOTH adapters now pass true (#406 settings parity-fix).
 //
 //   - RejectUnknownSection: an unknown capability section is SKIPPED by REST (continue) but is a
 //     mid-loop hard error on MCP (return InvalidParameters). The single-surface-guard precedent
@@ -62,13 +61,15 @@ public sealed record AppActionOutcome
 //     ("Use get_settings to see valid sections...") stays at the MCP adapter -- the operation
 //     returns OperationResult.Validation with the section name, the adapter shapes the prose.
 //
-// The first two are a confirmed REST<->MCP drift (the exact #350/#365/#366 hand-sync class §8
-// exists to delete), surfaced -- NOT fixed -- in this PR: PR 5's mandate is byte-for-byte
-// preservation on each surface; the one sanctioned parity-fix in the arc is PR 7's DeleteApp
-// InvalidateProbeCache fold. Flipping both MCP drift-flags to true (matching REST) is the eventual
-// one-line parity fix; the flags make that future decision a visible diff rather than a buried
-// behavioral change. RejectUnknownSection is a genuine kept divergence (REST's skip vs MCP's
-// reject is intended surface ergonomics, not drift), not a parity-fix candidate.
+// The first two flags WERE a confirmed REST<->MCP drift (the exact #350/#365/#366 hand-sync class
+// §8 exists to delete): the pre-migration MCP update_settings path ran NEITHER the merged-overrides
+// validation NOR the probe-refresh that REST ran. PR 5 migrated both surfaces onto this operation
+// byte-for-byte, isolating the drift behind these two flags (REST true, MCP false) so the fix would
+// be a visible diff. The #406 settings parity-fix then flipped the MCP flags to true -- the one
+// sanctioned behavior change of the spine arc, per the operator ruling -- so both surfaces now share
+// the merged-validation and probe-refresh. RejectUnknownSection is NOT a parity candidate: REST's
+// skip vs MCP's reject is intended surface ergonomics (MCP fails loud for agents; REST skips for the
+// typed UI), a genuine kept divergence.
 public sealed record UpdateSettingsCommand
 (
     string Slug,
