@@ -41,13 +41,16 @@ public class ContractRecordPlacementTests
     ];
 
     // The count of public *Request/*Response/*Command/*Arguments types in the Api assembly.
-    // 18 today: 13 from the T4 P2 baseline, plus the two *Command records the #406 spine PR 2 adds
-    // (RestartAppCommand + KillAppCommand) and the two PR 3 adds (StartAppCommand + StopAppCommand),
-    // all in Registry/_OperationContracts.cs, plus the one PR 4 adds (ReloadProxyCommand, in
-    // Proxy/_OperationContracts.cs -- the first spine command outside Registry/). Each later spine
-    // PR that adds a public *Command record bumps this count. The count guard keeps the placement
-    // assertion honest -- a detector that matches zero would let placement pass vacuously.
-    private const int _expectedContractRecordCount = 18;
+    // 19 today: 13 from the T4 P2 baseline, plus the two *Command records the #406 spine PR 2 adds
+    // (RestartAppCommand + KillAppCommand), the two PR 3 adds (StartAppCommand + StopAppCommand), all
+    // in Registry/_OperationContracts.cs; plus the one PR 4 adds (ReloadProxyCommand, in
+    // Proxy/_OperationContracts.cs -- the first spine command outside Registry/); plus the one PR 5
+    // adds (UpdateSettingsCommand, in Registry/_OperationContracts.cs). PR 5's UpdateSettingsOutcome
+    // is a *Outcome record, NOT in the *Command/*Request/*Response/*Arguments suffix family, so it is
+    // not counted (same as AppActionOutcome / ProxyReloadOutcome). Each later spine PR that adds a
+    // public *Command record bumps this count. The count guard keeps the placement assertion honest --
+    // a detector that matches zero would let placement pass vacuously.
+    private const int _expectedContractRecordCount = 19;
 
     // Mutation-proof reading 1: guard the detector. If the public-contract detector silently
     // matches zero, this is the test that goes RED rather than placement passing vacuously.

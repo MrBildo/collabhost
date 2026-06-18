@@ -11,7 +11,6 @@ using Collabhost.Api.Platform;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
-using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 using Collabhost.Api.Tests.Fixtures;
 
@@ -134,13 +133,9 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<ProcessSupervisor>(),
             sp.GetRequiredService<ProxyManager>(),
             sp.GetRequiredService<ProxySettings>(),
-            sp.GetRequiredService<ExternalTargetSettings>(),
-            sp.GetRequiredService<RuntimeConfigFileWriter>(),
             sp.GetRequiredService<ReloadProxyOperation>(),
-            sp.GetRequiredService<ICurrentUser>(),
-            sp.GetRequiredService<ActivityEventStore>(),
-            sp.GetRequiredService<McpRequestAuthenticator>(),
-            sp.GetRequiredService<ILogger<ConfigurationTools>>()
+            sp.GetRequiredService<UpdateSettingsOperation>(),
+            sp.GetRequiredService<McpRequestAuthenticator>()
         );
 
         return (tools, scope);
@@ -483,6 +478,96 @@ public class McpToolTests(ApiFixture fixture)
         var text = GetFirstText(result);
 
         text.ShouldContain("reload requested");
+    }
+
+    // -------- Configuration: update_settings (operation-spine adapter, #406 PR 5) --------
+    //
+    // update_settings now parses its raw `settings` string into a JsonObject, adapts it into the
+    // normalized UpdateSettingsCommand (MCP flags: ValidateMergedOverrides + RefreshProbesOnArtifact-
+    // Change false, RejectUnknownSection true), calls the injected UpdateSettingsOperation, and maps
+    // the result back. These direct-call tests are the MCP-observable oracle the migration must
+    // preserve byte-for-byte: the fixed success message, the unknown-section reject, and the
+    // app-not-found shape.
+
+    [Fact]
+    public async Task UpdateSettings_ValidChange_ReturnsFixedSuccessMessage()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateConfigurationTools();
+            using var _ = scope;
+
+            var result = await tools.UpdateSettingsAsync
+            (
+                slug,
+                "{\"runtime-config-file\":{\"values\":{\"apiBaseUrl\":\"https://mcp.example/api\"}}}",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeFalse();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain($"Settings updated for app '{slug}'");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateSettings_UnknownSection_ReturnsError()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateConfigurationTools();
+            using var _ = scope;
+
+            var result = await tools.UpdateSettingsAsync
+            (
+                slug,
+                "{\"not-a-capability\":{\"foo\":\"bar\"}}",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeTrue();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain("Unknown capability section 'not-a-capability'");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateSettings_UnknownApp_ReturnsError()
+    {
+        var (tools, scope) = CreateConfigurationTools();
+        using var _ = scope;
+
+        var result = await tools.UpdateSettingsAsync
+        (
+            "no-such-app-xyz",
+            "{\"runtime-config-file\":{\"values\":{\"apiBaseUrl\":\"https://x\"}}}",
+            authKey: ApiFixture.AdminKey,
+            CancellationToken.None
+        );
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-xyz");
     }
 
     // -------- Registration: detect_strategy --------
