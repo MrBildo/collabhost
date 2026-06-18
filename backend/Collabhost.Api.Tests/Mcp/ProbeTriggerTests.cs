@@ -21,7 +21,7 @@ namespace Collabhost.Api.Tests.Mcp;
 
 // Card #366: integration coverage for the probe-trigger on the MCP start_app
 // surface. The pre-Card-#366 MCP path took no ProbeService dependency at all --
-// REST AppEndpoints.StartAppAsync called RunProbesAsync on both start branches
+// REST AppLifecycleEndpoints.StartAppAsync called RunProbesAsync on both start branches
 // (routing-only and process-bearing); the MCP path called it on neither. An
 // MCP-driven start_app on a routing-only app therefore left probe-derived
 // metadata (surfaced via get_app) stale until the next probe-refresh trigger.

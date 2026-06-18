@@ -47,7 +47,7 @@ public class LifecycleTools
     private readonly ProxyManager _proxy = proxy
         ?? throw new ArgumentNullException(nameof(proxy));
 
-    // Card #366: mirror REST AppEndpoints.StartAppAsync's RunProbesAsync call so
+    // Card #366: mirror REST AppLifecycleEndpoints.StartAppAsync's RunProbesAsync call so
     // MCP start_app refreshes probe-derived metadata (surfaced via get_app) on
     // both the routing-only and process-bearing branches. The original #336/#332
     // MCP path took no ProbeService dep at all -- the REST path called probes on
@@ -55,7 +55,7 @@ public class LifecycleTools
     private readonly ProbeService _probeService = probeService
         ?? throw new ArgumentNullException(nameof(probeService));
 
-    // Card #365: mirror REST AppEndpoints.StartAppAsync's routing-only branch so
+    // Card #365: mirror REST AppLifecycleEndpoints.StartAppAsync's routing-only branch so
     // MCP start_app fires the runtime-config-file writer before EnableRoute. The
     // original #336 commit added the writer call to REST but not to MCP -- the
     // MCP path was structurally never wired to the writer.
@@ -113,7 +113,7 @@ public class LifecycleTools
             // Render runtime-config-file BEFORE enabling the route (Card #336).
             // Ordering matters: if we enabled the route first, Caddy could serve a
             // stale on-disk value for an arbitrary window before the writer landed
-            // the new file. Mirrors AppEndpoints.StartAppAsync's REST routing-only
+            // the new file. Mirrors AppLifecycleEndpoints.StartAppAsync's REST routing-only
             // branch -- the original #336 commit added the writer call to REST but
             // never to MCP, leaving the MCP trigger structurally absent. Card #365.
             try
@@ -129,11 +129,11 @@ public class LifecycleTools
             _proxy.RequestSync();
 
             // Clear the persisted operator-stop flag (REST+MCP parity with
-            // AppEndpoints.StartAppAsync). Card #350.
+            // AppLifecycleEndpoints.StartAppAsync). Card #350.
             await _appStore.SetStoppedByOperatorAsync(app.Id, app.Slug, false, ct);
 
             // Refresh probe-derived metadata so get_app reflects the current
-            // artifact state. Mirrors AppEndpoints.StartAppAsync's routing-only
+            // artifact state. Mirrors AppLifecycleEndpoints.StartAppAsync's routing-only
             // branch; the MCP path took no ProbeService dep before Card #366.
             await _probeService.RunProbesAsync(app.Id, ct);
 
@@ -249,7 +249,7 @@ public class LifecycleTools
             _proxy.RequestSync();
 
             // Persist the operator-stop intent (REST+MCP parity with
-            // AppEndpoints.StopAppAsync). Card #350.
+            // AppLifecycleEndpoints.StopAppAsync). Card #350.
             await _appStore.SetStoppedByOperatorAsync(app.Id, app.Slug, true, ct);
 
             try
