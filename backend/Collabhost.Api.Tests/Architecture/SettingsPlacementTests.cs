@@ -18,22 +18,34 @@ namespace Collabhost.Api.Tests.Architecture;
 // the one *Settings-suffixed REST contract DTO (Registry/_ApiContracts.cs's AppSettings) -- the
 // suffix-based placement test includes AppSettings and it passes (Registry/ is a subsystem
 // folder), exactly as the spec's row-5 re-measure records: GREEN whether you count 6 config
-// types or 7 suffix-matches. Scoped to Collabhost.Api.* via RelativeToApiRoot so no framework
-// or source-generated *Settings type reaches the assertion.
+// types or 7 suffix-matches.
+//
+// THE BARE Collabhost.Api ROOT IS IN SCOPE, by §5's own location wording. §5 forbids a
+// *Settings type "outside a subsystem folder (or Platform/)" -- and the bare Collabhost.Api
+// root is neither a subsystem folder nor Platform/, so a *Settings type stranded there is a §5
+// violation, not an out-of-scope case. The detector therefore admits the bare root (IsUnderApiRoot)
+// rather than excluding it. This is deliberately NOT done via the shared RelativeToApiRoot helper:
+// that helper returns null for the bare root (its "Collabhost.Api." prefix carries a trailing dot),
+// and §7's ContractRecordPlacementTests shares it -- changing the helper to admit the bare root
+// would silently pull a bare-root contract record into §7's scope, which §7 makes no claim about.
+// The bare-root admission is contained to this §5 call site (IsUnderApiRoot) so the blast radius
+// stays here; foreign and source-generated namespaces (Microsoft.*, System.*) are still excluded.
 //
 // PLACEMENT RULE, machine-statable. A *Settings type satisfies placement when its namespace,
 // relative to the Api root, has a non-empty subsystem-root segment (it lives inside SOME
 // subsystem folder, never stranded at the bare Collabhost.Api root) and that root segment is
-// not a pool-by-kind drawer name (Configuration, Settings). The forbidden-pool guard is what
-// makes the test bite the actual §5 failure mode: someone gathering knobs into a
-// Collabhost.Api.Configuration/ drawer is the pool-by-kind the spine forbids.
+// not a pool-by-kind drawer name (Configuration, Settings). The forbidden-pool guard bites the
+// gather-knobs-into-a-Collabhost.Api.Configuration/-drawer failure mode; the bare-root guard
+// bites the strand-a-knob-at-the-root failure mode. Both are §5 violations; both are asserted.
 //
 // MUTATION-PROOFING. A placement test passes vacuously if the detector matches zero *Settings
 // types -- then "none is mis-placed" is trivially true. The count guard below asserts the
 // detector finds the full *Settings set (7 today: the 6 config types + AppSettings); a
-// zero-match detector reds there rather than letting placement pass on an empty set. To see the
-// placement assertion RED, move any *Settings type into a Collabhost.Api.Configuration drawer
-// (or to the bare Api root) and it is named as an offender.
+// zero-match detector reds there rather than letting placement pass on an empty set. The
+// placement decision is also exercised directly against synthetic namespaces (a bare-root
+// namespace, a Configuration/ drawer namespace, a real subsystem namespace) so BOTH offender
+// arms -- bare-root and pool-by-kind -- are proven to bite and name the offender, rather than
+// resting on a mis-placed type that does not exist in the tree today.
 public class SettingsPlacementTests
 {
     // Pool-by-kind drawer names §5 forbids: a *Settings type may never live in one. These are
@@ -82,14 +94,8 @@ public class SettingsPlacementTests
     public void No_settings_type_lives_outside_a_subsystem_folder()
     {
         var offenders = SettingsTypes()
-            .Select(type => new
-            {
-                type.Name,
-                RootSegment = SubsystemRootSegment(type)
-            })
-            .Where(entry => entry.RootSegment is null
-                || _forbiddenPoolSegments.Contains(entry.RootSegment, StringComparer.Ordinal))
-            .Select(entry => entry.Name + " (root segment: " + (entry.RootSegment ?? "<bare Api root>") + ")")
+            .Where(type => !SatisfiesPlacement(type.Namespace))
+            .Select(type => type.Name + " (root segment: " + DescribeRootSegment(type.Namespace) + ")")
             .Order(StringComparer.Ordinal)
             .ToArray();
 
@@ -102,29 +108,105 @@ public class SettingsPlacementTests
         );
     }
 
-    // Detect concrete *Settings-suffixed types, scoped to Collabhost.Api.* so framework or
-    // source-generated *Settings types never reach the assertion. Both class and record kinds
-    // are in scope (AppSettings is a record); enums are excluded (no *Settings enum exists, and
-    // a settings enum would not be a configuration type).
+    // Mutation-proof reading 2: prove BOTH offender arms bite and name the offender, exercised
+    // against synthetic namespaces so neither arm rests on a mis-placed type that does not exist
+    // in the tree today. A bare-root *Settings type (namespace "Collabhost.Api") and a
+    // pool-by-kind-drawer *Settings type (namespace "Collabhost.Api.Configuration") must each
+    // fail placement; a real subsystem namespace must pass.
+    [Fact]
+    public void Placement_rule_rejects_bare_root_and_pool_by_kind_drawers()
+    {
+        // Bare-root: the failure mode this fix makes the test catch. Stranded directly at
+        // Collabhost.Api -- no subsystem segment at all.
+        SatisfiesPlacement("Collabhost.Api").ShouldBeFalse
+        (
+            "a *Settings type stranded at the bare Collabhost.Api root must fail §5 placement."
+        );
+        DescribeRootSegment("Collabhost.Api").ShouldBe("<bare Api root>");
+
+        // Pool-by-kind: the gather-knobs-into-a-drawer failure mode.
+        SatisfiesPlacement("Collabhost.Api.Configuration").ShouldBeFalse
+        (
+            "a *Settings type pooled in a Configuration/ drawer must fail §5 placement."
+        );
+        SatisfiesPlacement("Collabhost.Api.Settings").ShouldBeFalse
+        (
+            "a *Settings type pooled in a Settings/ drawer must fail §5 placement."
+        );
+
+        // A real subsystem folder satisfies placement; Platform/ (host-owned knobs) does too.
+        SatisfiesPlacement("Collabhost.Api.Proxy").ShouldBeTrue
+        (
+            "a *Settings type in a subsystem folder must satisfy §5 placement."
+        );
+        SatisfiesPlacement("Collabhost.Api.Platform").ShouldBeTrue
+        (
+            "a *Settings type in Platform/ (host-owned knobs) must satisfy §5 placement."
+        );
+        // A nested subsystem keys on its root segment (Data.AppTypes -> Data), which is neither
+        // bare-root nor a forbidden pool name.
+        SatisfiesPlacement("Collabhost.Api.Data.AppTypes").ShouldBeTrue
+        (
+            "a *Settings type in a blessed nested subsystem must satisfy §5 placement."
+        );
+    }
+
+    // Detect concrete *Settings-suffixed types under the Api root, INCLUDING the bare root, so a
+    // *Settings type stranded at Collabhost.Api is not silently excluded before placement runs.
+    // Foreign and source-generated *Settings types (Microsoft.*, System.*) are excluded by
+    // IsUnderApiRoot. Both class and record kinds are in scope (AppSettings is a record); enums
+    // are excluded (no *Settings enum exists, and a settings enum would not be a configuration
+    // type).
     private static Type[] SettingsTypes() =>
     [
         .. ArchitectureTestHelpers.AllApiTypes()
             .Where(type =>
                 type is { IsClass: true, IsAbstract: false }
                 && type.Name.EndsWith("Settings", StringComparison.Ordinal)
-                && ArchitectureTestHelpers.RelativeToApiRoot(type.Namespace) is not null)
+                && IsUnderApiRoot(type.Namespace))
     ];
 
-    // The subsystem-root segment of a type's namespace (the first segment below the Api root),
-    // or null when the type sits at the bare Api root (no subsystem segment at all). For
-    // "Collabhost.Api.Data.AppTypes" this returns "Data"; for a hypothetical
-    // "Collabhost.Api.SomeRootSettings" with namespace "Collabhost.Api" it returns null.
-    private static string? SubsystemRootSegment(Type type)
+    // A *Settings type's namespace satisfies §5 placement when it has a non-empty subsystem-root
+    // segment (it lives inside SOME subsystem folder, never stranded at the bare Api root) and
+    // that root segment is not a forbidden pool-by-kind drawer name.
+    private static bool SatisfiesPlacement(string? @namespace)
     {
-        var relative = ArchitectureTestHelpers.RelativeToApiRoot(type.Namespace);
+        var rootSegment = SubsystemRootSegment(@namespace);
 
+        return rootSegment is not null
+            && !_forbiddenPoolSegments.Contains(rootSegment, StringComparer.Ordinal);
+    }
+
+    // The subsystem-root segment of a namespace (the first segment below the Api root), or null
+    // when the namespace IS the bare Api root (no subsystem segment at all). For
+    // "Collabhost.Api.Data.AppTypes" this returns "Data"; for the bare "Collabhost.Api" it
+    // returns null.
+    private static string? SubsystemRootSegment(string? @namespace)
+    {
+        if (!IsUnderApiRoot(@namespace))
+        {
+            return null;
+        }
+
+        var relative = ArchitectureTestHelpers.RelativeToApiRoot(@namespace);
+
+        // RelativeToApiRoot returns null for the bare Api root (its prefix carries a trailing
+        // dot the bare root does not match); that is exactly the bare-root case -> no segment.
         return string.IsNullOrEmpty(relative)
             ? null
             : relative.Split('.')[0];
     }
+
+    // Human-readable root segment for the offender message: the segment name, or the bare-root
+    // marker when a type is stranded directly at Collabhost.Api.
+    private static string DescribeRootSegment(string? @namespace) =>
+        SubsystemRootSegment(@namespace) ?? "<bare Api root>";
+
+    // True when a namespace is under the Api root, INCLUDING the bare root itself. The shared
+    // RelativeToApiRoot helper excludes the bare root (its "Collabhost.Api." prefix carries a
+    // trailing dot); §5 must include it because a bare-root *Settings type is a §5 violation.
+    // This admission is local to §5 so it does not change the shared helper that §7 relies on.
+    private static bool IsUnderApiRoot(string? @namespace) =>
+        @namespace is "Collabhost.Api"
+            || (@namespace is not null && @namespace.StartsWith("Collabhost.Api.", StringComparison.Ordinal));
 }
