@@ -2,21 +2,17 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
-using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
-using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 using ModelContextProtocol.Protocol;
 
@@ -112,13 +108,11 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<AppStore>(),
             sp.GetRequiredService<TypeStore>(),
             sp.GetRequiredService<ProcessSupervisor>(),
-            sp.GetRequiredService<ProxyManager>(),
-            sp.GetRequiredService<ProbeService>(),
-            sp.GetRequiredService<RuntimeConfigFileWriter>(),
-            sp.GetRequiredService<ICurrentUser>(),
-            sp.GetRequiredService<ActivityEventStore>(),
-            sp.GetRequiredService<McpRequestAuthenticator>(),
-            sp.GetRequiredService<ILogger<LifecycleTools>>()
+            sp.GetRequiredService<StartAppOperation>(),
+            sp.GetRequiredService<StopAppOperation>(),
+            sp.GetRequiredService<RestartAppOperation>(),
+            sp.GetRequiredService<KillAppOperation>(),
+            sp.GetRequiredService<McpRequestAuthenticator>()
         );
 
         return (tools, scope);
@@ -136,12 +130,9 @@ public class McpToolTests(ApiFixture fixture)
             sp.GetRequiredService<ProcessSupervisor>(),
             sp.GetRequiredService<ProxyManager>(),
             sp.GetRequiredService<ProxySettings>(),
-            sp.GetRequiredService<ExternalTargetSettings>(),
-            sp.GetRequiredService<RuntimeConfigFileWriter>(),
-            sp.GetRequiredService<ICurrentUser>(),
-            sp.GetRequiredService<ActivityEventStore>(),
-            sp.GetRequiredService<McpRequestAuthenticator>(),
-            sp.GetRequiredService<ILogger<ConfigurationTools>>()
+            sp.GetRequiredService<ReloadProxyOperation>(),
+            sp.GetRequiredService<UpdateSettingsOperation>(),
+            sp.GetRequiredService<McpRequestAuthenticator>()
         );
 
         return (tools, scope);
@@ -156,15 +147,11 @@ public class McpToolTests(ApiFixture fixture)
         (
             sp.GetRequiredService<AppStore>(),
             sp.GetRequiredService<TypeStore>(),
-            sp.GetRequiredService<ProcessSupervisor>(),
-            sp.GetRequiredService<ProxyManager>(),
-            sp.GetRequiredService<ProxySettings>(),
-            sp.GetRequiredService<ExternalTargetSettings>(),
+            sp.GetRequiredService<CreateAppOperation>(),
+            sp.GetRequiredService<DeleteAppOperation>(),
             sp.GetRequiredService<ICurrentUser>(),
-            sp.GetRequiredService<ActivityEventStore>(),
             sp.GetRequiredService<AppDataPathResolver>(),
-            sp.GetRequiredService<McpRequestAuthenticator>(),
-            sp.GetRequiredService<ILogger<RegistrationTools>>()
+            sp.GetRequiredService<McpRequestAuthenticator>()
         );
 
         return (tools, scope);
@@ -237,6 +224,191 @@ public class McpToolTests(ApiFixture fixture)
         text.ShouldContain("no-such-app-xyz");
     }
 
+    // -------- Lifecycle: start_app / stop_app (operation-spine adapters, #406 PR 3) --------
+    //
+    // start_app and stop_app now adapt the slug into a command, call the injected
+    // StartAppOperation / StopAppOperation (dual-branch: routing-only vs process), and map the
+    // result back. These direct-call tests are the MCP-observable oracle the migration must
+    // preserve. A static-site (CreateTestAppAsync) is routing-only, so its start/stop runs the
+    // routing-only branch end-to-end and returns the { slug, status, appType } success shape
+    // byte-identical to pre-migration; the unknown-slug path keeps the MCP-surface AppNotFound shape
+    // (kept above the operation, where REST returns an empty 404). The process branch's live success
+    // needs a real running process (out of reach in this fixture); the routing-only success + the
+    // not-found shape are what change here and what these pin.
+
+    [Fact]
+    public async Task StartApp_RoutingOnly_ReturnsRunningSuccessShape()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateLifecycleTools();
+            using var _ = scope;
+
+            var result = await tools.StartAppAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeFalse();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain(slug);
+            text.ShouldContain("running");
+            text.ShouldContain("static-site");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task StartApp_UnknownApp_ReturnsAppNotFound()
+    {
+        var (tools, scope) = CreateLifecycleTools();
+        using var _ = scope;
+
+        var result = await tools.StartAppAsync("no-such-app-start", authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-start");
+    }
+
+    [Fact]
+    public async Task StopApp_RoutingOnly_ReturnsStoppedSuccessShape()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateLifecycleTools();
+            using var _ = scope;
+
+            var result = await tools.StopAppAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeFalse();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain(slug);
+            text.ShouldContain("stopped");
+            text.ShouldContain("static-site");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task StopApp_UnknownApp_ReturnsAppNotFound()
+    {
+        var (tools, scope) = CreateLifecycleTools();
+        using var _ = scope;
+
+        var result = await tools.StopAppAsync("no-such-app-stop", authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-stop");
+    }
+
+    // -------- Lifecycle: restart_app / kill_app (operation-spine adapters, #406 PR 2) --------
+    //
+    // restart_app and kill_app now adapt the slug into a command, call the injected
+    // RestartAppOperation / KillAppOperation, and map the result back. These direct-call tests are
+    // the MCP-observable oracle the migration must preserve: the "only process-based apps support
+    // ..." Validation guard is an MCP-surface pre-check kept above the operation (REST has none),
+    // and the unknown-slug path maps to AppNotFound. The success path on a LIVE process needs a
+    // real running process (out of reach in this fixture, as the pre-migration suite's absence of
+    // any restart/kill surface test reflects); the surface-guard + not-found shapes are what
+    // change here and what these pin byte-identical to pre-migration.
+
+    [Fact]
+    public async Task RestartApp_StaticSite_ReturnsValidationErrorPreservingMcpMessage()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateLifecycleTools();
+            using var _ = scope;
+
+            var result = await tools.RestartAppAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeTrue();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain("only process-based apps support restart");
+            text.ShouldContain(slug);
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task RestartApp_UnknownApp_ReturnsAppNotFound()
+    {
+        var (tools, scope) = CreateLifecycleTools();
+        using var _ = scope;
+
+        var result = await tools.RestartAppAsync("no-such-app-restart", authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-restart");
+    }
+
+    [Fact]
+    public async Task KillApp_StaticSite_ReturnsValidationErrorPreservingMcpMessage()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateLifecycleTools();
+            using var _ = scope;
+
+            var result = await tools.KillAppAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeTrue();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain("only process-based apps support kill");
+            text.ShouldContain(slug);
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task KillApp_UnknownApp_ReturnsAppNotFound()
+    {
+        var (tools, scope) = CreateLifecycleTools();
+        using var _ = scope;
+
+        var result = await tools.KillAppAsync("no-such-app-kill", authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-kill");
+    }
+
     // -------- Configuration: get_settings --------
 
     [Fact]
@@ -276,6 +448,183 @@ public class McpToolTests(ApiFixture fixture)
         var text = GetFirstText(result);
 
         text.ShouldContain("no-such-app-abc");
+    }
+
+    // -------- Configuration: reload_proxy (operation-spine adapter, #406 PR 4) --------
+    //
+    // reload_proxy now adapts the marker command, calls the injected ReloadProxyOperation (the
+    // trivial app-less op: RequestSync + the actor-stamped proxy.reloaded event), and maps the
+    // result back. This direct-call test is the MCP-observable oracle the migration must preserve:
+    // the fixed "reload requested" success message, byte-identical to pre-migration. (RequestSync
+    // only enqueues a channel write -- no Caddy contact -- so this runs without a live proxy.)
+
+    [Fact]
+    public async Task ReloadProxy_ReturnsFixedSuccessMessage()
+    {
+        var (tools, scope) = CreateConfigurationTools();
+        using var _ = scope;
+
+        var result = await tools.ReloadProxyAsync(authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+        (result.IsError ?? false).ShouldBeFalse();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("reload requested");
+    }
+
+    // -------- Configuration: update_settings (operation-spine adapter, #406 PR 5 + parity-fix) --------
+    //
+    // update_settings parses its raw `settings` string into a JsonObject, adapts it into the
+    // normalized UpdateSettingsCommand (MCP flags: ValidateMergedOverrides + RefreshProbesOnArtifact-
+    // Change TRUE since the #406 settings parity-fix, RejectUnknownSection true), calls the injected
+    // UpdateSettingsOperation, and maps the result back. The byte-preserved shapes (fixed success
+    // message, unknown-section reject, app-not-found) are pinned below; the HSTS-collision reject is
+    // the NEW parity behavior (the merged-validation flip -- pre-fix MCP silently accepted it).
+
+    [Fact]
+    public async Task UpdateSettings_ValidChange_ReturnsFixedSuccessMessage()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateConfigurationTools();
+            using var _ = scope;
+
+            var result = await tools.UpdateSettingsAsync
+            (
+                slug,
+                "{\"runtime-config-file\":{\"values\":{\"apiBaseUrl\":\"https://mcp.example/api\"}}}",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeFalse();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain($"Settings updated for app '{slug}'");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateSettings_UnknownSection_ReturnsError()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateConfigurationTools();
+            using var _ = scope;
+
+            var result = await tools.UpdateSettingsAsync
+            (
+                slug,
+                "{\"not-a-capability\":{\"foo\":\"bar\"}}",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeTrue();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain("Unknown capability section 'not-a-capability'");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateSettings_UnknownApp_ReturnsError()
+    {
+        var (tools, scope) = CreateConfigurationTools();
+        using var _ = scope;
+
+        var result = await tools.UpdateSettingsAsync
+        (
+            "no-such-app-xyz",
+            "{\"runtime-config-file\":{\"values\":{\"apiBaseUrl\":\"https://x\"}}}",
+            authKey: ApiFixture.AdminKey,
+            CancellationToken.None
+        );
+
+        (result.IsError ?? false).ShouldBeTrue();
+
+        var text = GetFirstText(result);
+
+        text.ShouldContain("no-such-app-xyz");
+    }
+
+    // NEW behavior (#406 settings parity-fix -- the one sanctioned behavior change of the spine arc):
+    // MCP update_settings now runs CapabilityResolver.ValidateMergedOverrides (ValidateMergedOverrides
+    // flag flipped false -> true, matching REST). This rejects the two-step HSTS double-emission
+    // collision -- save a Strict-Transport-Security entry in the headers map, then later turn on
+    // enableHsts -- that neither in-flight ValidateEdits delta trips alone but the merged state does.
+    //
+    // PRE-FIX this silently SUCCEEDED on MCP (the pre-migration path never ran merged-validation),
+    // producing a security-header double-emission REST had always rejected. This test asserts the new
+    // parity: the second MCP edit now returns an error naming the collision. A static-site binds
+    // security-headers, so CreateTestAppAsync is the vehicle; the in-flight first edit (headers only)
+    // succeeds, the second edit (enableHsts only) is what the merged check now rejects.
+    [Fact]
+    public async Task UpdateSettings_TwoStepHstsCollision_NowRejected()
+    {
+        var slug = await CreateTestAppAsync();
+
+        try
+        {
+            var (tools, scope) = CreateConfigurationTools();
+            using var _ = scope;
+
+            // Step 1: author a Strict-Transport-Security entry in the freeform headers map. The
+            // in-flight delta carries no enableHsts, so ValidateEdits' cross-field check does not trip
+            // -- this save succeeds (pre-fix and post-fix alike).
+            var firstResult = await tools.UpdateSettingsAsync
+            (
+                slug,
+                "{\"security-headers\":{\"headers\":{\"Strict-Transport-Security\":\"max-age=600\"}}}",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (firstResult.IsError ?? false).ShouldBeFalse
+            (
+                "First edit (headers map only) must succeed -- the collision needs the merged state. "
+                + "Body: " + GetFirstText(firstResult)
+            );
+
+            // Step 2: turn on enableHsts. The in-flight delta carries no headers map, so ValidateEdits
+            // alone still passes -- only the post-merge ValidateMergedOverrides sees BOTH and rejects.
+            var secondResult = await tools.UpdateSettingsAsync
+            (
+                slug,
+                "{\"security-headers\":{\"enableHsts\":true}}",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (secondResult.IsError ?? false).ShouldBeTrue
+            (
+                "MCP update_settings MUST now reject the merged HSTS double-emission collision "
+                + "(ValidateMergedOverrides flag flipped true by the #406 parity-fix). Pre-fix the "
+                + "MCP path ran no merged-validation and this silently succeeded. Body: "
+                + GetFirstText(secondResult)
+            );
+
+            GetFirstText(secondResult).ShouldContain("Strict-Transport-Security");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
     }
 
     // -------- Registration: detect_strategy --------
@@ -405,6 +754,57 @@ public class McpToolTests(ApiFixture fixture)
         finally
         {
             await DeleteTestAppAsync(appName);
+
+            if (Directory.Exists(installDirectory))
+            {
+                Directory.Delete(installDirectory, true);
+            }
+        }
+    }
+
+    // Card #406 PR 6, F-1 lock-test: the disclosed, deliberate parse-before-exists ordering on the MCP
+    // surface. A doubly-invalid register_app -- an EXISTING slug AND malformed settings JSON -- now
+    // surfaces the JSON-parse error (built at the adapter, before the operation runs), NOT the
+    // exists-conflict (owned by CreateAppOperation, never reached on this path). Pre-migration the MCP
+    // exists-check ran first and returned the conflict. The reorder is forced by the spine (the parse
+    // builds the command the operation consumes) and is zero state-impact; this test pins which error
+    // surfaces so the divergence can't silently flip back if someone "restores" a surface-level
+    // exists-check. The directoryRequired gate passes (valid installDirectory) so the parse is reached.
+    [Fact]
+    public async Task RegisterApp_ExistingSlugAndMalformedSettings_ReturnsParseErrorNotExistsError()
+    {
+        var existingSlug = await CreateTestAppAsync();
+        var installDirectory = Path.Combine(Path.GetTempPath(), $"collabhost-test-{Guid.NewGuid():N}");
+
+        Directory.CreateDirectory(installDirectory);
+
+        try
+        {
+            var (tools, scope) = CreateRegistrationTools();
+            using var _ = scope;
+
+            // name derives to the EXISTING slug (CreateTestAppAsync seeds name == slug, already
+            // lowercase + hyphenated, so name.ToLowerInvariant().Replace(' ', '-') is identity).
+            var result = await tools.RegisterAppAsync
+            (
+                existingSlug,
+                "static-site",
+                installDirectory,
+                settings: "{bad json",
+                authKey: ApiFixture.AdminKey,
+                CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeTrue();
+
+            var text = GetFirstText(result);
+
+            text.ShouldContain("Invalid JSON in settings parameter");
+            text.ShouldNotContain("already exists");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(existingSlug);
 
             if (Directory.Exists(installDirectory))
             {

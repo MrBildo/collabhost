@@ -30,7 +30,7 @@ public class UpdateHostsCliTests : IAsyncLifetime
     private string? _originalDataPath;
     private string? _originalContentRoot;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _scratchDir = Path.Combine(Path.GetTempPath(), $"collabhost-update-hosts-{Guid.NewGuid():N}");
         _dataDir = Path.Combine(_scratchDir, "data");
@@ -58,8 +58,10 @@ public class UpdateHostsCliTests : IAsyncLifetime
         Environment.SetEnvironmentVariable("ASPNETCORE_CONTENTROOT", _scratchDir);
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         Environment.SetEnvironmentVariable("COLLABHOST_DATA_PATH", _originalDataPath);
         Environment.SetEnvironmentVariable("ASPNETCORE_CONTENTROOT", _originalContentRoot);
 
@@ -77,7 +79,7 @@ public class UpdateHostsCliTests : IAsyncLifetime
             }
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

@@ -12,6 +12,7 @@ using Collabhost.Api.Registry;
 using Shouldly;
 
 using Xunit;
+using Xunit.Sdk;
 
 namespace Collabhost.Api.Tests.Proxy;
 
@@ -74,7 +75,7 @@ public sealed class RuntimeConfigOverlaySurvivesWipeSeamTests : IAsyncLifetime
     private bool _caddyStarted;
     private string _caddyUnavailableReason = string.Empty;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _scratchRoot = Path.Combine
         (
@@ -147,7 +148,7 @@ public sealed class RuntimeConfigOverlaySurvivesWipeSeamTests : IAsyncLifetime
         }
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         TryStopCaddy();
 
@@ -168,7 +169,7 @@ public sealed class RuntimeConfigOverlaySurvivesWipeSeamTests : IAsyncLifetime
             // Same best-effort rationale as the IOException branch.
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     // The serve-path gate, walked as the S73 sequence: pre-wipe shadowing,
@@ -176,7 +177,7 @@ public sealed class RuntimeConfigOverlaySurvivesWipeSeamTests : IAsyncLifetime
     // control that proves the surviving 200s came from the writable overlay (not
     // artifact-dir leakage). Each step's assertion is annotated with why it is
     // load-bearing.
-    [SkippableFact]
+    [Fact]
     public async Task RuntimeConfigOverlay_SurvivesArtifactDirWipe_AndStillServes()
     {
         SkipIfCaddyUnavailable();
@@ -527,7 +528,7 @@ public sealed class RuntimeConfigOverlaySurvivesWipeSeamTests : IAsyncLifetime
         // binary (or a transient bind failure) is not the serve-path contract
         // regression this test guards. CI runners with caddy on PATH exercise
         // it; everyone else still runs the rest of the suite.
-        throw new SkipException
+        throw SkipException.ForSkip
         (
             "RuntimeConfigOverlaySurvivesWipeSeamTests requires a real `caddy` on PATH "
             + "to spawn against the real ProxyConfigurationBuilder output. "

@@ -79,13 +79,13 @@ public class SighupReloadServiceTests : IDisposable
             NullLogger<TypeStore>.Instance
         );
 
-    [SkippableFact]
+    [Fact]
     public async Task StartAsync_OnNonLinux_NoOpReturnsCleanly()
     {
         // On Windows / macOS the service must start and stop cleanly without registering
         // anything. The hosted service is wired into DI unconditionally; the platform gate
         // is internal so the DI graph stays identical across platforms.
-        Skip.If(OperatingSystem.IsLinux(), "Non-Linux only");
+        Assert.SkipWhen(OperatingSystem.IsLinux(), "Non-Linux only");
 
         var typeStore = CreateTypeStore();
         await typeStore.LoadAsync();
@@ -100,14 +100,14 @@ public class SighupReloadServiceTests : IDisposable
         lifetime.ApplicationStopping.IsCancellationRequested.ShouldBeFalse();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task StartAsync_OnLinux_RegistersWithoutThrowing()
     {
         // Layer 1 of the contract: registering the PosixSignal.SIGHUP handler must succeed
         // on Linux. PosixSignalRegistration.Create can throw PlatformNotSupportedException
         // on platforms where the signal is unsupported -- this test is the proof Linux is
         // a supported host.
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var typeStore = CreateTypeStore();
         await typeStore.LoadAsync();

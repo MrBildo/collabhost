@@ -190,7 +190,6 @@ public class ProbeService
         return ProbeCurator.Curate
         (
             appTypeSlug,
-            evidence,
             dotnet,
             node,
             typeScript,

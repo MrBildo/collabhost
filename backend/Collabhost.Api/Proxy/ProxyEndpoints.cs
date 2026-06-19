@@ -1,10 +1,9 @@
 using System.Globalization;
 
-using Collabhost.Api.ActivityLog;
-using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Operations;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Portal;
 using Collabhost.Api.Registry;
@@ -167,32 +166,42 @@ public static class ProxyEndpoints
         );
     }
 
+    // Migrated to the operation spine (code-structure-conventions §8): the endpoint is a thin
+    // adapter -- inject ReloadProxyOperation directly (no dispatcher), call it with the marker
+    // command (no slug to adapt -- the reload acts on no app), and map OperationResult back to
+    // exactly the 204 No Content this handler returned before. The proxy.RequestSync() + the
+    // actor-stamped proxy.reloaded event now live once inside the operation.
     private static async Task<IResult> ReloadProxyAsync
     (
-        ProxyManager proxy,
-        ICurrentUser currentUser,
-        ActivityEventStore activityEventStore,
+        ReloadProxyOperation operation,
         CancellationToken ct
     )
     {
-        proxy.RequestSync();
+        var result = await operation.ExecuteAsync(new ReloadProxyCommand(), ct);
 
-        await activityEventStore.RecordAsync
-        (
-            new ActivityEvent
-            {
-                EventType = ActivityEventTypes.ProxyReloaded,
-                ActorId = currentUser.UserId.ToString(),
-                ActorName = currentUser.User.Name,
-                AppId = null,
-                AppSlug = null,
-                MetadataJson = null
-            },
-            ct
-        );
-
-        return TypedResults.NoContent();
+        return result.ToHttpResult();
     }
+}
+
+// File-scoped mapping from the surface-agnostic reload outcome back to the REST result shape
+// (§7: the surface holds only its file-scoped mapping, never the contract types). K-1 (Kai's PR-1
+// forward note): OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the
+// success arm is gated on IsSuccess FIRST -- FailureKind is only read on the failure path. The
+// reload operation has no failure path today (RequestSync only enqueues a channel write and never
+// throws; the leaf returns Success unconditionally), so the success arm -> 204 No Content is what
+// runs -- byte-identical to the pre-migration handler. The failure arm mirrors the lifecycle
+// adapter's status mapping for shape-consistency, kept for the day a reload precondition can fail.
+file static class ReloadProxyResultMapping
+{
+    public static IResult ToHttpResult(this OperationResult<ProxyReloadOutcome> result) =>
+        result.IsSuccess
+            ? TypedResults.NoContent()
+            : result.FailureKind switch
+            {
+                OperationFailureKind.NotFound => TypedResults.NotFound(),
+                OperationFailureKind.Validation => TypedResults.Problem(result.Error, statusCode: 400),
+                _ => TypedResults.Problem(result.Error, statusCode: 409),
+            };
 }
 #pragma warning restore MA0011
 #pragma warning restore MA0076

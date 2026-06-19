@@ -114,7 +114,7 @@ Development is on `main`.
 collabhost/
 ├── CLAUDE.md                  # This file
 ├── .editorconfig              # Code style (tool-enforced)
-├── nuget.config               # NuGet feed config (Aspire preview, dnceng dotnet9 feed)
+├── nuget.config               # NuGet feed config (nuget.org only)
 ├── .agents/                   # Instance-local workspace (gitignored)
 │   ├── specs/                 # Architecture specs and feature specs
 │   ├── agents/{name}/         # Named agent workspaces (journal, TODO, archive)

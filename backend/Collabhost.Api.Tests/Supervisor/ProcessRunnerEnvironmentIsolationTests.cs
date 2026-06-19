@@ -8,7 +8,6 @@ using Microsoft.Extensions.Logging;
 using Shouldly;
 
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Collabhost.Api.Tests.Supervisor;
 
@@ -30,11 +29,11 @@ public class LinuxProcessRunnerEnvironmentIsolationTests(ITestOutputHelper outpu
 {
     private readonly LinuxProcessRunner _runner = new(new XunitBridgeLogger<LinuxProcessRunner>(output));
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task LinuxRunner_ChildDoesNotInheritCollabhostContentRoot()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         // Simulate the supervisor running under the production systemd unit.
         using var poison = new EnvironmentPoison
@@ -80,11 +79,11 @@ public class LinuxProcessRunnerEnvironmentIsolationTests(ITestOutputHelper outpu
         line.ShouldContain("PATH_SET=[yes]");
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task LinuxRunner_OperatorPinnedViaCapability_IsHonoredInChild()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         using var poison = new EnvironmentPoison
         (
@@ -125,11 +124,11 @@ public class WindowsProcessRunnerEnvironmentIsolationTests(ITestOutputHelper out
 {
     private readonly WindowsProcessRunner _runner = new(new XunitBridgeLogger<WindowsProcessRunner>(output));
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task WindowsRunner_ChildDoesNotInheritCollabhostContentRoot()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         using var poison = new EnvironmentPoison
         (
@@ -170,11 +169,11 @@ public class WindowsProcessRunnerEnvironmentIsolationTests(ITestOutputHelper out
         line.ShouldContain("DATA=[%COLLABHOST_DATA_PATH%]");
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task WindowsRunner_OperatorPinnedViaCapability_IsHonoredInChild()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         using var poison = new EnvironmentPoison
         (

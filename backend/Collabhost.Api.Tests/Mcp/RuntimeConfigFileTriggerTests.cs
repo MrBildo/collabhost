@@ -55,7 +55,7 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
     private CancellationTokenSource? _serverCts;
     private string _artifactDirectory = null!;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _artifactDirectory = Path.Combine
         (
@@ -97,8 +97,10 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
         _client = await McpClient.CreateAsync(clientTransport, cancellationToken: CancellationToken.None);
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         if (_client is not null)
         {
             await _client.DisposeAsync();

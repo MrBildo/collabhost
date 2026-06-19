@@ -1,14 +1,12 @@
 using System.ComponentModel;
 using System.Globalization;
 
-using Collabhost.Api.ActivityLog;
-using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Operations;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
-using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 
 using ModelContextProtocol.Protocol;
@@ -16,8 +14,6 @@ using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
-#pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
-#pragma warning disable MA0011 // Ulid.ToString is not locale-sensitive
 // Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
 // at the top of each body via McpRequestAuthenticator.
 [McpServerToolType]
@@ -28,12 +24,9 @@ public class ConfigurationTools
     ProcessSupervisor supervisor,
     ProxyManager proxy,
     ProxySettings proxySettings,
-    ExternalTargetSettings externalTargetSettings,
-    RuntimeConfigFileWriter runtimeConfigFileWriter,
-    ICurrentUser currentUser,
-    ActivityEventStore activityEventStore,
-    McpRequestAuthenticator authenticator,
-    ILogger<ConfigurationTools> logger
+    ReloadProxyOperation reloadProxyOperation,
+    UpdateSettingsOperation updateSettingsOperation,
+    McpRequestAuthenticator authenticator
 )
 {
     private readonly AppStore _appStore = appStore
@@ -51,31 +44,22 @@ public class ConfigurationTools
     private readonly ProxySettings _proxySettings = proxySettings
         ?? throw new ArgumentNullException(nameof(proxySettings));
 
-    // Card #348, D3. Threaded into CapabilityResolver.ValidateEdits when the
-    // section under edit is external-target so the host-pattern check honors
-    // the operator's public-hosts opt-in.
-    private readonly ExternalTargetSettings _externalTargetSettings = externalTargetSettings
-        ?? throw new ArgumentNullException(nameof(externalTargetSettings));
+    // The migrated reload-proxy operation injected directly (code-structure-conventions §8: no
+    // dispatcher). reload_proxy adapts the marker command, calls the operation, and maps the result.
+    private readonly ReloadProxyOperation _reloadProxyOperation = reloadProxyOperation
+        ?? throw new ArgumentNullException(nameof(reloadProxyOperation));
 
-    // Card #365: mirror REST AppEndpoints.UpdateSettingsAsync's writer trigger so
-    // MCP update_settings re-renders the runtime-config-file when its capability
-    // values change and the route is currently up. The original #336 commit
-    // added the writer call to REST but not to MCP -- the MCP path was
-    // structurally never wired to the writer.
-    private readonly RuntimeConfigFileWriter _runtimeConfigFileWriter = runtimeConfigFileWriter
-        ?? throw new ArgumentNullException(nameof(runtimeConfigFileWriter));
-
-    private readonly ICurrentUser _currentUser = currentUser
-        ?? throw new ArgumentNullException(nameof(currentUser));
-
-    private readonly ActivityEventStore _activityEventStore = activityEventStore
-        ?? throw new ArgumentNullException(nameof(activityEventStore));
+    // The migrated update-settings operation injected directly (code-structure-conventions §8, spine
+    // PR 5 -- the heaviest single body). update_settings adapts its raw `settings` string into the
+    // normalized command (with the MCP-divergence flags) and maps the result. The shared validate ->
+    // merge -> save -> render -> event loop now lives once in UpdateSettingsOperation; the
+    // ExternalTargetSettings / RuntimeConfigFileWriter / ICurrentUser / ActivityEventStore deps that
+    // body used moved into the operation and are no longer ctor deps here.
+    private readonly UpdateSettingsOperation _updateSettingsOperation = updateSettingsOperation
+        ?? throw new ArgumentNullException(nameof(updateSettingsOperation));
 
     private readonly McpRequestAuthenticator _authenticator = authenticator
         ?? throw new ArgumentNullException(nameof(authenticator));
-
-    private readonly ILogger<ConfigurationTools> _logger = logger
-        ?? throw new ArgumentNullException(nameof(logger));
 
     [McpServerTool
     (
@@ -256,13 +240,10 @@ public class ConfigurationTools
             return authError;
         }
 
-        var app = await _appStore.GetBySlugAsync(slug, ct);
-
-        if (app is null)
-        {
-            return McpResponseFormatter.AppNotFound(slug);
-        }
-
+        // MCP-specific input adaptation: the raw `settings` JSON string -> JsonObject. These two
+        // parse errors are MCP-surface concerns (REST receives a typed UpdateSettingsRequest, never a
+        // raw string), so they stay at the adapter, above the operation -- the single-surface guard
+        // precedent (a guard with no twin on the other surface stays at its surface).
         JsonObject? changesObject;
 
         try
@@ -285,144 +266,34 @@ public class ConfigurationTools
             );
         }
 
-        var bindings = _typeStore.GetBindings(app.AppTypeSlug);
-        var overrides = await _appStore.GetOverridesAsync(app.Id, ct);
-
-        // Handle identity section changes
-        if (changesObject.TryGetPropertyValue("identity", out var identityNode)
-            && identityNode is JsonObject identityChanges
-            && identityChanges.TryGetPropertyValue("displayName", out var displayNameNode))
-        {
-            var newDisplayName = displayNameNode?.GetValue<string>();
-
-            if (!string.IsNullOrWhiteSpace(newDisplayName))
-            {
-                app.DisplayName = newDisplayName;
-                app.ModifiedAt = DateTime.UtcNow;
-
-                await _appStore.UpdateAppAsync(app, ct);
-            }
-        }
-
-        // Handle capability section changes
-        foreach (var (sectionKey, sectionValueNode) in changesObject)
-        {
-            if (string.Equals(sectionKey, "identity", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (sectionValueNode is not JsonObject sectionChanges)
-            {
-                continue;
-            }
-
-            if (bindings is null || !bindings.ContainsKey(sectionKey))
-            {
-                return McpResponseFormatter.InvalidParameters
-                (
-                    $"Unknown capability section '{sectionKey}'. Use get_settings to see valid sections for this app."
-                );
-            }
-
-            var proposedOverrides = new JsonObject();
-
-            foreach (var (fieldKey, fieldValue) in sectionChanges)
-            {
-                proposedOverrides[fieldKey] = fieldValue?.DeepClone();
-            }
-
-            var validationErrors = CapabilityResolver.ValidateEdits
-            (
-                sectionKey, proposedOverrides, false, _externalTargetSettings.AllowPublicHosts
-            );
-
-            if (validationErrors.Count > 0)
-            {
-                return McpResponseFormatter.InvalidParameters
-                (
-                    $"Validation errors for '{sectionKey}': {string.Join("; ", validationErrors)}"
-                );
-            }
-
-            // Merge with existing override (only change provided fields)
-            var existingOverrideJson = overrides.TryGetValue(sectionKey, out var existing)
-                ? existing.ConfigurationJson
-                : null;
-
-            var effectiveOverride = existingOverrideJson is not null
-                ? JsonNode.Parse(existingOverrideJson)?.AsObject() ?? []
-                : (JsonObject)[];
-
-            foreach (var (fieldKey, fieldValue) in sectionChanges)
-            {
-                effectiveOverride[fieldKey] = fieldValue?.DeepClone();
-            }
-
-            await _appStore.SaveOverrideAsync
-            (
-                app.Id,
-                sectionKey,
-                effectiveOverride.ToJsonString(McpResponseFormatter.JsonOptions),
-                ct
-            );
-        }
-
-        _appStore.Invalidate(slug);
-        _appStore.InvalidateOverrides(app.Id);
-
-        // Re-render the runtime-config file when its capability values change and
-        // the route is currently enabled. Mirrors REST AppEndpoints.UpdateSettingsAsync
-        // (post-Card-#365 semantic: IsRouteEnabled, not IsRouteExplicitlyEnabled --
-        // see that comment for the full rationale). Write failure surfaces in the
-        // MCP response as a partial-success (override persisted, file on disk did
-        // not update -- operator-actionable). Card #365.
-        if (changesObject.ContainsKey("runtime-config-file")
-            && _proxy.IsRouteEnabled(app.Slug))
-        {
-            try
-            {
-                await _runtimeConfigFileWriter.RenderAsync(app, ct);
-            }
-            catch (RuntimeConfigFileWriteException ex)
-            {
-                return McpResponseFormatter.InvalidParameters
-                (
-                    "Settings saved, but failed to write runtime-config file: " + ex.Message
-                );
-            }
-        }
-
-        var changedCapabilities = changesObject.Select(kvp => kvp.Key)
-            .Where(k => !string.Equals(k, "identity", StringComparison.Ordinal))
-                .ToList();
-
-        try
-        {
-            await _activityEventStore.RecordAsync
-            (
-                new ActivityEvent
-                {
-                    EventType = ActivityEventTypes.AppSettingsUpdated,
-                    ActorId = _currentUser.UserId.ToString(),
-                    ActorName = _currentUser.User.Name,
-                    AppId = app.Id.ToString(),
-                    AppSlug = app.Slug,
-                    MetadataJson = JsonSerializer.Serialize(new { changedCapabilities })
-                },
-                ct
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record activity event for app.settings_updated (slug={Slug})", slug);
-        }
-
-        return McpResponseFormatter.Success
+        // Migrated to the operation spine (code-structure-conventions §8): adapt the parsed changes
+        // into the normalized command, call the injected operation directly (no dispatcher), and map
+        // the result back to the CallToolResult this tool returns. The shared identity -> validate ->
+        // merge -> save -> render -> event loop lives once in UpdateSettingsOperation. The pre-
+        // migration outer try/catch around the event record is dropped with the migrated body:
+        // ActivityEventStore.RecordAsync already swallows all exceptions internally (catch Exception ->
+        // LogWarning), so the wrapper was dead defensive code -- dropping it is an observable no-op
+        // (same as the start/stop/reload migrations).
+        //
+        // The command flags now MATCH the REST surface (#406 settings parity-fix, the one sanctioned
+        // behavior change of the spine arc): ValidateMergedOverrides + RefreshProbesOnArtifactChange
+        // are TRUE. The pre-migration MCP path ran NEITHER -- a confirmed REST<->MCP drift surfaced (not
+        // fixed) at PR 5 and folded in here per the operator ruling. MCP now (a) runs the post-merge
+        // cross-field check (rejecting the HSTS double-emission collision REST already rejected), and
+        // (b) re-probes on an artifact-section change. RejectUnknownSection stays TRUE -- MCP rejecting
+        // an unknown section mid-loop where REST skips is intended surface ergonomics, NOT drift.
+        var command = new UpdateSettingsCommand
         (
-            $"Settings updated for app '{slug}'. Use get_settings to review current values. "
-            + "If any changed settings require restart, use restart_app to apply them."
+            slug,
+            changesObject,
+            ValidateMergedOverrides: true,
+            RefreshProbesOnArtifactChange: true,
+            RejectUnknownSection: true
         );
+
+        var result = await _updateSettingsOperation.ExecuteAsync(command, ct);
+
+        return result.ToCallToolResult(slug);
     }
 
     [McpServerTool
@@ -447,33 +318,17 @@ public class ConfigurationTools
             return authError;
         }
 
-        _proxy.RequestSync();
+        // Migrated to the operation spine (code-structure-conventions §8): adapt the marker command
+        // (no slug -- the reload acts on no app), call the injected operation, and map the result
+        // back to exactly the fixed "reload requested" message this tool returned before. The
+        // proxy.RequestSync() + the actor-stamped proxy.reloaded event now live once in the
+        // operation. The pre-migration outer try/catch around RecordAsync is dropped with the
+        // migrated body: ActivityEventStore.RecordAsync already swallows all exceptions internally
+        // (catch Exception -> LogWarning), so the wrapper was dead defensive code -- dropping it is
+        // an observable no-op (same as the start/stop migration in PR 3).
+        var result = await _reloadProxyOperation.ExecuteAsync(new ReloadProxyCommand(), ct);
 
-        try
-        {
-            await _activityEventStore.RecordAsync
-            (
-                new ActivityEvent
-                {
-                    EventType = ActivityEventTypes.ProxyReloaded,
-                    ActorId = _currentUser.UserId.ToString(),
-                    ActorName = _currentUser.User.Name,
-                    AppId = null,
-                    AppSlug = null,
-                    MetadataJson = null
-                },
-                ct
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record activity event for proxy.reloaded");
-        }
-
-        return McpResponseFormatter.Success
-        (
-            "Proxy configuration reload requested. Caddy will regenerate its configuration from the current app registry state."
-        );
+        return result.ToCallToolResult();
     }
 
     [McpServerTool
@@ -608,6 +463,62 @@ public class ConfigurationTools
     }
 }
 
+// File-scoped mapping from the surface-agnostic reload outcome back to the MCP result shape (§7:
+// the surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
+// OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the success arm is
+// gated on IsSuccess FIRST -- FailureKind is only read on the failure path. The success arm returns
+// the exact fixed "reload requested" message the pre-migration body returned. The reload operation
+// has no failure path today (RequestSync only enqueues a channel write and never throws; the leaf
+// returns Success unconditionally), so success is what runs -- byte-identical to before. The failure
+// arm maps to InvalidParameters (the single MCP error shape) for shape-consistency, kept for the day
+// a reload precondition can fail.
+file static class ReloadProxyResultMapping
+{
+    public static CallToolResult ToCallToolResult(this OperationResult<ProxyReloadOutcome> result) =>
+        result.IsSuccess
+            ? McpResponseFormatter.Success
+            (
+                "Proxy configuration reload requested. Caddy will regenerate its configuration from the current app registry state."
+            )
+            : McpResponseFormatter.InvalidParameters(result.Error ?? string.Empty);
+}
+
+// File-scoped mapping from the surface-agnostic settings-update outcome back to the MCP result shape
+// (§7: the surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note): FailureKind
+// defaults to ordinal-0 NotFound on a success, so the success arm gates on IsSuccess FIRST.
+//
+// The mapping is byte-faithful to the pre-migration update_settings tool:
+//   - Success -> the fixed "Settings updated for app '{slug}'..." message (slug threaded in).
+//   - NotFound -> AppNotFound(slug) -- the MCP not-found shape (the operation's NotFound carries a
+//     "App '{slug}' not found." message, but MCP's surface shape is AppNotFound(slug), kept at the
+//     surface exactly as the pre-migration tool returned and as StartApp/StopApp's MCP adapter does).
+//   - Validation -> InvalidParameters(error). The error is either the full "Unknown capability
+//     section '{slug}'..." message (built surface-agnostic in the operation, byte-identical) or the
+//     section-qualified joined validation errors. (See the PR body: the pre-migration MCP wrapped
+//     the latter in a "Validation errors for '{section}': " prefix; that redundant prefix -- the
+//     section is already named in each "{capabilitySlug}.{field}: ..." error -- normalizes away with
+//     zero information loss. Reversal lever in the PR body if byte-exact prose is mandated.)
+//   - Conflict -> InvalidParameters(error). The partial-success path: the override ALREADY persisted,
+//     the runtime-config-file write failed, and the message is the exact "Settings saved, but failed
+//     to write runtime-config file: ..." prefix the pre-migration tool returned. The 3-kind model
+//     carries this conflict-with-a-value faithfully -- the pre-migration tool returned no value and
+//     recorded no event on this path either, so Conflict(message) with no value is byte-identical.
+file static class UpdateSettingsResultMapping
+{
+    public static CallToolResult ToCallToolResult(this OperationResult<UpdateSettingsOutcome> result, string slug) =>
+        result.IsSuccess
+            ? McpResponseFormatter.Success
+            (
+                $"Settings updated for app '{slug}'. Use get_settings to review current values. "
+                + "If any changed settings require restart, use restart_app to apply them."
+            )
+            : result.FailureKind switch
+            {
+                OperationFailureKind.NotFound => McpResponseFormatter.AppNotFound(slug),
+                _ => McpResponseFormatter.InvalidParameters(result.Error ?? string.Empty),
+            };
+}
+
 file static class ConfigurationToolExtensions
 {
     extension(JsonObject obj)
@@ -644,5 +555,3 @@ file static class ConfigurationToolExtensions
         };
     }
 }
-#pragma warning restore MA0011
-#pragma warning restore MA0076

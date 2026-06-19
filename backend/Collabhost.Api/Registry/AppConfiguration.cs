@@ -1,8 +1,6 @@
 using System.Globalization;
 
-using Collabhost.Api.Registry;
-
-namespace Collabhost.Api.Data;
+namespace Collabhost.Api.Registry;
 
 public class AppConfiguration : IEntityTypeConfiguration<App>
 {

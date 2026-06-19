@@ -1,9 +1,8 @@
 using System.Globalization;
 
-using Collabhost.Api.Capabilities;
 using Collabhost.Api.Registry;
 
-namespace Collabhost.Api.Data;
+namespace Collabhost.Api.Capabilities;
 
 public class CapabilityOverrideConfiguration : IEntityTypeConfiguration<CapabilityOverride>
 {

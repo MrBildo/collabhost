@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Shouldly;
 
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Collabhost.Api.Tests.Supervisor;
 
@@ -73,11 +72,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         }
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Start_CapturesStdoutFromProcess()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var captured = new ConcurrentBag<string>();
 
@@ -100,11 +99,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         captured.ShouldContain(line => line.Contains("hello-stdout", StringComparison.Ordinal));
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Start_CapturesStderrFromProcess()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var captured = new ConcurrentBag<(string Line, LogStream Stream)>();
 
@@ -127,11 +126,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         captured.ShouldContain(entry => entry.Line.Contains("hello-stderr", StringComparison.Ordinal));
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Start_ProcessHasPid()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -149,11 +148,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         await WaitForExitAsync(handle);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Start_ExitCodeAvailableAfterExit()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -172,11 +171,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         handle.ExitCode.ShouldBe(42);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Start_ExitedEventFires()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var exitedCode = -1;
         var exitedFired = new TaskCompletionSource<int>();
@@ -208,11 +207,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         exitedCode.ShouldBe(7);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task TryGracefulShutdown_LongRunningProcess_SendsSignal()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -238,11 +237,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         handle.HasExited.ShouldBeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task TryGracefulShutdown_AlreadyExitedProcess_ReturnsTrue()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -264,11 +263,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         result.ShouldBeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Kill_TerminatesRunningProcess()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -292,11 +291,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         handle.HasExited.ShouldBeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Start_InjectsEnvironmentVariables()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var captured = new ConcurrentBag<string>();
 
@@ -324,11 +323,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         captured.ShouldContain(line => line.Contains("graceful-shutdown-test", StringComparison.Ordinal));
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task RunToCompletion_CapturesOutput()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var captured = new ConcurrentBag<string>();
 
@@ -351,11 +350,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         captured.ShouldContain(line => line.Contains("run-to-completion-test", StringComparison.Ordinal));
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task RunToCompletion_TimesOut_KillsProcess()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -372,11 +371,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         result.ExitCode.ShouldBe(-1);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Start_EstablishesProcessGroup_ViaSetsid()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -411,11 +410,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         await WaitForExitAsync(handle);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task TryGracefulShutdown_SendsSigtermToProcessGroup()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         // Start a shell that spawns a background child -- both should be in the same process group.
         // The shell runs "sleep 300" in the background and then sleeps itself.
@@ -450,11 +449,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
         handle.HasExited.ShouldBeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Start_SetsidWrapper_PreservesStdioCapture()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         // Verify that wrapping in setsid does not break stdout/stderr capture.
         // setsid(1) calls setsid() then execvp, preserving inherited pipe FDs.
@@ -484,11 +483,11 @@ public class LinuxProcessRunnerTests(ITestOutputHelper output)
             entry.Line.Contains("setsid-stderr", StringComparison.Ordinal));
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "linux")]
     public async Task Start_SetsidWrapper_PreservesEnvironmentVariables()
     {
-        Skip.IfNot(OperatingSystem.IsLinux(), "Linux only");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux only");
 
         var captured = new ConcurrentBag<string>();
 

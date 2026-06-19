@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Shouldly;
 
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Collabhost.Api.Tests.Supervisor;
 
@@ -73,11 +72,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         }
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task Start_CapturesStdoutFromProcess()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var captured = new ConcurrentBag<string>();
 
@@ -100,11 +99,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         captured.ShouldContain(line => line.Contains("hello-stdout", StringComparison.Ordinal));
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task Start_CapturesStderrFromProcess()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var captured = new ConcurrentBag<(string Line, LogStream Stream)>();
 
@@ -127,11 +126,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         captured.ShouldContain(entry => entry.Line.Contains("hello-stderr", StringComparison.Ordinal));
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task Start_ProcessHasPid()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -149,11 +148,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         await WaitForExitAsync(handle);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task Start_ExitCodeAvailableAfterExit()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -172,11 +171,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         handle.ExitCode.ShouldBe(42);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task Start_ExitedEventFires()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var exitedCode = -1;
         var exitedFired = new TaskCompletionSource<int>();
@@ -205,11 +204,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         exitedCode.ShouldBe(7);
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task TryGracefulShutdown_LongRunningProcess_SendsSignal()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         // Verify that CTRL_BREAK_EVENT is successfully sent via GenerateConsoleCtrlEvent.
         // Whether the process actually exits depends on its signal handler -- that is
@@ -243,11 +242,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         }
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task TryGracefulShutdown_AlreadyExitedProcess_ReturnsTrue()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -269,11 +268,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         result.ShouldBeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task Kill_TerminatesRunningProcess()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var configuration = new ProcessStartConfiguration
         (
@@ -297,11 +296,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         handle.HasExited.ShouldBeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task Start_InjectsEnvironmentVariables()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var captured = new ConcurrentBag<string>();
 
@@ -329,11 +328,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         captured.ShouldContain(line => line.Contains("graceful-shutdown-test", StringComparison.Ordinal));
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task RunToCompletion_CapturesOutput()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var captured = new ConcurrentBag<string>();
 
@@ -356,11 +355,11 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
         captured.ShouldContain(line => line.Contains("run-to-completion-test", StringComparison.Ordinal));
     }
 
-    [SkippableFact]
+    [Fact]
     [Trait("Platform", "windows")]
     public async Task RunToCompletion_TimesOut_KillsProcess()
     {
-        Skip.IfNot(OperatingSystem.IsWindows(), "Windows only");
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
         var configuration = new ProcessStartConfiguration
         (

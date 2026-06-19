@@ -44,7 +44,6 @@ public class AppTypeAwareCuratorTests
         var results = ProbeCurator.Curate
         (
             appTypeSlug: "static-site",
-            evidence: null,
             dotnet: null,
             node: node,
             typeScript: null,
@@ -72,7 +71,6 @@ public class AppTypeAwareCuratorTests
         var results = ProbeCurator.Curate
         (
             appTypeSlug: "dotnet-app",
-            evidence: null,
             dotnet: dotnet,
             node: null,
             typeScript: null,
@@ -101,7 +99,6 @@ public class AppTypeAwareCuratorTests
         var results = ProbeCurator.Curate
         (
             appTypeSlug: "executable",
-            evidence: null,
             dotnet: dotnet,
             node: null,
             typeScript: null,
@@ -128,7 +125,6 @@ public class AppTypeAwareCuratorTests
         var results = ProbeCurator.Curate
         (
             appTypeSlug: "executable",
-            evidence: null,
             dotnet: null,
             node: null,
             typeScript: null,

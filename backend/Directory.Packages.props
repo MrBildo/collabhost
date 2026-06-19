@@ -1,0 +1,103 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Transitive pinning lets a PackageVersion entry override a vulnerable
+         transitive dependency without manufacturing a direct PackageReference in
+         a project that does not consume the package in code. Required for the
+         MessagePack security pin below. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <!-- Solution-wide analyzers. GlobalPackageReference is the CPM-native channel
+       for dev dependencies every project consumes: it auto-applies
+       PrivateAssets=All + the analyzer IncludeAssets set, so it replaces the
+       per-project PackageReference + PrivateAssets="all" the analyzers carried
+       in Directory.Build.props before CPM. -->
+  <ItemGroup>
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="3.0.28" />
+    <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" />
+    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.22.0.136894" />
+  </ItemGroup>
+
+  <!-- Runtime / framework. The 10.0.x line tracks the .NET 10 servicing band,
+       kept aligned at a single patch across the family. Held at 10.0.8: a cold
+       CPM restore surfaced an NU1605 downgrade — the test graph transitively
+       pulls Microsoft.Extensions.Configuration.Binder 10.0.8 (via
+       Mvc.Testing -> Hosting), which floors Microsoft.Extensions.Configuration
+       at >= 10.0.8. Bumping the whole family to 10.0.8 resolves it at root and
+       avoids intra-family skew (the exact drift CPM exists to prevent). -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.8" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />
+    <PackageVersion Include="Ulid" Version="1.4.1" />
+  </ItemGroup>
+
+  <!-- ServiceDefaults shipped dependencies. These version independently of the
+       Aspire train and are operator-facing in the published binary.
+       Resilience + ServiceDiscovery move together on the 10.x line.
+       OpenTelemetry packages publish on independent per-package cadences: the
+       core/exporter/hosting line tops out at 1.15.3 while the instrumentation
+       packages top out lower (AspNetCore 1.15.2; Http and Runtime 1.15.1).
+       Each entry below is the latest stable for that specific package — the
+       version differences are correct, not drift. Do not collapse them to a
+       single literal version: 1.15.3 does not exist for the instrumentation
+       packages and would fail restore. -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.6.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.6.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
+  </ItemGroup>
+
+  <!-- Aspire (orchestration + Aspire-flavored test host). 13.4 stable is the sole
+       supported line (13.3 EOL'd 2026-06-01); these publish to nuget.org. The
+       AppHost SDK attribute itself is pinned in global.json (msbuild-sdks),
+       which CPM cannot govern. -->
+  <ItemGroup>
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.4.1" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.1" />
+  </ItemGroup>
+
+  <!-- Security pin (transitive). Aspire 13.4.1 transitively pulls MessagePack
+       2.5.192 (via StreamJsonRpc), which falls in the vulnerable range of
+       advisory GHSA-hv8m-jj95-wg3x (LZ4 decompression out-of-bounds read / DoS,
+       patched at 2.5.301). 2.5.302 is the latest 2.5.x and matches Microsoft's
+       own remediation for this Aspire-transitive case. Collabhost does not call
+       MessagePack directly; this only governs the orchestration/test-host graph.
+       Remove once the Aspire train ships a build that no longer floors below the
+       patched version. -->
+  <ItemGroup>
+    <PackageVersion Include="MessagePack" Version="2.5.302" />
+  </ItemGroup>
+
+  <!-- Test infrastructure (Collabhost.Api.Tests, Collabhost.AppHost.Tests).
+       Mvc.Testing + Configuration are part of the 10.0.x BCL servicing band
+       above and are held at the same 10.0.8 patch.
+
+       xUnit v3 (#393): xunit.v3 is the v3 meta-package (replaces the v2 `xunit`).
+       Microsoft Testing Platform is the dotnet-test runner — selected via the
+       solution-root global.json `test.runner` key. xunit.v3 3.1.0 defaults to
+       MTP v1 (the 4.0.0 line defaults to MTP v2); stay on 3.x. We keep
+       xunit.runner.visualstudio (3.x, VSTest+MTP capable) and Microsoft.NET.Test.Sdk
+       for the VSTest coexistence window — a runner rollback is then a one-line
+       global.json deletion, not an un-migration. Xunit.SkippableFact was removed:
+       it targets v2 only (no v3 package); v3 has built-in skipping
+       (Assert.SkipWhen/SkipUnless + Xunit.Sdk.SkipException). -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.5.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+    <PackageVersion Include="xunit.v3" Version="3.1.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.0" />
+  </ItemGroup>
+
+</Project>

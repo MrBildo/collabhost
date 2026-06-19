@@ -39,7 +39,7 @@ public class ProxyManagerDegradedStateTests : IAsyncLifetime
 {
     private SqliteConnection _connection = default!;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         await _connection.OpenAsync();
@@ -50,7 +50,12 @@ public class ProxyManagerDegradedStateTests : IAsyncLifetime
         await context.Database.EnsureCreatedAsync();
     }
 
-    public Task DisposeAsync() => _connection.DisposeAsync().AsTask();
+    public async ValueTask DisposeAsync()
+    {
+        GC.SuppressFinalize(this);
+
+        await _connection.DisposeAsync();
+    }
 
     [Fact]
     public async Task SyncRoutes_LoadFails_FromRunning_TransitionsToDegraded()

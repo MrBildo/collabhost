@@ -64,6 +64,7 @@ docs/uat-fixtures/build/
 tools/*
 !tools/build-caddy.ps1
 !tools/build-caddy.sh
+!tools/compute-wwwroot-hash.sh
 !tools/generate-ids.cs
 !tools/lint-systemd-unit-drift.sh
 

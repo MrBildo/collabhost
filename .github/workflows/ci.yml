@@ -46,7 +46,7 @@ jobs:
       - name: Build
         run: dotnet build Collabhost.slnx --no-incremental --no-restore
       - name: Test
-        run: dotnet test Collabhost.Api.Tests/Collabhost.Api.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=api-test-results.trx"
+        run: dotnet test Collabhost.Api.Tests/Collabhost.Api.Tests.csproj --no-build --verbosity normal --report-xunit-trx --report-xunit-trx-filename api-test-results.trx --results-directory Collabhost.Api.Tests/TestResults
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v6
@@ -84,7 +84,7 @@ jobs:
         env:
           WSL_INTEROP: ""
       - name: Test
-        run: dotnet test Collabhost.AppHost.Tests/Collabhost.AppHost.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=smoke-test-results.trx"
+        run: dotnet test Collabhost.AppHost.Tests/Collabhost.AppHost.Tests.csproj --no-build --verbosity normal --report-xunit-trx --report-xunit-trx-filename smoke-test-results.trx --results-directory Collabhost.AppHost.Tests/TestResults
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v6

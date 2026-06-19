@@ -7,6 +7,7 @@ using Collabhost.Api.Supervisor;
 using Shouldly;
 
 using Xunit;
+using Xunit.Sdk;
 
 namespace Collabhost.Api.Tests.Probes;
 
@@ -52,7 +53,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
     private bool _publishSucceeded;
     private string _publishFailureReason = string.Empty;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _scratchRoot = Path.Combine
         (
@@ -119,8 +120,10 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
         }
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        GC.SuppressFinalize(this);
+
         try
         {
             if (Directory.Exists(_scratchRoot))
@@ -138,7 +141,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
             // Same best-effort rationale as the IOException branch above.
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     // The cross-file contract guard, positive side. A real self-contained
@@ -152,7 +155,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
     // Extracts returns false here and ShouldProvision flips to false on a real
     // self-extracting artifact -- which is the S24/S26 production failure
     // class. This test breaks loudly when that happens.
-    [SkippableFact]
+    [Fact]
     public void SelfContainedSingleFile_ProvisionsTrue_ThroughTheRealCollector()
     {
         SkipIfPublishUnavailable();
@@ -189,7 +192,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
     // DOTNET_BUNDLE_EXTRACT_BASE_DIR. If a future edit weakens the
     // runtimeconfig short-circuit so it falls through into single-file
     // detection by accident, this test catches it.
-    [SkippableFact]
+    [Fact]
     public void FrameworkDependentLooseDll_DoesNotProvision_ThroughTheRealCollector()
     {
         SkipIfPublishUnavailable();
@@ -245,7 +248,7 @@ public class ArtifactEvidenceCollectorSeamTests : IAsyncLifetime
         // not the contract regression we want to flag. CI has the SDK on PATH,
         // and a developer on an offline machine without the runtime pack still
         // exercises every other test in the suite.
-        throw new SkipException
+        throw SkipException.ForSkip
         (
             "ArtifactEvidenceCollectorSeamTests requires a working `dotnet publish` "
             + "against the local SDK to build the real-artifact fixtures. The fixture "
