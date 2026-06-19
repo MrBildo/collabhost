@@ -136,8 +136,7 @@ public static class SingleFileBundleReader
             using var reader = new BinaryReader(memory);
 
             var majorVersion = reader.ReadUInt32();
-            var minorVersion = reader.ReadUInt32();
-            _ = minorVersion;
+            _ = reader.ReadUInt32(); // minor version
 
             // We only know how to read major version 1+. Anything beyond what we've
             // seen, we degrade to "single-file detected, no metadata."
@@ -155,8 +154,7 @@ public static class SingleFileBundleReader
 
             // Bundle ID is a length-prefixed string (BinaryReader.ReadString uses 7-bit
             // encoded length prefix -- matches BinaryWriter on the producing side).
-            var bundleId = reader.ReadString();
-            _ = bundleId;
+            _ = reader.ReadString(); // bundle ID
 
             // Major version 2+ has DepsJson + RuntimeConfigJson offsets/sizes immediately
             // after the bundle ID. We don't use them directly -- we walk the table of
@@ -183,8 +181,7 @@ public static class SingleFileBundleReader
                 }
 
                 var entryType = reader.ReadByte();
-                var relativePath = reader.ReadString();
-                _ = relativePath;
+                _ = reader.ReadString(); // relative path
 
                 if (entryType == _entryTypeRuntimeConfigJson)
                 {

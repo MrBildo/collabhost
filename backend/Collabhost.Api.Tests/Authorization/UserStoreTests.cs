@@ -185,7 +185,9 @@ public class UserStoreTests : IAsyncDisposable
     public async Task DeactivateAsync_AdminWhenOtherActiveAdminsExist_Deactivates()
     {
         var admin1 = await _store.CreateAsync("Admin1", UserRole.Administrator, CancellationToken.None);
-        var admin2 = await _store.CreateAsync("Admin2", UserRole.Administrator, CancellationToken.None);
+
+        // A second active admin exists so admin1 is not the last administrator.
+        _ = await _store.CreateAsync("Admin2", UserRole.Administrator, CancellationToken.None);
 
         await Should.NotThrowAsync
         (
@@ -196,9 +198,6 @@ public class UserStoreTests : IAsyncDisposable
 
         found.ShouldNotBeNull();
         found!.IsActive.ShouldBeFalse();
-
-        // admin2 is still active — the second admin is unaffected
-        _ = admin2;
     }
 
     [Fact]
