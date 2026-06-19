@@ -1,6 +1,11 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Transitive pinning lets a PackageVersion entry override a vulnerable
+         transitive dependency without manufacturing a direct PackageReference in
+         a project that does not consume the package in code. Required for the
+         MessagePack security pin below. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
   <!-- Solution-wide analyzers. GlobalPackageReference is the CPM-native channel
@@ -58,6 +63,18 @@
   <ItemGroup>
     <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.4.1" />
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.1" />
+  </ItemGroup>
+
+  <!-- Security pin (transitive). Aspire 13.4.1 transitively pulls MessagePack
+       2.5.192 (via StreamJsonRpc), which falls in the vulnerable range of
+       advisory GHSA-hv8m-jj95-wg3x (LZ4 decompression out-of-bounds read / DoS,
+       patched at 2.5.301). 2.5.302 is the latest 2.5.x and matches Microsoft's
+       own remediation for this Aspire-transitive case. Collabhost does not call
+       MessagePack directly; this only governs the orchestration/test-host graph.
+       Remove once the Aspire train ships a build that no longer floors below the
+       patched version. -->
+  <ItemGroup>
+    <PackageVersion Include="MessagePack" Version="2.5.302" />
   </ItemGroup>
 
   <!-- Test infrastructure (Collabhost.Api.Tests, Collabhost.AppHost.Tests).
