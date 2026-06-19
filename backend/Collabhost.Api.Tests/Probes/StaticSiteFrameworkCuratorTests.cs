@@ -29,7 +29,6 @@ public class StaticSiteFrameworkCuratorTests
         var results = ProbeCurator.Curate
         (
             appTypeSlug: "static-site",
-            evidence: null,
             dotnet: null,
             node: null,
             typeScript: null,
@@ -69,7 +68,6 @@ public class StaticSiteFrameworkCuratorTests
         var results = ProbeCurator.Curate
         (
             appTypeSlug: "nodejs-app",
-            evidence: null,
             dotnet: null,
             node: null,
             typeScript: null,
@@ -98,7 +96,6 @@ public class StaticSiteFrameworkCuratorTests
         var results = ProbeCurator.Curate
         (
             appTypeSlug: "dotnet-app",
-            evidence: null,
             dotnet: null,
             node: null,
             typeScript: null,
@@ -138,7 +135,6 @@ public class StaticSiteFrameworkCuratorTests
         var results = ProbeCurator.Curate
         (
             appTypeSlug: "static-site",
-            evidence: null,
             dotnet: null,
             node: null,
             typeScript: null,
@@ -171,7 +167,6 @@ public class StaticSiteFrameworkCuratorTests
         var results = ProbeCurator.Curate
         (
             appTypeSlug: "static-site",
-            evidence: null,
             dotnet: null,
             node: null,
             typeScript: null,

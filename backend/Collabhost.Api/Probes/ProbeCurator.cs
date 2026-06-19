@@ -18,7 +18,6 @@ public static class ProbeCurator
     ) => Curate
     (
         appTypeSlug: null,
-        evidence: null,
         dotnet,
         node,
         typeScript,
@@ -30,12 +29,11 @@ public static class ProbeCurator
     );
 
     // Pre-#359 signature retained for tests that don't supply the static-site
-    // framework data. Defers to the canonical 10-arg overload with null framework
+    // framework data. Defers to the canonical 9-arg overload with null framework
     // data so the existing AppType-aware behavior is preserved.
     public static List<ProbeEntry> Curate
     (
         string? appTypeSlug,
-        ArtifactEvidence? evidence,
         RawDotnetData? dotnet,
         RawNodeData? node,
         RawTypeScriptData? typeScript,
@@ -46,7 +44,6 @@ public static class ProbeCurator
     ) => Curate
     (
         appTypeSlug,
-        evidence,
         dotnet,
         node,
         typeScript,
@@ -60,7 +57,6 @@ public static class ProbeCurator
     public static List<ProbeEntry> Curate
     (
         string? appTypeSlug,
-        ArtifactEvidence? evidence,
         RawDotnetData? dotnet,
         RawNodeData? node,
         RawTypeScriptData? typeScript,
@@ -139,8 +135,6 @@ public static class ProbeCurator
         {
             CurateExecutable(executable, results);
         }
-
-        _ = evidence;
 
         return results;
     }
