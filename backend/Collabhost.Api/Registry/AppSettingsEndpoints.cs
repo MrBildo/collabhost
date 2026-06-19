@@ -1,12 +1,8 @@
 using System.Globalization;
 
-using Collabhost.Api.ActivityLog;
-using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data.AppTypes;
-using Collabhost.Api.Probes;
-using Collabhost.Api.Proxy;
-using Collabhost.Api.StaticSite;
+using Collabhost.Api.Operations;
 
 namespace Collabhost.Api.Registry;
 
@@ -14,13 +10,6 @@ namespace Collabhost.Api.Registry;
 #pragma warning disable MA0011 // Ulid.ToString/TryParse is not locale-sensitive
 internal static class AppSettingsEndpoints
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
-    };
-
     internal static async Task<IResult> GetAppSettingsAsync
     (
         string slug,
@@ -55,192 +44,53 @@ internal static class AppSettingsEndpoints
         return TypedResults.Ok(settings);
     }
 
+    // Migrated to the operation spine (code-structure-conventions §8): the endpoint is a thin
+    // adapter -- adapt UpdateSettingsRequest's typed nested dictionary into the normalized
+    // UpdateSettingsCommand (REST flags: ValidateMergedOverrides + RefreshProbesOnArtifactChange
+    // true -- REST's pre-migration behavior; RejectUnknownSection false -- REST skips unknown
+    // sections), inject the concrete operation directly (no dispatcher), call it, and map the
+    // OperationResult back to exactly the result the handler returned before. The shared validate ->
+    // merge -> save -> render -> event loop now lives once in UpdateSettingsOperation.
+    //
+    // REST owns the SUCCESS result shaping: it re-fetches the app and rebuilds the full AppSettings
+    // sections via BuildSettingsSections (REST result-mapping the endpoint owns -- the MCP surface
+    // returns a fixed message instead, so the section rebuild is not in the operation). The save has
+    // already happened in the operation, so the re-fetch reflects it.
     internal static async Task<IResult> SaveAppSettingsAsync
     (
         string slug,
         UpdateSettingsRequest request,
+        UpdateSettingsOperation operation,
         AppStore store,
         TypeStore typeStore,
-        ProbeService probeService,
-        ProxyManager proxy,
-        RuntimeConfigFileWriter runtimeConfigFileWriter,
-        ExternalTargetSettings externalTargetSettings,
-        ICurrentUser currentUser,
-        ActivityEventStore activityEventStore,
         CancellationToken ct
     )
     {
-        var app = await store.GetBySlugAsync(slug, ct);
+        var changes = request.ToJsonObject();
 
-        if (app is null)
-        {
-            return TypedResults.NotFound();
-        }
-
-        var bindings = typeStore.GetBindings(app.AppTypeSlug);
-        var overrides = await store.GetOverridesAsync(app.Id, ct);
-
-        // Handle identity section changes
-        if (request.Changes.TryGetValue("identity", out var identityChanges))
-        {
-            if (identityChanges.TryGetValue("displayName", out var displayNameElement))
-            {
-                var newDisplayName = displayNameElement.GetString();
-
-                if (!string.IsNullOrWhiteSpace(newDisplayName))
-                {
-                    app.DisplayName = newDisplayName;
-                    app.ModifiedAt = DateTime.UtcNow;
-
-                    await store.UpdateAppAsync(app, ct);
-                }
-            }
-        }
-
-        // Handle capability section changes
-        foreach (var (sectionKey, sectionChanges) in request.Changes)
-        {
-            if (string.Equals(sectionKey, "identity", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (bindings is null || !bindings.ContainsKey(sectionKey))
-            {
-                continue;
-            }
-
-            // Validate edits against schema
-            var proposedOverrides = new JsonObject();
-
-            foreach (var (fieldKey, fieldValue) in sectionChanges)
-            {
-                proposedOverrides[fieldKey] = JsonNode.Parse(fieldValue.GetRawText());
-            }
-
-            var validationErrors = CapabilityResolver.ValidateEdits
-            (
-                sectionKey, proposedOverrides, false, externalTargetSettings.AllowPublicHosts
-            );
-
-            if (validationErrors.Count > 0)
-            {
-                return TypedResults.Problem
-                (
-                    string.Join("; ", validationErrors),
-                    statusCode: 400
-                );
-            }
-
-            // Merge with existing override or create new one
-            var existingOverrideJson = overrides.TryGetValue(sectionKey, out var existing)
-                ? existing.ConfigurationJson
-                : null;
-
-            var effectiveOverride = existingOverrideJson is not null
-                ? JsonNode.Parse(existingOverrideJson)?.AsObject() ?? []
-                : (JsonObject)[];
-
-            foreach (var (fieldKey, fieldValue) in sectionChanges)
-            {
-                effectiveOverride[fieldKey] = JsonNode.Parse(fieldValue.GetRawText());
-            }
-
-            // Cross-field validation on the post-merge effective override.
-            // ValidateEdits above ran cross-field defense-in-depth on the
-            // in-flight delta only; this is the load-bearing check that
-            // catches the two-step operator path (e.g. save STS in headers
-            // first, later toggle EnableHsts -- neither delta alone would
-            // trip the in-flight check, but the merged state would).
-            var mergedValidationErrors = CapabilityResolver.ValidateMergedOverrides
-            (
-                sectionKey, effectiveOverride
-            );
-
-            if (mergedValidationErrors.Count > 0)
-            {
-                return TypedResults.Problem
-                (
-                    string.Join("; ", mergedValidationErrors),
-                    statusCode: 400
-                );
-            }
-
-            await store.SaveOverrideAsync
-            (
-                app.Id,
-                sectionKey,
-                effectiveOverride.ToJsonString(_jsonOptions),
-                ct
-            );
-        }
-
-        // Refresh and return full settings
-        store.Invalidate(slug);
-        store.InvalidateOverrides(app.Id);
-
-        // Re-probe when artifact config changes (location or project root)
-        if (request.Changes.ContainsKey("artifact"))
-        {
-            probeService.InvalidateProbeCache(app.Id);
-
-            await probeService.RunProbesAsync(app.Id, ct);
-        }
-
-        // Re-render the runtime-config file when its capability values change and
-        // the route is currently enabled. The route-enable path handles the
-        // start-time write; this handles edits while the route is already live.
-        // Write failure surfaces as a 409 with the override already persisted --
-        // operator-actionable (the save did happen; the file on disk did not).
-        //
-        // Gate uses IsRouteEnabled (default-true when _routeStates has no entry),
-        // NOT IsRouteExplicitlyEnabled (default-false). A routing-only app whose
-        // route is up by default-fallback -- the production-common case for an
-        // app that was running before Collabhost restarted and has never been
-        // operator-stop/start-cycled since boot -- must still re-render on a
-        // settings change. The narrower IsRouteExplicitlyEnabled gate (added
-        // #350-era) defeated this in the production-common case and shipped
-        // #336's rsync-clobber-protection as structurally inert. Card #365.
-        if (request.Changes.ContainsKey("runtime-config-file")
-            && proxy.IsRouteEnabled(app.Slug))
-        {
-            try
-            {
-                await runtimeConfigFileWriter.RenderAsync(app, ct);
-            }
-            catch (RuntimeConfigFileWriteException exception)
-            {
-                return TypedResults.Problem
-                (
-                    "Settings saved, but failed to write runtime-config file: " + exception.Message,
-                    statusCode: 409
-                );
-            }
-        }
-
-        var changedCapabilities = request.Changes.Keys
-            .Where(k => !string.Equals(k, "identity", StringComparison.Ordinal))
-                .ToList();
-
-        await activityEventStore.RecordAsync
+        var command = new UpdateSettingsCommand
         (
-            new ActivityEvent
-            {
-                EventType = ActivityEventTypes.AppSettingsUpdated,
-                ActorId = currentUser.UserId.ToString(),
-                ActorName = currentUser.User.Name,
-                AppId = app.Id.ToString(),
-                AppSlug = app.Slug,
-                MetadataJson = JsonSerializer.Serialize(new { changedCapabilities })
-            },
-            ct
+            slug,
+            changes,
+            ValidateMergedOverrides: true,
+            RefreshProbesOnArtifactChange: true,
+            RejectUnknownSection: false
         );
 
+        var result = await operation.ExecuteAsync(command, ct);
+
+        if (!result.IsSuccess)
+        {
+            return result.ToHttpResult();
+        }
+
+        // Re-fetch + rebuild the full settings view (REST-only success shape). slug == the saved
+        // app's slug; identity edits change only the display name, never the slug.
         var freshApp = await store.GetBySlugAsync(slug, ct)
             ?? throw new InvalidOperationException($"App '{slug}' not found after save.");
 
         var freshBindings = typeStore.GetBindings(freshApp.AppTypeSlug);
-        var freshOverrides = await store.GetOverridesAsync(app.Id, ct);
+        var freshOverrides = await store.GetOverridesAsync(freshApp.Id, ct);
         var appTypeDefinition = typeStore.GetBySlug(freshApp.AppTypeSlug);
 
         var sections = BuildSettingsSections(freshApp, freshBindings, freshOverrides);
@@ -444,4 +294,46 @@ file static class AppSettingsFieldExtensions
             _ => 99
         };
     }
+}
+
+// File-scoped adapters between the REST surface and the operation spine (§7: the surface holds only
+// its file-scoped mapping). The request adapter normalizes UpdateSettingsRequest's typed nested
+// dictionary into the JsonObject the operation walks (each JsonElement -> JsonNode by raw text,
+// byte-identical to the pre-migration per-field JsonNode.Parse(fieldValue.GetRawText())). The result
+// mapping is the FAILURE half (success is shaped inline in SaveAppSettingsAsync, which re-fetches +
+// rebuilds the full AppSettings).
+file static class AppSettingsOperationAdapter
+{
+    public static JsonObject ToJsonObject(this UpdateSettingsRequest request)
+    {
+        var changes = new JsonObject();
+
+        foreach (var (sectionKey, sectionChanges) in request.Changes)
+        {
+            var section = new JsonObject();
+
+            foreach (var (fieldKey, fieldValue) in sectionChanges)
+            {
+                section[fieldKey] = JsonNode.Parse(fieldValue.GetRawText());
+            }
+
+            changes[sectionKey] = section;
+        }
+
+        return changes;
+    }
+
+    // K-1 (Kai's PR-1 forward note): OperationResult.FailureKind defaults to ordinal-0 NotFound on a
+    // success, so the caller gates on IsSuccess BEFORE reaching this mapping -- it is the failure half
+    // only. The three kinds map to the exact statuses the pre-migration handler returned: NotFound ->
+    // 404 (empty body, as TypedResults.NotFound() did), Validation -> 400 (the bare section-qualified
+    // joined errors, verbatim), Conflict -> 409 (the partial-success "Settings saved, but failed to
+    // write..." message, with the override already persisted -- byte-identical to before).
+    public static IResult ToHttpResult(this OperationResult<UpdateSettingsOutcome> result) =>
+        result.FailureKind switch
+        {
+            OperationFailureKind.NotFound => TypedResults.NotFound(),
+            OperationFailureKind.Validation => TypedResults.Problem(result.Error, statusCode: 400),
+            _ => TypedResults.Problem(result.Error, statusCode: 409),
+        };
 }

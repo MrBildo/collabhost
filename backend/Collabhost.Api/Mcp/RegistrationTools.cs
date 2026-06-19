@@ -1,17 +1,12 @@
 using System.ComponentModel;
 using System.Security;
 
-using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
-using Collabhost.Api.Capabilities;
-using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
-using Collabhost.Api.Installation;
+using Collabhost.Api.Operations;
 using Collabhost.Api.Probes;
-using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
-using Collabhost.Api.Supervisor;
 
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -27,51 +22,48 @@ public class RegistrationTools
 (
     AppStore appStore,
     TypeStore typeStore,
-    ProcessSupervisor supervisor,
-    ProxyManager proxy,
-    ProxySettings proxySettings,
-    ExternalTargetSettings externalTargetSettings,
+    CreateAppOperation createAppOperation,
+    DeleteAppOperation deleteAppOperation,
     ICurrentUser currentUser,
-    ActivityEventStore activityEventStore,
     AppDataPathResolver dataPathResolver,
-    McpRequestAuthenticator authenticator,
-    ILogger<RegistrationTools> logger
+    McpRequestAuthenticator authenticator
 )
 {
+    // Both write tools are migrated to the operation spine (code-structure-conventions §8).
+    // register_app's full create sequence lives in CreateAppOperation, and delete_app's full
+    // stop-then-delete sequence (including the probe-cache invalidation REST always had and MCP did
+    // not) lives in DeleteAppOperation. The deps those two bodies held that nothing else in this tool
+    // needs left the ctor with them -- ProcessSupervisor, ProxyManager, ActivityEventStore, and the
+    // ILogger that delete_app was the last consumer of, plus register_app's earlier ProxySettings and
+    // ExternalTargetSettings. What remains is exactly the surface's own concerns. AppStore backs
+    // delete_app's MCP-surface AppNotFound pre-check, the shape REST does not return. TypeStore backs
+    // register_app's MCP-surface directoryRequired gate. ICurrentUser backs delete_app's admin-only
+    // double-check at the destructive call site. AppDataPathResolver backs register_app's
+    // writableDataPath. Then the two operations and the authenticator.
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
 
     private readonly TypeStore _typeStore = typeStore
         ?? throw new ArgumentNullException(nameof(typeStore));
 
-    private readonly ProcessSupervisor _supervisor = supervisor
-        ?? throw new ArgumentNullException(nameof(supervisor));
+    // The migrated registration operation injected directly (code-structure-conventions §8: no
+    // dispatcher). register_app adapts its raw input into the command, calls this, and maps the result.
+    private readonly CreateAppOperation _createAppOperation = createAppOperation
+        ?? throw new ArgumentNullException(nameof(createAppOperation));
 
-    private readonly ProxyManager _proxy = proxy
-        ?? throw new ArgumentNullException(nameof(proxy));
-
-    private readonly ProxySettings _proxySettings = proxySettings
-        ?? throw new ArgumentNullException(nameof(proxySettings));
-
-    // Card #348, D3. Carried through to CapabilityResolver.ValidateEdits when
-    // a registration settings JSON carries an external-target section.
-    private readonly ExternalTargetSettings _externalTargetSettings = externalTargetSettings
-        ?? throw new ArgumentNullException(nameof(externalTargetSettings));
+    // The migrated delete operation injected directly (code-structure-conventions §8: no dispatcher).
+    // delete_app adapts the slug into the command, calls this, and maps the result.
+    private readonly DeleteAppOperation _deleteAppOperation = deleteAppOperation
+        ?? throw new ArgumentNullException(nameof(deleteAppOperation));
 
     private readonly ICurrentUser _currentUser = currentUser
         ?? throw new ArgumentNullException(nameof(currentUser));
-
-    private readonly ActivityEventStore _activityEventStore = activityEventStore
-        ?? throw new ArgumentNullException(nameof(activityEventStore));
 
     private readonly AppDataPathResolver _dataPathResolver = dataPathResolver
         ?? throw new ArgumentNullException(nameof(dataPathResolver));
 
     private readonly McpRequestAuthenticator _authenticator = authenticator
         ?? throw new ArgumentNullException(nameof(authenticator));
-
-    private readonly ILogger<RegistrationTools> _logger = logger
-        ?? throw new ArgumentNullException(nameof(logger));
 
     [McpServerTool
     (
@@ -117,6 +109,13 @@ public class RegistrationTools
             return McpResponseFormatter.InvalidParameters("appTypeSlug is required.");
         }
 
+        // MCP-surface type lookup for the directoryRequired gate (Marcus R4). The operation looks the
+        // type up again (shared core); this is a cached TypeStore.GetBySlug dictionary read, and the
+        // LifecycleTools adapters already double-look-up, so the second read is established + cheap. The
+        // gate itself is single-surface (REST has no installDirectory parameter, Card #348 D4) so it
+        // stays at the surface with its MCP-specific prose -- and the type-not-found here keeps the MCP
+        // AppTypeNotFound shape (the operation's NotFound also maps to AppTypeNotFound via the result
+        // mapping below, R5, so the shape is identical whether the surface or the operation catches it).
         var appType = _typeStore.GetBySlug(appTypeSlug);
 
         if (appType is null)
@@ -141,7 +140,9 @@ public class RegistrationTools
             );
         }
 
-        // Derive slug from name
+        // Derive slug from name (the MCP-surface transform: REST takes its slug as-given). Both the
+        // derive transform and its derive-failure error prose are single-surface concerns that stay
+        // here (Marcus §1.5); the command carries the already-valid, final-persisted derivedSlug.
         var derivedSlug = name.Trim().ToLowerInvariant()
             .Replace(' ', '-');
 
@@ -156,19 +157,67 @@ public class RegistrationTools
             );
         }
 
-        var exists = await _appStore.ExistsBySlugAsync(derivedSlug, ct);
+        // Assemble the raw input into the normalized command's Overrides JsonObject (MCP-specific
+        // section assembly -- the installDirectory injection). Validation + exists-check + create now
+        // live in the operation; this adapter only produces the divergent input shape.
+        var (overrides, parseError) = AssembleOverrides(appType, installDirectory, settings);
 
-        if (exists)
+        // Deliberate, disclosed ordering -- Card #406 PR 6, finding F-1. The settings-JSON parse runs
+        // HERE at the adapter, BEFORE the operation's exists-check. Pre-migration the MCP exists-check
+        // ran first, so a doubly-invalid request -- an existing slug AND malformed settings JSON --
+        // returned the exists conflict, where it now surfaces the parse error first. This reorder is
+        // FORCED by the spine and is not a regression: the parse builds the command the operation
+        // consumes, so it cannot run after the operation. Do NOT preserve the old order by adding a
+        // surface-level exists-check here -- that would duplicate the operation's exists-check and
+        // re-leak core logic into the adapter, the exact anti-pattern this migration removed. Zero
+        // state-impact -- both inputs were always errors, so only WHICH error surfaces first changed,
+        // and only on the MCP surface.
+        if (parseError is not null)
         {
-            return McpResponseFormatter.InvalidParameters
-            (
-                $"An app with slug '{derivedSlug}' already exists. Use list_apps to see existing apps."
-            );
+            return McpResponseFormatter.InvalidParameters(parseError);
         }
 
-        // Validate all settings BEFORE creating the app to ensure registration is transactional
-        var validatedOverrides = new List<(string SectionKey, JsonObject Overrides)>();
+        var command = new CreateAppCommand(derivedSlug, name.Trim(), appTypeSlug, overrides);
 
+        var result = await _createAppOperation.ExecuteAsync(command, ct);
+
+        if (!result.IsSuccess)
+        {
+            return result.ToCallToolResult(appTypeSlug);
+        }
+
+        var outcome = result.Value!;
+
+        return McpResponseFormatter.Success
+        (
+            McpResponseFormatter.ToJson
+            (
+                new
+                {
+                    slug = outcome.Slug,
+                    id = outcome.Id.ToString(),
+                    status = "stopped",
+                    writableDataPath = _dataPathResolver.ResolveFor(outcome.Slug),
+                    helpfulNextSteps = outcome.Hints
+                }
+            )
+        );
+    }
+
+    // The MCP-specific section assembly: parse the raw `settings` JSON string into a JsonObject and
+    // inject installDirectory into process.workingDirectory / artifact.location (gated on the type's
+    // bindings). Returns the normalized Overrides plus an optional parse-error message the caller maps
+    // to the MCP InvalidParameters shape (kept at the surface -- the JSON-string format is an
+    // MCP-input concern, REST has no equivalent). Byte-for-byte preserves the pre-migration assembly:
+    // a valid-but-non-object settings JSON yields no overrides and no injection (the pre-migration code
+    // skipped the whole block when JsonNode.Parse(...)?.AsObject() was null), exactly as here.
+    private (JsonObject Overrides, string? ParseError) AssembleOverrides
+    (
+        AppType appType,
+        string? installDirectory,
+        string? settings
+    )
+    {
         if (!string.IsNullOrWhiteSpace(settings))
         {
             JsonObject? settingsObject;
@@ -179,235 +228,53 @@ public class RegistrationTools
             }
             catch (JsonException ex)
             {
-                return McpResponseFormatter.InvalidParameters
-                (
-                    $"Invalid JSON in settings parameter: {ex.Message}"
-                );
+                return ([], $"Invalid JSON in settings parameter: {ex.Message}");
             }
 
-            if (settingsObject is not null)
+            if (settingsObject is null)
             {
-                // Apply installDirectory into the process capability if it has one
-                var hasProcess = _typeStore.HasBinding(appType.Slug, "process");
-
-                if (hasProcess)
-                {
-                    var processSection = settingsObject.EnsureSection("process");
-
-                    processSection["workingDirectory"] ??= JsonValue.Create(installDirectory);
-                }
-
-                // Apply installDirectory into the artifact capability if it has one
-                var hasArtifact = _typeStore.HasBinding(appType.Slug, "artifact");
-
-                if (hasArtifact)
-                {
-                    var artifactSection = settingsObject.EnsureSection("artifact");
-
-                    artifactSection["location"] ??= JsonValue.Create(installDirectory);
-                }
-
-                foreach (var (sectionKey, sectionValueNode) in settingsObject)
-                {
-                    if (sectionValueNode is not JsonObject sectionChanges)
-                    {
-                        continue;
-                    }
-
-                    var validationErrors = CapabilityResolver.ValidateEdits
-                    (
-                        sectionKey, sectionChanges, true, _externalTargetSettings.AllowPublicHosts
-                    );
-
-                    if (validationErrors.Count > 0)
-                    {
-                        return McpResponseFormatter.InvalidParameters
-                        (
-                            $"Validation errors for '{sectionKey}': {string.Join("; ", validationErrors)}"
-                        );
-                    }
-
-                    validatedOverrides.Add((sectionKey, sectionChanges));
-                }
+                return ([], null);
             }
-        }
-        else
-        {
-            // No explicit settings -- inject installDirectory into capabilities if available
-            var hasProcess = _typeStore.HasBinding(appType.Slug, "process");
 
-            if (hasProcess)
+            // Apply installDirectory into the process capability if it has one
+            if (_typeStore.HasBinding(appType.Slug, "process"))
             {
-                var processOverride = new JsonObject
-                {
-                    ["workingDirectory"] = JsonValue.Create(installDirectory)
-                };
+                var processSection = settingsObject.EnsureSection("process");
 
-                validatedOverrides.Add(("process", processOverride));
+                processSection["workingDirectory"] ??= JsonValue.Create(installDirectory);
             }
 
-            var hasArtifact = _typeStore.HasBinding(appType.Slug, "artifact");
-
-            if (hasArtifact)
+            // Apply installDirectory into the artifact capability if it has one
+            if (_typeStore.HasBinding(appType.Slug, "artifact"))
             {
-                var artifactOverride = new JsonObject
-                {
-                    ["location"] = JsonValue.Create(installDirectory)
-                };
+                var artifactSection = settingsObject.EnsureSection("artifact");
 
-                validatedOverrides.Add(("artifact", artifactOverride));
+                artifactSection["location"] ??= JsonValue.Create(installDirectory);
             }
+
+            return (settingsObject, null);
         }
 
-        // All validation passed -- now create the app and persist overrides
-        var app = new App
+        // No explicit settings -- inject installDirectory into capabilities if available
+        var overrides = new JsonObject();
+
+        if (_typeStore.HasBinding(appType.Slug, "process"))
         {
-            Slug = derivedSlug,
-            DisplayName = name.Trim(),
-            AppTypeSlug = appType.Slug
-        };
-
-        await _appStore.CreateAsync(app, ct);
-
-        foreach (var (sectionKey, overrideObject) in validatedOverrides)
-        {
-            await _appStore.SaveOverrideAsync
-            (
-                app.Id,
-                sectionKey,
-                overrideObject.ToJsonString(McpResponseFormatter.JsonOptions),
-                ct
-            );
-        }
-
-        // Routing-only apps (e.g. static sites) start with their route disabled
-        // because the operator still needs to populate an artifact directory
-        // before the route is meaningful. External-route apps (Card #348, D8)
-        // are the inversion: there is no "build artifact" intermediate step,
-        // the upstream is the operator-declared host:port, so the honest
-        // default is enabled-at-registration. If the operator later wants to
-        // disable, stop_app is the lever.
-        //
-        // EnableRoute failure mode. If the channel is full or Caddy is down,
-        // the call returns but the route stays disabled until the next sync.
-        // The operator gets a 200 from register_app and can call start_app
-        // to retry. Same posture as today's process apps -- creation
-        // succeeds, start can fail later.
-        var hasRouting = _typeStore.HasBinding(appType.Slug, "routing");
-        var hasProcessCapability = _typeStore.HasBinding(appType.Slug, "process");
-        var hasExternalTarget = _typeStore.HasBinding(appType.Slug, "external-target");
-
-        if (hasRouting && !hasProcessCapability)
-        {
-            if (hasExternalTarget)
+            overrides["process"] = new JsonObject
             {
-                _proxy.EnableRoute(app.Slug);
-                _proxy.RequestSync();
-            }
-            else
+                ["workingDirectory"] = JsonValue.Create(installDirectory)
+            };
+        }
+
+        if (_typeStore.HasBinding(appType.Slug, "artifact"))
+        {
+            overrides["artifact"] = new JsonObject
             {
-                _proxy.DisableRoute(app.Slug);
-            }
+                ["location"] = JsonValue.Create(installDirectory)
+            };
         }
 
-        try
-        {
-            await _activityEventStore.RecordAsync
-            (
-                new ActivityEvent
-                {
-                    EventType = ActivityEventTypes.AppCreated,
-                    ActorId = _currentUser.UserId.ToString(),
-                    ActorName = _currentUser.User.Name,
-                    AppId = app.Id.ToString(),
-                    AppSlug = app.Slug,
-                    MetadataJson = JsonSerializer.Serialize
-                    (
-                        new { appTypeSlug = appType.Slug, displayName = app.DisplayName }
-                    )
-                },
-                ct
-            );
-
-            // Card #348 polish (C-1): external-route apps auto-enable at registration (D8).
-            // Record AppStarted so the activity feed reflects the route going live.
-            if (hasExternalTarget)
-            {
-                await _activityEventStore.RecordAsync
-                (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppStarted,
-                        ActorId = _currentUser.UserId.ToString(),
-                        ActorName = _currentUser.User.Name,
-                        AppId = app.Id.ToString(),
-                        AppSlug = app.Slug,
-                        MetadataJson = null
-                    },
-                    ct
-                );
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record activity event for app.created (slug={Slug})", app.Slug);
-        }
-
-        // Card #345: surface the same `collabhost --update-hosts` hint REST emits, scoped to
-        // routed app types (system-service stays silent -- no Caddy route, no hosts entry).
-        var hints = ResolveHelpfulNextSteps(appType.Slug, app.Slug, validatedOverrides);
-
-        return McpResponseFormatter.Success
-        (
-            McpResponseFormatter.ToJson
-            (
-                new
-                {
-                    slug = app.Slug,
-                    id = app.Id.ToString(),
-                    status = "stopped",
-                    writableDataPath = _dataPathResolver.ResolveFor(app.Slug),
-                    helpfulNextSteps = hints
-                }
-            )
-        );
-    }
-
-    private IReadOnlyList<string> ResolveHelpfulNextSteps
-    (
-        string appTypeSlug,
-        string slug,
-        IReadOnlyList<(string SectionKey, JsonObject Overrides)> validatedOverrides
-    )
-    {
-        if (!_typeStore.HasBinding(appTypeSlug, "routing"))
-        {
-            return [];
-        }
-
-        var bindings = _typeStore.GetBindings(appTypeSlug);
-
-        if (bindings is null || !bindings.TryGetValue("routing", out var routingBindingJson))
-        {
-            return [];
-        }
-
-        string? overrideJson = null;
-
-        foreach (var (sectionKey, overrideObject) in validatedOverrides)
-        {
-            if (string.Equals(sectionKey, "routing", StringComparison.Ordinal))
-            {
-                overrideJson = overrideObject.ToJsonString();
-                break;
-            }
-        }
-
-        var routing = CapabilityResolver.Resolve<RoutingConfiguration>(routingBindingJson, overrideJson);
-
-        var hostname = CapabilityResolver.ResolveDomain(routing.DomainPattern, slug, _proxySettings.BaseDomain);
-
-        return [HostsHintBuilder.Compose(hostname)];
+        return (overrides, null);
     }
 
     [McpServerTool
@@ -446,6 +313,12 @@ public class RegistrationTools
             );
         }
 
+        // The not-found pre-check is an MCP-surface concern kept above the operation call: MCP
+        // returns its own AppNotFound shape (a specific "use list_apps" message), where REST returns
+        // an empty 404 -- a genuine surface divergence that stays at the surface, exactly as the
+        // lifecycle adapters do. The operation re-loads inside the same request scope and runs the
+        // stop-then-delete sequence; this adapter only adapts the slug into the command and maps the
+        // result back to the MCP shape.
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -453,84 +326,9 @@ public class RegistrationTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        // Capture before delete -- app won't exist after _appStore.DeleteAppAsync
-        var appId = app.Id.ToString();
-        var appSlug = app.Slug;
-        var appDisplayName = app.DisplayName;
+        var result = await _deleteAppOperation.ExecuteAsync(new DeleteAppCommand(slug), ct);
 
-        // Stop if running (10s graceful timeout, force-kill fallback)
-        var process = _supervisor.GetProcess(app.Id);
-
-        if (process is not null && process.IsRunning)
-        {
-            try
-            {
-                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-                await _supervisor.StopAppAsync(app.Id, timeoutCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Timeout expired -- force kill
-                try
-                {
-                    await _supervisor.KillAppAsync(app.Id, CancellationToken.None);
-                }
-                catch (InvalidOperationException)
-                {
-                    // Already stopped
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                // Already stopped
-            }
-        }
-
-        // Routing-only apps (static-site, external-route): disable the Caddy route
-        // before the row is deleted. Without this, the route survives in Caddy until
-        // the next sync pass re-derives the live set from AppStore.ListAsync -- a small
-        // window where Caddy still routes to an app that no longer exists.
-        // Card #348 polish: REST DeleteAppAsync got this fix-along in the initial PR.
-        // MCP delete_app is the symmetric closure (same marginal cost, same surface).
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
-        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
-
-        if (!hasProcess && hasRouting)
-        {
-            _proxy.DisableRoute(appSlug);
-            _proxy.RequestSync();
-        }
-
-        await _appStore.DeleteAppAsync(app.Id, ct);
-
-        _supervisor.CleanupDeletedApp(app.Id, appSlug);
-
-        try
-        {
-            await _activityEventStore.RecordAsync
-            (
-                new ActivityEvent
-                {
-                    EventType = ActivityEventTypes.AppDeleted,
-                    ActorId = _currentUser.UserId.ToString(),
-                    ActorName = _currentUser.User.Name,
-                    AppId = appId,
-                    AppSlug = appSlug,
-                    MetadataJson = JsonSerializer.Serialize(new { displayName = appDisplayName })
-                },
-                ct
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record activity event for app.deleted (slug={Slug})", appSlug);
-        }
-
-        return McpResponseFormatter.Success
-        (
-            $"Deleted app '{appSlug}' ({appDisplayName}). This action cannot be undone."
-        );
+        return result.ToCallToolResult();
     }
 
     [McpServerTool
@@ -796,5 +594,66 @@ file static class RegistrationToolExtensions
 
             return section;
         }
+    }
+}
+
+// File-scoped mapping from the surface-agnostic CreateAppOutcome result back to the MCP result shape
+// (§7: the surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
+// OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so this is the FAILURE half
+// only -- the caller gates on IsSuccess first and shapes success inline (the { slug, id, status,
+// writableDataPath, helpfulNextSteps } object).
+//
+// Unlike the lifecycle all-to-InvalidParameters collapse, register_app's mapper needs a distinct
+// NotFound arm (Marcus R5): the operation's type-not-found returns OperationResult.NotFound, and MCP's
+// pre-migration shape for that was the rich-prose AppTypeNotFound(slug) -- a different, slug-bearing
+// shape than the bare InvalidParameters. The bare OperationResult.Error string does not carry the slug
+// structurally, so the mapper takes the in-scope appTypeSlug (still the tool parameter) and rebuilds
+// AppTypeNotFound from it. Conflict (exists-check) and Validation (section errors) both map to
+// InvalidParameters, the single MCP error shape for those -- byte-identical to the pre-migration MCP
+// path EXCEPT the exists-check message: the operation returns the bare "An app with slug '...' already
+// exists." (the REST message), dropping the pre-migration MCP "Use list_apps to see existing apps."
+// suffix. Disclosed as a zero-information-loss prose normalization (Marcus R2, the same PR-5 shape Kai
+// passed). The Validation section-errors message is byte-identical: the pre-migration MCP path wrapped
+// it in "Validation errors for '{section}': " but ValidateEdits already prefixes each error with the
+// section + field, so dropping the redundant wrapper is the same zero-loss normalization PR 5 made for
+// update_settings (Marcus R2 family).
+file static class CreateAppOperationResultMapping
+{
+    public static CallToolResult ToCallToolResult
+    (
+        this OperationResult<CreateAppOutcome> result,
+        string appTypeSlug
+    ) =>
+        result.FailureKind switch
+        {
+            OperationFailureKind.NotFound => McpResponseFormatter.AppTypeNotFound(appTypeSlug),
+            _ => McpResponseFormatter.InvalidParameters(result.Error ?? string.Empty),
+        };
+}
+
+// File-scoped mapping from the surface-agnostic delete outcome back to the MCP result shape (§7: the
+// surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
+// OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the success arm is gated
+// on IsSuccess FIRST -- FailureKind is only read on the failure path. The success shape is the exact
+// "Deleted app '{slug}' ({displayName}). This action cannot be undone." message the pre-migration body
+// returned. The MCP-specific not-found (AppNotFound) is handled by the pre-load in the tool body above
+// this mapping, so NotFound cannot reach here on the normal path; any failure that does reach here maps
+// to InvalidParameters, the single MCP error shape (the operation never produces Validation/Conflict on
+// the delete path -- surfacing the operation's message verbatim is the right defensive shape).
+file static class DeleteAppOperationResultMapping
+{
+    public static CallToolResult ToCallToolResult(this OperationResult<DeleteAppOutcome> result)
+    {
+        if (result.IsSuccess)
+        {
+            var outcome = result.Value!;
+
+            return McpResponseFormatter.Success
+            (
+                $"Deleted app '{outcome.Slug}' ({outcome.DisplayName}). This action cannot be undone."
+            );
+        }
+
+        return McpResponseFormatter.InvalidParameters(result.Error ?? string.Empty);
     }
 }

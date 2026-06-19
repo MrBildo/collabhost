@@ -19,20 +19,24 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Mcp;
 
-// Card #366: integration coverage for the probe-trigger on the MCP start_app
-// surface. The pre-Card-#366 MCP path took no ProbeService dependency at all --
-// REST AppLifecycleEndpoints.StartAppAsync called RunProbesAsync on both start branches
-// (routing-only and process-bearing); the MCP path called it on neither. An
-// MCP-driven start_app on a routing-only app therefore left probe-derived
-// metadata (surfaced via get_app) stale until the next probe-refresh trigger.
+// Card #366 + #406 settings parity-fix: integration coverage for the probe-trigger
+// on two MCP surfaces (start_app and update_settings). The pre-Card-#366 MCP
+// start_app path took no ProbeService dependency at all -- REST
+// AppLifecycleEndpoints.StartAppAsync called RunProbesAsync on both start branches
+// (routing-only and process-bearing); the MCP path called it on neither.
+// Separately, the pre-#406-parity-fix MCP update_settings path never re-probed on
+// an artifact-section change (REST did) -- the RefreshProbesOnArtifactChange flag
+// was MCP-false. Either gap left probe-derived metadata (surfaced via get_app)
+// stale after an MCP mutation.
 //
 // What this exercises
 // -------------------
-// MCP `start_app` on a routing-only app (static-site) with a real artifact
-// transitions the ProbeService cache from NeverProbed -> Fresh with a non-empty
-// static-site probe entry. This proves RunProbesAsync was actually invoked
-// across the MCP transport boundary -- not merely that the call site exists.
-// Pre-Card-#366 the cache stays NeverProbed because the writer was never wired.
+// (1) MCP `start_app` on a routing-only app (static-site) with a real artifact
+// transitions the ProbeService cache from NeverProbed -> Fresh (Card #366).
+// (2) MCP `update_settings` carrying an `artifact`-section change does the same
+// (#406 parity-fix: the RefreshProbesOnArtifactChange flag flipped MCP-false ->
+// true, matching REST). Both prove RunProbesAsync was actually invoked across the
+// MCP transport boundary -- not merely that a call site exists.
 //
 // Why the cache, not a "method was called" mock: ProbeService is a singleton
 // whose cache IS the operator-facing artifact (get_app reads GetCachedProbes).
@@ -221,6 +225,137 @@ public class ProbeTriggerTests(ApiFixture fixture) : IAsyncLifetime
         {
             await DeleteAppAsync(_fixture.Client, slug);
         }
+    }
+
+    [Fact]
+    public async Task UpdateSettings_ArtifactChange_RefreshesProbeCache()
+    {
+        // NEW behavior (#406 settings parity-fix): MCP update_settings now re-probes
+        // when the `artifact` section changes (RefreshProbesOnArtifactChange flag
+        // flipped MCP-false -> true, matching REST). PRE-FIX the MCP path never
+        // re-probed -- this assertion fails against that shape (the cache stays
+        // NeverProbed after the MCP settings change).
+        var (slug, appId) = await RegisterStaticSiteAsync();
+
+        var probeService = _fixture.Services.GetRequiredService<ProbeService>();
+
+        try
+        {
+            // Clean baseline: guarantee NeverProbed regardless of whether the
+            // boot-time ProbeStartupService warm cycle (or the registration) touched
+            // this app id.
+            probeService.InvalidateProbeCache(appId);
+
+            probeService.GetCachedProbes(appId, "static-site").Status
+                .ShouldBe
+                (
+                    ProbeCacheStatus.NeverProbed,
+                    "Test setup: cache must be NeverProbed before the MCP settings change."
+                );
+
+            // An artifact-section change. `location` is FieldEditableLocked (set at
+            // registration only) -- editing it post-registration is rejected by
+            // ValidateEdits -- so the editable `projectRoot` field carries the change.
+            // The operation re-probes on the PRESENCE of an `artifact`-section change
+            // (location OR project root). The value is a real directory so ValidateEdits
+            // passes and the save reaches the probe-refresh gate.
+            var escapedDirectory = _artifactDirectory.Replace("\\", "\\\\", StringComparison.Ordinal);
+            var settingsJson = "{\"artifact\":{\"projectRoot\":\"" + escapedDirectory + "\"}}";
+
+            var result = await _client!.CallToolAsync
+            (
+                "update_settings",
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["slug"] = slug,
+                    ["settings"] = settingsJson,
+                    ["authKey"] = ApiFixture.AdminKey
+                },
+                cancellationToken: CancellationToken.None
+            );
+
+            (result.IsError ?? false).ShouldBeFalse
+            (
+                "MCP update_settings with a valid artifact-location change must succeed. Body: "
+                + RenderContent(result)
+            );
+
+            var cached = probeService.GetCachedProbes(appId, "static-site");
+
+            cached.Status.ShouldBe
+            (
+                ProbeCacheStatus.Fresh,
+                "MCP update_settings (artifact change) MUST trigger ProbeService.RunProbesAsync "
+                + "(#406 parity-fix flipped RefreshProbesOnArtifactChange true). Pre-fix the MCP "
+                + "path never re-probed -- the cache stays NeverProbed against that shape."
+            );
+
+            cached.Entries.ShouldNotBeEmpty
+            (
+                "The static-site artifact has an index.html, so a refreshed probe "
+                + "run must surface at least one probe entry."
+            );
+        }
+        finally
+        {
+            await DeleteAppAsync(_fixture.Client, slug);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteApp_InvalidatesProbeCache()
+    {
+        // CATCHES the #406 spine PR 7 parity-fix: pre-migration MCP delete_app NEVER invalidated the
+        // probe cache (RegistrationTools took no ProbeService dependency), where REST DeleteAppAsync
+        // always did (Card #337). Unifying both surfaces onto DeleteAppOperation -- which calls
+        // InvalidateProbeCache once -- closes the drift. This drives MCP delete_app across the real
+        // stream transport and asserts the cache transitions Fresh -> NeverProbed. Against the
+        // pre-fix shape (no InvalidateProbeCache reaching the MCP path) the entry would survive ->
+        // RED. The op-level DeleteAppOperationTests proves the operation invalidates; this proves the
+        // MCP surface reaches it -- the F-1 discipline (the op-level test is blind to which surface
+        // calls the operation, so the behavior change gets a surface test).
+        var (slug, appId) = await RegisterStaticSiteAsync();
+
+        var probeService = _fixture.Services.GetRequiredService<ProbeService>();
+
+        // Prime the cache to Fresh so the delete has a live entry to invalidate.
+        await probeService.RunProbesAsync(appId, CancellationToken.None);
+
+        probeService.GetCachedProbes(appId, "static-site").Status
+            .ShouldBe
+            (
+                ProbeCacheStatus.Fresh,
+                "Test setup: the cache must be Fresh before the MCP delete (the static-site has a "
+                + "real artifact, so RunProbesAsync populates it)."
+            );
+
+        var result = await _client!.CallToolAsync
+        (
+            "delete_app",
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["slug"] = slug,
+                ["authKey"] = ApiFixture.AdminKey
+            },
+            cancellationToken: CancellationToken.None
+        );
+
+        (result.IsError ?? false).ShouldBeFalse
+        (
+            "MCP delete_app must succeed. Body: " + RenderContent(result)
+        );
+
+        probeService.GetCachedProbes(appId, "static-site").Status
+            .ShouldBe
+            (
+                ProbeCacheStatus.NeverProbed,
+                "MCP delete_app MUST invalidate the probe cache (#406 parity-fix: it now shares "
+                + "DeleteAppOperation with REST, which always called InvalidateProbeCache). Pre-fix "
+                + "the MCP path took no ProbeService dep -- the entry survives against that shape."
+            );
+
+        // No finally-delete: this test's whole point is that delete_app removed the app. A second
+        // REST delete would 404 (harmless), but omitting it keeps the test's intent unambiguous.
     }
 
     private async Task<(string Slug, Ulid AppId)> RegisterStaticSiteAsync()

@@ -41,10 +41,20 @@ public class ContractRecordPlacementTests
     ];
 
     // The count of public *Request/*Response/*Command/*Arguments types in the Api assembly.
-    // 13 today (measured S86 + re-confirmed): 12 already in a *Contracts.cs plus the one this
-    // PR extracts. The count guard keeps the placement assertion honest -- a detector that
-    // matches zero would let placement pass vacuously.
-    private const int _expectedContractRecordCount = 13;
+    // 21 today: 13 from the T4 P2 baseline, plus the two *Command records the #406 spine PR 2 adds
+    // (RestartAppCommand + KillAppCommand), the two PR 3 adds (StartAppCommand + StopAppCommand), all
+    // in Registry/_OperationContracts.cs; plus the one PR 4 adds (ReloadProxyCommand, in
+    // Proxy/_OperationContracts.cs -- the first spine command outside Registry/); plus the one PR 5
+    // adds (UpdateSettingsCommand, in Registry/_OperationContracts.cs); plus the one PR 6 adds
+    // (CreateAppCommand, in Registry/_OperationContracts.cs); plus the one PR 7 adds (DeleteAppCommand,
+    // in Registry/_OperationContracts.cs). The pre-existing CreateAppRequest + CreateAppResponse were
+    // already in the baseline count and are unaffected by the migration. PR 5's UpdateSettingsOutcome,
+    // PR 6's CreateAppOutcome, and PR 7's DeleteAppOutcome are *Outcome records, NOT in the *Command/
+    // *Request/*Response/*Arguments suffix family, so they are not counted (same as AppActionOutcome /
+    // ProxyReloadOutcome). Each spine PR that adds a public *Command record bumps this count. The count
+    // guard keeps the placement assertion honest -- a detector that matches zero would let placement
+    // pass vacuously.
+    private const int _expectedContractRecordCount = 21;
 
     // Mutation-proof reading 1: guard the detector. If the public-contract detector silently
     // matches zero, this is the test that goes RED rather than placement passing vacuously.

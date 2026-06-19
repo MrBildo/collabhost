@@ -1,14 +1,10 @@
 using System.ComponentModel;
 using System.Globalization;
 
-using Collabhost.Api.ActivityLog;
-using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
-using Collabhost.Api.Probes;
-using Collabhost.Api.Proxy;
+using Collabhost.Api.Operations;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
-using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 
 using ModelContextProtocol.Protocol;
@@ -16,8 +12,6 @@ using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
-#pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
-#pragma warning disable MA0011 // Ulid.ToString is not locale-sensitive
 // Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
 // at the top of each body via McpRequestAuthenticator.
 [McpServerToolType]
@@ -26,15 +20,19 @@ public class LifecycleTools
     AppStore appStore,
     TypeStore typeStore,
     ProcessSupervisor supervisor,
-    ProxyManager proxy,
-    ProbeService probeService,
-    RuntimeConfigFileWriter runtimeConfigFileWriter,
-    ICurrentUser currentUser,
-    ActivityEventStore activityEventStore,
-    McpRequestAuthenticator authenticator,
-    ILogger<LifecycleTools> logger
+    StartAppOperation startAppOperation,
+    StopAppOperation stopAppOperation,
+    RestartAppOperation restartAppOperation,
+    KillAppOperation killAppOperation,
+    McpRequestAuthenticator authenticator
 )
 {
+    // The tool keeps three direct deps after the lifecycle migration: AppStore for the
+    // MCP-surface not-found pre-check (the AppNotFound shape, kept above the operation), TypeStore
+    // for the restart/kill MCP-surface "only process-based apps support ..." guard (kept above the
+    // operation, since REST has no such guard), and ProcessSupervisor for get_logs' ring-buffer
+    // read. The proxy / probe / writer / current-user / event-store deps the old start/stop bodies
+    // held now live inside StartAppOperation / StopAppOperation, so they leave this ctor.
     private readonly AppStore _appStore = appStore
         ?? throw new ArgumentNullException(nameof(appStore));
 
@@ -44,35 +42,24 @@ public class LifecycleTools
     private readonly ProcessSupervisor _supervisor = supervisor
         ?? throw new ArgumentNullException(nameof(supervisor));
 
-    private readonly ProxyManager _proxy = proxy
-        ?? throw new ArgumentNullException(nameof(proxy));
+    // The migrated lifecycle operations injected directly (code-structure-conventions §8: no
+    // dispatcher). Each tool adapts its slug into the command, calls the operation, and maps the
+    // result; get_logs is the one remaining body (a read of the supervisor's ring buffer, not a
+    // mutating operation, so it never joins the spine).
+    private readonly StartAppOperation _startAppOperation = startAppOperation
+        ?? throw new ArgumentNullException(nameof(startAppOperation));
 
-    // Card #366: mirror REST AppLifecycleEndpoints.StartAppAsync's RunProbesAsync call so
-    // MCP start_app refreshes probe-derived metadata (surfaced via get_app) on
-    // both the routing-only and process-bearing branches. The original #336/#332
-    // MCP path took no ProbeService dep at all -- the REST path called probes on
-    // both start branches; the MCP path called probes on neither.
-    private readonly ProbeService _probeService = probeService
-        ?? throw new ArgumentNullException(nameof(probeService));
+    private readonly StopAppOperation _stopAppOperation = stopAppOperation
+        ?? throw new ArgumentNullException(nameof(stopAppOperation));
 
-    // Card #365: mirror REST AppLifecycleEndpoints.StartAppAsync's routing-only branch so
-    // MCP start_app fires the runtime-config-file writer before EnableRoute. The
-    // original #336 commit added the writer call to REST but not to MCP -- the
-    // MCP path was structurally never wired to the writer.
-    private readonly RuntimeConfigFileWriter _runtimeConfigFileWriter = runtimeConfigFileWriter
-        ?? throw new ArgumentNullException(nameof(runtimeConfigFileWriter));
+    private readonly RestartAppOperation _restartAppOperation = restartAppOperation
+        ?? throw new ArgumentNullException(nameof(restartAppOperation));
 
-    private readonly ICurrentUser _currentUser = currentUser
-        ?? throw new ArgumentNullException(nameof(currentUser));
-
-    private readonly ActivityEventStore _activityEventStore = activityEventStore
-        ?? throw new ArgumentNullException(nameof(activityEventStore));
+    private readonly KillAppOperation _killAppOperation = killAppOperation
+        ?? throw new ArgumentNullException(nameof(killAppOperation));
 
     private readonly McpRequestAuthenticator _authenticator = authenticator
         ?? throw new ArgumentNullException(nameof(authenticator));
-
-    private readonly ILogger<LifecycleTools> _logger = logger
-        ?? throw new ArgumentNullException(nameof(logger));
 
     [McpServerTool
     (
@@ -97,6 +84,13 @@ public class LifecycleTools
             return authError;
         }
 
+        // The not-found pre-check is an MCP-surface concern kept above the operation call: MCP
+        // returns its own AppNotFound shape (a specific "use list_apps" message), where REST
+        // returns an empty 404 -- a genuine surface divergence that stays at the surface, exactly
+        // as the restart/kill adapters do. The operation re-loads inside the same request scope and
+        // handles the dual-branch (routing-only vs process) body; this adapter only adapts the slug
+        // into the command and maps the result back to the MCP shape. Card #365/#366 (writer +
+        // probe on the routing-only branch) and Card #350 (persist-flag) now live in the operation.
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -104,109 +98,9 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
-        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
+        var result = await _startAppOperation.ExecuteAsync(new StartAppCommand(slug), ct);
 
-        // Routing-only apps (e.g. static sites): enable route instead of starting a process
-        if (!hasProcess && hasRouting)
-        {
-            // Render runtime-config-file BEFORE enabling the route (Card #336).
-            // Ordering matters: if we enabled the route first, Caddy could serve a
-            // stale on-disk value for an arbitrary window before the writer landed
-            // the new file. Mirrors AppLifecycleEndpoints.StartAppAsync's REST routing-only
-            // branch -- the original #336 commit added the writer call to REST but
-            // never to MCP, leaving the MCP trigger structurally absent. Card #365.
-            try
-            {
-                await _runtimeConfigFileWriter.RenderAsync(app, ct);
-            }
-            catch (RuntimeConfigFileWriteException ex)
-            {
-                return McpResponseFormatter.InvalidParameters(ex.Message);
-            }
-
-            _proxy.EnableRoute(app.Slug);
-            _proxy.RequestSync();
-
-            // Clear the persisted operator-stop flag (REST+MCP parity with
-            // AppLifecycleEndpoints.StartAppAsync). Card #350.
-            await _appStore.SetStoppedByOperatorAsync(app.Id, app.Slug, false, ct);
-
-            // Refresh probe-derived metadata so get_app reflects the current
-            // artifact state. Mirrors AppLifecycleEndpoints.StartAppAsync's routing-only
-            // branch; the MCP path took no ProbeService dep before Card #366.
-            await _probeService.RunProbesAsync(app.Id, ct);
-
-            try
-            {
-                await _activityEventStore.RecordAsync
-                (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppStarted,
-                        ActorId = _currentUser.UserId.ToString(),
-                        ActorName = _currentUser.User.Name,
-                        AppId = app.Id.ToString(),
-                        AppSlug = app.Slug,
-                        MetadataJson = null
-                    },
-                    ct
-                );
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to record activity event for app.started (slug={Slug})", app.Slug);
-            }
-
-            return McpResponseFormatter.Success
-            (
-                McpResponseFormatter.ToJson
-                (
-                    new { slug = app.Slug, status = "running", appType = app.AppTypeSlug }
-                )
-            );
-        }
-
-        try
-        {
-            var managed = await _supervisor.StartAppAsync(app.Id, ct);
-
-            // Refresh probe-derived metadata (REST+MCP parity). Card #366.
-            await _probeService.RunProbesAsync(app.Id, ct);
-
-            try
-            {
-                await _activityEventStore.RecordAsync
-                (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppStarted,
-                        ActorId = _currentUser.UserId.ToString(),
-                        ActorName = _currentUser.User.Name,
-                        AppId = app.Id.ToString(),
-                        AppSlug = app.Slug,
-                        MetadataJson = null
-                    },
-                    ct
-                );
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to record activity event for app.started (slug={Slug})", app.Slug);
-            }
-
-            return McpResponseFormatter.Success
-            (
-                McpResponseFormatter.ToJson
-                (
-                    new { slug = app.Slug, status = managed.State.ToApiString(), appType = app.AppTypeSlug }
-                )
-            );
-        }
-        catch (InvalidOperationException ex)
-        {
-            return McpResponseFormatter.InvalidParameters(ex.Message);
-        }
+        return result.ToCallToolResult();
     }
 
     [McpServerTool
@@ -232,6 +126,9 @@ public class LifecycleTools
             return authError;
         }
 
+        // MCP-surface not-found pre-check (the AppNotFound shape REST does not return), as for
+        // start_app: the operation owns the dual-branch (routing-only vs process) body and the
+        // Card #350 persist-flag; this adapter adapts the slug into the command and maps the result.
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -239,86 +136,9 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
-        var hasRouting = _typeStore.HasBinding(app.AppTypeSlug, "routing");
+        var result = await _stopAppOperation.ExecuteAsync(new StopAppCommand(slug), ct);
 
-        // Routing-only apps (e.g. static sites): disable route instead of stopping a process
-        if (!hasProcess && hasRouting)
-        {
-            _proxy.DisableRoute(app.Slug);
-            _proxy.RequestSync();
-
-            // Persist the operator-stop intent (REST+MCP parity with
-            // AppLifecycleEndpoints.StopAppAsync). Card #350.
-            await _appStore.SetStoppedByOperatorAsync(app.Id, app.Slug, true, ct);
-
-            try
-            {
-                await _activityEventStore.RecordAsync
-                (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppStopped,
-                        ActorId = _currentUser.UserId.ToString(),
-                        ActorName = _currentUser.User.Name,
-                        AppId = app.Id.ToString(),
-                        AppSlug = app.Slug,
-                        MetadataJson = null
-                    },
-                    ct
-                );
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to record activity event for app.stopped (slug={Slug})", app.Slug);
-            }
-
-            return McpResponseFormatter.Success
-            (
-                McpResponseFormatter.ToJson
-                (
-                    new { slug = app.Slug, status = "stopped", appType = app.AppTypeSlug }
-                )
-            );
-        }
-
-        try
-        {
-            var managed = await _supervisor.StopAppAsync(app.Id, ct);
-
-            try
-            {
-                await _activityEventStore.RecordAsync
-                (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppStopped,
-                        ActorId = _currentUser.UserId.ToString(),
-                        ActorName = _currentUser.User.Name,
-                        AppId = app.Id.ToString(),
-                        AppSlug = app.Slug,
-                        MetadataJson = null
-                    },
-                    ct
-                );
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to record activity event for app.stopped (slug={Slug})", app.Slug);
-            }
-
-            return McpResponseFormatter.Success
-            (
-                McpResponseFormatter.ToJson
-                (
-                    new { slug = app.Slug, status = managed.State.ToApiString(), appType = app.AppTypeSlug }
-                )
-            );
-        }
-        catch (InvalidOperationException ex)
-        {
-            return McpResponseFormatter.InvalidParameters(ex.Message);
-        }
+        return result.ToCallToolResult();
     }
 
     [McpServerTool
@@ -344,6 +164,11 @@ public class LifecycleTools
             return authError;
         }
 
+        // The "only process-based apps support restart" pre-check is an MCP-surface Validation
+        // guard kept above the operation call (REST has no such guard -- it lets the supervisor
+        // throw -> 409), so this MCP-specific message + short-circuit is byte-preserved. It loads
+        // the app to read its app-type; the operation re-loads inside the same request scope. The
+        // not-found path returns the same AppNotFound the pre-migration body returned.
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -351,9 +176,7 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
-
-        if (!hasProcess)
+        if (!_typeStore.HasBinding(app.AppTypeSlug, "process"))
         {
             return McpResponseFormatter.InvalidParameters
             (
@@ -361,43 +184,9 @@ public class LifecycleTools
             );
         }
 
-        try
-        {
-            var managed = await _supervisor.RestartAppAsync(app.Id, ct);
+        var result = await _restartAppOperation.ExecuteAsync(new RestartAppCommand(slug), ct);
 
-            try
-            {
-                await _activityEventStore.RecordAsync
-                (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppRestarted,
-                        ActorId = _currentUser.UserId.ToString(),
-                        ActorName = _currentUser.User.Name,
-                        AppId = app.Id.ToString(),
-                        AppSlug = app.Slug,
-                        MetadataJson = null
-                    },
-                    ct
-                );
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to record activity event for app.restarted (slug={Slug})", app.Slug);
-            }
-
-            return McpResponseFormatter.Success
-            (
-                McpResponseFormatter.ToJson
-                (
-                    new { slug = app.Slug, status = managed.State.ToApiString(), appType = app.AppTypeSlug }
-                )
-            );
-        }
-        catch (InvalidOperationException ex)
-        {
-            return McpResponseFormatter.InvalidParameters(ex.Message);
-        }
+        return result.ToCallToolResult();
     }
 
     [McpServerTool
@@ -423,6 +212,8 @@ public class LifecycleTools
             return authError;
         }
 
+        // MCP-surface Validation guard, as for restart_app: REST has none; this preserves the
+        // MCP-specific "only process-based apps support kill" message + short-circuit.
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -430,9 +221,7 @@ public class LifecycleTools
             return McpResponseFormatter.AppNotFound(slug);
         }
 
-        var hasProcess = _typeStore.HasBinding(app.AppTypeSlug, "process");
-
-        if (!hasProcess)
+        if (!_typeStore.HasBinding(app.AppTypeSlug, "process"))
         {
             return McpResponseFormatter.InvalidParameters
             (
@@ -440,46 +229,9 @@ public class LifecycleTools
             );
         }
 
-        try
-        {
-            await _supervisor.KillAppAsync(app.Id, ct);
+        var result = await _killAppOperation.ExecuteAsync(new KillAppCommand(slug), ct);
 
-            try
-            {
-                await _activityEventStore.RecordAsync
-                (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppKilled,
-                        ActorId = _currentUser.UserId.ToString(),
-                        ActorName = _currentUser.User.Name,
-                        AppId = app.Id.ToString(),
-                        AppSlug = app.Slug,
-                        MetadataJson = null
-                    },
-                    ct
-                );
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to record activity event for app.killed (slug={Slug})", app.Slug);
-            }
-
-            var process = _supervisor.GetProcess(app.Id);
-            var status = process?.State.ToApiString() ?? "stopped";
-
-            return McpResponseFormatter.Success
-            (
-                McpResponseFormatter.ToJson
-                (
-                    new { slug = app.Slug, status, appType = app.AppTypeSlug }
-                )
-            );
-        }
-        catch (InvalidOperationException ex)
-        {
-            return McpResponseFormatter.InvalidParameters(ex.Message);
-        }
+        return result.ToCallToolResult();
     }
 
     [McpServerTool
@@ -554,5 +306,44 @@ public class LifecycleTools
         return McpResponseFormatter.Success($"{header}\n{content}");
     }
 }
-#pragma warning restore MA0011
-#pragma warning restore MA0076
+
+// File-scoped mapping from the surface-agnostic operation outcome back to the MCP result shape
+// (§7: the surface holds only its file-scoped mapping). The MCP half of the outcome-mapping
+// template PRs 3-7 copy. K-1 (Kai's PR-1 forward note): OperationResult.FailureKind defaults to
+// ordinal-0 NotFound on a success, so the success arm is gated on IsSuccess FIRST -- FailureKind
+// is only read on the failure path. The success shape is the exact { slug, status, appType }
+// object the pre-migration body serialized; every failure kind maps to InvalidParameters, the
+// single MCP error shape all four lifecycle tools (start/stop/restart/kill) returned before for a
+// failed action (the supervisor's InvalidOperationException -> Conflict -> InvalidParameters, plus
+// Start's runtime-config-file write failure -> Conflict -> InvalidParameters -- both byte-identical
+// to the old per-tool catch). The MCP-specific not-found (AppNotFound) is handled by the pre-load
+// in each tool body above this mapping, and the "only process-based apps support ..." Validation
+// guard by restart/kill's process-type pre-check, so NotFound/Validation cannot reach here on the
+// normal path.
+file static class LifecycleOperationResultMapping
+{
+    public static CallToolResult ToCallToolResult(this OperationResult<AppActionOutcome> result)
+    {
+        if (result.IsSuccess)
+        {
+            var outcome = result.Value!;
+
+            return McpResponseFormatter.Success
+            (
+                McpResponseFormatter.ToJson
+                (
+                    new { slug = outcome.Slug, status = outcome.State.ToApiString(), appType = outcome.AppTypeSlug }
+                )
+            );
+        }
+
+        // Every failure kind -> InvalidParameters, the single error shape the lifecycle tools
+        // returned before. The kinds that reach here are Conflict (the supervisor's
+        // InvalidOperationException, or Start's RuntimeConfigFileWriteException -- formerly the
+        // per-tool catch -> InvalidParameters, byte-identical). NotFound and Validation are
+        // short-circuited by the tool body's pre-load + (restart/kill) process-type guard above this
+        // mapping; should one reach here on a load race, surfacing the operation's own message
+        // verbatim is the right defensive shape (never re-wrapped).
+        return McpResponseFormatter.InvalidParameters(result.Error ?? string.Empty);
+    }
+}

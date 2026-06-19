@@ -18,6 +18,19 @@ public static class RegistryRegistration
             // removed Axis-B cwd-redirect accommodation by construction.
             services.AddSingleton(new AppDataPathResolver(dataDirectory));
 
+            // Operation spine (code-structure-conventions §8: central-explicit DI, no
+            // assembly-scan -- each operation enumerated here, in its owning subsystem's
+            // registration). Scoped because the Operation<,> base injects the scoped
+            // ICurrentUser for actor stamping. Both surfaces (REST endpoint, MCP tool)
+            // inject the concrete operation directly and call it -- no dispatcher.
+            services.AddScoped<StartAppOperation>();
+            services.AddScoped<StopAppOperation>();
+            services.AddScoped<RestartAppOperation>();
+            services.AddScoped<KillAppOperation>();
+            services.AddScoped<UpdateSettingsOperation>();
+            services.AddScoped<CreateAppOperation>();
+            services.AddScoped<DeleteAppOperation>();
+
             return services;
         }
     }
