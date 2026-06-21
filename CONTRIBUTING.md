@@ -249,7 +249,7 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 
 **What it does not do:** create a tag, create or update a GitHub Release, upload to the Releases surface. If you see a `gh release` invocation in the dry-run, that's a bug -- file an issue.
 
-**Second supported use case -- pre-cut UAT archive production.** Maintainers running a *pre-cut UAT* (the runbook deviation in [`docs/release-uat.md`](docs/release-uat.md) § "Pre-cut UAT (bootstrap / candidate-validation runs)") use this same workflow to produce the archive against `main@<sha>` without cutting a tag. The dispatch commands live in the runbook; the workflow's archive output is identical to a tag-cut. (Card #352.)
+**Second supported use case -- pre-cut UAT archive production.** Maintainers running a release UAT pass *before* cutting a tag use this same workflow to produce the archive against `main@<sha>` without cutting a tag. The workflow's archive output is identical to a tag-cut, so a candidate build can be validated end-to-end ahead of the release.
 
 ## Install integration test
 
@@ -260,7 +260,7 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 - **Post-release**, chained off `publish.yml` via `workflow_run` (fires when the Publish workflow completes successfully). It downloads the just-published GitHub Release archives and exercises the live install scripts against them across all RIDs. This is **not** a PR gate -- it runs after a release is published, not on PRs.
 - **On demand** via `workflow_dispatch` with a required `version` input (a release tag like `v0.1.0`).
 
-It does **not** run on PRs and does **not** trigger on `release.published`. PR-time archive smoke is now handled by `publish-dryrun.yml`'s `archive-smoke` job (card #184), and the `release.published` trigger was replaced with `workflow_run` to avoid the parallel-fire race that failed all legs on the v1.0.0 cut (card #211).
+It does **not** run on PRs and does **not** trigger on `release.published`. PR-time archive smoke is now handled by `publish-dryrun.yml`'s `archive-smoke` job, and the `release.published` trigger was replaced with `workflow_run` to avoid the parallel-fire race that failed all legs on the v1.0.0 cut.
 
 **Release-process checklist (before tagging):**
 

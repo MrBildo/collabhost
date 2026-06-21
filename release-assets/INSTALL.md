@@ -972,7 +972,7 @@ is keyed on it.
 
 ### 5.7 External-route apps (services Collabhost does not run)
 
-The `external-route` app type (added in card #348) lets you front a service
+The `external-route` app type lets you front a service
 Collabhost does NOT manage with a `{slug}.<base-domain>` URL: a Docker
 container running on the same host, a LAN machine, a Tailscale-fronted host,
 a self-hosted upstream that pre-dates Collabhost. The platform handles the
@@ -1013,7 +1013,7 @@ curl -X POST https://collabhost.collab.internal/api/v1/apps \
   "appTypeSlug": "external-route",
   "installDirectory": null,            // optional for external-route -- no install dir
   "settings": "{\"external-target\":{\"host\":\"localhost\",\"port\":11235,\"scheme\":\"http\"}}",
-  "authKey": "..."                     // per-bot Collabhost user key
+  "authKey": "..."                     // your Collabhost user key
 }
 ```
 
@@ -1067,10 +1067,10 @@ is where to look first.
 ### 5.8 MCP client setup
 
 Collabhost exposes a Model Context Protocol (MCP) server at
-`https://collabhost.<base-domain>/mcp` for agent clients (Claude Code,
-compatible IDE plugins, custom bots). Every MCP tool accepts a per-call
-`authKey` argument — your Collabhost user key (the same ULID printed at
-first boot, or any user key you have created via the dashboard) — which the
+`https://collabhost.<base-domain>/mcp` for MCP clients (Claude Code,
+compatible IDE plugins, and other agent tooling). Every MCP tool accepts a
+per-call `authKey` argument — your Collabhost user key (the same ULID printed
+at first boot, or any user key you have created via the dashboard) — which the
 server uses to authenticate the call and stamp activity-log entries with the
 calling user's identity.
 
@@ -1079,14 +1079,13 @@ or project level — one configuration, one connection, many calling agents.
 A static header at connection time yields one shared identity for every
 caller, which collapses per-agent attribution in the activity log. Passing
 `authKey` per call is the channel through which per-agent identity reaches a
-shared MCP server. This mirrors how the Collaboard MCP works (`COLLABOARD_AUTH_KEY`
-per call); the Collabhost equivalent is your Collabhost user key.
+shared MCP server.
 
-**Recommended pattern (Claude Code).** Each agent stores its own key in a
-per-agent `.env` (e.g. `~/.agents/bots/<bot>/.env`) and supplies it as
-`authKey` on every Collabhost MCP tool call. The shared MCP configuration
-itself carries no key; the connection is anonymous and each call provides
-its own identity.
+**Recommended pattern.** Each agent stores its own key in its own secret
+store (an `.env` file, a secrets manager, the agent's configuration) and
+supplies it as `authKey` on every Collabhost MCP tool call. The shared MCP
+configuration itself carries no key; the connection is anonymous and each
+call provides its own identity.
 
 Example `~/.claude.json` (or project-scope `.mcp.json`) entry:
 
@@ -1105,10 +1104,9 @@ No `headers` block is required. The calling agent supplies `authKey` per
 tool call. Replace `<your-base-domain>` with the value of `Proxy:BaseDomain`
 (see §5.4).
 
-The MCP client configuration intentionally carries no key — the per-bot
-agent loop is responsible for reading the `authKey` from its own
-`~/.agents/bots/<bot>/.env` and injecting it as the `authKey` argument on
-each tool call.
+The MCP client configuration intentionally carries no key — each calling
+agent is responsible for reading its own `authKey` from its own secret store
+and injecting it as the `authKey` argument on each tool call.
 
 **Treat the key as a secret.** The Collabhost user key authorizes the full
 REST control plane (process start/kill, registration, settings, delete).

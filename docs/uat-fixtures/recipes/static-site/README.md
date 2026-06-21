@@ -1,6 +1,6 @@
 # `static-site` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `static-site` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 4.
+This directory holds the recipe(s) for building the `static-site` fixture(s) used by the release UAT pass — specifically the registration walk and the detect-strategy coverage matrix in the [recipes README](../README.md#detect-strategy-table-coverage).
 
 Build output lands at `docs/uat-fixtures/build/static-site/` (gitignored).
 
@@ -21,7 +21,7 @@ Both scripts are byte-stable across runs (pure file copy + mtime pin). Source fi
 | Fixture name | Shape | Purpose |
 |---|---|---|
 | `basic/` | A directory containing `index.html` at the root + at least one CSS file (e.g. `styles.css`) + at least one image asset (e.g. `logo.svg` or `favicon.png`). | Drives the happy-path `static-site` registration walk: detect-strategy returns `NotApplicable` (fitness `FullMatch`); routing uses Caddy `file_server` mode; probe `StaticSiteData.HasIndexHtml=true`, `HtmlFileCount=1`, `TotalAssetBytes` non-zero. |
-| `with-config-json/` | The `basic/` fixture PLUS a `config.json` at the root. | Drives the `runtime-config-file` capability assertion: when the operator sets non-empty values on the `runtime-config-file` capability via the settings page, `RuntimeConfigFileWriter` materializes `<artifactDir>/config.json` with the resolved values post-start (#336). |
+| `with-config-json/` | The `basic/` fixture PLUS a `config.json` at the root. | Drives the `runtime-config-file` capability assertion: when the operator sets non-empty values on the `runtime-config-file` capability via the settings page, `RuntimeConfigFileWriter` materializes `<artifactDir>/config.json` with the resolved values post-start. |
 | `spa-bundle/` | A directory containing `index.html` + a subdirectory of static assets + the runtime expectation that any 404 falls back to `index.html` (the SPA case). | Drives the `routing.spaFallback = true` assertion: a deep-link request returns the SPA shell, not a 404. |
 
 ## Registration shape the runbook points at
