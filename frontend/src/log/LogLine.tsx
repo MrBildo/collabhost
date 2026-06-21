@@ -1,6 +1,7 @@
 import type { LogEntry } from '@/api/types'
 import { cn } from '@/lib/cn'
 import { formatTimestamp } from '@/lib/format'
+import { memo, useMemo } from 'react'
 import type { AnsiSegment } from './parse-ansi'
 import { parseAnsiToSegments } from './parse-ansi'
 
@@ -24,7 +25,11 @@ const LEVEL_CLASSES: Record<string, string> = {
 }
 
 function LogContent({ content, isStderr }: LogContentProps) {
-  const segments: AnsiSegment[] = parseAnsiToSegments(content)
+  // Memoize the ANSI parse on `content`. The log viewer creates a new `entries`
+  // array reference on every SSE flush, re-rendering the whole list; without
+  // this, every visible line re-parses its ANSI on each flush — O(buffer) work
+  // per frame while streaming. Keyed on `content` only (the parse's sole input).
+  const segments: AnsiSegment[] = useMemo(() => parseAnsiToSegments(content), [content])
   const isPlain = segments.every((s) => !s.color && !s.bold && !s.dim)
 
   if (isPlain) {
@@ -55,7 +60,7 @@ function LogContent({ content, isStderr }: LogContentProps) {
   )
 }
 
-function LogLine({ entry }: LogLineProps) {
+function LogLineComponent({ entry }: LogLineProps) {
   const levelClass = entry.level ? (LEVEL_CLASSES[entry.level] ?? '') : ''
 
   return (
@@ -66,6 +71,13 @@ function LogLine({ entry }: LogLineProps) {
     </div>
   )
 }
+
+// memo: a log entry is immutable once received (keyed by a monotonic id), but a
+// new SSE flush hands the viewer a fresh `entries` array, re-rendering every
+// child. Memoizing on the `entry` reference short-circuits re-render for lines
+// whose entry object did not change — the streaming-hot-path optimization for
+// FE-UI-02, paired with the per-line ANSI parse memo in LogContent.
+const LogLine = memo(LogLineComponent)
 
 export { LogLine }
 export type { LogLineProps }

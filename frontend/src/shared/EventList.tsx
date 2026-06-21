@@ -14,10 +14,17 @@ const SEVERITY_STYLES: Record<DashboardEvent['severity'], string | undefined> = 
   info: undefined,
 }
 
+// Tolerance (px) for treating a scroll position as "at the bottom" — covers
+// sub-pixel rounding and the small slack a user expects near the end.
+const AT_BOTTOM_THRESHOLD_PX = 40
+
 function EventList({ events, className }: EventListProps) {
   const [isFollowing, setIsFollowing] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const userScrolledRef = useRef(false)
+  // The scrollTop our own auto-scroll last wrote — see LogViewer for the full
+  // rationale. Compared against in handleScroll so our programmatic scroll is not
+  // mistaken for user intent (FE-UI-01); a one-shot boolean would leak.
+  const programmaticScrollTopRef = useRef<number | null>(null)
 
   // Reverse to chronological order (oldest first, newest at bottom) so
   // new events appear at the bottom — same mental model as the log viewer.
@@ -30,25 +37,28 @@ function EventList({ events, className }: EventListProps) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: events reference is an intentional re-trigger signal for auto-scroll on new data
   useLayoutEffect(() => {
     if (isFollowing && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      const el = scrollRef.current
+      const target = Math.max(0, el.scrollHeight - el.clientHeight)
+      programmaticScrollTopRef.current = target
+      el.scrollTop = target
     }
   }, [events, isFollowing])
 
+  // Release follow on any user scroll (wheel, keyboard, scrollbar, touch), not
+  // only wheel (FE-UI-01). Every scroll is user intent except the one our own
+  // layout-effect just wrote.
   function handleScroll(): void {
     if (!scrollRef.current) return
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 40
 
-    // Only update follow state from user-initiated scrolls, not from
-    // our own programmatic scrollTop assignment in the layout effect.
-    if (userScrolledRef.current) {
-      setIsFollowing(isAtBottom)
-      userScrolledRef.current = false
+    if (programmaticScrollTopRef.current !== null && Math.abs(scrollTop - programmaticScrollTopRef.current) < 1) {
+      programmaticScrollTopRef.current = null
+      return
     }
-  }
+    programmaticScrollTopRef.current = null
 
-  function handleWheel(): void {
-    userScrolledRef.current = true
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < AT_BOTTOM_THRESHOLD_PX
+    setIsFollowing(isAtBottom)
   }
 
   return (
@@ -62,7 +72,7 @@ function EventList({ events, className }: EventListProps) {
           Follow
         </button>
       </div>
-      <div ref={scrollRef} className="wm-event-list" onScroll={handleScroll} onWheel={handleWheel}>
+      <div ref={scrollRef} className="wm-event-list" onScroll={handleScroll}>
         {chronological.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <span className="text-xs" style={{ color: 'var(--wm-text-dim)' }}>

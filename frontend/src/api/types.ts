@@ -293,6 +293,12 @@ type StreamEntry =
   | { type: 'log'; entry: LogEntry }
   | { type: 'status'; state: AppStatus; timestamp: string }
   | { type: 'gap' }
+  // A buffer-overflow reset: the incoming id jumped past the buffer cap, so the
+  // unrecoverable older range was dropped and the buffer cleared. Distinct from
+  // 'gap' (a bounded, in-buffer hole) — this marker discloses the larger loss so
+  // a bigger drop is louder in the UI, not quieter (FE-SSE-01). `dropped` is the
+  // number of log entries the jump skipped.
+  | { type: 'reset'; dropped: number }
 
 // --- Dashboard ---
 
