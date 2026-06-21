@@ -206,14 +206,17 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
 
     [Fact]
     [Trait("Platform", "windows")]
-    public async Task TryGracefulShutdown_LongRunningProcess_SendsSignal()
+    public async Task TryGracefulShutdown_LongRunningProcess_ReportsUndelivered()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows only");
 
-        // Verify that CTRL_BREAK_EVENT is successfully sent via GenerateConsoleCtrlEvent.
-        // Whether the process actually exits depends on its signal handler -- that is
-        // process-specific behavior, not something we control. The supervisor's shutdown
-        // flow has a timeout + hard kill fallback for uncooperative processes.
+        // The honest contract: a running child cannot be gracefully signalled on Windows today.
+        // It is started with CREATE_NEW_CONSOLE (its own console), so a host-side
+        // GenerateConsoleCtrlEvent -- which only reaches the host's own console -- cannot deliver
+        // to it. TryGracefulShutdown must therefore return FALSE for a running process so the
+        // supervisor hard-kills immediately instead of waiting out a ShutdownTimeoutSeconds it
+        // cannot honor. (The prior assertion here was shutdownSent.ShouldBeTrue() -- it pinned the
+        // API-success-means-delivered belief that WAS the bug, and stayed green in the broken state.)
         var configuration = new ProcessStartConfiguration
         (
             "ping",
@@ -231,15 +234,14 @@ public class WindowsProcessRunnerTests(ITestOutputHelper output)
 
         var shutdownSent = handle.TryGracefulShutdown();
 
-        shutdownSent.ShouldBeTrue();
+        shutdownSent.ShouldBeFalse();
 
-        // Clean up -- kill the process since ping may not honor CTRL_BREAK
-        if (!handle.HasExited)
-        {
-            handle.Kill();
+        // The running process is undisturbed by the (non-)signal -- hard-kill to clean up.
+        handle.HasExited.ShouldBeFalse();
 
-            await WaitForExitAsync(handle);
-        }
+        handle.Kill();
+
+        await WaitForExitAsync(handle);
     }
 
     [Fact]

@@ -128,6 +128,60 @@ public class ProcessSupervisorStopAsyncTests
         restartCancellation.IsCancellationRequested.ShouldBeTrue();
     }
 
+    // SUP-04 delivered-vs-not, the false branch. The existing HungProcessHandle test asserts
+    // "eventually killed", which is GREEN in BOTH the working and the broken states -- it cannot
+    // catch SUP-04. The discriminator is timing: when TryGracefulShutdown reports a signal it
+    // could NOT deliver (returns false), the supervisor must hard-kill IMMEDIATELY (the false
+    // branch at SendGracefulShutdownAsync, no graceful poll). The SUP-04 bug returned true on an
+    // undelivered Windows signal, so the supervisor entered the poll loop and waited the full
+    // default 10s ShutdownTimeoutSeconds before killing. With no host budget (CancellationToken.None)
+    // the working path returns near-instantly; a regression to the false-true behavior would block
+    // ~10s. The < 3s ceiling is wide enough to absorb shared-runner contention yet well clear of
+    // the 10s bug signature.
+    [Fact]
+    public async Task StopAsync_GracefulSignalUndeliverable_HardKillsImmediatelyWithoutTimeout()
+    {
+        var supervisor = CreateSupervisor();
+
+        var undeliverableHandle = new UndeliverableGracefulHandle();
+        var process = new ManagedProcess(Ulid.NewUlid(), "honest-app", "Honest App");
+        process.MarkRunning(undeliverableHandle);
+
+        InjectProcess(supervisor, process);
+
+        var stopwatch = Stopwatch.StartNew();
+        await supervisor.StopAsync(CancellationToken.None);
+        stopwatch.Stop();
+
+        // Killed, and killed fast -- the supervisor took the honest hard-kill branch instead of
+        // paying a graceful-shutdown timeout for a signal that was never delivered.
+        undeliverableHandle.KillCount.ShouldBe(1);
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(3));
+    }
+
+    // SUP-04 delivered-vs-not, the true branch. A genuinely-delivered graceful signal (the Linux
+    // SIGTERM contract) causes the app to exit on its own; the supervisor's poll loop observes the
+    // exit and returns WITHOUT hard-killing. This is the other half of the discriminator: a delivered
+    // graceful stop leaves KillCount at zero, where an undelivered one (the test above) forces a kill.
+    // Asserting no-kill on a delivered-then-exited handle is what the existing eventually-killed test
+    // cannot express.
+    [Fact]
+    public async Task StopAsync_GracefulSignalDeliveredAndProcessExits_DoesNotHardKill()
+    {
+        var supervisor = CreateSupervisor();
+
+        var gracefulHandle = new GracefulExitHandle();
+        var process = new ManagedProcess(Ulid.NewUlid(), "graceful-app", "Graceful App");
+        process.MarkRunning(gracefulHandle);
+
+        InjectProcess(supervisor, process);
+
+        await supervisor.StopAsync(CancellationToken.None);
+
+        // The delivered signal made the process exit; the supervisor honored it and never killed.
+        gracefulHandle.KillCount.ShouldBe(0);
+    }
+
     private static ProcessSupervisor CreateSupervisor()
     {
         var dbFactory = new ThrowingDbContextFactory();
@@ -202,6 +256,63 @@ file sealed class HungProcessHandle : IProcessHandle
 #pragma warning restore CS0067
 
     public bool TryGracefulShutdown() => true;
+
+    public void Kill() => KillCount++;
+
+    public void Dispose() { }
+}
+
+// SUP-04, the false branch. Models the honest Windows runner: the graceful signal cannot be
+// delivered (no graceful channel under the current console model), so TryGracefulShutdown
+// returns false. The process never exits on its own, so the only way it stops is a hard kill --
+// which the supervisor must take IMMEDIATELY rather than after a timeout.
+file sealed class UndeliverableGracefulHandle : IProcessHandle
+{
+    public int Pid => 4243;
+
+    public bool HasExited => false;
+
+    public int? ExitCode => null;
+
+    public int KillCount { get; private set; }
+
+#pragma warning disable CS0067 // Event is part of the IProcessHandle contract; not raised in this fake
+    public event Action<int>? Exited;
+#pragma warning restore CS0067
+
+    public bool TryGracefulShutdown() => false;
+
+    public void Kill() => KillCount++;
+
+    public void Dispose() { }
+}
+
+// SUP-04, the true branch. Models a genuinely-delivered graceful signal (the Linux SIGTERM
+// contract): TryGracefulShutdown returns true AND the process exits as a result, so HasExited
+// flips to true once the signal has been "sent." The supervisor's poll loop observes the exit
+// and returns without ever hard-killing.
+file sealed class GracefulExitHandle : IProcessHandle
+{
+    public int Pid => 4244;
+
+    public bool HasExited { get; private set; }
+
+    public int? ExitCode => HasExited ? 0 : null;
+
+    public int KillCount { get; private set; }
+
+#pragma warning disable CS0067 // Event is part of the IProcessHandle contract; not raised in this fake
+    public event Action<int>? Exited;
+#pragma warning restore CS0067
+
+    public bool TryGracefulShutdown()
+    {
+        // A delivered signal makes the app exit -- the runner reports true because the signal
+        // actually landed, and the process is now on its way out.
+        HasExited = true;
+
+        return true;
+    }
 
     public void Kill() => KillCount++;
 

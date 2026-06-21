@@ -62,7 +62,11 @@ public class ProcessConfiguration
             "Shutdown Timeout",
             FieldType.Number,
             new FieldEditableAlways(),
-            Unit: "sec"
+            Unit: "sec",
+            HelpText: "Linux only. On Linux the app receives a graceful SIGTERM and has this "
+                + "long to exit cleanly before a hard kill. On Windows there is no graceful "
+                + "shutdown channel today -- stop is an immediate hard kill, so this timeout "
+                + "does not apply."
         ),
         new
         (

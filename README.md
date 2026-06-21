@@ -101,7 +101,7 @@ If no Caddy binary is configured, everything else still works (app management, p
 
 **Operator dashboard** — Real-time stats, app table with inline actions, live activity feed, and streaming log viewers. Everything an operator needs on one screen. The War Machine design system — dark, monospace, industrial — is built for density and quick action.
 
-**Process supervision** — Start, stop, restart, and kill managed processes with platform-native implementations for both Windows and Linux. On Windows: processes launch via `CreateProcess` with dedicated process groups, graceful shutdown via `GenerateConsoleCtrlEvent`, and orphan protection through Win32 Job Objects that guarantee child process cleanup even if Collabhost crashes. On Linux: process groups with `SIGTERM`/`SIGKILL` lifecycle and cgroup-based containment. Crash detection with automatic restart and configurable exponential backoff. Stdout/stderr captured into in-memory ring buffers.
+**Process supervision** — Start, stop, restart, and kill managed processes with platform-native implementations for both Windows and Linux. On Windows: processes launch via `CreateProcess` with dedicated process groups and orphan protection through Win32 Job Objects that guarantee child process cleanup even if Collabhost crashes; stop is an immediate hard-kill (no graceful-shutdown channel today). On Linux: process groups with a graceful `SIGTERM`-then-`SIGKILL` lifecycle (honoring the per-app shutdown timeout) and cgroup-based containment. Crash detection with automatic restart and configurable exponential backoff. Stdout/stderr captured into in-memory ring buffers.
 
 **Reverse proxy** — Every app gets a subdomain route automatically configured through [Caddy](https://caddyserver.com/). HTTPS via Caddy's internal CA. Routes sync on process state changes — no manual proxy config. The base domain is configurable in `appsettings.json`.
 
@@ -127,7 +127,7 @@ Process supervision is the piece of Collabhost that differs most by platform. Th
 
 | Platform | How processes are supervised |
 |---|---|
-| **Windows** | `CreateProcess` P/Invoke with dedicated process groups, graceful shutdown via `GenerateConsoleCtrlEvent`, orphan protection through Win32 Job Objects. |
+| **Windows** | `CreateProcess` P/Invoke with dedicated process groups, orphan protection through Win32 Job Objects. Stop is an immediate hard-kill — no graceful-shutdown channel today, so the per-app shutdown timeout is Linux-only. |
 | **Linux** | `setsid` process groups with `SIGTERM`/`SIGKILL` lifecycle, cgroup v2 containment. Orphan-proof. |
 | **macOS** | `FallbackProcessRunner`. Processes start and stop, stdout/stderr capture works, and hard kill is available. No graceful shutdown (no `SIGTERM`-equivalent signal handling), no Job Object-equivalent isolation, no orphan protection — if Collabhost crashes, child processes may outlive it. |
 

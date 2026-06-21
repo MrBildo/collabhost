@@ -154,12 +154,16 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
         };
 #pragma warning restore S3869
 
-        // CREATE_NEW_PROCESS_GROUP: child gets its own process group (group ID = its PID).
-        //   This is required so GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, groupId) targets
-        //   only the child tree, not the Collabhost host process.
+        // CREATE_NEW_PROCESS_GROUP: child gets its own process group (group ID = its PID),
+        //   distinct from the Collabhost host's group.
         // CREATE_NEW_CONSOLE: child gets its own console (hidden via SW_HIDE above).
-        //   Without a console, GenerateConsoleCtrlEvent has no target to deliver the event to.
-        //   CREATE_NO_WINDOW would prevent console allocation entirely, making Ctrl+Break a no-op.
+        // These flags are retained as-is, but graceful shutdown via CTRL_BREAK is NOT
+        // wired today: because the child lives on its own (CREATE_NEW_CONSOLE) console,
+        // GenerateConsoleCtrlEvent from the host -- which delivers only to the host's own
+        // console -- cannot reach it. Windows stop is therefore an honest immediate hard-kill
+        // (see ProcessGroupHandle.TryGracefulShutdown). Delivering a real CTRL_BREAK would
+        // require dropping CREATE_NEW_CONSOLE and sharing a host console -- a deferred change
+        // gated on a service-mode console spike, not done here.
         var creationFlags = WindowsNativeMethods.CreateNewProcessGroup | WindowsNativeMethods.CreateNewConsole;
 
         var environmentPointer = IntPtr.Zero;
@@ -356,7 +360,8 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
     }
 
     // No subclasses expected -- process handle created via CreateProcess with
-    // CREATE_NEW_PROCESS_GROUP, enabling graceful shutdown via CTRL_BREAK_EVENT
+    // CREATE_NEW_PROCESS_GROUP. Graceful shutdown is not deliverable on Windows today
+    // (see TryGracefulShutdown); stop is an honest immediate hard-kill.
     [SupportedOSPlatform("windows")]
     private sealed class ProcessGroupHandle : IProcessHandle
     {
@@ -416,33 +421,28 @@ public class WindowsProcessRunner(ILogger<WindowsProcessRunner> logger) : IManag
                 return true;
             }
 
-            // CTRL_BREAK_EVENT targets the process group. Because we started the
-            // child with CREATE_NEW_PROCESS_GROUP, its group ID equals its PID and
-            // is distinct from the Collabhost host's group. The event is delivered
-            // only to processes in the target group -- the host is not affected.
-            if (!WindowsNativeMethods.GenerateConsoleCtrlEvent(WindowsNativeMethods.CtrlBreakEvent, _processGroupId))
-            {
-                var error = Marshal.GetLastPInvokeError();
-
-                _logger.LogWarning
-                (
-                    "GenerateConsoleCtrlEvent failed for PID {Pid} / group {GroupId} (error: {Error})",
-                    _process.Id,
-                    _processGroupId,
-                    error
-                );
-
-                return false;
-            }
-
+            // Honest "no graceful channel available" -- the running child cannot be
+            // gracefully signalled on Windows today. The child is started with
+            // CREATE_NEW_CONSOLE, so it lives on its OWN console; GenerateConsoleCtrlEvent
+            // delivers only to processes attached to the CALLER's console, so the host has
+            // no path to the child. Critically, that API returns success (it validates the
+            // group id and posts to the host's own console) WITHOUT the signal ever reaching
+            // the child -- trusting that return claimed delivery that never happened, so the
+            // supervisor waited the full ShutdownTimeoutSeconds for an exit that could not come,
+            // then hard-killed anyway. Returning false here is the honest contract: delivery
+            // cannot be confirmed, so the supervisor hard-kills immediately instead of paying a
+            // timeout it cannot honor. Linux delivers real SIGTERM and returns true on actual
+            // delivery; matching that on Windows (real CTRL_BREAK to a host-shared console) is
+            // the deferred follow-up gated on a service-mode console spike.
             _logger.LogDebug
             (
-                "Sent CTRL_BREAK_EVENT to process group {GroupId} (PID {Pid})",
-                _processGroupId,
-                _process.Id
+                "No graceful-shutdown channel for PID {Pid} / group {GroupId} on Windows -- reporting "
+                    + "undelivered so the supervisor hard-kills immediately rather than waiting a timeout",
+                _process.Id,
+                _processGroupId
             );
 
-            return true;
+            return false;
         }
 
         public void Kill()
