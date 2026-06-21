@@ -126,6 +126,14 @@ public class CrossSurfaceRoleParityTests(ApiFixture fixture)
     // Drives the LIVE REST role gate with a freshly-minted Agent key. The gate runs before the
     // handler, so a 403 is unambiguously the role filter (no app needs to exist); any other status
     // means the Agent got past the gate into the handler.
+    //
+    // When the response IS a 403, we confirm it came from RequireRoleFilter and not from any handler
+    // that also emits 403 (e.g. FilesystemEndpoints returns 403 on UnauthorizedAccessException for a
+    // real access-denied directory). RequireRoleFilter emits a plain JSON object with a 'message'
+    // field containing "This endpoint requires the <role> role."; handler 403s use TypedResults.Problem
+    // with a 'detail' field and a different message shape. Asserting the body carries the filter's
+    // message keeps the "403 == role gate" premise explicit and catches any future test-row edit that
+    // accidentally exercises a handler 403 instead.
     private async Task<bool> AgentPassesRestGateAsync(ControlPlaneOperation operation)
     {
         var agentKey = await MintAgentKeyAsync();
@@ -134,7 +142,21 @@ public class CrossSurfaceRoleParityTests(ApiFixture fixture)
 
         var response = await _client.SendAsync(request);
 
-        return response.StatusCode != HttpStatusCode.Forbidden;
+        if (response.StatusCode != HttpStatusCode.Forbidden)
+        {
+            return true;
+        }
+
+        // Confirm the 403 is the role-gate rejection, not a handler-emitted 403.
+        // RequireRoleFilter emits: { "error": "Forbidden", "message": "This endpoint requires the <role> role." }
+        // Handler 403s (e.g. FilesystemEndpoints on UnauthorizedAccessException) use TypedResults.Problem
+        // with a different message shape and no "requires the" fragment at the root.
+        var body = await response.Content.ReadAsStringAsync();
+        var expectedFragment = "This endpoint requires the";
+
+        body.ShouldContain(expectedFragment);
+
+        return false;
     }
 
     private static HttpRequestMessage BuildRequest(ControlPlaneOperation operation, string userKey)
