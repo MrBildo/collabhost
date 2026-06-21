@@ -87,11 +87,13 @@ public sealed class MigrationRunner
         {
             backupPath = BuildBackupPath(backupsDirectory, fromSemver, toSemver);
 
-            try
-            {
-                File.Copy(dbPath, backupPath, false);
-            }
-            catch (IOException ex) when (File.Exists(backupPath))
+            // A plain File.Copy of the main .db is unsafe under WAL journal mode (enabled at
+            // registration): recently committed transactions live in the `-wal` sidecar until a
+            // checkpoint folds them back, so copying the main file alone can capture a stale DB.
+            // VACUUM INTO produces a single consistent snapshot that reads through the current WAL
+            // state -- the backup is a self-contained file with no sidecars, restorable by copy-back.
+            // A pre-existing target is a filename collision (timestamp clash) -- refuse, exit 11.
+            if (File.Exists(backupPath))
             {
                 throw new MigrationFailedException
                 (
@@ -99,10 +101,30 @@ public sealed class MigrationRunner
                     "backup filename collision; refusing to proceed",
                     backupPath,
                     pending[0],
-                    ex,
+                    null,
                     [
                         "A backup with this timestamp already exists. Wait a moment and retry.",
                         "If this persists, inspect the backups directory for stuck files."
+                    ]
+                );
+            }
+
+            try
+            {
+                await CreateConsistentBackupAsync(dbPath, backupPath, ct);
+            }
+            catch (SqliteException ex)
+            {
+                throw new MigrationFailedException
+                (
+                    20,
+                    "pre-migration backup failed",
+                    null,
+                    pending[0],
+                    ex,
+                    [
+                        "Verify filesystem permissions on the data directory.",
+                        "Ensure sufficient disk space before retrying."
                     ]
                 );
             }
@@ -199,6 +221,25 @@ public sealed class MigrationRunner
         );
 
         return new MigrationOutcome(true, backupPath, pending);
+    }
+
+    // VACUUM INTO writes a fresh, fully-consistent single-file copy of the live database to the
+    // target path, reading through the current WAL state -- so commits still resident in the `-wal`
+    // sidecar are captured (a plain File.Copy of the main file misses them). The target must not
+    // exist; the caller pre-checks for collision. The source is the same file the runner already
+    // gates the backup on (ResolveDbPath) -- the EF context's data source is anchored to this path.
+    private static async Task CreateConsistentBackupAsync(string dbPath, string backupPath, CancellationToken ct)
+    {
+        await using var connection = new SqliteConnection($"Data Source={dbPath}");
+
+        await connection.OpenAsync(ct);
+
+        await using var command = connection.CreateCommand();
+
+        command.CommandText = "VACUUM main INTO $target;";
+        command.Parameters.AddWithValue("$target", backupPath);
+
+        await command.ExecuteNonQueryAsync(ct);
     }
 
     public static string ResolveDbPath(string dataDirectory) =>
