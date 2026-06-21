@@ -138,19 +138,23 @@ public class ProcessSupervisorConcurrencyTests : IAsyncLifetime
         var process = supervisor.GetProcess(app.Id);
         process.ShouldNotBeNull();
 
-        // Coherence invariant: if the supervisor reports Running, the live handle count it spawned
-        // exceeds the count it killed (a real running process); if Stopped, spawns and kills balance.
         var snapshot = process.ReadSnapshot();
 
+        // SUP-16 coherence invariant (the only direction that always holds): a process the
+        // supervisor reports as Running ALWAYS carries a PID. The converse is NOT asserted -- a
+        // non-Running process can legitimately retain a PID (Stopping = mid-shutdown with a live
+        // PID; Backoff = retrying, last PID retained). Asserting Pid==null for every non-Running
+        // state over-claims and is false.
         if (snapshot.State == ProcessState.Running)
         {
             snapshot.Pid.ShouldNotBeNull();
-            (runner.StartCount - runner.KillCount).ShouldBeGreaterThan(0);
         }
-        else
-        {
-            snapshot.Pid.ShouldBeNull();
-        }
+
+        // SUP-01 no-orphan invariant: the supervisor never leaves MORE than one live OS process for
+        // this app. Every spawn is either the single current process or has been stopped (killed or
+        // exited gracefully); a leaked spawn would show as a second still-live handle nobody stopped.
+        // This is the orphan check the serialization protects -- independent of which racer won.
+        runner.LiveHandleCount.ShouldBeLessThanOrEqualTo(1);
     }
 
     // --- Helpers ---
@@ -295,6 +299,7 @@ public class ProcessSupervisorConcurrencyTests : IAsyncLifetime
 // so the supervisor's grace-period promotion lands the process in Running.
 file sealed class RecordingRunner : IManagedProcessRunner
 {
+    private readonly System.Collections.Concurrent.ConcurrentBag<CountingHandle> _handles = [];
     private int _startCount;
     private int _killCount;
 
@@ -302,10 +307,18 @@ file sealed class RecordingRunner : IManagedProcessRunner
 
     public int KillCount => Volatile.Read(ref _killCount);
 
+    // A handle is "live" until it is killed OR exits gracefully. The no-orphan invariant is that
+    // the supervisor never leaves MORE than one live handle behind -- a leaked spawn would show as
+    // a second live handle nobody stopped. This counts both exit paths (Kill and graceful exit),
+    // unlike StartCount - KillCount, which a graceful stop (no Kill) would inflate past 1.
+    public int LiveHandleCount => _handles.Count(h => !h.HasExited);
+
     public IProcessHandle Start(ProcessStartConfiguration configuration)
     {
         var pid = Interlocked.Increment(ref _startCount) + 4200;
-        return new CountingHandle(pid, () => Interlocked.Increment(ref _killCount));
+        var handle = new CountingHandle(pid, () => Interlocked.Increment(ref _killCount));
+        _handles.Add(handle);
+        return handle;
     }
 
     public Task<ProcessRunResult> RunToCompletionAsync
