@@ -44,8 +44,9 @@ const PALETTE_ANCHORS: { token: string; r: number; g: number; b: number }[] = [
 
 /** Snap an arbitrary RGB triple to the nearest War Machine palette token. */
 function nearestToken(r: number, g: number, b: number): string {
-  // PALETTE_ANCHORS is a non-empty literal; seed with the first to keep the type
-  // non-undefined under noUncheckedIndexedAccess.
+  // Seed with a concrete token (not PALETTE_ANCHORS[0], which is `T | undefined`
+  // under noUncheckedIndexedAccess). Any seed is overwritten on the first
+  // iteration since bestDistance starts at +Infinity; PALETTE_ANCHORS is never empty.
   let bestToken = '--wm-text-bright'
   let bestDistance = Number.POSITIVE_INFINITY
   for (const anchor of PALETTE_ANCHORS) {
