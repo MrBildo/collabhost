@@ -1,9 +1,17 @@
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace Collabhost.Api.Events;
 
-public class EventBus<T> : IEventBus<T>
+// logger is optional only so the many direct test constructions that don't exercise the
+// swallowed-handler path need not thread a no-op logger. In production DI always supplies
+// the registered ILogger<EventBus<T>>; the NullLogger fallback applies only to bare
+// new EventBus<T>() in tests.
+public class EventBus<T>(ILogger<EventBus<T>>? logger = null) : IEventBus<T>
 {
     private readonly List<Action<T>> _handlers = [];
     private readonly Lock _lock = new();
+
+    private readonly ILogger<EventBus<T>> _logger = logger ?? NullLogger<EventBus<T>>.Instance;
 
     public void Publish(T eventData)
     {
@@ -19,9 +27,18 @@ public class EventBus<T> : IEventBus<T>
             {
                 handler(eventData);
             }
-            catch
+            catch (Exception ex)
             {
-                // One subscriber's failure must not block others
+                // One subscriber's failure must not block others. Isolation is the
+                // contract; the log is the observability the isolation would otherwise
+                // hide -- a throwing handler silently drops the event for that subscriber
+                // (e.g. a proxy route-sync that never runs) without it.
+                _logger.LogWarning
+                (
+                    ex,
+                    "Event subscriber threw while handling {EventType}; other subscribers were unaffected.",
+                    typeof(T).Name
+                );
             }
         }
     }

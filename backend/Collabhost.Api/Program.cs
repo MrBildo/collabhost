@@ -257,7 +257,7 @@ builder.Services.AddRegistry(effectiveDataDir);
 builder.Services.AddCapabilities(builder.Configuration);
 builder.Services.AddEventBus();
 builder.Services.AddSupervisor(effectiveDataDir);
-builder.Services.AddProxy(builder.Configuration);
+builder.Services.AddProxy(builder.Configuration, effectiveDataDir);
 builder.Services.AddPortal(builder.Configuration);
 builder.Services.AddProbes();
 builder.Services.AddHealthCheckExecutor();

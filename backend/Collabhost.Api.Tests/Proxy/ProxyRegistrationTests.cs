@@ -1,6 +1,9 @@
+using System.Reflection;
+
 using Collabhost.Api.Proxy;
 
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 using Shouldly;
 
@@ -12,6 +15,40 @@ public class ProxyRegistrationTests
 {
     private static IConfiguration EmptyConfig() =>
         new ConfigurationBuilder().Build();
+
+    // --- PRX-02: CaddyClient admin HttpClient must not keep the 100s default timeout ---
+    // A wedged Caddy admin call on the default 100s timeout blocks the sequential proxy
+    // sync pipeline for the full window. The admin API is localhost and millisecond-scale,
+    // so the constructed client carries a tight bound.
+
+    [Fact]
+    public void AddProxy_CaddyClient_HasBoundedAdminTimeout()
+    {
+        using var provider = new ServiceCollection()
+            .AddLogging()
+            .AddProxy(EmptyConfig(), Path.Combine(Path.GetTempPath(), "collabhost-proxy-reg-tests"))
+            .BuildServiceProvider();
+
+        var client = provider.GetRequiredService<ICaddyClient>();
+
+        var httpClient = GetHttpClient(client);
+
+        // Bounded well under the BCL 100s default; localhost admin calls are millisecond-scale.
+        httpClient.Timeout.ShouldBeGreaterThan(TimeSpan.Zero);
+        httpClient.Timeout.ShouldBeLessThanOrEqualTo(TimeSpan.FromSeconds(10));
+    }
+
+    // Reflects the private admin HttpClient out of the concrete CaddyClient. Loud-fail if the
+    // field name drifts so this never green-passes against a renamed/removed field (the
+    // green-but-useless reflection trap).
+    private static HttpClient GetHttpClient(ICaddyClient client)
+    {
+        var field = client.GetType().GetField("_httpClient", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        field.ShouldNotBeNull("CaddyClient._httpClient field not found -- reflection target drifted.");
+
+        return (HttpClient)field.GetValue(client)!;
+    }
 
     private static IConfiguration ConfigWithProxy(params (string key, string value)[] entries) =>
         new ConfigurationBuilder()

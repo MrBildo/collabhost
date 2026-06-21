@@ -8,7 +8,7 @@ public static class ProxyRegistration
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddProxy(IConfiguration configuration)
+        public IServiceCollection AddProxy(IConfiguration configuration, string dataDirectory)
         {
             var proxySettings = ResolveSettings(configuration);
 
@@ -39,18 +39,40 @@ public static class ProxyRegistration
             // start, after pin hydration), so the base address is resolved lazily on the
             // client's first request rather than baked into the HttpClient here. By the
             // time any admin call runs the proxy process has started and the port is set.
+            //
+            // Timeout is pinned to 10s instead of the BCL 100s default: the admin API is
+            // localhost and millisecond-scale, and a wedged admin call (e.g. a LoadConfig
+            // during route sync) on the 100s default would block the sequential sync
+            // pipeline for the full window. 10s sits above VerifyCaddyReadyAsync's 1s
+            // per-attempt CTS so it never preempts the readiness retry loop, while a hung
+            // sync call now fails fast. The client has no IHttpClientFactory pooling/recycle
+            // (it bypasses the factory above), so the timeout is set on the instance directly.
             services.AddSingleton<ICaddyClient>
             (
                 provider => new CaddyClient
                 (
-                    new HttpClient(),
+                    new HttpClient { Timeout = TimeSpan.FromSeconds(10) },
                     provider.GetRequiredService<ProxySettings>(),
                     provider.GetRequiredService<ILogger<CaddyClient>>()
                 )
             );
 
             services.AddSingleton<ProxyAppSeeder>();
-            services.AddSingleton<IProcessArgumentProvider, ProxyArgumentProvider>();
+
+            // dataDirectory is the resolve-once effectiveDataDir from Program.cs -- the same
+            // owner-scoped, writable root the DB and per-app data dirs use. The proxy
+            // bootstrap config (PRX-03) writes a per-boot-unique file under {dataDir}/proxy/
+            // here instead of the former shared world-writable {TEMP}/collabhost path.
+            services.AddSingleton<IProcessArgumentProvider>
+            (
+                provider => new ProxyArgumentProvider
+                (
+                    provider.GetRequiredService<ProxySettings>(),
+                    dataDirectory,
+                    provider.GetRequiredService<ILogger<ProxyArgumentProvider>>()
+                )
+            );
+
             services.AddSingleton<IProcessEnvironmentProvider, ProxyEnvironmentProvider>();
 
             // Card #258: ProxyManager's probe loop accepts an injected TimeProvider so
