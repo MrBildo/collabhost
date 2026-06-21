@@ -60,26 +60,4 @@ public class EntitlementsTests
         Entitlements.CanAccessTool(UserRole.Agent, "reload_proxy").ShouldBeTrue();
         Entitlements.CanAccessTool(UserRole.Agent, "register_app").ShouldBeTrue();
     }
-
-    [Fact]
-    public void CanAccessEndpoint_Administrator_UsersPrefix_ReturnsTrue()
-    {
-        Entitlements.CanAccessEndpoint(UserRole.Administrator, "/api/v1/users").ShouldBeTrue();
-        Entitlements.CanAccessEndpoint(UserRole.Administrator, "/api/v1/users/01ABCD").ShouldBeTrue();
-    }
-
-    [Fact]
-    public void CanAccessEndpoint_Agent_UsersPrefix_ReturnsFalse()
-    {
-        Entitlements.CanAccessEndpoint(UserRole.Agent, "/api/v1/users").ShouldBeFalse();
-        Entitlements.CanAccessEndpoint(UserRole.Agent, "/api/v1/users/01ABCD").ShouldBeFalse();
-    }
-
-    [Fact]
-    public void CanAccessEndpoint_Agent_NonAdminPaths_ReturnsTrue()
-    {
-        Entitlements.CanAccessEndpoint(UserRole.Agent, "/api/v1/apps").ShouldBeTrue();
-        Entitlements.CanAccessEndpoint(UserRole.Agent, "/api/v1/app-types").ShouldBeTrue();
-        Entitlements.CanAccessEndpoint(UserRole.Agent, "/api/v1/auth/me").ShouldBeTrue();
-    }
 }

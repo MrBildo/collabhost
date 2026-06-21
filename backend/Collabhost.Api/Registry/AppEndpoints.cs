@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
@@ -22,18 +23,29 @@ public static class AppEndpoints
     {
         var group = routes.MapGroup("/api/v1/apps").WithTags("Apps");
 
+        // The /apps group is mixed read+write, so role gates are attached per-route via
+        // RequireRoleFilter (the same checkpoint /users/* uses at the group level). GET reads
+        // stay open to any authenticated user; mutations require Agent; registry/config mutation
+        // that should never happen behind an Agent key requires Administrator. Both surfaces
+        // (REST here, MCP via Entitlements) enforce one role-per-operation model -- see
+        // CrossSurfaceRoleParityTests for the guard that keeps them from drifting.
+        var agent = new RequireRoleFilter(UserRole.Agent);
+        var administrator = new RequireRoleFilter(UserRole.Administrator);
+
         group.MapGet("/", ListAppsAsync);
-        group.MapPost("/", AppRegistrationEndpoints.CreateAppAsync);
+        group.MapPost("/", AppRegistrationEndpoints.CreateAppAsync).AddEndpointFilter(agent);
         group.MapGet("/{slug}", GetAppDetailAsync);
-        group.MapDelete("/{slug}", DeleteAppAsync);
+        group.MapDelete("/{slug}", DeleteAppAsync).AddEndpointFilter(administrator);
         group.MapGet("/{slug}/settings", AppSettingsEndpoints.GetAppSettingsAsync);
-        group.MapPut("/{slug}/settings", AppSettingsEndpoints.SaveAppSettingsAsync);
-        group.MapPost("/{slug}/start", AppLifecycleEndpoints.StartAppAsync);
-        group.MapPost("/{slug}/stop", AppLifecycleEndpoints.StopAppAsync);
-        group.MapPost("/{slug}/restart", AppLifecycleEndpoints.RestartAppAsync);
-        group.MapPost("/{slug}/kill", AppLifecycleEndpoints.KillAppAsync);
+        group.MapPut("/{slug}/settings", AppSettingsEndpoints.SaveAppSettingsAsync).AddEndpointFilter(agent);
+        group.MapPost("/{slug}/start", AppLifecycleEndpoints.StartAppAsync).AddEndpointFilter(agent);
+        group.MapPost("/{slug}/stop", AppLifecycleEndpoints.StopAppAsync).AddEndpointFilter(agent);
+        group.MapPost("/{slug}/restart", AppLifecycleEndpoints.RestartAppAsync).AddEndpointFilter(agent);
+        group.MapPost("/{slug}/kill", AppLifecycleEndpoints.KillAppAsync).AddEndpointFilter(agent);
         group.MapGet("/{slug}/logs", GetAppLogsAsync);
-        group.MapPost("/{slug}/runtime-config-file/import", ImportRuntimeConfigFileAsync);
+        group
+            .MapPost("/{slug}/runtime-config-file/import", ImportRuntimeConfigFileAsync)
+            .AddEndpointFilter(administrator);
     }
 
     private static async Task<IResult> ListAppsAsync

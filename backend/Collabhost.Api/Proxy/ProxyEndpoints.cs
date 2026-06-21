@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
@@ -19,8 +20,12 @@ public static class ProxyEndpoints
     {
         var group = routes.MapGroup("/api/v1").WithTags("Proxy");
 
+        // Mixed read+write group: /routes is an open read; the proxy reload is a control-plane
+        // mutation gated to Agent (per-route, matching the MCP reload_proxy entitlement).
         group.MapGet("/routes", ListRoutesAsync);
-        group.MapPost("/proxy/reload", ReloadProxyAsync);
+        group
+            .MapPost("/proxy/reload", ReloadProxyAsync)
+            .AddEndpointFilter(new RequireRoleFilter(UserRole.Agent));
     }
 
     private static async Task<IResult> ListRoutesAsync
