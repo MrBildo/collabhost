@@ -179,6 +179,42 @@ describe('UsersPage', () => {
     expect(screen.getByText(/Deactivate "CI Agent"/i)).toBeInTheDocument()
   })
 
+  // FE-FORM-03 (#421, #101 class) — a failed deactivate previously left the
+  // dialog open with no signal. Assert the failure surfaces and the dialog stays
+  // open (the target is only cleared on success).
+  test('a failed deactivate surfaces the error and keeps the dialog open', async () => {
+    const user = userEvent.setup()
+    mockUseUsers.mockReturnValue({
+      data: [makeAgentUser()],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useUsers>)
+
+    mockUseDeactivateUser.mockReturnValue({
+      mutate: vi.fn((_userId: string, callbacks?: { onSuccess?: () => void; onError?: (e: Error) => void }) => {
+        callbacks?.onError?.(new Error('User has active sessions'))
+      }),
+      isPending: false,
+    } as unknown as ReturnType<typeof useDeactivateUser>)
+
+    render(<UsersPage />)
+
+    await user.click(screen.getByRole('button', { name: /Deactivate/i }))
+    expect(screen.getByText(/Deactivate "CI Agent"/i)).toBeInTheDocument()
+
+    // Confirm inside the dialog (the row also has a "Deactivate" button) — scope
+    // to the dialog.
+    const dialog = document.querySelector('dialog')
+    expect(dialog).not.toBeNull()
+    if (!dialog) throw new Error('dialog missing')
+    const confirmInDialog = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Deactivate')
+    if (!confirmInDialog) throw new Error('dialog confirm missing')
+    await user.click(confirmInDialog)
+
+    expect(screen.getByText('User has active sessions')).toBeInTheDocument()
+    expect(dialog).toHaveAttribute('open')
+  })
+
   test('shows Access Denied for agent users', () => {
     mockUseCurrentUser.mockReturnValue({
       data: makeAgentUser(),

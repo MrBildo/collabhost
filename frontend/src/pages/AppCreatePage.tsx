@@ -29,6 +29,21 @@ function buildInitialValues(sections: RegistrationSection[]): FormValues {
   return values
 }
 
+// The form value to display for a field. The default is the display source ONLY
+// when the field hasn't been seeded into form state yet (the brief render before
+// `buildInitialValues` populates it). Once seeded, the form state is the sole
+// source — a field cleared to null/empty must render empty, not snap back to the
+// default. The previous `?? field.defaultValue` inline fallback conflated "not yet
+// seeded" with "cleared", so clearing a number field showed the default while
+// validation flagged it Required (FE-FORM-01, #421).
+function getDisplayValue(formValues: FormValues, sectionKey: string, field: RegistrationFieldType): unknown {
+  const sectionValues = formValues[sectionKey]
+  if (sectionValues !== undefined && field.key in sectionValues) {
+    return sectionValues[field.key]
+  }
+  return field.defaultValue
+}
+
 function validateForm(sections: RegistrationSection[], values: FormValues): FieldErrors {
   const errors: FieldErrors = {}
   for (const section of sections) {
@@ -363,7 +378,7 @@ function AppCreatePage() {
                         fieldKey={`${section.key}-${field.key}`}
                         label={field.label}
                         type={field.type}
-                        value={formValues[section.key]?.[field.key] ?? field.defaultValue}
+                        value={getDisplayValue(formValues, section.key, field)}
                         required={field.required}
                         placeholder={field.placeholder}
                         helpText={field.helpText}

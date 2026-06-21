@@ -1,4 +1,5 @@
 import { ActionButton } from '@/actions/ActionButton'
+import { ErrorBanner } from '@/shared/ErrorBanner'
 import { useEffect, useRef } from 'react'
 
 type ConfirmDialogProps = {
@@ -8,6 +9,11 @@ type ConfirmDialogProps = {
   confirmVariant?: 'danger' | 'primary'
   isOpen: boolean
   isPending?: boolean
+  // When the confirmed mutation fails, the caller leaves the dialog open and
+  // passes the failure message here so the operator sees why nothing happened
+  // (FE-FORM-03 / #101 class — failed mutations must not close or no-op
+  // silently). Reuses the inline ErrorBanner pattern; no new design surface.
+  error?: string | null
   onConfirm: () => void
   onCancel: () => void
 }
@@ -19,6 +25,7 @@ function ConfirmDialog({
   confirmVariant = 'danger',
   isOpen,
   isPending = false,
+  error,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -65,6 +72,7 @@ function ConfirmDialog({
           {title}
         </div>
         <div className="wm-dialog__body">{message}</div>
+        {error && <ErrorBanner message={error} className="mb-4" />}
         <div className="wm-dialog__actions">
           <ActionButton onClick={onCancel} disabled={isPending}>
             Cancel

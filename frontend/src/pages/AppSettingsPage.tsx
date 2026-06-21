@@ -104,6 +104,7 @@ function AppSettingsPage() {
   const [editValues, setEditValues] = useState<DirtyFields>({})
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isRestartDialogOpen, setIsRestartDialogOpen] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   // Card #336 — import-preview state. The dialog opens immediately on click
@@ -215,7 +216,20 @@ function AppSettingsPage() {
             pendingChangesRef.current = null
 
             if (andRestart && slug) {
-              restartMutation.mutate()
+              // FE-FORM-03 (#101 class): the save landed but the restart is a
+              // separate request that previously failed silently — the operator
+              // saw "saved" and believed restart-required settings were live when
+              // the app never restarted. Surface the restart failure distinctly
+              // from a save failure (the save DID succeed); the page-level banner
+              // is the right surface since the dialog has already closed.
+              restartMutation.mutate(undefined, {
+                onError: (error) => {
+                  const reason = error instanceof Error ? error.message : 'unknown error'
+                  setSaveError(
+                    `Settings saved, but the restart failed: ${reason}. Restart the app to apply the changes.`,
+                  )
+                },
+              })
             }
           },
           onError: (error) => {
@@ -283,9 +297,17 @@ function AppSettingsPage() {
 
   const handleDelete = useCallback(() => {
     if (!slug) return
+    setDeleteError(null)
     deleteMutation.mutate(slug, {
       onSuccess: () => {
         navigate(ROUTES.apps)
+      },
+      // FE-FORM-03 (#101 class): a failed delete previously left the dialog open
+      // with no signal — the operator clicks "Delete App", nothing visibly
+      // happens, the app is still there. Surface the failure inline; the dialog
+      // stays open so the message is anchored to the action that produced it.
+      onError: (error) => {
+        setDeleteError(error instanceof Error ? error.message : 'Failed to delete app')
       },
     })
   }, [slug, deleteMutation, navigate])
@@ -344,8 +366,17 @@ function AppSettingsPage() {
   }, [importPreview])
 
   function getFieldValue(field: SettingsField, sectionKey: string): unknown {
-    if (isEditing && editValues[sectionKey] !== undefined) {
-      return editValues[sectionKey][field.key] ?? field.value
+    // While editing, the edit state is the SOLE display source. The previous
+    // `?? field.value` fallback was a second source of truth: a field cleared to
+    // null/empty would snap the *display* back to the saved value while
+    // `computedChanges` armed Save with null — the operator saw the old value but
+    // saved a clear (FE-FORM-01, #421). The edit map is seeded for every field by
+    // `buildInitialValues` at edit-start, so a present key holding null/empty is a
+    // deliberate clear and must render empty (the field components coalesce
+    // null → ''). The `field.key in` check keeps display==payload even on the
+    // brief pre-seed render.
+    if (isEditing && editValues[sectionKey] !== undefined && field.key in editValues[sectionKey]) {
+      return editValues[sectionKey][field.key]
     }
     return field.value
   }
@@ -471,7 +502,13 @@ function AppSettingsPage() {
               'Deleting this app will remove it from Collabhost, stop its process, and remove its route. The application files on disk will not be deleted.'
             }
           </p>
-          <ActionButton variant="danger" onClick={() => setIsDeleteOpen(true)}>
+          <ActionButton
+            variant="danger"
+            onClick={() => {
+              setDeleteError(null)
+              setIsDeleteOpen(true)
+            }}
+          >
             Delete App
           </ActionButton>
         </div>
@@ -485,8 +522,12 @@ function AppSettingsPage() {
         confirmVariant="danger"
         isOpen={isDeleteOpen}
         isPending={deleteMutation.isPending}
+        error={deleteError}
         onConfirm={handleDelete}
-        onCancel={() => setIsDeleteOpen(false)}
+        onCancel={() => {
+          setIsDeleteOpen(false)
+          setDeleteError(null)
+        }}
       />
 
       {/* Restart confirmation dialog — shown when saving changes to restart-required fields */}

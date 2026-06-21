@@ -31,6 +31,7 @@ function UsersPageContent() {
 
   const { logout } = useAuth()
   const [deactivateTarget, setDeactivateTarget] = useState<DeactivateTarget | null>(null)
+  const [deactivateError, setDeactivateError] = useState<string | null>(null)
 
   const users = usersQuery.data ?? []
 
@@ -39,18 +40,27 @@ function UsersPageContent() {
   function handleDeactivateClick(user: User): void {
     const isSelf = currentUser?.id === user.id
     const isLastAdmin = user.role === 'administrator' && activeAdminCount <= 1
+    setDeactivateError(null)
     setDeactivateTarget({ user, isSelf, isLastAdmin })
   }
 
   function handleDeactivateConfirm(): void {
     if (!deactivateTarget) return
     const { user, isSelf } = deactivateTarget
+    setDeactivateError(null)
     deactivateMutation.mutate(user.id, {
       onSuccess: () => {
         setDeactivateTarget(null)
         if (isSelf) {
           logout()
         }
+      },
+      // FE-FORM-03 (#101 class): a failed deactivate previously left the dialog
+      // open with no signal — the operator confirms, nothing happens, the user is
+      // still active. Surface the failure inline; the dialog stays open (the
+      // target is only cleared on success).
+      onError: (error) => {
+        setDeactivateError(error instanceof Error ? error.message : 'Failed to deactivate user')
       },
     })
   }
@@ -181,8 +191,12 @@ function UsersPageContent() {
         confirmVariant="danger"
         isOpen={deactivateTarget !== null}
         isPending={deactivateMutation.isPending}
+        error={deactivateError}
         onConfirm={handleDeactivateConfirm}
-        onCancel={() => setDeactivateTarget(null)}
+        onCancel={() => {
+          setDeactivateTarget(null)
+          setDeactivateError(null)
+        }}
       />
     </div>
   )
