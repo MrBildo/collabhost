@@ -57,11 +57,13 @@ public class SettingsPlacementTests
         "Settings"
     ];
 
-    // The count of *Settings-suffixed types in the Api assembly: the 6 configuration-settings
-    // types (carrying const string SectionName) plus AppSettings (a REST contract DTO that
-    // shares the suffix). The count guard keeps the placement assertion honest -- a detector
-    // that matches zero would let placement pass vacuously.
-    private const int _expectedSettingsTypeCount = 7;
+    // The count of *Settings-suffixed types in the Api assembly: the 7 configuration-settings
+    // types (carrying const string SectionName -- AuthorizationSettings, ExternalTargetSettings,
+    // TypeStoreSettings, HostingSettings, PortalSettings, ProxySettings, and #430's
+    // ActivityEventRetentionSettings) plus AppSettings (a REST contract DTO that shares the
+    // suffix). The count guard keeps the placement assertion honest -- a detector that matches
+    // zero would let placement pass vacuously.
+    private const int _expectedSettingsTypeCount = 8;
 
     // Mutation-proof reading 1: guard the detector. If the *Settings-suffix detector silently
     // matches zero, this is the test that goes RED rather than placement passing vacuously.

@@ -77,6 +77,16 @@ public class ProcessResourceSamplerService
             if (!process.IsRunning || process.Pid is not int pid)
             {
                 _cache.Remove(process.AppId);
+
+                // SUP-15: forget the per-PID CPU baseline for a process that is no longer running
+                // but still carries a PID (Stopping/Backoff retain it mid-shutdown/retry). The
+                // null-snapshot branch below already forgets; this branch did not, so a baseline
+                // could survive past the process and poison a later PID-reuse's first CPU% delta.
+                if (process.Pid is int stoppedPid)
+                {
+                    _sampler.Forget(stoppedPid);
+                }
+
                 continue;
             }
 

@@ -3,10 +3,12 @@ using System.Globalization;
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.HealthChecks;
 using Collabhost.Api.Operations;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Supervisor;
+using Collabhost.Api.Supervisor.Resources;
 
 namespace Collabhost.Api.Registry;
 
@@ -34,6 +36,8 @@ public sealed class DeleteAppOperation
     ProcessSupervisor supervisor,
     ProxyManager proxy,
     ProbeService probeService,
+    ProcessResourceCache resourceCache,
+    HealthCheckExecutorService healthCheckExecutor,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore
 ) : Operation<DeleteAppCommand, DeleteAppOutcome>(currentUser, activityEventStore)
@@ -52,6 +56,12 @@ public sealed class DeleteAppOperation
 
     private readonly ProbeService _probeService = probeService
         ?? throw new ArgumentNullException(nameof(probeService));
+
+    private readonly ProcessResourceCache _resourceCache = resourceCache
+        ?? throw new ArgumentNullException(nameof(resourceCache));
+
+    private readonly HealthCheckExecutorService _healthCheckExecutor = healthCheckExecutor
+        ?? throw new ArgumentNullException(nameof(healthCheckExecutor));
 
     protected override async Task<OperationResult<DeleteAppOutcome>> ExecuteCoreAsync
     (
@@ -126,6 +136,17 @@ public sealed class DeleteAppOperation
         // probe cache (a confirmed REST<->MCP drift). Unifying both surfaces here fixes it by
         // construction. THE one sanctioned behavior change of the #406 spine arc.
         _probeService.InvalidateProbeCache(app.Id);
+
+        // AppDeleted cache-residue cleanup (#430). The resource-sampler cache (SUP-15) and the
+        // health-check executor's per-app result cache (PLT-01) both prune lazily by walking the
+        // LIVE app/process set on their periodic tick -- a deleted app, gone from that set, is never
+        // visited, so its entries would leak until process restart. DeleteAppOperation is the single
+        // firing point for the cleanup (the supervisor's CleanupDeletedApp above already covers the
+        // log buffer, restart policy, port reservation, parked process, and bundle dir; the probe
+        // cache is invalidated above). Both removes are ULID-keyed and idempotent -- a no-op when the
+        // app had no cached entry.
+        _resourceCache.Remove(app.Id);
+        _healthCheckExecutor.Remove(app.Id);
 
         // app.deleted, stamped via the base recorder. The string-id overload (not the App overload)
         // because the entity is gone -- the captured id + slug + display-name metadata is the shape

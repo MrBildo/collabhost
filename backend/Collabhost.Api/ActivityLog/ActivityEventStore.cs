@@ -117,6 +117,66 @@ public class ActivityEventStore
         return new ActivityEventPage(items, nextCursor, hasMore);
     }
 
+    // SVC-01 retention sweep. Bounds the insert-only table on two axes -- delete a row that violates
+    // EITHER MaxAge (older than the window) OR MaxCount (beyond the newest N). Each axis is a single
+    // set-based ExecuteDeleteAsync (no entity materialization). Returns the total rows removed.
+    // Best-effort: a transient failure is logged and the next sweep retries; retention is hygiene,
+    // not correctness, so it must never take down the host.
+    public async Task<int> PruneAsync(ActivityEventRetentionSettings retention, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(retention);
+
+        var removed = 0;
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+            if (retention.MaxAgeDays > 0)
+            {
+                var cutoff = DateTime.UtcNow.AddDays(-retention.MaxAgeDays);
+
+                removed += await db.ActivityEvents
+                    .Where(e => e.Timestamp < cutoff)
+                        .ExecuteDeleteAsync(ct);
+            }
+
+            if (retention.MaxCount > 0)
+            {
+                // Keep only the newest MaxCount rows; delete everything else. Id is a ULID --
+                // lexicographically time-ordered, so OrderByDescending(e => e.Id).Take(MaxCount) is
+                // the keep-set, and the delete removes every row NOT in it. The keep-set is a
+                // correlated subquery EF translates to a single SQL `DELETE ... WHERE Id NOT IN
+                // (SELECT Id ... ORDER BY Id DESC LIMIT N)` -- no row materialization, and (unlike a
+                // string-CompareTo boundary, which SQLite cannot translate) it works on the converted
+                // Ulid column directly.
+                var keepSet = db.ActivityEvents
+                    .OrderByDescending(e => e.Id)
+                        .Take(retention.MaxCount)
+                            .Select(e => e.Id);
+
+                removed += await db.ActivityEvents
+                    .Where(e => !keepSet.Contains(e.Id))
+                        .ExecuteDeleteAsync(ct);
+            }
+
+            if (removed > 0)
+            {
+                _logger.LogInformation
+                (
+                    "Activity-event retention sweep removed {Removed} row(s)",
+                    removed
+                );
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(exception, "Activity-event retention sweep failed");
+        }
+
+        return removed;
+    }
+
     public static string DeriveSeverity(string eventType) => eventType switch
     {
         ActivityEventTypes.AppCrashed => "error",

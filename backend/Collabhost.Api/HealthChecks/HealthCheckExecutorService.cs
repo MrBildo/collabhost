@@ -66,6 +66,15 @@ public class HealthCheckExecutorService
     public HealthCheckResult? GetLatest(Ulid appId) =>
         _latest.TryGetValue(appId, out var result) ? result : null;
 
+    // PLT-01: drop a deleted app's cached health state. The tick prunes lazily by walking the LIVE
+    // app set (ListAsync), so a deleted app -- gone from that set -- is never visited and its
+    // _latest/_lastProbedAt entries would leak forever. DeleteAppOperation calls this on delete.
+    public void Remove(Ulid appId)
+    {
+        _latest.TryRemove(appId, out _);
+        _lastProbedAt.TryRemove(appId, out _);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation
