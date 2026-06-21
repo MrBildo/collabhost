@@ -185,6 +185,75 @@ public class MigrationRunnerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task MigrateWithBackupAsync_WalResidentRow_SurvivesBackupRoundTrip()
+    {
+        // Seed the DB so a real file exists, then clear history so the next call backs up + migrates.
+        await _runner.MigrateWithBackupAsync
+        (
+            _dataDirectory,
+            _backupsDirectory,
+            "unknown",
+            "0.1.0",
+            CancellationToken.None
+        );
+
+        const string probeValue = "wal-resident-canary";
+
+        // Switch to WAL mode, disable auto-checkpoint, and commit a row through a connection we hold
+        // OPEN across the backup. With auto-checkpoint off and the connection never closed, the row
+        // stays resident in the `-wal` sidecar and is NOT folded into the main collabhost.db file --
+        // exactly the condition under which a plain File.Copy of the main file would lose it.
+        await using var walConnection = new SqliteConnection($"Data Source={_dbPath}");
+        await walConnection.OpenAsync();
+
+        await ExecuteAsync(walConnection, "PRAGMA journal_mode=WAL;");
+        await ExecuteAsync(walConnection, "PRAGMA wal_autocheckpoint=0;");
+        await ExecuteAsync(walConnection, "CREATE TABLE wal_probe (value TEXT NOT NULL);");
+        await ExecuteAsync(walConnection, $"INSERT INTO wal_probe (value) VALUES ('{probeValue}');");
+
+        // Negative control: the committed row lives in the WAL sidecar, not the main file.
+        var walPath = _dbPath + "-wal";
+        File.Exists(walPath).ShouldBeTrue("the committed row should be resident in the -wal sidecar");
+        new FileInfo(walPath).Length.ShouldBeGreaterThan(0);
+
+        // Clearing history makes the next call see pending migrations -> it takes the backup, then
+        // re-applies migrations against a DB whose tables already exist and throws (exit 20). The
+        // backup is taken BEFORE the migrate, so it carries the WAL-resident row regardless of the
+        // migrate failure -- the exception is the established channel for the backup path here.
+        ClearMigrationsHistory();
+
+        var ex = await Should.ThrowAsync<MigrationFailedException>
+        (
+            () => _runner.MigrateWithBackupAsync
+            (
+                _dataDirectory,
+                _backupsDirectory,
+                "0.1.0",
+                "0.2.0",
+                CancellationToken.None
+            )
+        );
+
+        ex.BackupPath.ShouldNotBeNull();
+        File.Exists(ex.BackupPath!).ShouldBeTrue();
+
+        // The backup must be a self-contained single file -- no WAL sidecar of its own to depend on.
+        File.Exists(ex.BackupPath + "-wal").ShouldBeFalse();
+
+        // Restore == open the backup and read the row back. If the WAL contents were captured, the
+        // canary survives the backup; a main-file-only File.Copy would have lost it.
+        await using var restored = new SqliteConnection($"Data Source={ex.BackupPath}");
+        await restored.OpenAsync();
+
+        await using var read = restored.CreateCommand();
+        read.CommandText = "SELECT value FROM wal_probe;";
+
+        var restoredValue = (string?)await read.ExecuteScalarAsync();
+
+        restoredValue.ShouldBe(probeValue);
+    }
+
+    [Fact]
     public void TryPruneBackups_RetainsFiveMostRecent()
     {
         PlantBackups(8);
@@ -381,6 +450,14 @@ public class MigrationRunnerTests : IAsyncDisposable
         ex.Summary.ShouldContain("migration failed");
         ex.InnerException.ShouldBeOfType<InvalidOperationException>();
         ex.BackupPath.ShouldNotBeNull();
+    }
+
+    private static async Task ExecuteAsync(SqliteConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        await command.ExecuteNonQueryAsync();
     }
 
     private void ClearMigrationsHistory()
