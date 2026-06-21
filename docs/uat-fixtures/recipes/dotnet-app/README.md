@@ -1,6 +1,6 @@
 # `dotnet-app` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `dotnet-app` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 4.
+This directory holds the recipe(s) for building the `dotnet-app` fixture(s) used by the release UAT pass — specifically the registration walk and the detect-strategy coverage matrix in the [recipes README](../README.md#detect-strategy-table-coverage).
 
 Build output lands at `docs/uat-fixtures/build/dotnet-app/` (gitignored). The recipe is checked in; the output is not.
 
@@ -24,7 +24,7 @@ Three variants are produced (see "Fixtures the recipe must produce" below). NuGe
 |---|---|---|
 | `framework-dependent/` | A directory containing the publish output of a minimal ASP.NET Core API (`dotnet publish` of a `Microsoft.NET.Sdk.Web` project). The `*.runtimeconfig.json` file MUST be present at the root. The app MUST listen on `$ASPNETCORE_URLS` and serve HTTP 200 on `/` and `/health`. | Drives the happy-path `dotnet-app` registration walk: detect-strategy returns `DotNetRuntimeConfiguration`, port-injection wires `ASPNETCORE_URLS`, health-check probes `/health`. |
 | `self-contained/` | A directory containing the publish output of the same minimal API, published with `--self-contained -p:PublishSingleFile=true`. Result: a single `*.exe` (Windows) or extensionless binary (Linux) + a neighboring `*.pdb` + (when ASP.NET) `*.staticwebassets.endpoints.json`. | Drives the `dotnet-app` self-contained code path: `DotnetExtractor` reports `isSelfContained: true`; also serves as the input for the `executable`-fixture-that-looks-like-dotnet case (§ 3.3 / § 4 row "Looks like single-file .NET publish"). |
-| `self-contained-pdb-stripped/` | The `self-contained/` recipe, published with `-p:DebugType=none` (no PDB). For the silent-failure regression guard per § Silent-failure modes item 5. | Detect-strategy returns `Manual` with empty or single-signal output (`single-file-binary` alone if no `staticwebassets.endpoints.json`; PR #223 #329 K-1 anchor). |
+| `self-contained-pdb-stripped/` | The `self-contained/` recipe, published with `-p:DebugType=none` (no PDB). For the silent-failure regression guard. | Detect-strategy returns `Manual` with empty or single-signal output (`single-file-binary` alone if no `staticwebassets.endpoints.json`). |
 
 ## Registration shape the runbook points at
 

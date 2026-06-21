@@ -1,6 +1,6 @@
 # `nodejs-app` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `nodejs-app` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 4.
+This directory holds the recipe(s) for building the `nodejs-app` fixture(s) used by the release UAT pass — specifically the registration walk and the detect-strategy coverage matrix in the [recipes README](../README.md#detect-strategy-table-coverage).
 
 Build output lands at `docs/uat-fixtures/build/nodejs-app/` (gitignored).
 

@@ -1,6 +1,6 @@
 # `executable` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `executable` UAT fixture(s) consumed by `docs/release-uat.md` § 2, § 3.3, and § 4.
+This directory holds the recipe(s) for building the `executable` fixture(s) used by the release UAT pass — specifically the registration and lifecycle walks and the detect-strategy coverage matrix in the [recipes README](../README.md#detect-strategy-table-coverage).
 
 Build output lands at `docs/uat-fixtures/build/executable/` (gitignored).
 
@@ -56,4 +56,4 @@ A fixture without `.exe` on Windows or without `chmod +x` on Linux is invisible 
 
 ## Linux FIFO trap reference
 
-`Directory.EnumerateFiles("/tmp")` on a CI runner can pick up `clr-debug-pipe` FIFOs (extensionless, executable bits set) and a downstream `File.OpenRead` blocks waiting for a writer (S33 #220). The `HasExecutableBit` helper gates pipes/sockets/devices via the zero-length filter. UAT against real fixture dirs won't hit this — flagged here so a future test-fixture recipe doesn't accidentally re-introduce the regression by, for example, dropping a named pipe into the fixture dir.
+`Directory.EnumerateFiles("/tmp")` on a CI runner can pick up `clr-debug-pipe` FIFOs (extensionless, executable bits set) and a downstream `File.OpenRead` blocks waiting for a writer. The `HasExecutableBit` helper gates pipes/sockets/devices via the zero-length filter. UAT against real fixture dirs won't hit this — flagged here so a future test-fixture recipe doesn't accidentally re-introduce the regression by, for example, dropping a named pipe into the fixture dir.

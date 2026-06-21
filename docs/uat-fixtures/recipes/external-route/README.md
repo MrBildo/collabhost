@@ -1,6 +1,6 @@
 # `external-route` UAT fixture recipe
 
-This directory holds the recipe(s) for building the `external-route` UAT fixture(s) consumed by `docs/release-uat.md` § 2 and § 3.4.
+This directory holds the recipe(s) for building the `external-route` fixture(s) used by the release UAT pass — specifically the fixture-requirements list and the `external-route` lifecycle walk.
 
 ## Build
 
@@ -35,7 +35,7 @@ When the runbook says "register an `external-route` with the localhost-http fixt
   - `external-target.host`: `localhost`
   - `external-target.port`: `11235`
   - `external-target.scheme`: `http` (the form default).
-- Submit. Expect 200 + redirect to `/apps/<slug>`. Per D8 (Card #348), the route is **auto-enabled at registration** — the row reads `running` immediately, no separate Start step is needed.
+- Submit. Expect 200 + redirect to `/apps/<slug>`. The route is **auto-enabled at registration** — the row reads `running` immediately, no separate Start step is needed.
 
 ## Recipe constraints
 
@@ -61,10 +61,11 @@ After §8 teardown of the Collabhost install, **also** stop the side-process run
 
 If a recipe-side script writes anything outside the build directory (a temp cert, a log file), document it in the per-fixture recipe and clean it in teardown.
 
-## Cross-reference
+## What the fixture exercises
 
-- `docs/release-uat.md` § 2.1 — the fixture-requirements table that points at this README.
-- `docs/release-uat.md` § 3.4 — the external-route lifecycle walk this recipe is consumed by.
-- `.agents/specs/348-external-route.md` — the spec the AppType ships against; the fixture intentionally exercises the spec's load-bearing surfaces (`external-target` capability, `ExternalDial` proxy emission, health-check probe-an-external-target branch, `tabs` DTO).
-- Card #348 — backend impl that this fixture verifies.
-- Card #349 — UAT runbook extension card that this recipe is filed against.
+The fixture intentionally drives the load-bearing surfaces of the `external-route` app type:
+
+- the `external-target` capability (host / port / scheme),
+- the proxy config emitted for an external upstream (the `reverse_proxy` dial to the declared `host:port`, plus the `transport` TLS block on the `https` path),
+- the health-check probe against an external target, and
+- the per-type detail-view affordances (no logs tab, lifecycle limited to enable/disable route).
