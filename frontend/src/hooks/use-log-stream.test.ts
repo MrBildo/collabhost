@@ -62,6 +62,15 @@ class MockEventSource {
     }
   }
 
+  // Deliver a frame whose `data` is a raw (possibly malformed) string, bypassing
+  // JSON.stringify — used to exercise the listeners' parse guard (FE-SSE-02).
+  simulateRawEvent(type: string, raw: string): void {
+    const event = new MessageEvent(type, { data: raw })
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener(event)
+    }
+  }
+
   simulateError(): void {
     this.readyState = 2
     this.onerror?.(new Event('error'))
@@ -273,6 +282,103 @@ describe('useLogStream', () => {
 
     const gaps = result.current.entries.filter((e) => e.type === 'gap')
     expect(gaps).toHaveLength(1)
+  })
+
+  test('buffer-overflow gap (> cap) emits a reset disclosure marker, not a silent clear (FE-SSE-01)', () => {
+    const { result } = renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+      for (let i = 1; i <= 5; i++) {
+        es.simulateEvent('log', makeLogEvent(i))
+      }
+      flushRaf()
+    })
+    expect(result.current.entries.filter((e) => e.type === 'log')).toHaveLength(5)
+
+    // Jump far past the buffer cap so the older range is unrecoverable. Before
+    // the fix this cleared entriesRef to [] with no marker — a bigger loss than
+    // a small gap, yet quieter. Now a 'reset' marker discloses the drop.
+    const jumpTarget = 5 + LOG_BUFFER_CAP + 200
+    act(() => {
+      es.simulateEvent('log', makeLogEvent(jumpTarget, 'after the cliff'))
+      flushRaf()
+    })
+
+    const resets = result.current.entries.filter((e) => e.type === 'reset')
+    expect(resets).toHaveLength(1)
+    // The dropped count is disclosed (the size of the skipped range).
+    expect(resets[0]).toEqual({ type: 'reset', dropped: jumpTarget - 5 - 1 })
+    // No 'gap' marker for an over-cap jump — that is the small-gap path only.
+    expect(result.current.entries.filter((e) => e.type === 'gap')).toHaveLength(0)
+    // The pre-cliff entries were cleared; the marker leads the new buffer.
+    expect(result.current.entries[0]).toEqual({ type: 'reset', dropped: jumpTarget - 5 - 1 })
+    const lastLog = result.current.entries.filter((e) => e.type === 'log').at(-1)
+    expect(lastLog).toEqual({ type: 'log', entry: expect.objectContaining({ id: jumpTarget }) })
+  })
+
+  test('malformed log frame is dropped, not thrown, and streaming continues (FE-SSE-02)', () => {
+    const { result } = renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+      es.simulateEvent('log', makeLogEvent(1, 'good one'))
+      flushRaf()
+    })
+    expect(result.current.entries).toHaveLength(1)
+
+    // A malformed frame must not throw uncaught inside the listener (which would
+    // abort the listener and is invisible to the operator). It is dropped.
+    expect(() => {
+      act(() => {
+        es.simulateRawEvent('log', '{ this is not valid json ')
+        flushRaf()
+      })
+    }).not.toThrow()
+
+    // The bad frame added nothing, and the stream still accepts good frames after.
+    expect(result.current.entries).toHaveLength(1)
+    act(() => {
+      es.simulateEvent('log', makeLogEvent(2, 'good two'))
+      flushRaf()
+    })
+    expect(result.current.entries).toHaveLength(2)
+    expect(result.current.entries.at(-1)).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 2, content: 'good two' }),
+    })
+  })
+
+  test('malformed status frame is dropped, not thrown (FE-SSE-02)', () => {
+    const { result } = renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+    })
+
+    expect(() => {
+      act(() => {
+        es.simulateRawEvent('status', 'not json at all')
+        flushRaf()
+      })
+    }).not.toThrow()
+
+    expect(result.current.entries).toHaveLength(0)
+
+    // Good status frames still process.
+    act(() => {
+      es.simulateEvent('status', { state: 'running', timestamp: '2026-04-05T12:00:00Z' })
+      flushRaf()
+    })
+    expect(result.current.entries).toHaveLength(1)
+    expect(result.current.entries[0]).toEqual({
+      type: 'status',
+      state: 'running',
+      timestamp: '2026-04-05T12:00:00Z',
+    })
   })
 
   test('buffer cap enforced, oldest entries dropped', () => {

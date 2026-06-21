@@ -1,8 +1,15 @@
 import type { DashboardEvent } from '@/api/types'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test } from 'vitest'
+import { beforeAll, describe, expect, test } from 'vitest'
 import { EventList } from './EventList'
+
+beforeAll(() => {
+  // jsdom does not implement scrollHeight/clientHeight; the auto-scroll layout
+  // effect and the isAtBottom math need stable numbers.
+  Object.defineProperty(HTMLDivElement.prototype, 'scrollHeight', { configurable: true, get: () => 100 })
+  Object.defineProperty(HTMLDivElement.prototype, 'clientHeight', { configurable: true, get: () => 50 })
+})
 
 let _eventCounter = 0
 
@@ -83,5 +90,19 @@ describe('EventList', () => {
   test('Follow button renders for empty event list', () => {
     render(<EventList events={[]} />)
     expect(screen.getByRole('button', { name: 'Follow' })).toBeInTheDocument()
+  })
+
+  test('releases follow on a non-wheel scroll away from the bottom (FE-UI-01)', () => {
+    // Keyboard / scrollbar / touch fire `scroll` without a `wheel` event. The
+    // earlier wheel-only guard left follow un-releasable for those inputs.
+    const { container } = render(<EventList events={[makeEvent()]} />)
+    const follow = screen.getByRole('button', { name: 'Follow' })
+    expect(follow.className).toContain('wm-filter-chip--active')
+
+    const scroller = container.querySelector('.wm-event-list') as HTMLDivElement
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true, value: 0, writable: true })
+    fireEvent.scroll(scroller)
+
+    expect(follow.className).not.toContain('wm-filter-chip--active')
   })
 })

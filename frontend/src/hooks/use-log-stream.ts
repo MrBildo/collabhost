@@ -14,8 +14,9 @@ const LIVENESS_TIMEOUT_MS = 45_000
  * cleanup flush (effect teardown) — to keep the buffer-cap contract in one
  * place. The third buffer-cap policy site in this file (the gap-overflow
  * branch in the 'log' handler) is intentionally NOT routed through this
- * helper: gap-overflow is a full RESET to `[]` because the missing range
- * cannot be recovered, which is a different policy from "trim to fit." (#319)
+ * helper: gap-overflow is a full RESET (to a lone 'reset' disclosure marker,
+ * not silently to `[]` — FE-SSE-01) because the missing range cannot be
+ * recovered, which is a different policy from "trim to fit." (#319, #425)
  */
 function trimToBufferCap(entries: StreamEntry[]): StreamEntry[] {
   return entries.length > LOG_BUFFER_CAP ? entries.slice(-LOG_BUFFER_CAP) : entries
@@ -104,12 +105,20 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
     }
 
     es.addEventListener('log', (e: MessageEvent) => {
-      const data = JSON.parse(e.data) as {
+      // Guard the parse: a malformed frame must not throw uncaught inside the
+      // EventSource listener (which would kill processing of that frame and is
+      // invisible to the operator). Drop the bad frame and keep streaming (FE-SSE-02).
+      let data: {
         id: number
         timestamp: string
         stream: 'stdout' | 'stderr'
         content: string
         level: string | null
+      }
+      try {
+        data = JSON.parse(e.data)
+      } catch {
+        return
       }
 
       markActivity()
@@ -120,9 +129,12 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
       // Gap detection: if incoming id jumps past what we expect
       if (maxIdRef.current > 0 && data.id > maxIdRef.current + 1) {
         const gap = data.id - maxIdRef.current - 1
-        // If the gap exceeds the buffer cap, reset entirely
+        // If the gap exceeds the buffer cap, the dropped range is unrecoverable
+        // and larger than anything we hold, so reset. Disclose the loss with a
+        // 'reset' marker (FE-SSE-01) — a bigger drop must be LOUDER than the
+        // bounded 'gap' marker below, not silent (the inversion the audit named).
         if (gap > LOG_BUFFER_CAP) {
-          entriesRef.current = []
+          entriesRef.current = [{ type: 'reset', dropped: gap }]
         } else {
           entriesRef.current.push({ type: 'gap' })
         }
@@ -143,7 +155,13 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
     })
 
     es.addEventListener('status', (e: MessageEvent) => {
-      const data = JSON.parse(e.data) as { state: string; timestamp: string }
+      // Same parse guard as the 'log' listener (FE-SSE-02).
+      let data: { state: string; timestamp: string }
+      try {
+        data = JSON.parse(e.data)
+      } catch {
+        return
+      }
       markActivity()
       entriesRef.current.push({
         type: 'status',
