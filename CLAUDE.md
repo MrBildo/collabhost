@@ -219,7 +219,7 @@ cd frontend && npm run test                                  # Vitest — all gr
 - Start/stop/restart/kill managed processes
 - `IManagedProcessRunner` interface with platform-specific implementations: `WindowsProcessRunner`, `LinuxProcessRunner`, and `FallbackProcessRunner` (uses `System.Diagnostics.Process` where the native runners do not apply).
 - `IProcessContainment` / `IContainmentHandle` — process containment abstraction. Implementations under `Supervisor/Containment/`: `WindowsJobObjectContainment` (Windows Job Objects), `LinuxContainment`, and `NullContainment` (no-op fallback).
-- Windows: CreateProcess P/Invoke, process groups, `GenerateConsoleCtrlEvent` for graceful shutdown, Job Objects for orphan protection.
+- Windows: CreateProcess P/Invoke, process groups, Job Objects for orphan protection. Stop is an honest immediate hard-kill — there is no graceful-shutdown channel today (the child runs on its own `CREATE_NEW_CONSOLE`, so a host `GenerateConsoleCtrlEvent` cannot reach it; `ShutdownTimeoutSeconds` is Linux-only). Delivering a real `CTRL_BREAK` is a deferred follow-up gated on a service-mode console spike.
 - Linux: native fork/exec via `LinuxNativeMethods` with cgroup v2 containment for orphan protection (see `.agents/specs/linux-process-management.md` for the design).
 - Stdout/stderr capture into in-memory ring buffer
 - Crash detection + restart with exponential backoff
