@@ -193,6 +193,44 @@ public class ProxyManagerDegradedStateTests : IAsyncLifetime
         error.ShouldContain("second error");
     }
 
+    // Card #426 (FE-XT-03): the vendor name "Caddy" must not cross the /status boundary.
+    // LastSyncOutcome.ErrorMessage is the source-of-truth field rendered raw by the FE
+    // (SystemPage.tsx) as proxyDetail.lastSyncError -- per CLAUDE.md the FE must NOT translate
+    // vendor names, so the abstraction must hold on the backend side of the contract.
+    //
+    // The property has two halves and both are asserted here so neither regresses:
+    //   (A) no-leak     -- no "caddy" token (case-insensitive) survives into the surfaced error.
+    //   (B) diagnostic  -- the operator's real cause (HTTP status + Caddy's response body:
+    //                      bind/parse/issuer detail) survives, so the message stays actionable.
+    // A flatten-everything-to-one-opaque-string fix would pass (A) and fail (B).
+    [Fact]
+    public async Task SyncRoutes_LoadFails_SurfacedErrorDoesNotLeakVendorName_KeepsDiagnosticDetail()
+    {
+        var caddy = new SyncControllableCaddyClient();
+
+        // The exact shape FormatSyncError produces today: "Caddy admin API returned {code}: {body}".
+        // The body is Caddy's real bind error -- the operator's actionable cause.
+        caddy.SetLoadResult
+        (
+            LoadConfigResult.Failed(400, "loading config: listening on :443: bind: permission denied")
+        );
+
+        var manager = CreateProxyManager(caddy);
+        SetCurrentState(manager, ProxyState.Running);
+
+        await manager.SyncRoutesAsync(CancellationToken.None);
+
+        var error = manager.LastSyncOutcome.ErrorMessage;
+        error.ShouldNotBeNull();
+
+        // (A) no-leak: the vendor name is gone, in any casing.
+        error.ShouldNotContain("Caddy", Case.Insensitive);
+
+        // (B) diagnostic value survives: status code + the full bind-error body.
+        error.ShouldContain("400");
+        error.ShouldContain("loading config: listening on :443: bind: permission denied");
+    }
+
     private static void SetCurrentState(ProxyManager manager, ProxyState state)
     {
         var field = typeof(ProxyManager).GetField
