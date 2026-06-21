@@ -218,74 +218,13 @@ public class ManagedProcessTests
         cancellation.IsCancellationRequested.ShouldBeTrue();
     }
 
-    [Fact]
-    public async Task AcquireOperationLockAsync_SecondCallBlocks_UntilFirstReleased()
-    {
-        var process = CreateProcess();
-        var secondAcquired = false;
-
-        var firstLock = await process.AcquireOperationLockAsync();
-
-        var secondTask = Task.Run(async () =>
-        {
-            await using var secondLock = await process.AcquireOperationLockAsync();
-            secondAcquired = true;
-        });
-
-        await Task.Delay(200);
-
-        secondAcquired.ShouldBeFalse();
-
-        await firstLock.DisposeAsync();
-
-        await secondTask.WaitAsync(TimeSpan.FromSeconds(5));
-
-        secondAcquired.ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task AcquireOperationLockAsync_RespectsCancellation()
-    {
-        var process = CreateProcess();
-        using var alreadyCancelled = new CancellationTokenSource();
-        await alreadyCancelled.CancelAsync();
-
-        await using var firstLock = await process.AcquireOperationLockAsync(CancellationToken.None);
-
-        await Should.ThrowAsync<OperationCanceledException>(
-            () => process.AcquireOperationLockAsync(alreadyCancelled.Token)
-        );
-    }
-
-    [Fact]
-    public async Task AcquireOperationLockAsync_DisposingRelease_AllowsNextAcquisition()
-    {
-        var process = CreateProcess();
-
-        var firstLock = await process.AcquireOperationLockAsync();
-
-        await firstLock.DisposeAsync();
-
-        var secondTask = process.AcquireOperationLockAsync();
-
-        var completed = await Task.WhenAny(secondTask, Task.Delay(TimeSpan.FromSeconds(5)));
-
-        completed.ShouldBe(secondTask);
-
-        await using var secondLock = await secondTask;
-    }
-
-    [Fact]
-    public async Task Dispose_DisposesOperationLock()
-    {
-        var process = CreateProcess();
-
-        process.Dispose();
-
-        await Should.ThrowAsync<ObjectDisposedException>(
-            () => process.AcquireOperationLockAsync()
-        );
-    }
+    // NOTE (SUP-01, #424): the five tests formerly here exercised an operation lock that lived
+    // ON ManagedProcess (AcquireOperationLockAsync + Dispose_DisposesOperationLock). That lock was
+    // the ROOT of SUP-01 -- it could never span a start/restart because those operations dispose
+    // and replace the very ManagedProcess the lock lived on. The fix relocates the operation lock
+    // to the supervisor (keyed by the stable appId), so the per-ManagedProcess lock no longer
+    // exists. The relocated lock's mutual-exclusion / serialization semantics are now proven
+    // end-to-end in ProcessSupervisorConcurrencyTests (no-double-spawn, serialize-across-op).
 
     [Fact]
     public void Dispose_DisposesContainmentHandle()
@@ -555,6 +494,84 @@ public class ManagedProcessTests
         // Running process that is still alive -- reconciliation should not trigger
         process.IsRunning.ShouldBeTrue();
         process.HasProcessExited.ShouldBeFalse();
+    }
+
+    // SUP-16: ManagedProcess state fields are mutated from multiple threads (operator
+    // request threads, the crash-restart Task.Run closures, the grace-period closure,
+    // the synchronous Exited callback) and read concurrently by request threads that
+    // build the app-detail response. Each MarkXxx writes a GROUP of related fields
+    // (MarkRunning sets Pid + Port-bearing handle + State; MarkStopped sets State then
+    // nulls Pid + Port) and the reader assembles (State, Pid, Port) from independent
+    // loads. Without a lock making the write-group atomic AND the read coherent, a
+    // reader can stitch State==Running (one writer's flip) with Pid==null (a concurrent
+    // writer's null) into one snapshot -- the torn read SUP-16 names.
+    //
+    // The invariant under test is the running-process coherence rule: a process the
+    // snapshot reports as Running ALWAYS carries a PID and a port. ReadSnapshot reads
+    // the three fields together under the same lock that guards the writers, so the
+    // reader observes one coherent moment, never a half-applied transition.
+    //
+    // RED-first: against the pre-fix non-volatile auto-props (no lock, three separate
+    // loads) the concurrent loop reliably catches a Running+null tear within the
+    // iteration budget; post-fix the locked snapshot makes the tear unrepresentable.
+    [Fact]
+    public async Task ReadSnapshot_ConcurrentRunningStoppedFlips_NeverObservesRunningWithoutPidAndPort()
+    {
+        var process = CreateProcess();
+
+        // A running handle always exposes a PID; the port is assigned alongside it,
+        // mirroring StartAppInternalAsync's MarkRunning + AssignPort pairing.
+        var runningHandle = new FakeProcessHandle();
+
+        const int iterations = 200_000;
+
+        using var start = new ManualResetEventSlim(false);
+        var tornObservations = 0;
+
+        // Writer: flip Running <-> Stopped as fast as possible. MarkRunning(handle)
+        // sets the PID-bearing handle and Port then State; MarkStopped sets State then
+        // nulls Pid and Port. The two together open the torn window for the reader.
+        var writer = Task.Run
+        (
+            () =>
+            {
+                start.Wait();
+
+                for (var i = 0; i < iterations; i++)
+                {
+                    process.AssignPort(8080);
+                    process.MarkRunning(runningHandle);
+                    process.MarkStopped();
+                }
+            }
+        );
+
+        // Reader: snapshot (State, Pid, Port) coherently and assert the running-process
+        // invariant. A single torn observation fails the test.
+        var reader = Task.Run
+        (
+            () =>
+            {
+                start.Wait();
+
+                for (var i = 0; i < iterations; i++)
+                {
+                    var snapshot = process.ReadSnapshot();
+
+                    if (snapshot.State == ProcessState.Running
+                        && (snapshot.Pid is null || snapshot.Port is null))
+                    {
+                        Interlocked.Increment(ref tornObservations);
+                    }
+                }
+            }
+        );
+
+        start.Set();
+
+        await Task.WhenAll(writer, reader);
+
+        tornObservations.ShouldBe(0);
     }
 }
 
