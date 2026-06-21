@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -8,6 +9,7 @@ using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
+using Collabhost.Api.HealthChecks;
 using Collabhost.Api.Operations;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Portal;
@@ -17,6 +19,7 @@ using Collabhost.Api.Registry;
 using Collabhost.Api.StaticSite;
 using Collabhost.Api.Supervisor;
 using Collabhost.Api.Supervisor.Containment;
+using Collabhost.Api.Supervisor.Resources;
 using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Data.Sqlite;
@@ -99,9 +102,9 @@ public sealed class DeleteAppOperationTests : IDisposable
     [Fact]
     public async Task Delete_UnknownSlug_ReturnsNotFoundAndRecordsNoEvent()
     {
-        var (operation, _, _) = await CreateOperationAsync();
+        var context = await CreateOperationAsync();
 
-        var result = await operation.ExecuteAsync(new DeleteAppCommand("no-such-app"), CancellationToken.None);
+        var result = await context.Operation.ExecuteAsync(new DeleteAppCommand("no-such-app"), CancellationToken.None);
 
         result.IsSuccess.ShouldBeFalse();
         result.FailureKind.ShouldBe(OperationFailureKind.NotFound);
@@ -120,7 +123,8 @@ public sealed class DeleteAppOperationTests : IDisposable
         var artifactDirectory = CreateArtifactDirectory();
         var app = await SeedStaticSiteWithArtifactAsync("site-del", artifactDirectory);
 
-        var (operation, proxy, probeService) = await CreateOperationAsync();
+        var context = await CreateOperationAsync();
+        var (operation, proxy, probeService) = (context.Operation, context.Proxy, context.ProbeService);
 
         // Enable the route + prime the probe cache so the delete has something to disable / invalidate.
         proxy.EnableRoute("site-del");
@@ -150,13 +154,64 @@ public sealed class DeleteAppOperationTests : IDisposable
         await AssertDeletedEventRecordedAsync("site-del");
     }
 
+    // RED-first (#430, the AppDeleted cache-lifecycle hook): delete must prune the per-app
+    // resource-sampler cache (SUP-15) and the health-check executor's per-app result cache (PLT-01).
+    // Both prune lazily by walking the LIVE app/process set on their periodic tick -- a deleted app,
+    // gone from that set, is never visited, so its entries leak until process restart. Pre-fix the
+    // delete leaves both populated; post-fix the delete clears both.
+    [Fact]
+    public async Task Delete_PrunesResourceCacheAndHealthCheckCache()
+    {
+        var artifactDirectory = CreateArtifactDirectory();
+        var app = await SeedStaticSiteWithArtifactAsync("cache-del", artifactDirectory);
+
+        var context = await CreateOperationAsync();
+
+        // Prime both per-app caches as a live process would have left them.
+        context.ResourceCache.Set(app.Id, new ProcessResourceSnapshot(12.5, 256.0, 42, DateTime.UtcNow));
+        PrimeHealthCheckCache(context.HealthCheckExecutor, app.Id);
+
+        context.ResourceCache.GetLatest(app.Id).ShouldNotBeNull();
+        context.HealthCheckExecutor.GetLatest(app.Id).ShouldNotBeNull();
+
+        var result = await context.Operation.ExecuteAsync(new DeleteAppCommand("cache-del"), CancellationToken.None);
+
+        result.IsSuccess.ShouldBeTrue();
+
+        // Both per-app caches pruned by the AppDeleted hook -- no residue for the deleted app.
+        context.ResourceCache.GetLatest(app.Id).ShouldBeNull();
+        context.HealthCheckExecutor.GetLatest(app.Id).ShouldBeNull();
+    }
+
+    // Seed the executor's private _latest result cache directly -- driving a real probe would need a
+    // live health endpoint, where this test only needs the cache populated to prove the delete-hook
+    // prunes it.
+    private static void PrimeHealthCheckCache(HealthCheckExecutorService executor, Ulid appId)
+    {
+        var latestField = typeof(HealthCheckExecutorService)
+            .GetField("_latest", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("Could not find _latest on HealthCheckExecutorService.");
+
+        var dictionary = latestField.GetValue(executor)
+            ?? throw new InvalidOperationException("_latest was null on HealthCheckExecutorService.");
+
+        var indexer = dictionary.GetType().GetProperty("Item")
+            ?? throw new InvalidOperationException("ConcurrentDictionary indexer not found.");
+
+        var result = new HealthCheckResult(HealthCheckStatus.Healthy, DateTime.UtcNow, null);
+
+        indexer.SetValue(dictionary, result, [appId]);
+    }
+
     // --- Helpers ---
 
-    private async Task<(DeleteAppOperation Operation, ProxyManager Proxy, ProbeService ProbeService)> CreateOperationAsync()
+    private async Task<DeleteOperationContext> CreateOperationAsync()
     {
         var (supervisor, typeStore, capabilityStore) = await CreateSupervisorAsync();
         var proxy = CreateProxyManager(supervisor, typeStore, capabilityStore);
         var probeService = new ProbeService(_appStore, capabilityStore, TimeProvider.System, NullLogger<ProbeService>.Instance);
+        var resourceCache = new ProcessResourceCache();
+        var healthCheckExecutor = CreateHealthCheckExecutor(typeStore, capabilityStore, supervisor, proxy);
 
         var operation = new DeleteAppOperation
         (
@@ -165,12 +220,33 @@ public sealed class DeleteAppOperationTests : IDisposable
             supervisor,
             proxy,
             probeService,
+            resourceCache,
+            healthCheckExecutor,
             _currentUser,
             _activityEventStore
         );
 
-        return (operation, proxy, probeService);
+        return new DeleteOperationContext(operation, proxy, probeService, resourceCache, healthCheckExecutor);
     }
+
+    private HealthCheckExecutorService CreateHealthCheckExecutor
+    (
+        TypeStore typeStore,
+        CapabilityStore capabilityStore,
+        ProcessSupervisor supervisor,
+        ProxyManager proxy
+    ) =>
+        new
+        (
+            _appStore,
+            typeStore,
+            capabilityStore,
+            supervisor,
+            proxy,
+            new HealthCheckProbe(new HttpClient(), TimeProvider.System, NullLogger<HealthCheckProbe>.Instance),
+            TimeProvider.System,
+            NullLogger<HealthCheckExecutorService>.Instance
+        );
 
     private static string CreateArtifactDirectory()
     {
@@ -326,6 +402,15 @@ public sealed class DeleteAppOperationTests : IDisposable
     }
 
     public void Dispose() => _connection.Dispose();
+
+    private sealed record DeleteOperationContext
+    (
+        DeleteAppOperation Operation,
+        ProxyManager Proxy,
+        ProbeService ProbeService,
+        ProcessResourceCache ResourceCache,
+        HealthCheckExecutorService HealthCheckExecutor
+    );
 }
 
 file sealed class TestDbContextFactory(SqliteConnection connection) : IDbContextFactory<AppDbContext>

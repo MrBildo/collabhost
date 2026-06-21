@@ -1405,6 +1405,15 @@ public class ProcessSupervisor
 
         GetOrCreateLogBuffer(app.Id).Add(new LogEntry(DateTime.UtcNow, LogStream.StdErr, errorMessage));
 
+        // Dispose-before-overwrite, mirroring the successful start path. A ManagedProcess being
+        // overwritten owns an IProcessHandle + containment handle + restart-delay CTS, all released
+        // only in Dispose(); a bare `_processes[appId] = errorProcess` would drop those on the floor.
+        // Today every caller into the start path pre-clears the slot (#424), so this is a no-op in
+        // practice -- but it makes the overwrite site locally safe rather than caller-dependent, so a
+        // future park-without-pre-dispose can't silently reintroduce the handle leak. (SUP-08)
+        _processes.TryRemove(appId, out var replaced);
+        replaced?.Dispose();
+
         _processes[appId] = errorProcess;
     }
 

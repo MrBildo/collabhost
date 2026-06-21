@@ -252,7 +252,7 @@ builder.Services.AddCollabhostAuthorization(builder.Configuration);
 builder.Services.AddTypeStore(typeStoreSettings);
 
 // Subsystems
-builder.Services.AddActivityLog();
+builder.Services.AddActivityLog(builder.Configuration);
 builder.Services.AddRegistry(effectiveDataDir);
 builder.Services.AddCapabilities(builder.Configuration);
 builder.Services.AddEventBus();
