@@ -33,7 +33,16 @@ function AuthGate({ children }: AuthGateProps) {
     wasAuthenticatedRef.current = isAuthenticated
   }, [isAuthenticated, queryClient])
 
-  if (isAuthenticated) {
+  // Mount the protected children only once the session is COMMITTED — not while
+  // a validation probe is still in flight. `isAuthenticated` derives from
+  // `useSyncExternalStore(getSnapshot = localStorage)`, which React re-reads on
+  // every render, so the moment `handleSubmit` writes the key to localStorage
+  // (which the client wrapper needs on the probe) and schedules a render via
+  // `setIsSubmitting(true)`, `isAuthenticated` flips true — before `fetchMe`
+  // resolves. Gating on `!isSubmitting` keeps the children out of the DOM for
+  // that in-flight window, so a bad/expired key never flashes the protected UI
+  // before bouncing back to the gate (FE-AUTH-01, no-flash half).
+  if (isAuthenticated && !isSubmitting) {
     return <>{children}</>
   }
 
@@ -45,11 +54,12 @@ function AuthGate({ children }: AuthGateProps) {
   // with no message: a flash, then back to a blank form.
   //
   // We write the key directly to localStorage (so the client wrapper attaches it
-  // to the probe) WITHOUT emitting — the gate does not re-render mid-validation.
-  // On success we `login()` to commit (which emits and renders the children). On
-  // a 401 the client wrapper already cleared the key + emitted, so we must not
-  // double-handle it — we only render the message. On any other failure we clear
-  // the key we wrote ourselves so no orphaned key lingers for the next mount.
+  // to the probe), then hold the gate open via `isSubmitting` while the probe
+  // runs (see the committed-session guard above). On success we `login()` to
+  // commit (which emits and renders the children). On a 401 the client wrapper
+  // already cleared the key + emitted, so we must not double-handle it — we only
+  // render the message. On any other failure we clear the key we wrote ourselves
+  // so no orphaned key lingers for the next mount.
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     const trimmed = key.trim()

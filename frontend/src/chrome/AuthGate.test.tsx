@@ -81,6 +81,47 @@ describe('AuthGate', () => {
     expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBe('01ABC')
   })
 
+  test('protected content does NOT mount while validation is in flight (no flash on a bad key)', async () => {
+    // FE-AUTH-01 no-flash half. `isAuthenticated` derives from
+    // useSyncExternalStore(getSnapshot = localStorage), which React re-reads on
+    // EVERY render — not only when subscribe's listener fires. handleSubmit
+    // writes the key to localStorage and calls setIsSubmitting(true) (a render)
+    // BEFORE awaiting fetchMe. Without the in-flight guard, that render re-reads
+    // the just-written key, flips isAuthenticated true, and mounts the protected
+    // children while the probe is still pending — a flash that unmounts back to
+    // the gate when a bad key 401s. This test samples mount-state DURING a
+    // held-open fetchMe and asserts the children never appear before it resolves.
+    let rejectProbe: ((reason: unknown) => void) | undefined
+    mockFetchMe.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectProbe = (reason) => reject(reason)
+        }),
+    )
+    const user = userEvent.setup()
+    const client = makeQueryClient()
+    renderWithClient(client)
+
+    await user.type(screen.getByLabelText('User Key'), '01BADKEY')
+    await user.click(screen.getByRole('button', { name: /authenticate/i }))
+
+    // The probe is pending. The key is already in localStorage (the wrapper needs
+    // it on the probe), so isAuthenticated is true — but the session is NOT yet
+    // committed. The protected children must not be in the DOM yet.
+    await waitFor(() => expect(screen.getByText(/authenticating/i)).toBeInTheDocument())
+    expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument()
+
+    // Resolve the in-flight window as a 401 (production bad-key path: the wrapper
+    // clears the key before the rejection propagates). Still no protected content.
+    await act(async () => {
+      localStorage.removeItem(AUTH_STORAGE_KEY)
+      rejectProbe?.(new ApiError(401, 'Session expired. Please log in again.'))
+    })
+
+    await waitFor(() => expect(screen.getByText(/invalid or expired user key/i)).toBeInTheDocument())
+    expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument()
+  })
+
   test('a wrong or expired key surfaces a message at the gate instead of silently bouncing', async () => {
     // FE-AUTH-01 core: the previous code committed the key, let the first call
     // 401, and the client wrapper cleared it and re-rendered a blank form — a
