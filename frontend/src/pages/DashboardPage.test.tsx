@@ -151,19 +151,40 @@ describe('DashboardPage', () => {
     expect(screen.getByLabelText('Loading')).toBeInTheDocument()
   })
 
-  test('renders nothing for events section when events endpoint fails', () => {
+  test('renders an error state (not nothing) for the events section when the endpoint fails with no data', () => {
+    // FE-QRY-01: the old behavior rendered `null` here (the feed silently went
+    // dark). The fix surfaces the error so the operator knows the feed failed to
+    // load rather than being legitimately empty.
     mockUseDashboardEvents.mockReturnValue({
       data: undefined,
       isLoading: false,
+      isError: true,
       error: new Error('500 Internal Server Error'),
     } as unknown as ReturnType<typeof useDashboardEvents>)
 
     render(<DashboardPage />)
 
-    // No error banner for events — graceful degradation
-    // The section divider still renders, but no event list or spinner
     expect(screen.getByText('Recent Activity')).toBeInTheDocument()
+    expect(screen.getByText(/failed to load recent activity/i)).toBeInTheDocument()
+    expect(screen.getByText(/500 Internal Server Error/)).toBeInTheDocument()
     expect(screen.queryByText('No recent events')).toBeNull()
+  })
+
+  test('keeps showing the last-known feed when a refetch errors (stale-then-error)', () => {
+    // FE-QRY-01: TanStack keeps `data` on a query that errors after a prior
+    // success — prefer the stale feed over flipping to an error banner, so the
+    // dashboard does not flap as the backed-off poll retries.
+    mockUseDashboardEvents.mockReturnValue({
+      data: { events: [makeEvent({ message: 'started', appSlug: 'my-api' })] },
+      isLoading: false,
+      isError: true,
+      error: new Error('transient blip'),
+    } as unknown as ReturnType<typeof useDashboardEvents>)
+
+    render(<DashboardPage />)
+
+    expect(screen.getByText('started')).toBeInTheDocument()
+    expect(screen.queryByText(/failed to load recent activity/i)).toBeNull()
   })
 
   test('renders empty event list when events array is empty', () => {

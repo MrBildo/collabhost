@@ -11,12 +11,20 @@ function useDashboardStats() {
   })
 }
 
+// On error, back off rather than latch off — keep polling at a slower cadence
+// so a transient blip self-recovers (FE-QRY-01). Returning `false` here would
+// disable polling permanently and (with refetchOnWindowFocus default) leave the
+// feed dark until a full page reload.
+function dashboardEventsRefetchInterval(status: 'pending' | 'error' | 'success'): number {
+  return status === 'error' ? POLL_INTERVALS.dashboardErrorBackoff : POLL_INTERVALS.dashboard
+}
+
 function useDashboardEvents(limit = 20) {
   return useQuery<DashboardEventsResponse>({
     queryKey: ['dashboard', 'events'],
     queryFn: () => getDashboardEvents(limit),
-    refetchInterval: (query) => (query.state.status === 'error' ? false : POLL_INTERVALS.dashboard),
+    refetchInterval: (query) => dashboardEventsRefetchInterval(query.state.status),
   })
 }
 
-export { useDashboardStats, useDashboardEvents }
+export { useDashboardStats, useDashboardEvents, dashboardEventsRefetchInterval }
