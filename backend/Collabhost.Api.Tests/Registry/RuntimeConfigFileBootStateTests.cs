@@ -14,8 +14,8 @@ using Xunit;
 namespace Collabhost.Api.Tests.Registry;
 
 // Card #365: captures the precise boot-state interaction that allowed the
-// runtime-config-file writer-trigger defect to ship -- and that the production
-// case in collaboard.collabot.dev (Theo's Test 1) exercised.
+// runtime-config-file writer-trigger defect to ship -- and that a production
+// deployment exercised.
 //
 // The defect mechanism
 // --------------------
@@ -199,8 +199,8 @@ public class RuntimeConfigFileBootStateTests(ApiFixture fixture) : IAsyncLifetim
                 "POST-CARD-#365: writer MUST fire when _routeStates has no entry "
                 + "(default-true fallback in IsRouteEnabled). Pre-fix this assertion "
                 + "FAILS because the gate was IsRouteExplicitlyEnabled (default-false), "
-                + "exactly reproducing the production defect Theo's Test 1 surfaced "
-                + "against collaboard.collabot.dev v1.6.1."
+                + "exactly reproducing the production defect surfaced against a live "
+                + "deployment."
             );
 
             var parsed = JsonNode.Parse(await File.ReadAllTextAsync(targetPath))!.AsObject();

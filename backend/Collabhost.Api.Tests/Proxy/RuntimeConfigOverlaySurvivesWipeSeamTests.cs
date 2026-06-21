@@ -55,7 +55,7 @@ public sealed class RuntimeConfigOverlaySurvivesWipeSeamTests : IAsyncLifetime
     private const string _routeSlug = "portal";
     private const string _baseDomain = "collab.internal";
     private const string _configPath = "/config.json";
-    private const string _operatorValue = "{\"apiBaseUrl\":\"https://collaboard-api.collabot.dev/api/v1\"}";
+    private const string _operatorValue = "{\"apiBaseUrl\":\"https://api.example.com/api/v1\"}";
     private const string _staleArtifactDefault = "{\"apiBaseUrl\":\"https://STALE-ARTIFACT-DEFAULT.example.com\"}";
     private const string _spaIndexBody = "PORTAL SPA INDEX";
     private const string _spaIndexBodyV2 = "PORTAL SPA INDEX v2";

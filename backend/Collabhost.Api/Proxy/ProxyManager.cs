@@ -779,8 +779,7 @@ public class ProxyManager
     // Hydrate _routeStates from the persisted App.StoppedByOperator column at boot. Only
     // routing-only AppTypes are in scope: process-bearing routed apps (dotnet-app,
     // nodejs-app) keep their Caddy route up across operator-stop and rely on a 502 from
-    // the dead upstream as the operator-visible "stopped" signal (see
-    // docs/release-uat.md "Stop" semantics). Only `false` entries are written -- enabled
+    // the dead upstream as the operator-visible "stopped" signal. Only `false` entries are written -- enabled
     // apps stay implicit via IsRouteEnabled's default-true fallback (line 131), so the
     // dict only grows by the count of operator-stopped routing-only apps. The auto-start
     // skip for process-bearing apps lives in ProcessSupervisor.StartAsync. Card #350.

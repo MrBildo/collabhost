@@ -652,7 +652,7 @@ public class ProxyConfigurationBuilderTests
         var portal = new PortalSettings { Subdomain = "portal" };
         var settings = new ProxySettings
         {
-            BaseDomain = "collabot.dev",
+            BaseDomain = "example.com",
             BinaryPath = "caddy",
             ListenAddress = ":443",
             CertLifetime = "168h",
@@ -662,10 +662,10 @@ public class ProxyConfigurationBuilderTests
         var config = ProxyConfigurationBuilder.Build([], settings, _defaultHosting, portal);
 
         var selfHost = GetRoutes(config)![0]!["match"]![0]!["host"]![0]!.GetValue<string>();
-        selfHost.ShouldBe("portal.collabot.dev");
+        selfHost.ShouldBe("portal.example.com");
 
         var subjects = config["apps"]!["tls"]!["automation"]!["policies"]![0]!["subjects"]!.AsArray();
-        subjects[0]!.GetValue<string>().ShouldBe("portal.collabot.dev");
+        subjects[0]!.GetValue<string>().ShouldBe("portal.example.com");
     }
 
     // ----- Card #184: RouteEntry.Domain consumed by per-app routes -----
@@ -748,7 +748,7 @@ public class ProxyConfigurationBuilderTests
     {
         var settings = new ProxySettings
         {
-            BaseDomain = "collabot.dev",
+            BaseDomain = "example.com",
             BinaryPath = "caddy",
             ListenAddress = ":443",
             CertLifetime = "168h",
@@ -774,7 +774,7 @@ public class ProxyConfigurationBuilderTests
         // Custom env-var name flows through the placeholder unchanged.
         var settings = new ProxySettings
         {
-            BaseDomain = "collabot.dev",
+            BaseDomain = "example.com",
             BinaryPath = "caddy",
             ListenAddress = ":443",
             CertLifetime = "168h",
@@ -798,7 +798,7 @@ public class ProxyConfigurationBuilderTests
         // even when CertLifetime is set in settings.
         var settings = new ProxySettings
         {
-            BaseDomain = "collabot.dev",
+            BaseDomain = "example.com",
             BinaryPath = "caddy",
             ListenAddress = ":443",
             CertLifetime = "720h",
@@ -820,7 +820,7 @@ public class ProxyConfigurationBuilderTests
         // Caddy ignores the local pki block under ACME -- omit it as dead weight.
         var settings = new ProxySettings
         {
-            BaseDomain = "collabot.dev",
+            BaseDomain = "example.com",
             BinaryPath = "caddy",
             ListenAddress = ":443",
             CertLifetime = "168h",

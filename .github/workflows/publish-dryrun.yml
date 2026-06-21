@@ -14,12 +14,11 @@ name: Publish (dry-run)
 #   2. Pre-cut UAT archive production (card #352). Operators run the workflow
 #      manually via `workflow_dispatch` against `main` (or a branch pointing
 #      at the SHA under test) and pull the produced archives from the
-#      workflow-run artifacts page. This is the supported mechanism for the
-#      runbook's "Pre-cut UAT (bootstrap / candidate-validation runs)"
-#      shape -- it produces the same eight-item archive contract that
-#      publish.yml ships (wwwroot.sha256 sidecar + embedded WwwrootHash
-#      via -p:WwwrootHash + flat layout) without going through tag-cut.
-#      Documented in docs/release-uat.md.
+#      workflow-run artifacts page. This is the supported mechanism for
+#      pre-cut UAT (bootstrap / candidate-validation runs) -- it produces
+#      the same eight-item archive contract that publish.yml ships
+#      (wwwroot.sha256 sidecar + embedded WwwrootHash via -p:WwwrootHash +
+#      flat layout) without going through tag-cut.
 #
 # Triggers:
 #   - workflow_dispatch: ad-hoc, with optional version override (use case 2)

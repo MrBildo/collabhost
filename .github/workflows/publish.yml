@@ -119,9 +119,9 @@ jobs:
       # Caddy bundling -- replaced the upstream-binary download with an in-CI
       # `xcaddy build` so we can bake `caddy-dns/cloudflare` (and any future
       # plugins listed in caddy-plugins.txt) into the shipped binary. Vanilla
-      # Caddy lacks DNS-01 providers; without this, ACME issuance against
-      # *.collabot.dev would fail at runtime with "unknown module
-      # dns.providers.cloudflare".
+      # Caddy lacks DNS-01 providers; without this, ACME issuance against a
+      # wildcard domain (e.g. *.example.com) would fail at runtime with
+      # "unknown module dns.providers.cloudflare".
       #
       # Pinned versions:
       #   caddy.version     -- Caddy core (e.g. 2.11.2)

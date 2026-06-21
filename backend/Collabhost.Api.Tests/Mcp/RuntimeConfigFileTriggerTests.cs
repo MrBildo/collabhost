@@ -197,8 +197,7 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
     {
         // CATCHES Fix-C: the writer call was structurally absent from MCP
         // ConfigurationTools.UpdateSettingsAsync pre-Card-#365. This is the
-        // exact path Theo's Test 1 exercised against collaboard.collabot.dev
-        // v1.6.1 from his Ecosystem PM bot seat.
+        // exact path a live deployment exercised when the defect surfaced.
         var slug = await RegisterStaticSiteAsync
         (
             apiBaseUrl: "https://mcp-initial.example.com/api/v1"
@@ -257,7 +256,7 @@ public class RuntimeConfigFileTriggerTests(ApiFixture fixture) : IAsyncLifetime
                 "MCP update_settings with a runtime-config-file change MUST trigger the "
                 + "runtime-config-file writer when the route is currently up. Pre-Card-#365 "
                 + "the writer call was structurally absent from MCP ConfigurationTools."
-                + "UpdateSettingsAsync -- this is the path Theo's Test 1 exercised."
+                + "UpdateSettingsAsync -- this is the path the live deployment exercised."
             );
 
             var parsed = JsonNode.Parse(await File.ReadAllTextAsync(targetPath, CancellationToken.None))!.AsObject();
