@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using System.Text.Json.Nodes;
 
 using Collabhost.Api.ActivityLog;
@@ -7,6 +8,7 @@ using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Events;
+using Collabhost.Api.Operations;
 using Collabhost.Api.Platform;
 using Collabhost.Api.Portal;
 using Collabhost.Api.Proxy;
@@ -109,8 +111,43 @@ public sealed class ReloadProxyOperationTests : IDisposable
         recorded.MetadataJson.ShouldBeNull();
     }
 
+    [Fact]
+    public async Task Reload_WhileProxyDisabled_ReturnsConflictAndRecordsNoEvent()
+    {
+        // PRX-01: while the proxy is disabled (the post-launch probe gave up, route sync is
+        // suppressed), a reload would enqueue a sync the disabled latch silently drops. The
+        // operation must instead return Conflict carrying an operator-actionable message -- so
+        // the REST surface signals 409 and MCP signals InvalidParameters rather than a false 204
+        // No Content / "reload requested". And because no reload actually happened, no
+        // proxy.reloaded event is recorded.
+        var proxy = CreateProxyManager();
+        SetProxyDisabled(proxy, value: true);
+
+        var operation = new ReloadProxyOperation(proxy, _currentUser, _activityEventStore);
+
+        var result = await operation.ExecuteAsync(new ReloadProxyCommand(), CancellationToken.None);
+
+        result.IsSuccess.ShouldBeFalse();
+        result.FailureKind.ShouldBe(OperationFailureKind.Conflict);
+        result.Error.ShouldNotBeNullOrWhiteSpace();
+
+        (await RecordedEventCountAsync()).ShouldBe(0);
+    }
+
     private ReloadProxyOperation CreateOperation() =>
         new(CreateProxyManager(), _currentUser, _activityEventStore);
+
+    private static void SetProxyDisabled(ProxyManager proxy, bool value)
+    {
+        var field = typeof(ProxyManager).GetField
+        (
+            "_proxyDisabled",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
+
+        field.ShouldNotBeNull();
+        field.SetValue(proxy, value);
+    }
 
     // A real ProxyManager built with minimal real dependencies (StartAsync is never called, so the
     // background sync loop is not running; RequestSync only enqueues a channel write). Mirrors
@@ -186,6 +223,13 @@ public sealed class ReloadProxyOperationTests : IDisposable
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         return await db.ActivityEvents.SingleAsync();
+    }
+
+    private async Task<int> RecordedEventCountAsync()
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        return await db.ActivityEvents.CountAsync();
     }
 
     public void Dispose() => _connection.Dispose();

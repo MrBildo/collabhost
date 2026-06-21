@@ -233,6 +233,71 @@ public class ProxyManagerVerifyCaddyReadyTests
     }
 
     [Fact]
+    public async Task ProbeAndActivate_RecoversAfterLatchSet_ClearsDisabledLatch()
+    {
+        // PRX-01 regression: the disabled latch must clear on the probe-success / CAS-into-Running
+        // recovery path so route sync resumes after a transient proxy outage -- no Collabhost
+        // restart needed. Before the fix the latch set true and was cleared nowhere, so a recovered
+        // proxy reported Running while sync stayed dead for the process lifetime.
+        //
+        // Scenario: a first never-ready probe latches _proxyDisabled = true and Failed (driven on
+        // virtual time so the 5s budget elapses logically, not on the wall clock). A later restart
+        // event re-opens the probe window (state back to Starting); the proxy is now up, so the
+        // second probe succeeds, CASes into Running, and must clear the latch.
+        var caddy = new RecoveringCaddyClient();
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var manager = CreateProxyManager(caddy, clock);
+
+        var firstProbe = manager.ProbeAndActivateAsync(CancellationToken.None);
+        await DriveProbeLoopAsync(firstProbe, clock);
+        await firstProbe;
+
+        manager.CurrentState.ShouldBe(ProxyState.Failed);
+        GetProxyDisabled(manager).ShouldBeTrue();
+
+        // The proxy comes back: flip the client to ready and re-open the probe window (the Running
+        // event handler does exactly this Exchange before spawning the next probe).
+        caddy.MarkReady();
+        SetCurrentState(manager, ProxyState.Starting);
+
+        // The second probe is ready on its first call, so it completes without needing the clock
+        // advanced -- await it directly.
+        await manager.ProbeAndActivateAsync(CancellationToken.None);
+
+        manager.CurrentState.ShouldBe(ProxyState.Running);
+        GetProxyDisabled(manager).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ProbeAndActivate_ReadyButTerminalEventLanded_KeepsDisabledLatch()
+    {
+        // Guard against over-clearing: when the probe sees Caddy ready but a terminal event
+        // (Fatal/Crashed/Stopped) moved the state out of Starting mid-probe, the late Running
+        // write is suppressed AND the latch must stay set -- the proxy is not actually back, so
+        // resuming sync would be wrong. Only the won-CAS-from-Starting arm clears the latch.
+        var caddy = new RecoveringCaddyClient();
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var manager = CreateProxyManager(caddy, clock);
+
+        var firstProbe = manager.ProbeAndActivateAsync(CancellationToken.None);
+        await DriveProbeLoopAsync(firstProbe, clock);
+        await firstProbe;
+
+        GetProxyDisabled(manager).ShouldBeTrue();
+
+        // The proxy is reachable again, but a terminal event landed instead of a clean restart:
+        // state is Failed, not Starting. The second probe sees ready=true but its CAS-from-Starting
+        // loses, so it must leave both the state and the latch untouched.
+        caddy.MarkReady();
+        SetCurrentState(manager, ProxyState.Failed);
+
+        await manager.ProbeAndActivateAsync(CancellationToken.None);
+
+        manager.CurrentState.ShouldBe(ProxyState.Failed);
+        GetProxyDisabled(manager).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task ProbeAndActivate_CrashedMidProbe_LeavesStateAsFailed()
     {
         // MED-4: directed race test for the MED-1 CAS fix.
@@ -480,6 +545,25 @@ file sealed class ScriptedCaddyClient : ICaddyClient
             ? Task.FromResult(true)
             : Task.FromResult(false);
     }
+
+    public Task<LoadConfigResult> LoadConfigAsync(System.Text.Json.Nodes.JsonObject config, CancellationToken ct = default) =>
+        Task.FromResult(LoadConfigResult.Ok());
+
+    public Task<System.Text.Json.Nodes.JsonObject?> GetConfigAsync(CancellationToken ct = default) =>
+        Task.FromResult<System.Text.Json.Nodes.JsonObject?>(null);
+}
+
+// Returns unhealthy until MarkReady() is called, then healthy. Models a transient proxy
+// outage that later recovers: the first probe exhausts its budget and latches disabled; after
+// MarkReady the next probe succeeds. Drives the PRX-01 latch-clears-on-recovery regression.
+file sealed class RecoveringCaddyClient : ICaddyClient
+{
+    private volatile bool _ready;
+
+    public void MarkReady() => _ready = true;
+
+    public Task<bool> IsReadyAsync(CancellationToken ct = default) =>
+        Task.FromResult(_ready);
 
     public Task<LoadConfigResult> LoadConfigAsync(System.Text.Json.Nodes.JsonObject config, CancellationToken ct = default) =>
         Task.FromResult(LoadConfigResult.Ok());
