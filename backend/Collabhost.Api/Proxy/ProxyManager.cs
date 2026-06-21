@@ -92,11 +92,17 @@ public class ProxyManager
     // writes to guarantee visibility across threads.
     private int _currentState = (int)ProxyState.Starting;
 
-    // Once the post-launch probe fails, disable further sync attempts for this process lifetime.
-    // Distinct from the Degraded state (#217): _proxyDisabled latches when the admin-API probe
-    // never succeeded (or the proxy went Fatal), so further syncs would be pointless. Degraded
-    // is a recoverable state where the admin API IS reachable but route loads are failing -- the
-    // sync loop continues so the next attempt can clear it.
+    // Latches when the post-launch probe gives up (never-ready within the 5s budget, an
+    // unexpected probe exception, or the proxy process going Fatal), suppressing further sync
+    // attempts. Distinct from the Degraded state (#217): _proxyDisabled means the admin-API probe
+    // never succeeded, so a sync would be pointless; Degraded means the admin API IS reachable but
+    // route loads are failing, and the sync loop keeps running so the next attempt can recover.
+    //
+    // Cleared on the probe-success / CAS-into-Running recovery path (ProbeAndActivateAsync), so a
+    // transient proxy outage (e.g. a slow cold start that blew the 5s budget) self-heals once the
+    // admin API comes up on a later restart event -- route sync resumes without a Collabhost
+    // restart. While the latch is set, ReloadProxyAsync returns a Conflict signal instead of a
+    // false success so the operator gets feedback rather than a silent no-op.
     private volatile bool _proxyDisabled;
 
     // Latest route-sync outcome, surfaced via /api/v1/status as proxyDetail. Replaced
@@ -113,6 +119,12 @@ public class ProxyManager
     public ProxyState CurrentState => (ProxyState)Volatile.Read(ref _currentState);
 
     public SyncOutcome LastSyncOutcome => Volatile.Read(ref _lastSyncOutcome);
+
+    // True while the post-launch probe has given up and route sync is suppressed for now.
+    // Surfaced so the reload operation can return a Conflict signal instead of a false success
+    // while the proxy is disabled. The backing field is volatile, so the read pairs with the
+    // probe-path writes for cross-thread visibility.
+    public bool IsProxyDisabled => _proxyDisabled;
 
     public void EnableRoute(string slug)
     {
@@ -527,6 +539,15 @@ public class ProxyManager
 
                     return;
                 }
+
+                // Clear the disabled latch on the recovery path BEFORE requesting the sync, so the
+                // enqueued sync is not dropped as a no-op by the still-set latch. A transient outage
+                // (slow cold start that blew the 5s budget, then a later restart event re-opening
+                // the probe window) self-heals here -- route sync resumes without a Collabhost
+                // restart. Only the won-CAS-from-Starting arm clears it: a terminal event (Fatal/
+                // Crashed/Stopped) that landed mid-probe keeps the latch, since the proxy is not
+                // actually back.
+                _proxyDisabled = false;
 
                 _logger.LogInformation("Caddy admin API is ready -- proxy subsystem activated (proxyState='running')");
                 RequestSync();

@@ -467,11 +467,10 @@ public class ConfigurationTools
 // the surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
 // OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the success arm is
 // gated on IsSuccess FIRST -- FailureKind is only read on the failure path. The success arm returns
-// the exact fixed "reload requested" message the pre-migration body returned. The reload operation
-// has no failure path today (RequestSync only enqueues a channel write and never throws; the leaf
-// returns Success unconditionally), so success is what runs -- byte-identical to before. The failure
-// arm maps to InvalidParameters (the single MCP error shape) for shape-consistency, kept for the day
-// a reload precondition can fail.
+// the fixed "reload requested" message. The reload now HAS a failure path: when the proxy is
+// disabled the operation returns Conflict, which maps to InvalidParameters (the single MCP error
+// shape) carrying the "proxy is disabled" message, so a reload against a dead proxy signals rather
+// than false-succeeds.
 file static class ReloadProxyResultMapping
 {
     public static CallToolResult ToCallToolResult(this OperationResult<ProxyReloadOutcome> result) =>

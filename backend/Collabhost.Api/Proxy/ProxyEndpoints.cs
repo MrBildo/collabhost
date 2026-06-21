@@ -192,10 +192,9 @@ public static class ProxyEndpoints
 // (§7: the surface holds only its file-scoped mapping, never the contract types). K-1 (Kai's PR-1
 // forward note): OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the
 // success arm is gated on IsSuccess FIRST -- FailureKind is only read on the failure path. The
-// reload operation has no failure path today (RequestSync only enqueues a channel write and never
-// throws; the leaf returns Success unconditionally), so the success arm -> 204 No Content is what
-// runs -- byte-identical to the pre-migration handler. The failure arm mirrors the lifecycle
-// adapter's status mapping for shape-consistency, kept for the day a reload precondition can fail.
+// success arm -> 204 No Content. The reload now HAS a failure path: when the proxy is disabled
+// the operation returns Conflict, which maps to 409 (the `_` arm) carrying the operator-actionable
+// "proxy is disabled" message, so a reload against a dead proxy signals rather than false-succeeds.
 file static class ReloadProxyResultMapping
 {
     public static IResult ToHttpResult(this OperationResult<ProxyReloadOutcome> result) =>
