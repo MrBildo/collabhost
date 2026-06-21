@@ -170,6 +170,39 @@ describe('ConfirmDialog', () => {
     expect(confirmButton).toHaveClass('wm-btn--danger')
   })
 
+  // FE-FORM-03 (#421) — the error slot renders a failure message inline so a
+  // failed confirmed mutation is visible rather than silent.
+  test('renders the error slot when error is set', () => {
+    render(
+      <ConfirmDialog
+        title="Delete App"
+        message="Are you sure?"
+        confirmLabel="Delete"
+        isOpen={true}
+        error="Something went wrong"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Something went wrong')
+  })
+
+  test('does not render the error slot when error is absent', () => {
+    render(
+      <ConfirmDialog
+        title="Delete App"
+        message="Are you sure?"
+        confirmLabel="Delete"
+        isOpen={true}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   test('uses primary variant when specified', () => {
     render(
       <ConfirmDialog

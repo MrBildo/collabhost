@@ -501,3 +501,217 @@ describe('AppSettingsPage — DependsOn rendering (Card #338)', () => {
     expect(screen.queryByText(/Effective only when/)).not.toBeInTheDocument()
   })
 })
+
+// FE-FORM-01 (#421) — display/payload divergence on a cleared field. Before the
+// fix, getFieldValue's `?? field.value` fallback snapped a cleared number field's
+// DISPLAY back to the saved value while computedChanges armed Save with null:
+// the operator saw the old value but saved a clear. The fix removes the second
+// source of truth so display == payload. The regression test is: clear the
+// field, assert the input renders empty AND Save is armed.
+describe('AppSettingsPage — cleared field arms empty (FE-FORM-01, #421)', () => {
+  function makeSettingsWithNumber(): AppSettings {
+    return {
+      id: '01ULID0000000000000000000A',
+      name: 'test-421',
+      displayName: 'Test 421',
+      appTypeName: 'dotnet-app',
+      registeredAt: '2026-04-01T00:00:00Z',
+      sections: [
+        {
+          key: 'process',
+          title: 'Process',
+          fields: [
+            {
+              key: 'startupTimeoutSeconds',
+              label: 'Startup Timeout',
+              type: 'number',
+              value: 30,
+              defaultValue: 30,
+              editable: { mode: 'always' },
+              requiresRestart: false,
+            },
+          ],
+        },
+      ],
+    }
+  }
+
+  beforeEach(() => {
+    mockUseAppSettings.mockReturnValue({
+      data: makeSettingsWithNumber(),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppSettings>)
+    mockUseSaveSettings.mockReturnValue(makeMutationStub() as unknown as ReturnType<typeof useSaveSettings>)
+    mockUseDeleteApp.mockReturnValue(makeMutationStub() as unknown as ReturnType<typeof useDeleteApp>)
+    mockUseSettingsRestartApp.mockReturnValue(makeMutationStub() as unknown as ReturnType<typeof useSettingsRestartApp>)
+    mockUseImportRuntimeConfigFile.mockReturnValue(
+      makeMutationStub() as unknown as ReturnType<typeof useImportRuntimeConfigFile>,
+    )
+    mockUseCurrentUser.mockReturnValue({
+      data: { id: 'u1', name: 'Admin', role: 'administrator', isActive: true, createdAt: '' },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useCurrentUser>)
+  })
+
+  test('clearing a number field renders the input empty (display follows edit state, not the saved value)', async () => {
+    const user = userEvent.setup()
+    render(<AppSettingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+
+    const input = screen.getByRole('spinbutton') as HTMLInputElement
+    expect(input.value).toBe('30')
+
+    await user.clear(input)
+
+    // The display MUST be empty — not snapped back to the saved "30". This is the
+    // core of FE-FORM-01: the edit state (null) is the sole display source.
+    expect(input.value).toBe('')
+  })
+
+  test('clearing a number field arms Save (the cleared display and the dirty/payload state agree)', async () => {
+    const user = userEvent.setup()
+    render(<AppSettingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+
+    // Save is disabled until the form is dirty.
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled()
+
+    await user.clear(screen.getByRole('spinbutton'))
+
+    // Clearing is a real change — Save must arm. Before the fix, the display
+    // snapped back to "30" while the payload carried null; the operator would
+    // save a clear believing nothing changed.
+    expect(screen.getByRole('button', { name: 'Save Changes' })).not.toBeDisabled()
+  })
+
+  test('clearing a number field saves null, not the snapped-back saved value', async () => {
+    let savedPayload: unknown
+    const saveStub = makeMutationStub((vars) => {
+      savedPayload = vars
+    })
+    mockUseSaveSettings.mockReturnValue(saveStub as unknown as ReturnType<typeof useSaveSettings>)
+
+    const user = userEvent.setup()
+    render(<AppSettingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.clear(screen.getByRole('spinbutton'))
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    expect(saveStub.mutate).toHaveBeenCalledOnce()
+    expect(savedPayload).toEqual({ changes: { process: { startupTimeoutSeconds: null } } })
+  })
+})
+
+// FE-FORM-03 (#421, #101 class) — failed mutations must surface to the operator.
+// Before the fix, a failed delete left the dialog open silently and a failed
+// restart-after-save left the operator believing restart-required settings were
+// live. These tests assert each failure renders a message rather than no-oping.
+describe('AppSettingsPage — failed mutations surface (FE-FORM-03, #421)', () => {
+  function makeSettingsForDelete(): AppSettings {
+    return {
+      id: '01ULID0000000000000000000A',
+      name: 'test-421',
+      displayName: 'Test 421',
+      appTypeName: 'dotnet-app',
+      registeredAt: '2026-04-01T00:00:00Z',
+      sections: [
+        {
+          key: 'process',
+          title: 'Process',
+          fields: [
+            {
+              key: 'startupTimeoutSeconds',
+              label: 'Startup Timeout',
+              type: 'number',
+              value: 30,
+              defaultValue: 30,
+              editable: { mode: 'always' },
+              requiresRestart: true,
+            },
+          ],
+        },
+      ],
+    }
+  }
+
+  beforeEach(() => {
+    mockUseAppSettings.mockReturnValue({
+      data: makeSettingsForDelete(),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppSettings>)
+    mockUseSaveSettings.mockReturnValue(makeMutationStub() as unknown as ReturnType<typeof useSaveSettings>)
+    mockUseDeleteApp.mockReturnValue(makeMutationStub() as unknown as ReturnType<typeof useDeleteApp>)
+    mockUseSettingsRestartApp.mockReturnValue(makeMutationStub() as unknown as ReturnType<typeof useSettingsRestartApp>)
+    mockUseImportRuntimeConfigFile.mockReturnValue(
+      makeMutationStub() as unknown as ReturnType<typeof useImportRuntimeConfigFile>,
+    )
+    mockUseCurrentUser.mockReturnValue({
+      data: { id: 'u1', name: 'Admin', role: 'administrator', isActive: true, createdAt: '' },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useCurrentUser>)
+  })
+
+  test('a failed delete surfaces the error in the dialog and keeps the dialog open', async () => {
+    const deleteStub = makeMutationStub<void, string>((_vars, callbacks) => {
+      callbacks?.onError?.(new Error('App is still shutting down'))
+    })
+    mockUseDeleteApp.mockReturnValue(deleteStub as unknown as ReturnType<typeof useDeleteApp>)
+
+    const user = userEvent.setup()
+    render(<AppSettingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    // Danger Zone Delete App button opens the confirm dialog.
+    await user.click(screen.getByRole('button', { name: 'Delete App' }))
+
+    // Confirm inside the dialog — scope to the dialog (the Danger Zone button
+    // also reads "Delete App").
+    const dialog = document.querySelector('dialog')
+    expect(dialog).not.toBeNull()
+    if (!dialog) throw new Error('dialog missing')
+    const confirmInDialog = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Delete App')
+    if (!confirmInDialog) throw new Error('dialog confirm missing')
+    await user.click(confirmInDialog)
+
+    // The failure is shown, and the dialog stays open (it did NOT silently close
+    // or no-op).
+    await waitFor(() => expect(screen.getByText('App is still shutting down')).toBeInTheDocument())
+    expect(dialog).toHaveAttribute('open')
+  })
+
+  test('a successful save with a failed restart tells the operator the restart did not happen', async () => {
+    const saveStub = makeMutationStub((_vars, callbacks) => {
+      callbacks?.onSuccess?.(undefined)
+    })
+    mockUseSaveSettings.mockReturnValue(saveStub as unknown as ReturnType<typeof useSaveSettings>)
+
+    const restartStub = makeMutationStub<unknown, void>((_vars, callbacks) => {
+      callbacks?.onError?.(new Error('process exited during restart'))
+    })
+    mockUseSettingsRestartApp.mockReturnValue(restartStub as unknown as ReturnType<typeof useSettingsRestartApp>)
+
+    const user = userEvent.setup()
+    render(<AppSettingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+
+    // Change a restart-required field so Save routes through the restart dialog.
+    await user.clear(screen.getByRole('spinbutton'))
+    await user.type(screen.getByRole('spinbutton'), '60')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    // Restart dialog appears (the changed field requiresRestart) — choose
+    // Save & Restart.
+    await user.click(screen.getByRole('button', { name: 'Save & Restart' }))
+
+    expect(saveStub.mutate).toHaveBeenCalledOnce()
+    expect(restartStub.mutate).toHaveBeenCalledOnce()
+
+    // The save succeeded but the restart failed — the operator must be told so
+    // they don't believe restart-required settings are live.
+    await waitFor(() => expect(screen.getByText(/Settings saved, but the restart failed/)).toBeInTheDocument())
+    expect(screen.getByText(/process exited during restart/)).toBeInTheDocument()
+  })
+})
