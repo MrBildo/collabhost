@@ -71,6 +71,18 @@ public class ProcessSupervisor
     private readonly ConcurrentDictionary<Ulid, ManagedProcess> _processes = new();
     private readonly ConcurrentDictionary<Ulid, RestartPolicy> _restartPolicies = new();
     private readonly ProcessLogBufferStore _logBufferStore = new();
+
+    // SUP-01: per-appId operation lock held ON THE SUPERVISOR (keyed by the stable appId),
+    // not on the ManagedProcess -- because start/restart REPLACE the ManagedProcess, a lock
+    // living on the instance can never span the operation (disposing the object disposes the
+    // lock). Every lifecycle operation (start / stop / restart / kill, the auto-start boot
+    // loop, and the background startup-retry / crash-restart tasks) acquires this lock for the
+    // WHOLE operation, so a given app's lifecycle is serialized and concurrent starts can never
+    // double-spawn or orphan an OS process. The semaphore is created on first use and lives for
+    // the supervisor's lifetime; it is intentionally not removed on app-delete (an unbounded but
+    // tiny per-registered-app cost, and removing it would reopen a TOCTOU against an in-flight
+    // operation -- the lock's whole job).
+    private readonly ConcurrentDictionary<Ulid, SemaphoreSlim> _operationLocks = new();
     private Timer? _graceTimer;
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -139,7 +151,14 @@ public class ProcessSupervisor
                 {
                     _logger.LogInformation("Auto-starting app '{DisplayName}'", app.DisplayName);
 
-                    await StartAppInternalAsync(app.Id, cancellationToken);
+                    // Boot auto-start is uncontended (the API has not begun accepting requests),
+                    // but routed through the per-appId lock for one uniform acquire-site shape --
+                    // every StartAppInternalAsync caller holds the supervisor lock, no per-caller
+                    // "is this path contended?" judgment. (SUP-01)
+                    await using (await AcquireAppLockAsync(app.Id, cancellationToken))
+                    {
+                        await StartAppInternalAsync(app.Id, cancellationToken);
+                    }
 
                     try
                     {
@@ -244,8 +263,8 @@ public class ProcessSupervisor
                 // acquire is safe. The host CT is still honoured on the actual stop work
                 // (StopProcessWithShutdownPolicyAsync below) -- propagation belongs ON the stop
                 // work, not on the bookkeeping lock-acquire. Mirrors the grace-period site
-                // below at the AcquireOperationLockAsync(CancellationToken.None) call. (#358)
-                await using var _ = await process.AcquireOperationLockAsync(CancellationToken.None);
+                // below at the AcquireAppLockAsync(CancellationToken.None) call. (#358 / SUP-01)
+                await using var _ = await AcquireAppLockAsync(appId, CancellationToken.None);
 
                 if (process.IsRunning)
                 {
@@ -272,14 +291,34 @@ public class ProcessSupervisor
         _logger.LogInformation("Process supervisor stopped");
     }
 
+    // SUP-01: acquire the supervisor-held per-appId operation lock. Held across a whole
+    // lifecycle operation so concurrent start/stop/restart/kill of the same app serialize.
+    // The semaphore is keyed by the stable appId on the supervisor, so it survives the
+    // ManagedProcess replacement that start/restart performs -- the exact property a
+    // per-ManagedProcess lock cannot provide.
+    private async Task<IAsyncDisposable> AcquireAppLockAsync(Ulid appId, CancellationToken ct)
+    {
+        var gate = _operationLocks.GetOrAdd(appId, static _ => new SemaphoreSlim(1, 1));
+
+        await gate.WaitAsync(ct);
+
+        return new OperationLockRelease(gate);
+    }
+
     public async Task<ManagedProcess> StartAppAsync(Ulid appId, CancellationToken ct = default)
     {
-        // If a previous ManagedProcess exists (e.g. after stop), dispose it BEFORE
-        // starting the new one. We must not hold the old process's operation lock
-        // across StartAppInternalAsync because that method removes and disposes the
-        // old process, which invalidates the semaphore -- causing the lock's
-        // DisposeAsync to throw ObjectDisposedException on Release().
-        if (_processes.TryGetValue(appId, out var existing) && !existing.IsRunning)
+        await using var operationLock = await AcquireAppLockAsync(appId, ct);
+
+        // If a previous ManagedProcess exists in a NON-active terminal state (Stopped, Crashed,
+        // Fatal, Backoff -- anything that is neither Running nor Starting), dispose it BEFORE
+        // starting the new one. A Running or Starting process already owns a live OS spawn and is
+        // left for StartAppInternalAsync to reject ("already running") -- disposing it here would
+        // drop the supervisor's only handle on a live process and orphan it. Holding the
+        // supervisor's per-appId lock (not the old process's own lock) is what makes the
+        // dispose-then-start sequence safe to serialize: a concurrent start blocks on the lock
+        // instead of racing through this check-then-act window and double-spawning. (SUP-01)
+        if (_processes.TryGetValue(appId, out var existing)
+            && existing.State is not (ProcessState.Running or ProcessState.Starting))
         {
             _processes.TryRemove(appId, out _);
             existing.Dispose();
@@ -290,12 +329,12 @@ public class ProcessSupervisor
 
     public async Task<ManagedProcess> StopAppAsync(Ulid appId, CancellationToken ct = default)
     {
+        await using var _ = await AcquireAppLockAsync(appId, ct);
+
         if (!_processes.TryGetValue(appId, out var process) || process.IsStopped)
         {
             throw new InvalidOperationException("App is already stopped.");
         }
-
-        await using var _ = await process.AcquireOperationLockAsync(ct);
 
         process.MarkStoppedByOperator();
 
@@ -327,26 +366,21 @@ public class ProcessSupervisor
 
     public async Task<ManagedProcess> RestartAppAsync(Ulid appId, CancellationToken ct = default)
     {
-        ManagedProcess? stopped = null;
+        // One supervisor lock spans the whole stop-then-start so no concurrent operator
+        // start, stop, or crash-restart can interleave between the two halves and orphan
+        // a process. The lock lives on the supervisor (keyed by appId), so disposing the
+        // stopped ManagedProcess below does NOT invalidate it -- the property the old
+        // per-process lock could not provide. (SUP-01)
+        await using var operationLock = await AcquireAppLockAsync(appId, ct);
 
         if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
         {
-            await using var operationLock = await existing.AcquireOperationLockAsync(ct);
-
             existing.MarkStoppedByOperator();
 
             await StopProcessWithShutdownPolicyAsync(appId, existing, ct);
 
-            stopped = existing;
-        }
-
-        // Dispose the old process after releasing the operation lock to avoid
-        // ObjectDisposedException -- the lock's DisposeAsync calls Release() on
-        // the semaphore, which fails if the process (and its semaphore) is already disposed
-        if (stopped is not null)
-        {
             _processes.TryRemove(appId, out _);
-            stopped.Dispose();
+            existing.Dispose();
         }
 
         return await StartAppInternalAsync(appId, ct);
@@ -354,12 +388,12 @@ public class ProcessSupervisor
 
     public async Task KillAppAsync(Ulid appId, CancellationToken ct = default)
     {
+        await using var _ = await AcquireAppLockAsync(appId, ct);
+
         if (!_processes.TryGetValue(appId, out var process))
         {
             throw new InvalidOperationException("No managed process found for this app.");
         }
-
-        await using var _ = await process.AcquireOperationLockAsync(ct);
 
         process.MarkStoppedByOperator();
 
@@ -423,7 +457,14 @@ public class ProcessSupervisor
 
     private async Task<ManagedProcess> StartAppInternalAsync(Ulid appId, CancellationToken ct)
     {
-        if (_processes.TryGetValue(appId, out var existing) && existing.IsRunning)
+        // Reject a start when a spawn already exists for this app -- Running OR Starting. A
+        // Starting process has ALREADY spawned its OS process and registered (it only stays
+        // Starting until the grace-period task promotes it); restarting it here would spawn a
+        // second OS process and orphan the first. The IsRunning-only check missed the Starting
+        // window -- the gap that let two serialized starts double-spawn when the second ran during
+        // the first's grace period. (SUP-01)
+        if (_processes.TryGetValue(appId, out var existing)
+            && existing.State is ProcessState.Running or ProcessState.Starting)
         {
             throw new InvalidOperationException("App is already running.");
         }
@@ -681,7 +722,9 @@ public class ProcessSupervisor
         var gracePeriodSeconds = processConfiguration.StartupGracePeriodSeconds;
 
         // Grace period is intentionally fire-and-forget -- the task is self-contained
-        // with full error handling and acquires the per-process lock before mutating state.
+        // with full error handling and acquires the supervisor's per-appId lock before
+        // mutating state, serializing the Starting -> Running promotion against any
+        // concurrent operator stop/restart. (SUP-01)
 #pragma warning disable VSTHRD110, MA0134, CS4014, CA2016, MA0040
         Task.Run
         (
@@ -691,14 +734,15 @@ public class ProcessSupervisor
                 {
                     await Task.Delay(TimeSpan.FromSeconds(gracePeriodSeconds), CancellationToken.None);
 
-                    // The ManagedProcess may have been disposed by a startup retry or operator stop
-                    // between the delay and now. If so, this grace period task is stale -- bail out.
+                    await using var _ = await AcquireAppLockAsync(appId, CancellationToken.None);
+
+                    // The ManagedProcess may have been disposed/replaced by a startup retry or
+                    // operator stop. Re-check UNDER the lock that the dictionary still holds THIS
+                    // instance before promoting it -- if not, this grace period task is stale.
                     if (!_processes.TryGetValue(appId, out var current) || !ReferenceEquals(current, managed))
                     {
                         return;
                     }
-
-                    await using var _ = await managed.AcquireOperationLockAsync(CancellationToken.None);
 
                     if (!managed.HasProcessExited && managed.State == ProcessState.Starting)
                     {
@@ -886,10 +930,23 @@ public class ProcessSupervisor
             {
                 try
                 {
+                    // Delay OUTSIDE the lock -- holding the per-appId lock across the whole
+                    // backoff window would needlessly block an operator stop for that duration.
                     await Task.Delay(delay, token);
 
-                    // Remove the old process BEFORE disposing it -- dispose invalidates
-                    // the semaphore, so we must not hold its lock during disposal.
+                    // The replace-and-start runs UNDER the supervisor's per-appId lock so it
+                    // cannot interleave with a concurrent operator start/stop and double-spawn. (SUP-01)
+                    await using var _ = await AcquireAppLockAsync(appId, token);
+
+                    // Stale-retry guard: only tear down and respawn if the dictionary still holds
+                    // THIS Backoff instance. If an operator start (or another lifecycle op) already
+                    // replaced it while this retry was parked on the lock, removing the slot here
+                    // would dispose a live process and orphan its spawn -- this retry is stale. (SUP-01)
+                    if (!_processes.TryGetValue(appId, out var current) || !ReferenceEquals(current, process))
+                    {
+                        return;
+                    }
+
                     _processes.TryRemove(appId, out var stale);
 
                     stale?.Dispose();
@@ -1086,15 +1143,30 @@ public class ProcessSupervisor
             {
                 try
                 {
+                    // Delay OUTSIDE the lock -- holding the per-appId lock across the whole
+                    // backoff window would needlessly block an operator stop for that duration.
                     await Task.Delay(delay, token);
 
-                    // Remove the old process BEFORE disposing it -- dispose invalidates
-                    // the semaphore, so we must not hold its lock during disposal.
-                    _processes.TryRemove(appId, out var stale);
+                    // The replace-and-start runs UNDER the supervisor's per-appId lock so it
+                    // cannot interleave with a concurrent operator start or stop and double-spawn.
+                    // The lock releases before the (non-lifecycle) activity-event record. (SUP-01)
+                    await using (await AcquireAppLockAsync(appId, token))
+                    {
+                        // Stale-restart guard: only respawn if the dictionary still holds THIS
+                        // crashed instance. If an operator start/restart already replaced it while
+                        // this restart was parked on the lock, removing the slot here would orphan
+                        // the live process the newer op spawned -- this restart is stale. (SUP-01)
+                        if (!_processes.TryGetValue(appId, out var current) || !ReferenceEquals(current, process))
+                        {
+                            return;
+                        }
 
-                    stale?.Dispose();
+                        _processes.TryRemove(appId, out var stale);
 
-                    await StartAppInternalAsync(appId, token);
+                        stale?.Dispose();
+
+                        await StartAppInternalAsync(appId, token);
+                    }
 
                     try
                     {
@@ -1299,6 +1371,11 @@ public class ProcessSupervisor
             process.Dispose();
         }
 
+        foreach (var (_, gate) in _operationLocks)
+        {
+            gate.Dispose();
+        }
+
         GC.SuppressFinalize(this);
     }
 
@@ -1434,5 +1511,18 @@ public class ProcessSupervisor
         }
 
         return environmentVariables;
+    }
+}
+
+// Releases the supervisor's per-appId operation semaphore on disposal. The semaphore lives on
+// the supervisor (keyed by the stable appId) for the supervisor's lifetime, so -- unlike the old
+// per-ManagedProcess lock -- it is never disposed mid-operation; Release cannot race a dispose.
+file readonly record struct OperationLockRelease(SemaphoreSlim Semaphore) : IAsyncDisposable
+{
+    public ValueTask DisposeAsync()
+    {
+        Semaphore.Release();
+
+        return ValueTask.CompletedTask;
     }
 }
