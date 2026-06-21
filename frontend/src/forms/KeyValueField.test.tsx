@@ -290,4 +290,101 @@ describe('KeyValueField', () => {
       expect(screen.getByLabelText('Key for MY_VAR-BAD')).toHaveAttribute('aria-invalid', 'true')
     })
   })
+
+  // FE-FORM-02 (Card #421) — the data-loss regression guard. Before the fix the
+  // component derived its rows from the controlled `value` Record. Renaming a key
+  // through a transient value equal to a sibling key collapsed the two rows in the
+  // Record (last-wins) and destroyed the sibling row mid-keystroke, irreversibly.
+  // The fix holds positional [key, value][] edit state; transient duplicates live
+  // there and only collapse to the Record at the parent-onChange seam.
+  describe('rename-through-collision (FE-FORM-02 — no row destroyed mid-edit)', () => {
+    test('renaming a key through a sibling-collision keeps both rows alive', async () => {
+      const user = userEvent.setup()
+      const onChangeSpy = vi.fn()
+      // FOO renamed toward FOOBAR2 passes through the transient value "FOOBAR",
+      // which equals the sibling key. The sibling row ("FOOBAR" -> "2") must survive.
+      render(<ControlledHost initial={{ FOO: '1', FOOBAR: '2' }} onChangeSpy={onChangeSpy} />)
+
+      const keyInput = screen.getByLabelText('Key for FOO')
+      await user.type(keyInput, 'BAR2', {
+        initialSelectionStart: 'FOO'.length,
+        initialSelectionEnd: 'FOO'.length,
+      })
+
+      // The renamed row landed on FOOBAR2 carrying its own value, and the sibling
+      // FOOBAR row is still present — two rows, not one.
+      expect(screen.getByLabelText('Key for FOOBAR2')).toHaveValue('FOOBAR2')
+      expect(screen.getByLabelText('Value for FOOBAR2')).toHaveValue('1')
+      expect(screen.getByLabelText('Key for FOOBAR')).toHaveValue('FOOBAR')
+      expect(screen.getByLabelText('Value for FOOBAR')).toHaveValue('2')
+    })
+
+    test('the transient collision is flagged, not collapsed silently', async () => {
+      const user = userEvent.setup()
+      // Rename FOO so it lands exactly on the sibling key FOOBAR and stops there.
+      render(<ControlledHost initial={{ FOO: '1', FOOBAR: '2' }} />)
+
+      const keyInput = screen.getByLabelText('Key for FOO')
+      await user.type(keyInput, 'BAR', {
+        initialSelectionStart: 'FOO'.length,
+        initialSelectionEnd: 'FOO'.length,
+      })
+
+      // Both rows now read FOOBAR — neither is destroyed, and the operator is
+      // warned that one will be dropped on save (rather than it happening silently).
+      const collidingKeyInputs = screen.getAllByLabelText('Key for FOOBAR')
+      expect(collidingKeyInputs).toHaveLength(2)
+      for (const input of collidingKeyInputs) {
+        expect(input).toHaveAttribute('aria-invalid', 'true')
+      }
+      expect(screen.getByText(/only the last will be saved/i)).toBeInTheDocument()
+    })
+
+    test('a transient collision resolves cleanly once the rename completes', async () => {
+      const user = userEvent.setup()
+      const onChangeSpy = vi.fn()
+      render(<ControlledHost initial={{ FOO: '1', FOOBAR: '2' }} onChangeSpy={onChangeSpy} />)
+
+      const keyInput = screen.getByLabelText('Key for FOO')
+      await user.type(keyInput, 'BAR2', {
+        initialSelectionStart: 'FOO'.length,
+        initialSelectionEnd: 'FOO'.length,
+      })
+
+      // The committed record after the full rename carries BOTH keys with their
+      // original values — the parent never saw a row vanish.
+      expect(onChangeSpy).toHaveBeenLastCalledWith({ FOOBAR2: '1', FOOBAR: '2' })
+      expect(screen.queryByText(/only the last will be saved/i)).not.toBeInTheDocument()
+    })
+
+    test('an externally driven value change (parent reset / merge) is adopted', async () => {
+      const user = userEvent.setup()
+      // ControlledHost mirrors a parent that owns `value`; this exercises the
+      // reconcile path that distinguishes our own emit from an external change.
+      function MergingHost() {
+        const [value, setValue] = useState<Record<string, string>>({ A: '1' })
+        return (
+          <>
+            <KeyValueField value={value} onChange={setValue} />
+            <button type="button" onClick={() => setValue({ A: '1', B: '2' })}>
+              merge
+            </button>
+          </>
+        )
+      }
+      render(<MergingHost />)
+
+      // Edit a row first so local rows diverge from the initial value...
+      const valueInput = screen.getByLabelText('Value for A')
+      await user.clear(valueInput)
+      await user.type(valueInput, '9')
+      expect(screen.getByLabelText('Value for A')).toHaveValue('9')
+
+      // ...then the parent merges in a new key out-of-band. The component adopts it.
+      await user.click(screen.getByText('merge'))
+
+      expect(screen.getByLabelText('Key for B')).toHaveValue('B')
+      expect(screen.getByLabelText('Value for B')).toHaveValue('2')
+    })
+  })
 })
