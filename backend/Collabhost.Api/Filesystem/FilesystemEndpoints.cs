@@ -1,5 +1,6 @@
 using System.Security;
 
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Shared;
 
@@ -9,7 +10,12 @@ public static class FilesystemEndpoints
 {
     public static void Map(IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/api/v1/filesystem").WithTags("Filesystem");
+        // Both routes reach the host directory tree, so the whole group is Agent-gated at the
+        // group level (it backs the Agent registration/discovery flow; coherent with register=Agent).
+        var group = routes
+            .MapGroup("/api/v1/filesystem")
+            .WithTags("Filesystem")
+            .AddEndpointFilter(new RequireRoleFilter(UserRole.Agent));
 
         group.MapGet("/browse", Browse);
         group.MapGet("/detect-strategy", DetectStrategy);
