@@ -15,6 +15,7 @@ import { StatusStrip } from '@/status/StatusStrip'
 import { buildProxyStateCell } from '@/status/proxyStateCell'
 import { DataTable } from '@/tables/DataTable'
 import { buildDashboardColumns } from '@/tables/app-columns'
+import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 function DashboardPage() {
@@ -58,6 +59,29 @@ function DashboardPage() {
     : stopMutation.isError
       ? { verb: 'Stop', error: stopMutation.error, reset: stopMutation.reset }
       : null
+
+  // Events feed (FE-QRY-01). Prefer the last-known feed even while a refetch is
+  // erroring (TanStack keeps `data` on a stale-then-error query) — the poll
+  // backs off but never goes dark. Only when there is no feed at all do we
+  // surface the error instead of rendering nothing.
+  let eventsSection: ReactNode
+  if (eventsQuery.data) {
+    eventsSection = <EventList events={eventsQuery.data.events} />
+  } else if (eventsQuery.isLoading) {
+    eventsSection = <Spinner />
+  } else if (eventsQuery.isError) {
+    eventsSection = (
+      <ErrorBanner
+        message={
+          eventsQuery.error instanceof Error
+            ? `Failed to load recent activity: ${eventsQuery.error.message}`
+            : 'Failed to load recent activity'
+        }
+      />
+    )
+  } else {
+    eventsSection = null
+  }
 
   if (isLoading) {
     return (
@@ -123,7 +147,7 @@ function DashboardPage() {
       )}
 
       <SectionDivider label="Recent Activity" className="mb-3 mt-5" />
-      {eventsQuery.data ? <EventList events={eventsQuery.data.events} /> : eventsQuery.isLoading ? <Spinner /> : null}
+      {eventsSection}
     </div>
   )
 }

@@ -1,6 +1,8 @@
 import { ActionButton } from '@/actions/ActionButton'
+import { fetchMe } from '@/api/endpoints'
 import { LogoMark } from '@/chrome/LogoMark'
 import { useAuth } from '@/hooks/use-auth'
+import { AUTH_STORAGE_KEY } from '@/lib/constants'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -14,6 +16,7 @@ function AuthGate({ children }: AuthGateProps) {
   const queryClient = useQueryClient()
   const [key, setKey] = useState('')
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const wasAuthenticatedRef = useRef(isAuthenticated)
 
   // Clear server-state cache when auth transitions from authenticated to
@@ -30,18 +33,56 @@ function AuthGate({ children }: AuthGateProps) {
     wasAuthenticatedRef.current = isAuthenticated
   }, [isAuthenticated, queryClient])
 
-  if (isAuthenticated) {
+  // Mount the protected children only once the session is COMMITTED — not while
+  // a validation probe is still in flight. `isAuthenticated` derives from
+  // `useSyncExternalStore(getSnapshot = localStorage)`, which React re-reads on
+  // every render, so the moment `handleSubmit` writes the key to localStorage
+  // (which the client wrapper needs on the probe) and schedules a render via
+  // `setIsSubmitting(true)`, `isAuthenticated` flips true — before `fetchMe`
+  // resolves. Gating on `!isSubmitting` keeps the children out of the DOM for
+  // that in-flight window, so a bad/expired key never flashes the protected UI
+  // before bouncing back to the gate (FE-AUTH-01, no-flash half).
+  if (isAuthenticated && !isSubmitting) {
     return <>{children}</>
   }
 
-  function handleSubmit(e: React.FormEvent): void {
+  // Validate the key against `/auth/me` BEFORE committing the session, so a
+  // wrong or expired key surfaces a message here instead of silently bouncing
+  // off the gate (FE-AUTH-01). The previous code called `login()` immediately —
+  // that flipped `isAuthenticated`, mounted the children, let the first API call
+  // 401, and the client wrapper then cleared the key and re-rendered the gate
+  // with no message: a flash, then back to a blank form.
+  //
+  // We write the key directly to localStorage (so the client wrapper attaches it
+  // to the probe), then hold the gate open via `isSubmitting` while the probe
+  // runs (see the committed-session guard above). On success we `login()` to
+  // commit (which emits and renders the children). On a 401 the client wrapper
+  // already cleared the key + emitted, so we must not double-handle it — we only
+  // render the message. On any other failure we clear the key we wrote ourselves
+  // so no orphaned key lingers for the next mount.
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     const trimmed = key.trim()
     if (!trimmed) {
       setError('User key is required')
       return
     }
-    login(trimmed)
+
+    setIsSubmitting(true)
+    setError('')
+    localStorage.setItem(AUTH_STORAGE_KEY, trimmed)
+    try {
+      await fetchMe()
+      login(trimmed)
+    } catch {
+      // 401 → the client wrapper already removed the key and emitted; any other
+      // error → remove the key we just wrote so it can't auto-authenticate the
+      // next mount. removeItem is idempotent, so the 401 path is safe to repeat.
+      localStorage.removeItem(AUTH_STORAGE_KEY)
+      setError('Invalid or expired user key. Check the key and try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -77,6 +118,7 @@ function AuthGate({ children }: AuthGateProps) {
               type="password"
               className="wm-input w-full"
               value={key}
+              disabled={isSubmitting}
               onChange={(e) => {
                 setKey(e.target.value)
                 setError('')
@@ -86,13 +128,19 @@ function AuthGate({ children }: AuthGateProps) {
               autoFocus
             />
             {error && (
-              <p className="text-xs mt-1" style={{ color: 'var(--wm-red)' }}>
+              <p className="text-xs mt-1" style={{ color: 'var(--wm-red)' }} role="alert">
                 {error}
               </p>
             )}
           </div>
-          <ActionButton variant="primary" size="lg" type="submit" className="w-full justify-center">
-            Authenticate
+          <ActionButton
+            variant="primary"
+            size="lg"
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full justify-center"
+          >
+            {isSubmitting ? 'Authenticating…' : 'Authenticate'}
           </ActionButton>
         </form>
       </div>
