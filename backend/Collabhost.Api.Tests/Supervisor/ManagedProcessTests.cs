@@ -496,6 +496,40 @@ public class ManagedProcessTests
         process.HasProcessExited.ShouldBeFalse();
     }
 
+    // Card #428: the detail-builder derives uptime from the snapshot, so uptime is part of
+    // the same coherent moment as the running state -- a running snapshot carries a non-null
+    // uptime and a stopped one carries null, mirroring the UptimeSeconds property rule
+    // (live only while running) but read under the one lock guarding state, pid, and port.
+    [Fact]
+    public void ReadSnapshot_Running_CarriesUptime()
+    {
+        var process = CreateProcess();
+
+        process.AssignPort(8080);
+        process.MarkRunning(new FakeProcessHandle());
+
+        var snapshot = process.ReadSnapshot();
+
+        snapshot.State.ShouldBe(ProcessState.Running);
+        snapshot.UptimeSeconds.ShouldNotBeNull();
+        snapshot.UptimeSeconds!.Value.ShouldBeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public void ReadSnapshot_Stopped_UptimeIsNull()
+    {
+        var process = CreateProcess();
+
+        process.AssignPort(8080);
+        process.MarkRunning(new FakeProcessHandle());
+        process.MarkStopped();
+
+        var snapshot = process.ReadSnapshot();
+
+        snapshot.State.ShouldBe(ProcessState.Stopped);
+        snapshot.UptimeSeconds.ShouldBeNull();
+    }
+
     // SUP-16: ManagedProcess state fields are mutated from multiple threads (operator
     // request threads, the crash-restart Task.Run closures, the grace-period closure,
     // the synchronous Exited callback) and read concurrently by request threads that
@@ -558,8 +592,11 @@ public class ManagedProcessTests
                 {
                     var snapshot = process.ReadSnapshot();
 
+                    // Running coherence (SUP-16 + #428): a Running snapshot always carries a
+                    // PID, a port, AND an uptime -- all read under the one lock. A torn read
+                    // would stitch Running with any of the three null.
                     if (snapshot.State == ProcessState.Running
-                        && (snapshot.Pid is null || snapshot.Port is null))
+                        && (snapshot.Pid is null || snapshot.Port is null || snapshot.UptimeSeconds is null))
                     {
                         Interlocked.Increment(ref tornObservations);
                     }

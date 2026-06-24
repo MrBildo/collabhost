@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Globalization;
 
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
@@ -389,51 +388,31 @@ public class ConfigurationTools
 
             var process = _supervisor.GetProcess(app.Id);
 
-            // Card #348 polish: external-route apps have no supervised process.
-            // Synthesize the operator-declared upstream so list_routes matches what
-            // Caddy is actually dialing -- same resolution as AppEndpoints.GetAppDetailAsync.
+            // Card #435: the one shared RouteTargetResolver synthesizes the upstream-
+            // target string for all 4 route surfaces (REST detail + routes, MCP get_app +
+            // list_routes). External-route apps (Card #348) have no supervised process, so
+            // the resolver surfaces the operator-declared upstream; supervised apps get
+            // "localhost:{port}" from the live process port.
             var hasExternalTarget = bindings.ContainsKey("external-target");
 
-            string target;
+            var externalTarget = hasExternalTarget
+                && bindings.TryGetValue("external-target", out var externalTargetBinding)
+                    ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
+                    (
+                        externalTargetBinding,
+                        overrides.TryGetValue("external-target", out var externalTargetOverride)
+                            ? externalTargetOverride.ConfigurationJson
+                            : null
+                    )
+                    : null;
 
-            if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
-            {
-                if (hasExternalTarget)
-                {
-                    var externalTarget = bindings.TryGetValue("external-target", out var externalTargetBinding)
-                        ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
-                        (
-                            externalTargetBinding,
-                            overrides.TryGetValue("external-target", out var externalTargetOverride)
-                                ? externalTargetOverride.ConfigurationJson
-                                : null
-                        )
-                        : null;
-
-                    target = externalTarget is not null
-                        && !string.IsNullOrWhiteSpace(externalTarget.Host)
-                        && externalTarget.Port > 0
-                            ? string.Format
-                            (
-                                CultureInfo.InvariantCulture,
-                                "{0}://{1}:{2}",
-                                externalTarget.Scheme,
-                                externalTarget.Host,
-                                externalTarget.Port
-                            )
-                            : "not-configured";
-                }
-                else
-                {
-                    target = process?.Port is not null
-                        ? string.Create(CultureInfo.InvariantCulture, $"localhost:{process.Port.Value}")
-                        : "not-running";
-                }
-            }
-            else
-            {
-                target = "file-server";
-            }
+            var target = RouteTargetResolver.ResolveTarget
+            (
+                routingConfiguration,
+                hasExternalTarget,
+                externalTarget,
+                process?.Port
+            );
 
             var enabled = _proxy.IsRouteEnabled(app.Slug);
 

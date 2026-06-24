@@ -90,52 +90,34 @@ public static class ProxyEndpoints
 
             var process = supervisor.GetProcess(app.Id);
 
-            // Card #348 polish: external-route apps have no supervised process.
-            // Synthesize the operator-declared upstream so the Routes table matches
-            // what Caddy is actually dialing -- same resolution pattern used on the
-            // App Detail page (AppEndpoints.GetAppDetailAsync).
+            // Card #435: the one shared RouteTargetResolver synthesizes the upstream-
+            // target string for all 4 route surfaces. External-route apps (Card #348)
+            // have no supervised process, so the resolver surfaces the operator-declared
+            // upstream; supervised apps get "localhost:{port}" from the live process
+            // port. NOTE: this surface (Routes table) already emitted "Static Files" for
+            // file-server apps; #435 converges the other 3 surfaces (App Detail + both MCP
+            // tools) from "file-server" to "Static Files", so the parity test sees one
+            // string per app (display-only; no FE logic branches on it).
             var hasExternalTarget = bindings.ContainsKey("external-target");
 
-            string target;
+            var externalTarget = hasExternalTarget
+                && bindings.TryGetValue("external-target", out var externalTargetBinding)
+                    ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
+                    (
+                        externalTargetBinding,
+                        overrides.TryGetValue("external-target", out var externalTargetOverride)
+                            ? externalTargetOverride.ConfigurationJson
+                            : null
+                    )
+                    : null;
 
-            if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
-            {
-                if (hasExternalTarget)
-                {
-                    var externalTarget = bindings.TryGetValue("external-target", out var externalTargetBinding)
-                        ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
-                        (
-                            externalTargetBinding,
-                            overrides.TryGetValue("external-target", out var externalTargetOverride)
-                                ? externalTargetOverride.ConfigurationJson
-                                : null
-                        )
-                        : null;
-
-                    target = externalTarget is not null
-                        && !string.IsNullOrWhiteSpace(externalTarget.Host)
-                        && externalTarget.Port > 0
-                            ? string.Format
-                            (
-                                CultureInfo.InvariantCulture,
-                                "{0}://{1}:{2}",
-                                externalTarget.Scheme,
-                                externalTarget.Host,
-                                externalTarget.Port
-                            )
-                            : "not-configured";
-                }
-                else
-                {
-                    target = process?.Port is not null
-                        ? $"localhost:{process.Port.Value.ToString(CultureInfo.InvariantCulture)}"
-                        : "not-running";
-                }
-            }
-            else
-            {
-                target = "Static Files";
-            }
+            var target = RouteTargetResolver.ResolveTarget
+            (
+                routingConfiguration,
+                hasExternalTarget,
+                externalTarget,
+                process?.Port
+            );
 
             entries.Add
             (

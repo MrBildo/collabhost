@@ -16,6 +16,14 @@ public record AppListItem
     string Status,
     string? Domain,
     bool DomainActive,
+    // URL scheme the operator's browser uses to reach Domain: "https" or "http".
+    // Card #438 (FE-UI-05): the list view previously hardcoded "https://" because
+    // AppListItem carried no scheme, while AppDetail.Route (via AppRoute.Tls) and
+    // RouteListEntry (via Https) both already expose the TLS posture. Derived from
+    // the same proxy listen-surface check those use (ProxyConfigurationBuilder
+    // .HasTlsListener) so all three surfaces agree. Non-null; the FE reads it as
+    // "{scheme}://{domain}" instead of hardcoding the prefix.
+    string Scheme,
     int? Port,
     double? UptimeSeconds,
     AppListActions Actions

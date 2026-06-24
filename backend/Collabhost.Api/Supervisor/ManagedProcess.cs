@@ -187,11 +187,21 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
     // Coherent read of the fields a status reader assembles together. Reading them under
     // the same lock that guards the writers is what makes the running-process invariant
     // (Running => Pid and Port are set) hold against a concurrent transition. (SUP-16)
+    //
+    // UptimeSeconds is computed inside the same lock (Card #428) -- it is part of the
+    // coherent moment a detail reader assembles, not a separate property load. Reading
+    // it under the lock keeps "status: running" from stitching with "uptime: null" when
+    // a stop lands between the snapshot and a follow-up property read. Mirrors the
+    // UptimeSeconds property: live only while Running with a recorded start time.
     public ProcessStateSnapshot ReadSnapshot()
     {
         lock (_stateLock)
         {
-            return new ProcessStateSnapshot(_state, _pid, _port);
+            var uptimeSeconds = _startedAt.HasValue && _state == ProcessState.Running
+                ? (DateTime.UtcNow - _startedAt.Value).TotalSeconds
+                : (double?)null;
+
+            return new ProcessStateSnapshot(_state, _pid, _port, uptimeSeconds);
         }
     }
 
@@ -449,4 +459,4 @@ public class ManagedProcess(Ulid appId, string appSlug, string displayName) : ID
     }
 }
 
-public record ProcessStateSnapshot(ProcessState State, int? Pid, int? Port);
+public record ProcessStateSnapshot(ProcessState State, int? Pid, int? Port, double? UptimeSeconds);
