@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Globalization;
 
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
@@ -242,58 +241,37 @@ public class DiscoveryTools
         var probes = probeResult.Entries;
         var probesStatus = probeResult.Status.ToApiString();
 
+        // Card #435: the one shared RouteTargetResolver synthesizes the upstream-target
+        // string for all 4 route surfaces (REST detail + routes, MCP get_app +
+        // list_routes). MCP-04 was the drift this dedup closes -- get_app's old ternary
+        // fell through to "not-running" for a healthy external-route while the other three
+        // synthesized the operator-declared upstream. routeTarget stays null when the app
+        // has no routing capability (the resolver is only consulted for routable apps).
         string? routeTarget = null;
 
         if (routingConfiguration is not null)
         {
-            if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
-            {
-                // MCP-04: external-route apps (Card #348) have no supervised process, so the
-                // old ternary fell through to "not-running" for a perfectly healthy route while
-                // the REST App Detail and list_routes both synthesize the operator-declared
-                // upstream. Mirror that synthesis here -- same resolution as
-                // AppEndpoints.GetAppDetailAsync and ConfigurationTools.ListRoutesAsync.
-                var hasExternalTarget = bindings?.ContainsKey("external-target") ?? false;
+            var hasExternalTarget = bindings?.ContainsKey("external-target") ?? false;
 
-                if (hasExternalTarget)
-                {
-                    var externalTarget = bindings is not null
-                        && bindings.TryGetValue("external-target", out var externalTargetBinding)
-                            ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
-                            (
-                                externalTargetBinding,
-                                overrides.TryGetValue("external-target", out var externalTargetOverride)
-                                    ? externalTargetOverride.ConfigurationJson
-                                    : null
-                            )
-                            : null;
+            var externalTarget = hasExternalTarget
+                && bindings is not null
+                && bindings.TryGetValue("external-target", out var externalTargetBinding)
+                    ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
+                    (
+                        externalTargetBinding,
+                        overrides.TryGetValue("external-target", out var externalTargetOverride)
+                            ? externalTargetOverride.ConfigurationJson
+                            : null
+                    )
+                    : null;
 
-                    routeTarget = externalTarget is not null
-                        && !string.IsNullOrWhiteSpace(externalTarget.Host)
-                        && externalTarget.Port > 0
-                            ? string.Format
-                            (
-                                CultureInfo.InvariantCulture,
-                                "{0}://{1}:{2}",
-                                externalTarget.Scheme,
-                                externalTarget.Host,
-                                externalTarget.Port
-                            )
-                            : "not-configured";
-                }
-                else
-                {
-                    routeTarget = process?.Port is not null
-                        ? string.Create(CultureInfo.InvariantCulture, $"localhost:{process.Port.Value}")
-                        : "not-running";
-                }
-            }
-            else
-            {
-                routeTarget = routingConfiguration.ServeMode == ServeMode.FileServer
-                    ? "file-server"
-                    : "not-running";
-            }
+            routeTarget = RouteTargetResolver.ResolveTarget
+            (
+                routingConfiguration,
+                hasExternalTarget,
+                externalTarget,
+                process?.Port
+            );
         }
 
         var capabilities = bindings?.Keys.ToList() ?? [];

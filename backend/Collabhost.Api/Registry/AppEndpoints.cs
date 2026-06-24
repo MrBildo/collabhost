@@ -60,6 +60,13 @@ public static class AppEndpoints
     {
         var apps = await store.ListAsync(ct);
 
+        // Card #438 (FE-UI-05): scheme is a property of the proxy's listen surface, not
+        // of any one app, so it is resolved once for the whole list. Same derivation
+        // AppDetail.Route.Tls uses (HasTlsListener over the configured ListenAddress).
+        var scheme = ProxyConfigurationBuilder.HasTlsListener(proxySettings.ListenAddress)
+            ? "https"
+            : "http";
+
         var items = new List<AppListItem>();
 
         foreach (var app in apps)
@@ -110,6 +117,7 @@ public static class AppEndpoints
                     status.ToApiString(),
                     domain,
                     routeEnabled,
+                    scheme,
                     process?.Port,
                     process?.UptimeSeconds,
                     new AppListActions
@@ -147,6 +155,16 @@ public static class AppEndpoints
         }
 
         var process = supervisor.GetProcess(app.Id);
+
+        // Card #428: read (State, Pid, Port, UptimeSeconds) once, coherently, under the
+        // ManagedProcess lock. Every operator-facing field the detail response derives
+        // from the process comes from this single moment -- status, pid, port, uptime,
+        // and the is-running gates below -- so a stop landing mid-build can no longer
+        // stitch "status: running" with "pid: null" / "uptime: null". Null when the app
+        // has no supervised process (routing-only / external-route).
+        var snapshot = process?.ReadSnapshot();
+        var isRunning = snapshot?.State == ProcessState.Running;
+
         var bindings = typeStore.GetBindings(app.AppTypeSlug);
         var overrides = await store.GetOverridesAsync(app.Id, ct);
 
@@ -175,7 +193,7 @@ public static class AppEndpoints
 
         var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-        var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
+        var status = ResolveStatus(hasProcess, snapshot?.State, hasRouting, routeEnabled);
 
         // Restart policy + auto-start
         string? restartPolicyValue = null;
@@ -222,53 +240,32 @@ public static class AppEndpoints
 
         if (routingConfiguration is not null && domain is not null)
         {
-            string target;
+            // Card #435: the upstream-target string is resolved by the one shared
+            // RouteTargetResolver consumed by all 4 route surfaces (REST detail + routes,
+            // MCP get_app + list_routes), so a change to the target shape touches one
+            // function, not four. External-target apps (Card #348) carry an operator-
+            // declared upstream; the resolver surfaces it from the snapshot's port for
+            // supervised apps. Port comes from the coherent #428 snapshot, not a second
+            // process.Port read.
+            var externalTarget = hasExternalTarget
+                && bindings is not null
+                && bindings.TryGetValue("external-target", out var externalTargetBinding)
+                    ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
+                    (
+                        externalTargetBinding,
+                        overrides.TryGetValue("external-target", out var externalTargetOverride)
+                            ? externalTargetOverride.ConfigurationJson
+                            : null
+                    )
+                    : null;
 
-            if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
-            {
-                if (hasExternalTarget)
-                {
-                    // External-target apps (Card #348): the upstream is operator-
-                    // declared, surface the resolved host:port so the App Detail
-                    // page tells the operator where the proxy actually dials --
-                    // not a misleading "localhost:..." that does not exist.
-                    var externalTarget = bindings is not null
-                        && bindings.TryGetValue("external-target", out var externalTargetBinding)
-                            ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
-                            (
-                                externalTargetBinding,
-                                overrides.TryGetValue("external-target", out var externalTargetOverride)
-                                    ? externalTargetOverride.ConfigurationJson
-                                    : null
-                            )
-                            : null;
-
-                    target = externalTarget is not null
-                        && !string.IsNullOrWhiteSpace(externalTarget.Host)
-                        && externalTarget.Port > 0
-                            ? string.Format
-                            (
-                                CultureInfo.InvariantCulture,
-                                "{0}://{1}:{2}",
-                                externalTarget.Scheme,
-                                externalTarget.Host,
-                                externalTarget.Port
-                            )
-                            : "not-configured";
-                }
-                else
-                {
-                    target = process?.Port is not null
-                        ? $"localhost:{process.Port.Value.ToString(CultureInfo.InvariantCulture)}"
-                        : "not-running";
-                }
-            }
-            else
-            {
-                target = routingConfiguration.ServeMode == ServeMode.FileServer
-                    ? "file-server"
-                    : "not-running";
-            }
+            var target = RouteTargetResolver.ResolveTarget
+            (
+                routingConfiguration,
+                hasExternalTarget,
+                externalTarget,
+                snapshot?.Port
+            );
 
             // TLS posture is derived from the proxy's configured listen surface (Card
             // #263 item 1.3). Today this evaluates to true on every supported install
@@ -298,7 +295,7 @@ public static class AppEndpoints
         string? healthStatus = null;
 
         var liveProbeTarget =
-            (hasProcess && process is not null && process.IsRunning)
+            (hasProcess && isRunning)
             || (hasExternalTarget && hasRouting && routeEnabled);
 
         if (liveProbeTarget)
@@ -312,22 +309,23 @@ public static class AppEndpoints
         }
 
         // Resources -- pulled from the resource sampler's cache. Null when the
-        // process is not running or no snapshot has been taken yet (sampler runs on
+        // process is not running or no sample has been taken yet (sampler runs on
         // a 5-second cadence). Note that CpuPercent is null on the very first sample
         // for a PID; MemoryMb and HandleCount are populated on the first sample.
+        // is-running gates on the #428 coherent snapshot, not a fresh process.IsRunning read.
         AppResources? resources = null;
 
-        if (process is not null && process.IsRunning)
+        if (isRunning)
         {
-            var snapshot = resourceCache.GetLatest(app.Id);
+            var resourceSample = resourceCache.GetLatest(app.Id);
 
-            if (snapshot is not null)
+            if (resourceSample is not null)
             {
                 resources = new AppResources
                 (
-                    snapshot.CpuPercent,
-                    snapshot.MemoryMb,
-                    snapshot.HandleCount
+                    resourceSample.CpuPercent,
+                    resourceSample.MemoryMb,
+                    resourceSample.HandleCount
                 );
             }
         }
@@ -346,9 +344,9 @@ public static class AppEndpoints
             ),
             app.RegisteredAt.ToString("o", CultureInfo.InvariantCulture),
             status.ToApiString(),
-            process?.Pid,
-            process?.Port,
-            process?.UptimeSeconds,
+            snapshot?.Pid,
+            snapshot?.Port,
+            snapshot?.UptimeSeconds,
             process?.RestartCount ?? 0,
             restartPolicyValue,
             autoStartValue,
@@ -502,8 +500,21 @@ public static class AppEndpoints
         bool hasRouting,
         bool routeEnabled
     ) =>
+        ResolveStatus(hasProcess, process?.State, hasRouting, routeEnabled);
+
+    // Snapshot-friendly overload (Card #428). The detail-builder reads a single coherent
+    // ProcessStateSnapshot and derives status from snapshot.State, so it never re-reads
+    // process.State a second time. The ManagedProcess? overload above delegates here, so
+    // the list / dashboard paths stay byte-identical.
+    internal static ProcessState ResolveStatus
+    (
+        bool hasProcess,
+        ProcessState? processState,
+        bool hasRouting,
+        bool routeEnabled
+    ) =>
         hasProcess
-            ? process?.State ?? ProcessState.Stopped
+            ? processState ?? ProcessState.Stopped
             : hasRouting && routeEnabled
                 ? ProcessState.Running
                 : ProcessState.Stopped;
