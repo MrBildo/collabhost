@@ -9,7 +9,11 @@ import type { Column } from './DataTable'
 type AppColumnOptions = {
   onStart: (slug: string) => void
   onStop: (slug: string) => void
-  isActionPending: boolean
+  // The slug of the row whose start/stop action is currently in flight, or null
+  // when nothing is pending (FE-UI-08). Only that row's buttons are disabled —
+  // the previous shared `isActionPending` boolean greyed EVERY row's buttons
+  // while one app was transitioning, blocking unrelated actions.
+  pendingSlug: string | null
 }
 
 /**
@@ -140,26 +144,31 @@ function domainColumn(): Column<AppListItem> {
 /**
  * Actions column -- start/stop buttons with stopPropagation to avoid row click.
  */
-function actionsColumn({ onStart, onStop, isActionPending }: AppColumnOptions): Column<AppListItem> {
+function actionsColumn({ onStart, onStop, pendingSlug }: AppColumnOptions): Column<AppListItem> {
   return {
     key: 'actions',
     header: 'Actions',
     align: 'right',
-    render: (app) => (
-      // biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation prevents row navigation, buttons have own handlers
-      <div className="flex items-center gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
-        {app.actions.canStart && (
-          <ActionButton variant="success" size="sm" disabled={isActionPending} onClick={() => onStart(app.name)}>
-            Start
-          </ActionButton>
-        )}
-        {app.actions.canStop && (
-          <ActionButton variant="default" size="sm" disabled={isActionPending} onClick={() => onStop(app.name)}>
-            Stop
-          </ActionButton>
-        )}
-      </div>
-    ),
+    render: (app) => {
+      // Only this row's buttons disable while its own action is in flight
+      // (FE-UI-08).
+      const isRowPending = pendingSlug === app.name
+      return (
+        // biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation prevents row navigation, buttons have own handlers
+        <div className="flex items-center gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
+          {app.actions.canStart && (
+            <ActionButton variant="success" size="sm" disabled={isRowPending} onClick={() => onStart(app.name)}>
+              Start
+            </ActionButton>
+          )}
+          {app.actions.canStop && (
+            <ActionButton variant="default" size="sm" disabled={isRowPending} onClick={() => onStop(app.name)}>
+              Stop
+            </ActionButton>
+          )}
+        </div>
+      )
+    },
   }
 }
 

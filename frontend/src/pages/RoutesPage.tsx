@@ -6,18 +6,38 @@ import { EmptyState } from '@/shared/EmptyState'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { Spinner } from '@/shared/Spinner'
 import { StatusDot } from '@/status/StatusDot'
+import { StatusStrip } from '@/status/StatusStrip'
+import { buildProxyStateCell } from '@/status/proxyStateCell'
 import type { Column } from '@/tables/DataTable'
 import { DataTable } from '@/tables/DataTable'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+
+// How long the "reloaded successfully" confirmation stays up before it
+// auto-clears (FE-UI-07). Long enough to read, short enough not to linger as
+// stale state the operator has to manually dismiss.
+const RELOAD_SUCCESS_TIMEOUT_MS = 4_000
 
 function RoutesPage() {
   const navigate = useNavigate()
   const routesQuery = useRoutes()
   const reloadMutation = useReloadProxy()
 
+  // Auto-clear the reload-success banner (FE-UI-07). Without this, the success
+  // confirmation latched on screen until the next reload — stale UI implying a
+  // reload just happened when it may have been minutes ago. A timer reset is a
+  // legitimate useEffect (external synchronization).
+  const { isSuccess: reloadSucceeded, reset: resetReload } = reloadMutation
+  useEffect(() => {
+    if (!reloadSucceeded) return
+    const timer = setTimeout(() => resetReload(), RELOAD_SUCCESS_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [reloadSucceeded, resetReload])
+
   const routes = routesQuery.data?.routes ?? []
   const baseDomain = routesQuery.data?.baseDomain ?? ''
   const portalReachable = routesQuery.data?.portalReachable ?? true
+  const proxyState = routesQuery.data?.proxyState
 
   const modeLabels: Record<string, string> = {
     reverseproxy: 'Reverse Proxy',
@@ -154,6 +174,11 @@ function RoutesPage() {
           {reloadMutation.isPending ? 'Reloading...' : 'Reload Proxy'}
         </ActionButton>
       </div>
+
+      {/* Proxy health (FE-XT-06): the page operators open to debug routing now
+          carries the proxy-state signal. buildProxyStateCell already exists and
+          drives the same cell on the Dashboard and System pages. */}
+      {proxyState && <StatusStrip cells={[buildProxyStateCell(proxyState)]} className="mb-4" />}
 
       {routesQuery.error && (
         <ErrorBanner

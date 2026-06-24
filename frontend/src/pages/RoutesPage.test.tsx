@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 vi.mock('@/hooks/use-routes', () => ({
   useRoutes: vi.fn(),
@@ -153,5 +153,86 @@ describe('RoutesPage', () => {
     expect(screen.queryByTestId('portal-row-domain-unreachable')).toBeNull()
     const domainLink = screen.getByRole('link', { name: 'my-api.collab.internal' })
     expect(domainLink).toHaveStyle({ color: 'var(--wm-text-bright)' })
+  })
+
+  test('renders the proxy-state health cell (FE-XT-06)', () => {
+    renderWithRoutes([makeRoute()], 'collab.internal', { proxyState: 'running' })
+
+    // buildProxyStateCell labels the cell "Proxy" and formats the state value.
+    expect(screen.getByText('Proxy')).toBeInTheDocument()
+    expect(screen.getByText('Running')).toBeInTheDocument()
+  })
+
+  test('surfaces a degraded proxy state on the routing page (FE-XT-06)', () => {
+    renderWithRoutes([makeRoute()], 'collab.internal', { proxyState: 'degraded' })
+
+    expect(screen.getByText('Proxy')).toBeInTheDocument()
+    expect(screen.getByText('Degraded')).toBeInTheDocument()
+  })
+})
+
+describe('RoutesPage reload-success auto-clear (FE-UI-07)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    setupDefaults()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test('the success banner shows then auto-clears via reset() after the timeout', () => {
+    const reset = vi.fn()
+    mockUseReloadProxy.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      error: null,
+      reset,
+    } as unknown as ReturnType<typeof useReloadProxy>)
+    mockUseRoutes.mockReturnValue({
+      data: { routes: [makeRoute()], baseDomain: 'collab.internal', proxyState: 'running', portalReachable: true },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useRoutes>)
+
+    render(<RoutesPage />)
+
+    expect(screen.getByText('Proxy configuration reloaded successfully.')).toBeInTheDocument()
+    expect(reset).not.toHaveBeenCalled()
+
+    act(() => {
+      vi.advanceTimersByTime(4_000)
+    })
+
+    // The component drives the dismissal by resetting the mutation; the banner
+    // disappears on the next render the reset triggers (asserted via reset call).
+    expect(reset).toHaveBeenCalledOnce()
+  })
+
+  test('does not schedule a reset when the reload has not succeeded', () => {
+    const reset = vi.fn()
+    mockUseReloadProxy.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: false,
+      isSuccess: false,
+      error: null,
+      reset,
+    } as unknown as ReturnType<typeof useReloadProxy>)
+    mockUseRoutes.mockReturnValue({
+      data: { routes: [makeRoute()], baseDomain: 'collab.internal', proxyState: 'running', portalReachable: true },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useRoutes>)
+
+    render(<RoutesPage />)
+
+    act(() => {
+      vi.advanceTimersByTime(4_000)
+    })
+
+    expect(reset).not.toHaveBeenCalled()
   })
 })

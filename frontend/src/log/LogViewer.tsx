@@ -172,6 +172,7 @@ function LogViewer({ entries, totalBuffered, stream, onStreamChange, streamMode,
           </span>
           <button
             type="button"
+            aria-pressed={isFollowing}
             className={cn('wm-filter-chip', isFollowing && 'wm-filter-chip--active')}
             onClick={() => setIsFollowing(!isFollowing)}
           >

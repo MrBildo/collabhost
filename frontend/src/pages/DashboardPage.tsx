@@ -48,10 +48,18 @@ function DashboardPage() {
       ]
     : []
 
+  // The slug whose start/stop is currently in flight (FE-UI-08) — `variables`
+  // holds the arg of the active mutate() call. Only that row disables.
+  const pendingSlug = startMutation.isPending
+    ? (startMutation.variables ?? null)
+    : stopMutation.isPending
+      ? (stopMutation.variables ?? null)
+      : null
+
   const columns = buildDashboardColumns({
     onStart: (slug) => startMutation.mutate(slug),
     onStop: (slug) => stopMutation.mutate(slug),
-    isActionPending: startMutation.isPending || stopMutation.isPending,
+    pendingSlug,
   })
 
   const actionErrorEntry = startMutation.isError
