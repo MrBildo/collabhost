@@ -923,7 +923,8 @@ public class McpToolTests(ApiFixture fixture)
     [Fact]
     public async Task GetSystemStatus_UptimeSeconds_IsNonNegative()
     {
-        // Validates that IApplicationStartTime eliminates the 0 / -0 race. Card #222.
+        // Validates that IApplicationStartTime reports a non-negative platform uptime
+        // (OS process start time as source-of-truth). Card #408 (subsumes #222).
         var (tools, scope) = CreateDiscoveryTools();
         using var _ = scope;
 

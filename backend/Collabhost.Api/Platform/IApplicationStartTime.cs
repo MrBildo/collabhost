@@ -1,15 +1,11 @@
 namespace Collabhost.Api.Platform;
 
-// Shared source-of-truth for the host process start time. Captured from
-// IHostApplicationLifetime.ApplicationStarted -- guaranteed to fire after DI is
-// fully wired and Kestrel has bound, which means the first inbound request cannot
-// arrive before the snapshot is taken. This eliminates the 0 / -0 race on
-// uptimeSeconds that occurs when a static readonly field (set at JIT-init of the
-// class, not at process-start) is subtracted from DateTime.UtcNow within ~500ms
-// of the first class-touch. Card #222.
+// Shared source-of-truth for platform (this-process) start time. The epoch is the OS-recorded
+// process start time, so platform uptime is monotonic, never reads 0, and is always >= any
+// managed app's uptime (a supervised child cannot be older than the platform supervising it).
+// Card #408 (subsumes the #222 0/-0 race -- see ApplicationStartTime for the full rationale).
 public interface IApplicationStartTime
 {
-    // UTC timestamp at which IHostApplicationLifetime.ApplicationStarted fired.
-    // UtcKind is guaranteed.
+    // UTC timestamp of this process's OS-recorded start time. Kind is guaranteed Utc.
     DateTime UtcStartedAt { get; }
 }

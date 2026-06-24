@@ -292,6 +292,72 @@ public class LogStreamEndpointTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task StreamLogs_Keepalive_EmitsRealNamedEvent()
+    {
+        // Card #437: the live SSE loop must emit a REAL `event: keepalive` (not an SSE
+        // comment), so an idle stream isn't dropped by proxies/clients AND the FE listener
+        // can subscribe to a named event. An SSE comment (":keepalive") is invisible to
+        // EventSource and to the named-event parser, so this asserts the real event is on
+        // the wire -- verified against the real BE event per the arc note, not a mock.
+        var slug = await RegisterTestAppAsync();
+
+        // Shorten the keepalive cadence so the heartbeat lands inside the test window.
+        // Same reflection seam as the _concurrentStreams counter used below.
+        var intervalField = typeof(LogStreamEndpoints).GetField
+        (
+            "_keepaliveInterval",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic
+        );
+
+        intervalField.ShouldNotBeNull("_keepaliveInterval seam field should exist");
+
+        var originalInterval = (TimeSpan)intervalField.GetValue(null)!;
+        intervalField.SetValue(null, TimeSpan.FromMilliseconds(150));
+
+        try
+        {
+            using var request = new HttpRequestMessage
+            (
+                HttpMethod.Get,
+                $"/api/v1/apps/{slug}/logs/stream"
+            );
+
+            request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            using var response = await _client.SendAsync
+            (
+                request, HttpCompletionOption.ResponseHeadersRead, cts.Token
+            );
+
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            var events = await SseTestHelper.ReadEventsAsync(stream, 1, TimeSpan.FromSeconds(5));
+
+            events.Count.ShouldBe(1, "a real keepalive event must arrive on an idle stream");
+            events[0].EventType.ShouldBe("keepalive");
+
+            // The payload is valid JSON carrying a parseable ISO-8601 timestamp.
+            var payload = JsonDocument.Parse(events[0].Data);
+            payload.RootElement.TryGetProperty("timestamp", out var timestamp).ShouldBeTrue();
+            DateTimeOffset.TryParse
+            (
+                timestamp.GetString(),
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind,
+                out _
+            ).ShouldBeTrue("keepalive timestamp must be a parseable ISO-8601 value");
+        }
+        finally
+        {
+            intervalField.SetValue(null, originalInterval);
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    [Fact]
     public async Task StreamLogs_ResponseHeaders_Correct()
     {
         var slug = await RegisterTestAppAsync();
