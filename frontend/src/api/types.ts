@@ -117,6 +117,12 @@ type AppListItem = {
   status: AppStatus
   domain: string | null
   domainActive: boolean
+  // Card #438: resolved URL scheme for the app's domain, from the same
+  // listen-surface derivation AppDetail.route.tls uses (https when the proxy has
+  // a TLS listener, else http). Non-null. The list view links the domain with
+  // this scheme instead of a hardcoded https:// (the list record was the odd one
+  // out — AppDetail.route and RouteEntry already carry their scheme).
+  scheme: 'https' | 'http'
   port: number | null
   uptimeSeconds: number | null
   actions: AppListActions

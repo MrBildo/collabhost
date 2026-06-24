@@ -29,7 +29,12 @@ function makeStatus(overrides: Partial<SystemStatus> = {}): SystemStatus {
 function makeProxyDetail(overrides: Partial<ProxyDetail> = {}): ProxyDetail {
   return {
     lastSyncOk: false,
-    lastSyncError: 'Caddy admin API returned 400: loading config: listening on :443: bind: permission denied',
+    // Post-#426 the backend sanitizes the proxy vendor name out of lastSyncError
+    // at the /status contract boundary ("Caddy" -> "Proxy", word-bounded), so the
+    // fixture seeds what the backend actually emits — not the pre-#426 "Caddy ..."
+    // literal. The rendering assertion keys on the diagnostic body, not the vendor
+    // token, so this stays a fixture-accuracy refresh, not a behavior change.
+    lastSyncError: 'Proxy admin API returned 400: loading config: listening on :443: bind: permission denied',
     lastSyncAt: '2026-05-03T09:58:42Z',
     listenAddress: ':80,:443',
     ...overrides,
@@ -89,6 +94,11 @@ describe('SystemPage', () => {
     expect(screen.getByText(':80,:443')).toBeInTheDocument()
     expect(screen.getByText(/loading config: listening on :443: bind: permission denied/)).toBeInTheDocument()
     expect(screen.getByText('failed')).toBeInTheDocument()
+    // Vendor-abstraction end-to-end guard (#426/#427): the backend sanitizes
+    // "Caddy" out of lastSyncError before it reaches the FE, and the FE renders
+    // the field raw (no FE translation). Assert the rendered panel never shows the
+    // vendor token — a cheap second line of defense that the abstraction holds.
+    expect(screen.getByTestId('proxy-detail-panel').textContent).not.toMatch(/caddy/i)
   })
 
   test('renders sync-succeeded state when lastSyncOk is true', () => {

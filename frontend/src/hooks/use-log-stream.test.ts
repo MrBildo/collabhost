@@ -800,6 +800,69 @@ describe('useLogStream', () => {
     expect(es.readyState).toBe(1)
   })
 
+  // --- Keepalive (#437 / #310) ---
+  //
+  // The backend emits a real `event: keepalive` (data `{"timestamp":...}`) every
+  // 30s. The FE listener is an idle-reset: it marks activity so the liveness
+  // watchdog (45s) does not tear down a stream that is alive but producing no
+  // logs. These tests verify against the real named event the backend ships, NOT
+  // an SSE comment (a comment can't be subscribed to — the whole point of #310).
+
+  test('keepalive resets the liveness watchdog so an idle-but-alive stream is not torn down', () => {
+    const { result } = renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+      es.simulateEvent('log', makeLogEvent(1, 'hello'))
+      flushRaf()
+    })
+    expect(result.current.isConnected).toBe(true)
+
+    // No logs flow, but a real keepalive arrives every 30s — comfortably inside
+    // the 45s liveness timeout. Advance 90s in two 30s keepalive beats (with the
+    // 10s liveness checks running throughout). Without the keepalive listener
+    // marking activity, the 45s watchdog would close the stream at the first
+    // check past 45s; with it, the stream stays open.
+    act(() => {
+      vi.advanceTimersByTime(30_000)
+      es.simulateEvent('keepalive', { timestamp: '2026-04-05T12:00:30Z' })
+    })
+    act(() => {
+      vi.advanceTimersByTime(30_000)
+      es.simulateEvent('keepalive', { timestamp: '2026-04-05T12:01:00Z' })
+    })
+    act(() => {
+      vi.advanceTimersByTime(30_000)
+      es.simulateEvent('keepalive', { timestamp: '2026-04-05T12:01:30Z' })
+    })
+
+    // 90s elapsed with only keepalives: the stream is still the original, still
+    // open, still connected — the watchdog never fired.
+    expect(MockEventSource.instances).toHaveLength(1)
+    expect(es.readyState).toBe(1)
+    expect(result.current.isConnected).toBe(true)
+  })
+
+  test('keepalive produces no rendered entry (it is an idle-reset, not a log line)', () => {
+    const { result } = renderHook(() => useLogStream('my-app'))
+    const es = latestInstance()
+
+    act(() => {
+      es.simulateOpen()
+      es.simulateEvent('log', makeLogEvent(1, 'hello'))
+      es.simulateEvent('keepalive', { timestamp: '2026-04-05T12:00:30Z' })
+      flushRaf()
+    })
+
+    // The keepalive must not add a stream entry — only the one log line renders.
+    expect(result.current.entries).toHaveLength(1)
+    expect(result.current.entries[0]).toEqual({
+      type: 'log',
+      entry: expect.objectContaining({ id: 1, content: 'hello' }),
+    })
+  })
+
   test('liveness interval cleaned up on unmount', () => {
     const { unmount } = renderHook(() => useLogStream('my-app'))
     const es = latestInstance()
