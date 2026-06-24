@@ -113,7 +113,7 @@ function domainColumn(): Column<AppListItem> {
       app.domain ? (
         app.domainActive ? (
           <a
-            href={`https://${app.domain}`}
+            href={`${app.scheme}://${app.domain}`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs"

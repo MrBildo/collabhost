@@ -171,6 +171,19 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
       scheduleFlush()
     })
 
+    // Keepalive is a real named SSE event (#437 / #310): the backend emits
+    // `event: keepalive` with a `{"timestamp":...}` payload every 30s so an idle
+    // stream isn't dropped by a proxy/client idle-read timeout. The handler is an
+    // idle-reset, not a rendered entry — it marks activity so the liveness
+    // watchdog (LIVENESS_TIMEOUT_MS) does not tear down a stream that is alive but
+    // producing no logs. The payload is intentionally not parsed/rendered: its
+    // only job is to prove the connection is still flowing. (Previously this was
+    // an SSE *comment* `:keepalive`, which EventSource silently ignores — so no FE
+    // listener could ever fire; #310 made it a real named event.)
+    es.addEventListener('keepalive', () => {
+      markActivity()
+    })
+
     es.addEventListener('closed', () => {
       es.close()
       setIsConnected(false)

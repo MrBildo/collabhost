@@ -29,8 +29,22 @@ function useDeleteApp() {
   return useMutation<void, Error, string>({
     mutationFn: (slug) => deleteApp(slug),
     onSuccess: (_result, slug) => {
-      queryClient.removeQueries({ queryKey: ['apps', slug] })
-      queryClient.invalidateQueries({ queryKey: ['apps'] })
+      // #409: on delete the AppSettingsPage's useAppSettings(slug) observer is
+      // still mounted and subscribed while the page redirects to /apps. Two cache
+      // operations would re-fetch the just-deleted app's /settings against the now
+      // 404ing resource, in the window before the redirect unmounts the observer:
+      //   - removeQueries(['apps', slug]) destroys the query, and the still-active
+      //     observer rebuilds + refetches it on the next render (verified directly:
+      //     removeQueries + a render of a live observer fires a fresh fetch).
+      //   - a bare invalidateQueries(['apps']) (non-exact) marks the still-active
+      //     ['apps', slug, 'settings'] query stale and refetches it.
+      // The safe shape: cancel any in-flight per-app fetch, then invalidate ONLY
+      // the list (exact) so the deleted app's per-app observers are never touched.
+      // The deleted app's now-observerless detail/settings entries are evicted by
+      // gc after the redirect unmounts the page — actively removing them while the
+      // observer is live is exactly what triggered the 404.
+      queryClient.cancelQueries({ queryKey: ['apps', slug] })
+      queryClient.invalidateQueries({ queryKey: ['apps'], exact: true })
     },
   })
 }
