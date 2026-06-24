@@ -272,6 +272,40 @@ describe('AppDetailPage tabs (Card #348 D5)', () => {
     expect(mockUseLogStream).toHaveBeenCalledWith('my-api', expect.objectContaining({ enabled: false }))
   })
 
+  test('does NOT poll logs for a routing-only app (no logs tab) (FE-XT-05 C-1)', () => {
+    // Companion to the SSE gate above. FE-XT-05 closed the SSE stream for a
+    // routing-only app, but the poll fallback (useAppLogs, enabled: !isUsingSSE)
+    // still fired: with the stream disabled, isUsingSSE is false, so the poll
+    // turned ON and hammered /logs for an app that can never log — discarded
+    // data, the same resource-waste class FE-XT-05 targeted. The poll gate must
+    // carry the SAME wantsLogStream discriminator as the stream: a routing-only
+    // app polls neither.
+    mockUseAppDetail.mockReturnValue({
+      data: makeAppDetail({
+        appType: { slug: 'external-route', displayName: 'External Route' },
+        tabs: ['health', 'route'],
+        pid: null,
+        port: null,
+      }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppDetail>)
+
+    render(<AppDetailPage />)
+
+    expect(mockUseAppLogs).toHaveBeenCalledWith('my-api', expect.objectContaining({ enabled: false }))
+  })
+
+  test('polls logs for a managed app while SSE has not yet produced entries (FE-XT-05 C-1)', () => {
+    // The gate must NOT over-fire: a managed app (logs tab) whose SSE stream is
+    // not yet live (no entries, not connected) still needs the poll fallback.
+    // Default app shape has tabs ['logs','technology'] and the default
+    // useLogStream stub is disconnected with zero entries → poll stays enabled.
+    render(<AppDetailPage />)
+
+    expect(mockUseAppLogs).toHaveBeenCalledWith('my-api', expect.objectContaining({ enabled: true }))
+  })
+
   test('falls back to [logs, technology] when backend tabs field is empty (defensive)', () => {
     mockUseAppDetail.mockReturnValue({
       data: makeAppDetail({ tabs: [] }),

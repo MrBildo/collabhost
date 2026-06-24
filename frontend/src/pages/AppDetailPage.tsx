@@ -73,9 +73,17 @@ function AppDetailPage() {
   // - 'polling'      — SSE never produced entries; useAppLogs is the source
   const streamMode: StreamMode = isUsingSSE ? (logStream$.isConnected ? 'live' : 'reconnecting') : 'polling'
 
+  // Poll the logs snapshot only as the SSE fallback for an app that actually
+  // logs (FE-XT-05 C-1). `wantsLogStream` is the same backend-authoritative
+  // discriminator that gates the stream above — without it, a routing-only app
+  // (stream disabled ⇒ isUsingSSE false ⇒ `!isUsingSSE` true) polled `/logs` on
+  // a guaranteed cadence for a producer that can never emit, discarding every
+  // response (the LogViewer isn't even mounted without a logs tab). The poll now
+  // carries the stream's gate: a routing-only app polls neither; a logging app
+  // still falls back to the poll while its SSE stream is dead.
   const logsQuery = useAppLogs(slug ?? '', {
     stream: logStream === 'all' ? undefined : logStream,
-    enabled: !isUsingSSE,
+    enabled: wantsLogStream && !isUsingSSE,
   })
 
   const startMutation = useDetailStartApp()
