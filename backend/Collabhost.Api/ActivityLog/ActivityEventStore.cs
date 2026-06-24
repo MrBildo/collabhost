@@ -89,13 +89,17 @@ public class ActivityEventStore
             q = q.Where(e => e.Timestamp <= query.Until.Value);
         }
 
-        if (query.Cursor is not null)
+        if (query.Cursor is not null && Ulid.TryParse(query.Cursor, CultureInfo.InvariantCulture, out var cursor))
         {
-            // Keyset pagination: compare the raw stored string column (varchar 26) directly.
-            // Crockford Base32 ULIDs are lexicographically ordered by time, so SQLite string
-            // comparison on the stored column is equivalent to temporal ordering.
-            var cursor = query.Cursor;
-            q = q.Where(e => EF.Property<string>(e, "Id").CompareTo(cursor) < 0);
+            // Keyset pagination: take the page of events strictly older than the cursor. ULIDs are
+            // lexicographically time-ordered, so a relational comparison on the Id IS temporal order.
+            // The Id column carries a Ulid<->string value converter; string.CompareTo / string.Compare
+            // do NOT translate through the converter on EF Core 10 / SQLite (the converter defeats
+            // relational translation -- dotnet/efcore#35515), but Ulid.CompareTo on the converted CLR
+            // property does: EF emits `WHERE Id < @cursor` against the stored string column. Malformed
+            // cursors fail the TryParse and are ignored (the request returns the first page) rather
+            // than throwing -- the cursor is untrusted client input. (#432.)
+            q = q.Where(e => e.Id.CompareTo(cursor) < 0);
         }
 
         var pageSize = Math.Min(query.Limit, 200);
