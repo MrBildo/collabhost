@@ -10,9 +10,9 @@ using Xunit;
 namespace Collabhost.Api.Tests.Platform;
 
 // Integration tests for uptimeSeconds on GET /api/v1/status.
-// Validates that the shared IApplicationStartTime service eliminates the 0 / -0 race
-// that existed when _startedAt was a private static readonly field initialized at JIT
-// class-touch rather than at process start (ApplicationStarted). Card #222.
+// Validates that the shared IApplicationStartTime service reports a sensible platform uptime --
+// non-negative and monotonic. The source-of-truth is the OS process start time. Card #408,
+// which subsumes the earlier 0 and -0 race from a JIT-initialized static start-time field.
 [Collection("Api")]
 public class SystemStatusUptimeTests(ApiFixture fixture)
 {

@@ -1,6 +1,6 @@
-using Collabhost.Api.Platform;
+using System.Diagnostics;
 
-using Microsoft.Extensions.Hosting;
+using Collabhost.Api.Platform;
 
 using Shouldly;
 
@@ -8,69 +8,67 @@ using Xunit;
 
 namespace Collabhost.Api.Tests.Platform;
 
+// Card #408: uptimeSeconds must track real platform (this-process) uptime -- monotonic,
+// never 0 once running, and ALWAYS >= any managed-app process uptime (a supervised child
+// cannot be older than the platform supervising it). The source-of-truth is the OS process
+// start time (Process.StartTime), captured by the kernel at exec -- strictly before Main,
+// before DI, before any child is spawned. This subsumes the #222 race (ApplicationStarted
+// fired after process start, under-reporting uptime); the kernel start time is the true
+// earliest-possible epoch.
 public class ApplicationStartTimeTests
 {
     [Fact]
-    public void UtcStartedAt_BeforeApplicationStarted_ReturnsMinValue()
+    public void UtcStartedAt_ReflectsOsProcessStart()
     {
-        // ApplicationStarted not fired yet -- UtcStartedAt falls back to DateTime.MinValue.
-        using var lifetime = new FakeHostApplicationLifetime();
+        // The platform-uptime epoch is the OS-recorded start time of THIS process.
+        var expected = Process.GetCurrentProcess().StartTime.ToUniversalTime();
 
-        var sut = new ApplicationStartTime(lifetime);
+        var sut = new ApplicationStartTime();
 
-        sut.UtcStartedAt.ShouldBe(DateTime.MinValue);
-    }
-
-    [Fact]
-    public void UtcStartedAt_AfterApplicationStarted_ReturnsSnapshotNearFireTime()
-    {
-        using var lifetime = new FakeHostApplicationLifetime();
-
-        var before = DateTime.UtcNow;
-
-        var sut = new ApplicationStartTime(lifetime);
-
-        lifetime.FireApplicationStarted();
-
-        var after = DateTime.UtcNow;
-
-        sut.UtcStartedAt.ShouldBeGreaterThanOrEqualTo(before);
-        sut.UtcStartedAt.ShouldBeLessThanOrEqualTo(after);
+        // Equal to the kernel's process start (within a second of conversion rounding).
+        sut.UtcStartedAt.ShouldBe(expected, TimeSpan.FromSeconds(1));
     }
 
     [Fact]
     public void UtcStartedAt_KindIsUtc()
     {
-        using var lifetime = new FakeHostApplicationLifetime();
-
-        var sut = new ApplicationStartTime(lifetime);
-
-        lifetime.FireApplicationStarted();
+        var sut = new ApplicationStartTime();
 
         sut.UtcStartedAt.Kind.ShouldBe(DateTimeKind.Utc);
     }
-}
 
-// Fake IHostApplicationLifetime that exposes FireApplicationStarted() for test control.
-// Sealed: file-scoped test double, no inheritance needed.
-file sealed class FakeHostApplicationLifetime : IHostApplicationLifetime, IDisposable
-{
-    private readonly CancellationTokenSource _startedSource = new();
-    private readonly CancellationTokenSource _stoppingSource = new();
-    private readonly CancellationTokenSource _stoppedSource = new();
-
-    public CancellationToken ApplicationStarted => _startedSource.Token;
-    public CancellationToken ApplicationStopping => _stoppingSource.Token;
-    public CancellationToken ApplicationStopped => _stoppedSource.Token;
-
-    public void StopApplication() { }
-
-    public void FireApplicationStarted() => _startedSource.Cancel();
-
-    public void Dispose()
+    [Fact]
+    public void UtcStartedAt_IsAtOrBeforeNow_AndNotZero()
     {
-        _startedSource.Dispose();
-        _stoppingSource.Dispose();
-        _stoppedSource.Dispose();
+        // The process exists, so its start time is a real moment in the past -- never 0,
+        // never DateTime.MinValue, never in the future.
+        var sut = new ApplicationStartTime();
+
+        sut.UtcStartedAt.ShouldBeLessThanOrEqualTo(DateTime.UtcNow);
+        sut.UtcStartedAt.ShouldBeGreaterThan(DateTime.UnixEpoch, "process start must be a real recent time, not 0/MinValue");
+    }
+
+    [Fact]
+    public void PlatformUptime_IsNeverLessThanAManagedAppStartedRightNow()
+    {
+        // The #408 invariant. A managed app's _startedAt is DateTime.UtcNow captured at
+        // MarkRunning -- which always runs AFTER this process started (Main -> DI ->
+        // auto-start -> MarkRunning). So the platform epoch must be <= any app's epoch,
+        // i.e. platform uptime >= app uptime, for an app started at the earliest a child
+        // could be (right now). The old ApplicationStarted-callback source could read younger
+        // than a box-boot-started child (the live 3.07d < 3.76d defect Theo observed).
+        var sut = new ApplicationStartTime();
+
+        // Earliest a supervised child's _startedAt could be: now (it cannot predate this read).
+        var managedAppStartedAt = DateTime.UtcNow;
+
+        var platformUptimeSeconds = (DateTime.UtcNow - sut.UtcStartedAt).TotalSeconds;
+        var managedAppUptimeSeconds = (DateTime.UtcNow - managedAppStartedAt).TotalSeconds;
+
+        platformUptimeSeconds.ShouldBeGreaterThanOrEqualTo
+        (
+            managedAppUptimeSeconds,
+            "platform uptime must never be less than a managed app's uptime"
+        );
     }
 }

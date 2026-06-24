@@ -12,6 +12,19 @@ public static class LogStreamEndpoints
     private static int _concurrentStreams;
     private const int _maxConcurrentStreams = 10;
 
+    // Keepalive cadence for the live SSE loop. 30s sits comfortably under the typical 60s
+    // idle-read timeout of reverse proxies (Caddy included) and clients, so an idle stream
+    // emits a heartbeat before anything upstream drops it. Card #437. Mutable private static
+    // (not const) purely so tests can shorten the cadence via reflection -- the same seam the
+    // concurrent-stream counter uses. Production always runs the 30 second default.
+    //
+    // IDE0044 (make readonly) is a genuine false positive here: production never reassigns the
+    // field, but the test seam mutates it through reflection, which the analyzer cannot see.
+    // readonly would defeat the test-only override; scoped-disable is the right escape hatch.
+#pragma warning disable IDE0044 // Add readonly modifier
+    private static TimeSpan _keepaliveInterval = TimeSpan.FromSeconds(30);
+#pragma warning restore IDE0044 // Add readonly modifier
+
     public static void Map(IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/v1/apps").WithTags("Apps");
@@ -113,7 +126,7 @@ public static class LogStreamEndpoints
 
                 // Live loop — keepalive task created once, renewed only after completion
                 // to avoid PeriodicTimer.WaitForNextTickAsync concurrent call crash
-                using var keepaliveTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+                using var keepaliveTimer = new PeriodicTimer(_keepaliveInterval);
 
                 Task<bool> WaitForKeepaliveAsync() =>
                     keepaliveTimer.WaitForNextTickAsync(ct).AsTask();
@@ -242,7 +255,18 @@ file static class SseWriter
 
     public static async Task WriteKeepaliveAsync(HttpResponse response, CancellationToken ct)
     {
-        await response.WriteAsync(":keepalive\n\n", ct);
+        // A REAL named event (not an SSE `:comment`): EventSource ignores comment lines, so the
+        // FE listener can only subscribe to a named `keepalive` event. The timestamp payload
+        // keeps the shape consistent with the status/closed events and gives the client an
+        // idle-reset signal it can inspect. Card #437.
+        var payload = new
+        {
+            timestamp = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
+        };
+
+        var json = JsonSerializer.Serialize(payload, _jsonOptions);
+
+        await response.WriteAsync($"event: keepalive\ndata: {json}\n\n", ct);
         await response.Body.FlushAsync(ct);
     }
 }
