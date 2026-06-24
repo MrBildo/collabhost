@@ -75,17 +75,26 @@ public static class HostsFileEditor
             var hasOrphanBegin = existing.Contains(BeginMarkerPrefix, StringComparison.Ordinal);
             var hasOrphanEnd = existing.Contains(EndMarker, StringComparison.Ordinal);
 
-            newContent = AppendBlock(existing, blockBody, lineEnding);
-
             if (hasOrphanBegin || hasOrphanEnd)
             {
+                // INS-01: an orphan marker (a BEGIN or END without its complete pair) means
+                // ExtractBlockBody could not find a block to replace, so the append path runs.
+                // Appending blindly accumulates: an external editor that strips the END marker
+                // between runs leaves the previous run's orphan BEGIN in place, and each run adds
+                // another fresh block (BEGIN-count 1 -> 2 -> 3 -> ...). Reconcile first -- strip
+                // EVERY Collabhost marker artifact (orphan markers and the lines of any partial
+                // block) from the existing content, then append one canonical block. Repeated runs
+                // now converge to exactly one block regardless of external marker corruption.
+                var reconciled = StripMarkerArtifacts(existing);
+                newContent = AppendBlock(reconciled, blockBody, lineEnding);
                 outcome = RewriteOutcome.AppendedWithOrphan;
-                warning = "Hosts file contains an orphan Collabhost marker (one of BEGIN/END "
-                    + "without its pair). Appended a fresh block; the orphan line is harmless "
-                    + "(it parses as a comment) but can be removed by hand.";
+                warning = "Hosts file contained an orphan Collabhost marker (one of BEGIN/END "
+                    + "without its pair). Reconciled the file to a single managed block; any "
+                    + "stray marker lines were removed.";
             }
             else
             {
+                newContent = AppendBlock(existing, blockBody, lineEnding);
                 outcome = RewriteOutcome.Appended;
             }
         }
@@ -216,6 +225,49 @@ public static class HostsFileEditor
         span = new BlockSpan(beginIndex, bodyStart, bodyEnd, endLineEnd);
 
         return content[bodyStart..bodyEnd];
+    }
+
+    // INS-01: remove every Collabhost marker artifact from the content -- standalone orphan BEGIN
+    // and END marker lines, and the body lines of any partial BEGIN..END region (a BEGIN with a
+    // later END, but not a clean pair ExtractBlockBody would have matched, e.g. a duplicate-BEGIN
+    // tangle). Operator host entries outside any marker region are preserved exactly. The caller
+    // appends one canonical block to the result, so repeated runs converge to a single block.
+    private static string StripMarkerArtifacts(string content)
+    {
+        var lines = content.Split('\n');
+        var kept = new List<string>(lines.Length);
+        var insideRegion = false;
+
+        foreach (var rawLine in lines)
+        {
+            // Compare against the line without a trailing CR so CRLF files match the LF-anchored markers.
+            var line = rawLine.EndsWith('\r') ? rawLine[..^1] : rawLine;
+
+            if (line.StartsWith(BeginMarkerPrefix, StringComparison.Ordinal))
+            {
+                // Enter a region: drop this BEGIN line and everything up to (and including) the next END.
+                insideRegion = true;
+                continue;
+            }
+
+            if (line.StartsWith(EndMarker, StringComparison.Ordinal))
+            {
+                // Drop the END line; if it was a region close, exit the region. An orphan END with
+                // no preceding BEGIN simply gets dropped (insideRegion was already false).
+                insideRegion = false;
+                continue;
+            }
+
+            if (insideRegion)
+            {
+                // Partial-block body between an orphan BEGIN and a later END -- drop it.
+                continue;
+            }
+
+            kept.Add(rawLine);
+        }
+
+        return string.Join('\n', kept);
     }
 
     private static int FindLineStartingWith(string content, string prefix, int searchFrom)

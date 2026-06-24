@@ -115,7 +115,6 @@ public class HealthCheckExecutorService
     {
         var apps = await _appStore.ListAsync(ct);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var probeTasks = new List<Task>();
 
         foreach (var app in apps)
         {
@@ -233,18 +232,46 @@ public class HealthCheckExecutorService
             var probePort = port;
             var probeScheme = scheme;
 
-            probeTasks.Add(Task.Run(async () =>
-            {
-                var result = await _probe.ProbeAsync(slug, probeHost, probePort, probeScheme, configuration, ct);
-                _latest[appId] = result;
-            }, ct));
+            // PLT-02: probes run DETACHED, not awaited before the next tick. Awaiting
+            // Task.WhenAll(probeTasks) coupled every app's effective interval to the slowest
+            // probe in the batch -- one stuck endpoint (up to its own per-probe timeout) stalled
+            // the whole tick loop, so an unrelated app that came due mid-stall was not re-evaluated
+            // until the slow probe returned. Per-app cadence is preserved because _lastProbedAt is
+            // stamped at schedule time (above), so the same app is never re-scheduled until its
+            // interval elapses -- no same-app overlap, no unbounded fan-out. Each probe self-handles
+            // its failures inside HealthCheckProbe.ProbeAsync; the wrapper below only guards the
+            // shutdown-cancellation path that ProbeAsync deliberately rethrows.
+#pragma warning disable VSTHRD110, MA0134, CS4014, CA2016, MA0040
+            RunDetachedProbeAsync(appId, slug, probeHost, probePort, probeScheme, configuration, ct);
+#pragma warning restore VSTHRD110, MA0134, CS4014, CA2016, MA0040
         }
+    }
 
-        if (probeTasks.Count > 0)
+    private async Task RunDetachedProbeAsync
+    (
+        Ulid appId,
+        string slug,
+        string host,
+        int port,
+        string scheme,
+        HealthCheckConfiguration configuration,
+        CancellationToken ct
+    )
+    {
+        try
         {
-            // Each probe task handles its own exceptions inside HealthCheckProbe.ProbeAsync.
-            // WhenAll only waits for the batch to complete.
-            await Task.WhenAll(probeTasks);
+            var result = await _probe.ProbeAsync(slug, host, port, scheme, configuration, ct);
+            _latest[appId] = result;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Host shutdown cancelled the in-flight probe -- expected, not an error.
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // ProbeAsync already maps its own failures to an Unhealthy result; this is the
+            // belt-and-braces guard for the detached path so an unobserved task never escapes.
+            _logger.LogWarning(exception, "Health probe for {Slug} failed unexpectedly", slug);
         }
     }
 }

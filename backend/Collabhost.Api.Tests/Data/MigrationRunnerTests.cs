@@ -452,6 +452,52 @@ public class MigrationRunnerTests : IAsyncDisposable
         ex.BackupPath.ShouldNotBeNull();
     }
 
+    [Fact]
+    public async Task MigrateWithBackupAsync_NonLockCodeWithLockedInMessage_Exits20_NotMisclassifiedAsLock()
+    {
+        // MIG-02: a SqliteException whose ERROR CODE is not SQLITE_BUSY(5)/SQLITE_LOCKED(6) but whose
+        // MESSAGE happens to contain the word "locked" must NOT be treated as a database-lock (exit 11).
+        // The old IsLockedException had an English-substring fallback (ex.Message.Contains("locked"))
+        // that would misclassify this as a lock; the error-code check is now the sole, locale-
+        // independent signal, so this routes to the generic migration-failure path (exit 20).
+        await _runner.MigrateWithBackupAsync
+        (
+            _dataDirectory,
+            _backupsDirectory,
+            "unknown",
+            "0.1.0",
+            CancellationToken.None
+        );
+
+        ClearMigrationsHistory();
+
+        // Error code 0 (generic) -- NOT 5/6 -- with "locked" in the message text.
+        var factory = new ThrowingDbContextFactory
+        (
+            _dbFactory.Options,
+            2,
+            new SqliteException("constraint failed: the row is locked by another writer", 0)
+        );
+
+        var runner = new MigrationRunner(factory, NullLogger<MigrationRunner>.Instance);
+
+        var ex = await Should.ThrowAsync<MigrationFailedException>
+        (
+            () => runner.MigrateWithBackupAsync
+            (
+                _dataDirectory,
+                _backupsDirectory,
+                "0.1.0",
+                "0.2.0",
+                CancellationToken.None
+            )
+        );
+
+        ex.ExitCode.ShouldBe(20);
+        ex.Summary.ShouldContain("migration failed");
+        ex.InnerException.ShouldBeOfType<SqliteException>();
+    }
+
     private static async Task ExecuteAsync(SqliteConnection connection, string sql)
     {
         await using var command = connection.CreateCommand();

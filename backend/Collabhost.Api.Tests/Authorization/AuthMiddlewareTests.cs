@@ -214,4 +214,46 @@ public class AuthMiddlewareTests(ApiFixture fixture)
 
         error.GetProperty("error").GetString().ShouldBe("Forbidden");
     }
+
+    // SVC-02: the auth skip-list must match whole path SEGMENTS, not raw prefixes. A bare
+    // StartsWith let "/healthz", "/health-secrets", "/aliveness", "/openapidocs" slip past the
+    // auth wall because they share a prefix with a skip path. These drive the pure ShouldSkip
+    // function directly -- the discriminating cases are the look-alikes that share a prefix but
+    // are NOT the same segment.
+    [Theory]
+    [InlineData("/health", "GET", true)]
+    [InlineData("/health/ready", "GET", true)]
+    [InlineData("/alive", "GET", true)]
+    [InlineData("/openapi", "GET", true)]
+    [InlineData("/openapi/v1.json", "GET", true)]
+    [InlineData("/mcp", "POST", true)]
+    [InlineData("/mcp/messages", "POST", true)]
+    // The look-alikes that MUST NOT skip (the SVC-02 fix):
+    [InlineData("/healthz", "GET", false)]
+    [InlineData("/health-secrets", "GET", false)]
+    [InlineData("/aliveness", "GET", false)]
+    [InlineData("/openapidocs", "GET", false)]
+    [InlineData("/mcpx", "POST", false)]
+    // Public read-only GETs stay public; their non-GET / look-alike forms do not:
+    [InlineData("/api/v1/status", "GET", true)]
+    [InlineData("/api/v1/version", "GET", true)]
+    [InlineData("/api/v1/status", "POST", false)]
+    [InlineData("/api/v1/statuses", "GET", false)]
+    [InlineData("/api/v1/apps", "GET", false)]
+    public void ShouldSkip_MatchesWholeSegments_NotRawPrefixes(string path, string method, bool expected) =>
+        AuthorizationMiddleware.ShouldSkip(path, method).ShouldBe(expected);
+
+    [Fact]
+    public async Task HealthLookAlikePath_IsNotSkipped_Returns401()
+    {
+        // Behavioral confirmation of the SVC-02 fix through the live middleware: "/healthz" shares a
+        // prefix with the "/health" skip entry but is a different segment, so it must hit the auth
+        // wall. With no key it returns the middleware's 401 (pre-fix it skipped auth and fell through
+        // to a 404).
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz");
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
 }

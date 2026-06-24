@@ -246,11 +246,54 @@ public class DiscoveryTools
 
         if (routingConfiguration is not null)
         {
-            routeTarget = routingConfiguration.ServeMode == ServeMode.ReverseProxy && process?.Port is not null
-                ? string.Create(CultureInfo.InvariantCulture, $"localhost:{process.Port.Value}")
-                : routingConfiguration.ServeMode == ServeMode.FileServer
+            if (routingConfiguration.ServeMode == ServeMode.ReverseProxy)
+            {
+                // MCP-04: external-route apps (Card #348) have no supervised process, so the
+                // old ternary fell through to "not-running" for a perfectly healthy route while
+                // the REST App Detail and list_routes both synthesize the operator-declared
+                // upstream. Mirror that synthesis here -- same resolution as
+                // AppEndpoints.GetAppDetailAsync and ConfigurationTools.ListRoutesAsync.
+                var hasExternalTarget = bindings?.ContainsKey("external-target") ?? false;
+
+                if (hasExternalTarget)
+                {
+                    var externalTarget = bindings is not null
+                        && bindings.TryGetValue("external-target", out var externalTargetBinding)
+                            ? CapabilityResolver.Resolve<ExternalTargetConfiguration>
+                            (
+                                externalTargetBinding,
+                                overrides.TryGetValue("external-target", out var externalTargetOverride)
+                                    ? externalTargetOverride.ConfigurationJson
+                                    : null
+                            )
+                            : null;
+
+                    routeTarget = externalTarget is not null
+                        && !string.IsNullOrWhiteSpace(externalTarget.Host)
+                        && externalTarget.Port > 0
+                            ? string.Format
+                            (
+                                CultureInfo.InvariantCulture,
+                                "{0}://{1}:{2}",
+                                externalTarget.Scheme,
+                                externalTarget.Host,
+                                externalTarget.Port
+                            )
+                            : "not-configured";
+                }
+                else
+                {
+                    routeTarget = process?.Port is not null
+                        ? string.Create(CultureInfo.InvariantCulture, $"localhost:{process.Port.Value}")
+                        : "not-running";
+                }
+            }
+            else
+            {
+                routeTarget = routingConfiguration.ServeMode == ServeMode.FileServer
                     ? "file-server"
                     : "not-running";
+            }
         }
 
         var capabilities = bindings?.Keys.ToList() ?? [];

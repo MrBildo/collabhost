@@ -100,11 +100,16 @@ public class AuthorizationMiddleware
         );
     }
 
-    private static bool ShouldSkip(string path, string method)
+    // Internal for direct unit testing of the segment-match contract (SVC-02). A raw
+    // StartsWith would let "/healthz", "/health-secrets", "/aliveness" slip past the
+    // auth wall because they share a prefix with a skip path; match on whole path
+    // segments instead -- a prefix matches only when the path IS the prefix or
+    // continues at a "/" boundary.
+    internal static bool ShouldSkip(string path, string method)
     {
         foreach (var prefix in _skipPrefixes)
         {
-            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            if (IsPathSegmentMatch(path, prefix))
             {
                 return true;
             }
@@ -115,4 +120,10 @@ public class AuthorizationMiddleware
             && (path.Equals("/api/v1/status", StringComparison.OrdinalIgnoreCase)
                 || path.Equals("/api/v1/version", StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool IsPathSegmentMatch(string path, string prefix) =>
+        path.Equals(prefix, StringComparison.OrdinalIgnoreCase)
+        || (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            && path.Length > prefix.Length
+            && path[prefix.Length] == '/');
 }

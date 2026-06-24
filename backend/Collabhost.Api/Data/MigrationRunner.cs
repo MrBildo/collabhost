@@ -305,10 +305,11 @@ public sealed class MigrationRunner
         }
     }
 
+    // SQLITE_BUSY (5) / SQLITE_LOCKED (6). MIG-02: the prior English-substring fallback
+    // (ex.Message.Contains("locked")) was a brittle locale/wording-dependent extra net; the
+    // error-code check is the authoritative, locale-independent signal and carries the load alone.
     private static bool IsLockedException(SqliteException ex) =>
-        ex.SqliteErrorCode == 5  // SQLITE_BUSY
-        || ex.SqliteErrorCode == 6 // SQLITE_LOCKED
-        || (ex.Message?.Contains("locked", StringComparison.OrdinalIgnoreCase) ?? false);
+        ex.SqliteErrorCode is 5 or 6;
 }
 
 public sealed record MigrationOutcome

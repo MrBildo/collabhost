@@ -149,6 +149,51 @@ public class AppStore
         return app;
     }
 
+    // REG-02: create the App and all its capability overrides in ONE transaction. CreateAsync +
+    // a loop of SaveOverrideAsync each open their own DbContext and commit independently, so a
+    // crash (or DB error) after the App row commits but mid-override-loop leaves a half-configured
+    // app persisted -- exactly the partial-write the registration path must not produce. This
+    // method mirrors ProxyAppSeeder.SeedAsync: one context, one BeginTransactionAsync, App +
+    // overrides added together, a single SaveChangesAsync, then commit -- all-or-nothing. The
+    // unique-index conflict on Slug (REG-04) surfaces here as a DbUpdateException from the single
+    // SaveChangesAsync, which the caller (CreateAppOperation) maps to a 409 instead of a 500.
+    public async Task CreateWithOverridesAsync
+    (
+        App app,
+        IReadOnlyList<(string CapabilitySlug, string ConfigurationJson)> overrides,
+        CancellationToken ct
+    )
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        db.Apps.Add(app);
+
+        foreach (var (capabilitySlug, configurationJson) in overrides)
+        {
+            db.CapabilityOverrides.Add(new CapabilityOverride
+            {
+                AppId = app.Id,
+                CapabilitySlug = capabilitySlug,
+                ConfigurationJson = configurationJson
+            });
+        }
+
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+
+        InvalidateAppCache(app.Slug);
+        _cache.Remove($"app:id:{app.Id}");
+        InvalidateOverrides(app.Id);
+
+        _logger.LogInformation
+        (
+            "Created app {Slug} with {OverrideCount} capability override(s)",
+            app.Slug,
+            overrides.Count
+        );
+    }
+
     public async Task SaveOverrideAsync
     (
         Ulid appId,
