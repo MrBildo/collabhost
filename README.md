@@ -119,6 +119,8 @@ If no Caddy binary is configured, everything else still works (app management, p
 | `external-route` | A route to a service Collabhost does *not* run — a Docker container, a LAN host, a Tailscale node, any upstream you point it at. Collabhost fronts it with TLS and health checks; there's no process to supervise. |
 | `internal-service` | A supervised non-HTTP process — a database, a message broker, a custom-protocol service. Collabhost runs and watches it, but no reverse-proxy route is generated. |
 
+`system-service` is the seventh built-in type but is internal — it is the Proxy's own type, seeded by Collabhost at startup and not operator-registerable. The registration picker shows the six types above.
+
 **User management** — Header-based auth with administrator and agent roles. One-time API key reveal on creation. The same key authenticates the dashboard, the REST API, and the MCP server — mint a key for an agent and it can operate the platform.
 
 **Technology probing** — Automatic detection of runtimes, frameworks, and dependencies for registered apps. No manual tagging required. Surfaces in the dashboard and in `get_app` MCP responses.
