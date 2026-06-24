@@ -183,6 +183,69 @@ public class McpToolTests(ApiFixture fixture)
         (result.IsError ?? false).ShouldBeFalse();
     }
 
+    // -------- Discovery: get_app routeTarget for external-route (MCP-04) --------
+
+    [Fact]
+    public async Task GetApp_ExternalRoute_RouteTargetIsResolvedUpstream_NotNotRunning()
+    {
+        // MCP-04: get_app's routeTarget knew only supervised-process ports and file-server, so an
+        // external-route app (routing + operator-declared upstream, no supervised process) read back
+        // "not-running" while the REST App Detail and list_routes both synthesize the real upstream.
+        // After the fix, get_app mirrors that synthesis: routeTarget == "{scheme}://{host}:{port}".
+        var slug = await CreateExternalRouteAppAsync("localhost", 9123, "http");
+
+        try
+        {
+            var (tools, scope) = CreateDiscoveryTools();
+            using var _ = scope;
+
+            var result = await tools.GetAppAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeFalse();
+
+            var json = JsonDocument.Parse(GetFirstText(result)).RootElement;
+            var routeTarget = json.GetProperty("routeTarget").GetString();
+
+            routeTarget.ShouldBe("http://localhost:9123");
+            routeTarget.ShouldNotBe("not-running");
+        }
+        finally
+        {
+            await DeleteTestAppAsync(slug);
+        }
+    }
+
+    private async Task<string> CreateExternalRouteAppAsync(string host, int port, string scheme)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var slug = $"mcp-ext-{suffix}";
+
+        var payload = new
+        {
+            name = slug,
+            displayName = "MCP External Route",
+            appTypeSlug = "external-route",
+            values = new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal)
+            {
+                ["external-target"] = new(StringComparer.Ordinal)
+                {
+                    ["host"] = host,
+                    ["port"] = port,
+                    ["scheme"] = scheme
+                }
+            }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
+        request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+        request.Content = JsonContent.Create(payload, options: _jsonOptions);
+
+        var response = await _client.SendAsync(request);
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        return slug;
+    }
+
     // -------- Lifecycle: get_logs --------
 
     [Fact]

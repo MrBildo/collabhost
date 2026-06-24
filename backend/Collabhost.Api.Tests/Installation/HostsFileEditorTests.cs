@@ -268,6 +268,91 @@ public class HostsFileEditorTests : IDisposable
         HostsFileEditor.DetectLineEnding(string.Empty).ShouldBe(expected);
     }
 
+    [Fact]
+    public void Rewrite_RepeatedRunsWithEndMarkerStripped_ConvergesToSingleBlock()
+    {
+        // INS-01: an external editor that strips the END marker between every run leaves the prior
+        // run's orphan BEGIN in place. Pre-fix, each run could not find a complete block to replace
+        // and blindly APPENDED a fresh one, so the managed blocks accumulated (BEGIN-count 1, 2, 3,
+        // 4, ...). Post-fix, the append path reconciles -- it strips ALL marker artifacts before
+        // appending -- so repeated runs converge to exactly one block regardless of the external
+        // corruption.
+        var path = WriteHosts("127.0.0.1\tlocalhost\n");
+        var body = "127.0.0.1\tcollabhost.collab.internal";
+
+        for (var run = 0; run < 4; run++)
+        {
+            HostsFileEditor.Rewrite(path, body);
+
+            // Simulate the external marker-stripping editor: drop the END line before the next run.
+            var corrupted = File.ReadAllText(path)
+                .Replace("\n" + HostsFileEditor.EndMarker, string.Empty, StringComparison.Ordinal);
+            File.WriteAllText(path, corrupted);
+        }
+
+        // After the final run, restore by rewriting once more without the external stripper, then
+        // assert exactly one BEGIN marker survived across the whole sequence.
+        HostsFileEditor.Rewrite(path, body);
+
+        var content = File.ReadAllText(path);
+
+        CountOccurrences(content, HostsFileEditor.BeginMarkerPrefix).ShouldBe(1);
+        CountOccurrences(content, HostsFileEditor.EndMarker).ShouldBe(1);
+        content.ShouldContain("collabhost.collab.internal");
+        // The operator's own entry is never touched by the reconcile.
+        content.ShouldContain("127.0.0.1\tlocalhost");
+    }
+
+    [Fact]
+    public void Rewrite_DuplicateBeginTangle_CollapsesToSingleBlock()
+    {
+        // A duplicate-BEGIN tangle (two BEGIN lines, one END). ExtractBlockBody anchors on the FIRST
+        // BEGIN and the FIRST END after it, so the matched span SWALLOWS the inner duplicate BEGIN
+        // and both stale bodies into "the block" -- the Replace path then overwrites the entire span
+        // with one canonical block. The load-bearing property is the outcome: exactly one block, no
+        // stale entries left behind (regardless of whether the path taken was Replace or the
+        // orphan-reconcile -- here it is Replace).
+        var initial = string.Join
+        (
+            "\n",
+            "127.0.0.1\tlocalhost",
+            HostsFileEditor.BeginMarker,
+            "127.0.0.1\tstale-one.local",
+            HostsFileEditor.BeginMarker,
+            "127.0.0.1\tstale-two.local",
+            HostsFileEditor.EndMarker
+        );
+
+        var path = WriteHosts(initial);
+
+        var result = HostsFileEditor.Rewrite(path, "127.0.0.1\tcollabhost.collab.internal");
+
+        result.Outcome.ShouldBe(HostsFileEditor.RewriteOutcome.Replaced);
+
+        var content = File.ReadAllText(path);
+
+        CountOccurrences(content, HostsFileEditor.BeginMarkerPrefix).ShouldBe(1);
+        CountOccurrences(content, HostsFileEditor.EndMarker).ShouldBe(1);
+        content.ShouldContain("collabhost.collab.internal");
+        content.ShouldNotContain("stale-one.local");
+        content.ShouldNotContain("stale-two.local");
+        content.ShouldContain("127.0.0.1\tlocalhost");
+    }
+
+    private static int CountOccurrences(string content, string token)
+    {
+        var count = 0;
+        var index = 0;
+
+        while ((index = content.IndexOf(token, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += token.Length;
+        }
+
+        return count;
+    }
+
     private string WriteHosts(string content)
     {
         var path = Path.Combine(_scratchDir, "hosts");

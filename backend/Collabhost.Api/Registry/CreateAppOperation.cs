@@ -143,16 +143,26 @@ public sealed class CreateAppOperation
             AppTypeSlug = appType.Slug
         };
 
-        await _store.CreateAsync(app, ct);
+        // REG-02: persist the App row and every capability override in ONE transaction (the store
+        // owns the commit). The prior shape created the App, then looped saving overrides, each in
+        // its own context -- so a failure mid-loop left a half-configured app on disk. REG-04: the
+        // exists-check above closes the common duplicate-slug case, but two concurrent creates of the
+        // same slug can both pass the check and race to insert -- the loser hits the unique Slug
+        // index and the store throws DbUpdateException. Map that to the same Conflict the exists-check
+        // returns (a 409), not an unhandled 500.
+        var overridesToPersist = validatedOverrides
+            .Select(o => (o.SectionKey, o.Overrides.ToJsonString(_overrideSerializationOptions)))
+                .ToList();
 
-        foreach (var (sectionKey, overrideObject) in validatedOverrides)
+        try
         {
-            await _store.SaveOverrideAsync
+            await _store.CreateWithOverridesAsync(app, overridesToPersist, ct);
+        }
+        catch (DbUpdateException)
+        {
+            return OperationResult<CreateAppOutcome>.Conflict
             (
-                app.Id,
-                sectionKey,
-                overrideObject.ToJsonString(_overrideSerializationOptions),
-                ct
+                $"An app with slug '{command.Slug}' already exists."
             );
         }
 
