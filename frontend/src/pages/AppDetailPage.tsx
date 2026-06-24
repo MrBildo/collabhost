@@ -19,6 +19,7 @@ import { ROUTES } from '@/lib/routes'
 import type { LogStream, StreamMode } from '@/log/LogViewer'
 import { LogViewer } from '@/log/LogViewer'
 import { ProbeSection } from '@/probes/ProbeSection'
+import { ConfirmDialog } from '@/shared/ConfirmDialog'
 import { DetailCard } from '@/shared/DetailCard'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { Spinner } from '@/shared/Spinner'
@@ -39,10 +40,30 @@ function AppDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const [activeTab, setActiveTab] = useState<DetailTab | null>(null)
   const [logStream, setLogStream] = useState<LogStream>('all')
+  // Kill confirm (FE-UI-04). Kill is an immediate hard-kill — the only Windows
+  // lifecycle path that differs from Stop (SUP-04) — so it gets the same
+  // friction Delete already has. `killError` surfaces a failed kill inline in
+  // the dialog (FE-FORM-03 class), the dialog staying open so the message is
+  // anchored to the action.
+  const [isKillConfirmOpen, setIsKillConfirmOpen] = useState(false)
+  const [killError, setKillError] = useState<string | null>(null)
 
   const detailQuery = useAppDetail(slug ?? '')
 
-  const logStream$ = useLogStream(slug ?? '', { resetKey: detailQuery.data?.status })
+  // Only open the SSE log stream for apps that actually have a logs tab
+  // (FE-XT-05). Routing-only apps (external-route) carry no log producer, so an
+  // unconditional stream burned one of the backend's GLOBAL 10-stream slots and
+  // — being permanently quiet — tripped the liveness timeout on a guaranteed
+  // cadence. `tabs.includes('logs')` is the backend-authoritative discriminator
+  // (Card #348 D5), the same signal `hasManagedProcess` uses below. While the
+  // detail query is still loading (tabs unknown), the stream stays closed; it
+  // opens once the data arrives and confirms a logs tab.
+  const wantsLogStream = detailQuery.data?.tabs?.includes('logs') ?? false
+
+  const logStream$ = useLogStream(slug ?? '', {
+    enabled: wantsLogStream,
+    resetKey: detailQuery.data?.status,
+  })
   const isUsingSSE = logStream$.entries.length > 0 || logStream$.isConnected
 
   // Operator-visible feed mode (#321 — Bill's ruling: surface degraded states):
@@ -52,15 +73,38 @@ function AppDetailPage() {
   // - 'polling'      — SSE never produced entries; useAppLogs is the source
   const streamMode: StreamMode = isUsingSSE ? (logStream$.isConnected ? 'live' : 'reconnecting') : 'polling'
 
+  // Poll the logs snapshot only as the SSE fallback for an app that actually
+  // logs (FE-XT-05 C-1). `wantsLogStream` is the same backend-authoritative
+  // discriminator that gates the stream above — without it, a routing-only app
+  // (stream disabled ⇒ isUsingSSE false ⇒ `!isUsingSSE` true) polled `/logs` on
+  // a guaranteed cadence for a producer that can never emit, discarding every
+  // response (the LogViewer isn't even mounted without a logs tab). The poll now
+  // carries the stream's gate: a routing-only app polls neither; a logging app
+  // still falls back to the poll while its SSE stream is dead.
   const logsQuery = useAppLogs(slug ?? '', {
     stream: logStream === 'all' ? undefined : logStream,
-    enabled: !isUsingSSE,
+    enabled: wantsLogStream && !isUsingSSE,
   })
 
   const startMutation = useDetailStartApp()
   const stopMutation = useDetailStopApp()
   const restartMutation = useDetailRestartApp()
   const killMutation = useDetailKillApp()
+
+  function handleKillConfirm(): void {
+    if (!slug) return
+    setKillError(null)
+    killMutation.mutate(slug, {
+      onSuccess: () => {
+        setIsKillConfirmOpen(false)
+      },
+      onError: (error) => {
+        // Leave the dialog open and surface why the kill didn't happen
+        // (FE-FORM-03 class) rather than closing silently.
+        setKillError(error instanceof Error ? error.message : 'Failed to kill app')
+      },
+    })
+  }
 
   const app = detailQuery.data
 
@@ -85,15 +129,16 @@ function AppDetailPage() {
 
   // Action error surface: the first mutation in error state wins. Operators
   // can dismiss; the next click resets state on success or replaces the error.
+  // Kill is intentionally NOT here — it now goes through a confirm dialog
+  // (FE-UI-04), and its failure surfaces inside that dialog (anchored to the
+  // action), exactly like Delete in Settings.
   const actionErrorEntry = startMutation.isError
     ? { verb: 'Start', error: startMutation.error, reset: startMutation.reset }
     : stopMutation.isError
       ? { verb: 'Stop', error: stopMutation.error, reset: stopMutation.reset }
       : restartMutation.isError
         ? { verb: 'Restart', error: restartMutation.error, reset: restartMutation.reset }
-        : killMutation.isError
-          ? { verb: 'Kill', error: killMutation.error, reset: killMutation.reset }
-          : null
+        : null
 
   if (!slug) {
     return <ErrorBanner message="No app slug provided" />
@@ -290,7 +335,10 @@ function AppDetailPage() {
           onStart={() => startMutation.mutate(slug)}
           onStop={() => stopMutation.mutate(slug)}
           onRestart={() => restartMutation.mutate(slug)}
-          onKill={() => killMutation.mutate(slug)}
+          onKill={() => {
+            setKillError(null)
+            setIsKillConfirmOpen(true)
+          }}
         />
       </div>
 
@@ -320,12 +368,18 @@ function AppDetailPage() {
         )}
       </div>
 
-      {/* Tab bar -- order and visibility driven by backend `tabs` (Card #348 D5) */}
-      <div className="wm-tab-bar mb-3">
+      {/* Tab bar -- order and visibility driven by backend `tabs` (Card #348 D5).
+          role=tablist / role=tab + aria-selected wire it up for assistive tech
+          (FE-UI-06); each tab controls its panel via aria-controls/id. */}
+      <div className="wm-tab-bar mb-3" role="tablist">
         {tabs.map((tab) => (
           <button
             key={tab}
             type="button"
+            role="tab"
+            id={`tab-${tab}`}
+            aria-selected={activeTabResolved === tab}
+            aria-controls={`tabpanel-${tab}`}
             className={cn('wm-tab', activeTabResolved === tab && 'wm-tab--active')}
             onClick={() => setActiveTab(tab)}
           >
@@ -334,108 +388,131 @@ function AppDetailPage() {
         ))}
       </div>
 
-      {/* Tab content */}
-      {activeTabResolved === 'logs' && (
-        <LogViewer
-          entries={logEntries}
-          totalBuffered={totalBuffered}
-          stream={logStream}
-          onStreamChange={setLogStream}
-          streamMode={streamMode}
-        />
-      )}
-      {activeTabResolved === 'technology' && <ProbeSection probes={app.probes} />}
-      {activeTabResolved === 'health' && (
-        <DetailCard
-          title="Health"
-          rows={[
-            {
-              key: 'status',
-              label: 'Status',
-              value: app.healthStatus ? (
-                <span
-                  style={{
-                    color:
-                      app.healthStatus === 'healthy'
-                        ? 'var(--wm-green)'
-                        : app.healthStatus === 'unhealthy'
-                          ? 'var(--wm-red)'
-                          : 'var(--wm-text-dim)',
-                  }}
-                >
-                  {formatHealthStatus(app.healthStatus, app.appType.slug)}
-                </span>
-              ) : (
-                <span style={{ color: 'var(--wm-text-dim)' }}>Not probed yet</span>
-              ),
-            },
-            {
-              key: 'about',
-              label: 'About',
-              value: (
-                <span style={{ color: 'var(--wm-text-dim)' }}>
-                  Probes the configured /health endpoint on the upstream target. Configure interval, timeout, and
-                  endpoint in Settings.
-                </span>
-              ),
-            },
-          ]}
-        />
-      )}
-      {activeTabResolved === 'route' && (
-        <DetailCard
-          title="Route"
-          rows={
-            app.route
-              ? [
-                  {
-                    key: 'domain',
-                    label: 'Domain',
-                    value: app.domainActive ? (
-                      <a
-                        href={`${app.route.tls ? 'https' : 'http'}://${app.route.domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'var(--wm-amber)', fontWeight: 500, textDecoration: 'none' }}
-                      >
-                        {app.route.domain}
-                      </a>
-                    ) : (
-                      <span style={{ color: 'var(--wm-text-dim)' }}>
-                        {app.route.domain}
-                        <span style={{ marginLeft: 6, fontSize: 11, letterSpacing: '0.04em' }}>(disabled)</span>
-                      </span>
-                    ),
-                  },
-                  {
-                    key: 'target',
-                    label: 'Upstream',
-                    value: app.route.target ? (
-                      app.route.target
-                    ) : (
-                      <span style={{ color: 'var(--wm-text-dim)' }}>Not configured</span>
-                    ),
-                  },
-                  {
-                    key: 'tls',
-                    label: 'TLS',
-                    value: app.route.tls ? (
-                      <span style={{ color: 'var(--wm-green)' }}>Enabled</span>
-                    ) : (
-                      <span style={{ color: 'var(--wm-text-dim)' }}>Disabled</span>
-                    ),
-                  },
-                ]
-              : [
-                  {
-                    key: 'none',
-                    label: 'Route',
-                    value: <span style={{ color: 'var(--wm-text-dim)' }}>No route configured</span>,
-                  },
-                ]
-          }
-        />
-      )}
+      {/* Tab content — one panel for the active tab, labelled by its tab button
+          (FE-UI-06). Only the active tab is rendered, so a single panel wrapper
+          carries the role/id/aria-labelledby for whichever tab is live. */}
+      <div role="tabpanel" id={`tabpanel-${activeTabResolved}`} aria-labelledby={`tab-${activeTabResolved}`}>
+        {activeTabResolved === 'logs' && (
+          <LogViewer
+            entries={logEntries}
+            totalBuffered={totalBuffered}
+            stream={logStream}
+            onStreamChange={setLogStream}
+            streamMode={streamMode}
+          />
+        )}
+        {activeTabResolved === 'technology' && <ProbeSection probes={app.probes} />}
+        {activeTabResolved === 'health' && (
+          <DetailCard
+            title="Health"
+            rows={[
+              {
+                key: 'status',
+                label: 'Status',
+                value: app.healthStatus ? (
+                  <span
+                    style={{
+                      color:
+                        app.healthStatus === 'healthy'
+                          ? 'var(--wm-green)'
+                          : app.healthStatus === 'unhealthy'
+                            ? 'var(--wm-red)'
+                            : 'var(--wm-text-dim)',
+                    }}
+                  >
+                    {formatHealthStatus(app.healthStatus, app.appType.slug)}
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--wm-text-dim)' }}>Not probed yet</span>
+                ),
+              },
+              {
+                key: 'about',
+                label: 'About',
+                value: (
+                  <span style={{ color: 'var(--wm-text-dim)' }}>
+                    Probes the configured /health endpoint on the upstream target. Configure interval, timeout, and
+                    endpoint in Settings.
+                  </span>
+                ),
+              },
+            ]}
+          />
+        )}
+        {activeTabResolved === 'route' && (
+          <DetailCard
+            title="Route"
+            rows={
+              app.route
+                ? [
+                    {
+                      key: 'domain',
+                      label: 'Domain',
+                      value: app.domainActive ? (
+                        <a
+                          href={`${app.route.tls ? 'https' : 'http'}://${app.route.domain}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--wm-amber)', fontWeight: 500, textDecoration: 'none' }}
+                        >
+                          {app.route.domain}
+                        </a>
+                      ) : (
+                        <span style={{ color: 'var(--wm-text-dim)' }}>
+                          {app.route.domain}
+                          <span style={{ marginLeft: 6, fontSize: 11, letterSpacing: '0.04em' }}>(disabled)</span>
+                        </span>
+                      ),
+                    },
+                    {
+                      key: 'target',
+                      label: 'Upstream',
+                      value: app.route.target ? (
+                        app.route.target
+                      ) : (
+                        <span style={{ color: 'var(--wm-text-dim)' }}>Not configured</span>
+                      ),
+                    },
+                    {
+                      key: 'tls',
+                      label: 'TLS',
+                      value: app.route.tls ? (
+                        <span style={{ color: 'var(--wm-green)' }}>Enabled</span>
+                      ) : (
+                        <span style={{ color: 'var(--wm-text-dim)' }}>Disabled</span>
+                      ),
+                    },
+                  ]
+                : [
+                    {
+                      key: 'none',
+                      label: 'Route',
+                      value: <span style={{ color: 'var(--wm-text-dim)' }}>No route configured</span>,
+                    },
+                  ]
+            }
+          />
+        )}
+      </div>
+
+      {/* Kill confirm (FE-UI-04) — Kill is a hard-kill with no graceful stop;
+          gate it behind the same confirm Delete uses. Reuses ConfirmDialog,
+          whose error slot keeps a failed kill anchored to the action. */}
+      <ConfirmDialog
+        title="Kill App"
+        message={`Force-kill "${app.displayName}"? This terminates the process immediately, without a graceful shutdown.`}
+        confirmLabel="Kill"
+        confirmVariant="danger"
+        isOpen={isKillConfirmOpen}
+        isPending={killMutation.isPending}
+        error={killError}
+        onConfirm={handleKillConfirm}
+        onCancel={() => {
+          setIsKillConfirmOpen(false)
+          setKillError(null)
+          killMutation.reset()
+        }}
+      />
     </div>
   )
 }

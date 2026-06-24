@@ -138,12 +138,15 @@ describe('AppDetailPage action-error banner', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Restart failed: state conflict — not running')
   })
 
-  test('renders banner when kill mutation fails', () => {
+  test('a kill failure does NOT surface in the top action banner (it lives in the dialog now, FE-UI-04)', () => {
+    // Kill no longer flows through the top action-error banner — confirming a
+    // kill that fails surfaces inside the confirm dialog. A bare killMutation
+    // isError (no dialog open) must not paint the top banner.
     mockUseDetailKillApp.mockReturnValue(makeMutationStub({ isError: true, error: new Error('API 404: ') }))
 
     render(<AppDetailPage />)
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Kill failed: app not found')
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   test('dismissing the banner calls mutation.reset()', async () => {
@@ -188,10 +191,18 @@ describe('AppDetailPage tabs (Card #348 D5)', () => {
   test('renders Logs + Technology tabs for a managed app (default backend shape)', () => {
     render(<AppDetailPage />)
 
-    expect(screen.getByRole('button', { name: 'Logs' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Technology' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Health' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Route' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Logs' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Technology' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Health' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Route' })).toBeNull()
+  })
+
+  test('the active tab is marked aria-selected (FE-UI-06)', () => {
+    render(<AppDetailPage />)
+
+    // Default active tab is the first declared tab (logs).
+    expect(screen.getByRole('tab', { name: 'Logs' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Technology' })).toHaveAttribute('aria-selected', 'false')
   })
 
   test('renders Health + Route tabs for an external-route app, hides Logs/Technology', () => {
@@ -210,10 +221,10 @@ describe('AppDetailPage tabs (Card #348 D5)', () => {
 
     render(<AppDetailPage />)
 
-    expect(screen.getByRole('button', { name: 'Health' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Route' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Logs' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Technology' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Health' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Route' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Logs' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Technology' })).toBeNull()
   })
 
   test('renders external-route health label as "Reachable" (Card #348 D6 terminology split)', () => {
@@ -237,6 +248,64 @@ describe('AppDetailPage tabs (Card #348 D5)', () => {
     expect(screen.queryByText('Healthy')).toBeNull()
   })
 
+  test('opens the SSE log stream for a managed app with a logs tab (FE-XT-05)', () => {
+    render(<AppDetailPage />)
+
+    // Default app shape has tabs ['logs', 'technology'] → stream enabled.
+    expect(mockUseLogStream).toHaveBeenCalledWith('my-api', expect.objectContaining({ enabled: true }))
+  })
+
+  test('does NOT open the SSE log stream for a routing-only app (no logs tab) (FE-XT-05)', () => {
+    mockUseAppDetail.mockReturnValue({
+      data: makeAppDetail({
+        appType: { slug: 'external-route', displayName: 'External Route' },
+        tabs: ['health', 'route'],
+        pid: null,
+        port: null,
+      }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppDetail>)
+
+    render(<AppDetailPage />)
+
+    expect(mockUseLogStream).toHaveBeenCalledWith('my-api', expect.objectContaining({ enabled: false }))
+  })
+
+  test('does NOT poll logs for a routing-only app (no logs tab) (FE-XT-05 C-1)', () => {
+    // Companion to the SSE gate above. FE-XT-05 closed the SSE stream for a
+    // routing-only app, but the poll fallback (useAppLogs, enabled: !isUsingSSE)
+    // still fired: with the stream disabled, isUsingSSE is false, so the poll
+    // turned ON and hammered /logs for an app that can never log — discarded
+    // data, the same resource-waste class FE-XT-05 targeted. The poll gate must
+    // carry the SAME wantsLogStream discriminator as the stream: a routing-only
+    // app polls neither.
+    mockUseAppDetail.mockReturnValue({
+      data: makeAppDetail({
+        appType: { slug: 'external-route', displayName: 'External Route' },
+        tabs: ['health', 'route'],
+        pid: null,
+        port: null,
+      }),
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAppDetail>)
+
+    render(<AppDetailPage />)
+
+    expect(mockUseAppLogs).toHaveBeenCalledWith('my-api', expect.objectContaining({ enabled: false }))
+  })
+
+  test('polls logs for a managed app while SSE has not yet produced entries (FE-XT-05 C-1)', () => {
+    // The gate must NOT over-fire: a managed app (logs tab) whose SSE stream is
+    // not yet live (no entries, not connected) still needs the poll fallback.
+    // Default app shape has tabs ['logs','technology'] and the default
+    // useLogStream stub is disconnected with zero entries → poll stays enabled.
+    render(<AppDetailPage />)
+
+    expect(mockUseAppLogs).toHaveBeenCalledWith('my-api', expect.objectContaining({ enabled: true }))
+  })
+
   test('falls back to [logs, technology] when backend tabs field is empty (defensive)', () => {
     mockUseAppDetail.mockReturnValue({
       data: makeAppDetail({ tabs: [] }),
@@ -246,7 +315,64 @@ describe('AppDetailPage tabs (Card #348 D5)', () => {
 
     render(<AppDetailPage />)
 
-    expect(screen.getByRole('button', { name: 'Logs' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Technology' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Logs' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Technology' })).toBeInTheDocument()
+  })
+})
+
+describe('AppDetailPage Kill confirm (FE-UI-04)', () => {
+  beforeEach(() => {
+    setupDefaults()
+    // jsdom does not implement <dialog>.showModal / .close — polyfill so the
+    // ConfirmDialog's open/close effect works (mirrors ConfirmDialog.test.tsx).
+    HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+      this.setAttribute('open', '')
+    })
+    HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+      this.removeAttribute('open')
+    })
+  })
+
+  test('clicking Kill does NOT immediately mutate — it opens a confirm dialog', async () => {
+    const mutate = vi.fn()
+    mockUseDetailKillApp.mockReturnValue(makeMutationStub({}))
+    // Replace mutate with our spy.
+    const stub = makeMutationStub({})
+    ;(stub as unknown as { mutate: typeof mutate }).mutate = mutate
+    mockUseDetailKillApp.mockReturnValue(stub)
+
+    const { default: userEvent } = await import('@testing-library/user-event')
+    const user = userEvent.setup()
+    render(<AppDetailPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Kill' }))
+
+    // The mutation has NOT fired — the confirm dialog is up instead.
+    expect(mutate).not.toHaveBeenCalled()
+    expect(screen.getByText('Kill App')).toBeInTheDocument()
+    expect(screen.getByText(/Force-kill "My API"/)).toBeInTheDocument()
+  })
+
+  test('confirming the dialog fires the kill mutation', async () => {
+    const mutate = vi.fn()
+    const stub = makeMutationStub({})
+    ;(stub as unknown as { mutate: typeof mutate }).mutate = mutate
+    mockUseDetailKillApp.mockReturnValue(stub)
+
+    const { default: userEvent } = await import('@testing-library/user-event')
+    const user = userEvent.setup()
+    render(<AppDetailPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Kill' }))
+    // The dialog's confirm button is the second "Kill"-labelled control; scope
+    // to the open dialog to avoid the action-bar Kill button.
+    const dialog = document.querySelector('dialog')
+    const confirmButton = dialog
+      ? Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Kill')
+      : undefined
+    expect(confirmButton).toBeDefined()
+    if (confirmButton) await user.click(confirmButton)
+
+    expect(mutate).toHaveBeenCalledWith('my-api', expect.any(Object))
   })
 })

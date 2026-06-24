@@ -78,7 +78,8 @@ type ExecutableProbe = {
   isManagedDotnet: boolean
 }
 
-type ProbeEntry =
+// Known probe variants — each carries its typed `data` shape (FE-TYPE-01).
+type KnownProbeEntry =
   | { type: 'dotnet-runtime'; label: string; data: DotnetRuntimeProbe }
   | { type: 'dotnet-dependencies'; label: string; data: DotnetDependenciesProbe }
   | { type: 'node'; label: string; data: NodeProbe }
@@ -86,7 +87,16 @@ type ProbeEntry =
   | { type: 'typescript'; label: string; data: TypeScriptProbe }
   | { type: 'static-site'; label: string; data: StaticSiteProbe }
   | { type: 'executable'; label: string; data: ExecutableProbe }
-  | { type: string; label: string; data: Record<string, unknown> }
+
+// Forward-compat catch-all for a probe type the backend adds before the FE
+// learns it. The `(string & {})` brand keeps this member's `type` distinct from
+// the literal members above, so TS does NOT widen the whole union's discriminant
+// to `string` — narrowing on `probe.type` still works for the known variants
+// (FE-TYPE-01). Its `data` is `unknown`, never `any`: the UnknownProbePanel is
+// the only consumer and treats it opaquely.
+type UnknownProbeEntry = { type: string & {}; label: string; data: unknown }
+
+type ProbeEntry = KnownProbeEntry | UnknownProbeEntry
 
 type FieldType = 'text' | 'number' | 'boolean' | 'select' | 'directory' | 'keyvalue'
 
@@ -492,6 +502,8 @@ export type {
   ProbesStatus,
   DetailTab,
   ProbeEntry,
+  KnownProbeEntry,
+  UnknownProbeEntry,
   DotnetRuntimeProbe,
   DotnetDependenciesProbe,
   NotableDependency,

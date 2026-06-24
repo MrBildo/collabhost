@@ -1,7 +1,6 @@
 import type { ProbeEntry } from '@/api/types'
 import { ProbePanel } from './ProbePanel'
-import { UnknownProbePanel } from './UnknownProbePanel'
-import { PROBE_PANELS } from './probe-registry'
+import { renderProbePanel } from './probe-registry'
 
 type ProbeSectionProps = {
   probes: ProbeEntry[]
@@ -18,14 +17,11 @@ function ProbeSection({ probes }: ProbeSectionProps) {
 
   return (
     <div className="grid grid-cols-2 gap-3 mt-3">
-      {probes.map((probe, index) => {
-        const Panel = PROBE_PANELS[probe.type] ?? UnknownProbePanel
-        return (
-          <ProbePanel key={`${probe.type}-${index}`} title={probe.label}>
-            <Panel data={probe.data} />
-          </ProbePanel>
-        )
-      })}
+      {probes.map((probe, index) => (
+        <ProbePanel key={`${probe.type}-${index}`} title={probe.label}>
+          {renderProbePanel(probe)}
+        </ProbePanel>
+      ))}
     </div>
   )
 }

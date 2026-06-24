@@ -4,6 +4,7 @@ import type { CreateAppRequest, RegistrationField as RegistrationFieldType, Regi
 import { Breadcrumbs } from '@/chrome/Breadcrumbs'
 import { RegistrationField } from '@/forms/RegistrationField'
 import { useAppTypes, useCreateApp, useRegistrationSchema } from '@/hooks/use-app-create'
+import { useDebounce } from '@/hooks/use-debounce'
 import { useDetectStrategy } from '@/hooks/use-detect-strategy'
 import { toSlug } from '@/lib/format'
 import { ROUTES } from '@/lib/routes'
@@ -88,10 +89,15 @@ function AppCreatePage() {
 
   // Discovery strategy auto-detect: call detect-strategy when directory changes.
   // Only fires for app types that have a discovery section (process-capable types).
+  // The path is debounced (FE-FORM-04) so a hand-typed directory fires ONE
+  // detect call when typing settles, not one per keystroke. The path-picker
+  // (which sets a complete path in a single change) sees the same ~300ms delay,
+  // which is imperceptible for a one-shot set.
   const artifactLocation = String(formValues.artifact?.location ?? '')
   const hasDiscoverySection = schema?.sections.some((s) => s.key === 'discovery') ?? false
   const detectPath = hasDiscoverySection ? artifactLocation : ''
-  const detectQuery = useDetectStrategy(detectPath, selectedType ?? '')
+  const debouncedDetectPath = useDebounce(detectPath, 300)
+  const detectQuery = useDetectStrategy(debouncedDetectPath, selectedType ?? '')
 
   // Apply auto-detected strategy when detection results arrive
   useEffect(() => {

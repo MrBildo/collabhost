@@ -21,7 +21,9 @@ function dashboardEventsRefetchInterval(status: 'pending' | 'error' | 'success')
 
 function useDashboardEvents(limit = 20) {
   return useQuery<DashboardEventsResponse>({
-    queryKey: ['dashboard', 'events'],
+    // `limit` is in the key (FE-QRY-02) — it shapes the response, so two callers
+    // with different limits must not share one cache entry.
+    queryKey: ['dashboard', 'events', limit],
     queryFn: () => getDashboardEvents(limit),
     refetchInterval: (query) => dashboardEventsRefetchInterval(query.state.status),
   })

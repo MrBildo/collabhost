@@ -55,10 +55,18 @@ function AppListPage() {
     { label: 'Crashed', value: counts.crashed, color: counts.crashed > 0 ? ('red' as const) : ('default' as const) },
   ]
 
+  // The slug whose start/stop is currently in flight (FE-UI-08) — only that
+  // row's buttons disable, not the whole list.
+  const pendingSlug = startMutation.isPending
+    ? (startMutation.variables ?? null)
+    : stopMutation.isPending
+      ? (stopMutation.variables ?? null)
+      : null
+
   const columns = buildAppListColumns({
     onStart: (slug) => startMutation.mutate(slug),
     onStop: (slug) => stopMutation.mutate(slug),
-    isActionPending: startMutation.isPending || stopMutation.isPending,
+    pendingSlug,
   })
 
   const actionErrorEntry = startMutation.isError

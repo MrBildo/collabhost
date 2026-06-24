@@ -20,7 +20,9 @@ function useStartApp() {
       queryClient.setQueryData<AppDetail>(['apps', slug], (old) =>
         old ? { ...old, status: result.status, actions: result.actions } : old,
       )
-      queryClient.invalidateQueries({ queryKey: ['apps'] })
+      // Targeted invalidation (FE-QRY-03) — list row + this app's detail only.
+      queryClient.invalidateQueries({ queryKey: ['apps'], exact: true })
+      queryClient.invalidateQueries({ queryKey: ['apps', slug] })
     },
   })
 }
@@ -34,7 +36,9 @@ function useStopApp() {
       queryClient.setQueryData<AppDetail>(['apps', slug], (old) =>
         old ? { ...old, status: result.status, actions: result.actions } : old,
       )
-      queryClient.invalidateQueries({ queryKey: ['apps'] })
+      // Targeted invalidation (FE-QRY-03) — list row + this app's detail only.
+      queryClient.invalidateQueries({ queryKey: ['apps'], exact: true })
+      queryClient.invalidateQueries({ queryKey: ['apps', slug] })
     },
   })
 }
