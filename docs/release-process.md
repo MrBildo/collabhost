@@ -6,6 +6,14 @@ This doc covers the operational obligations Collabhost takes on by bundling thir
 
 Collabhost releases are **tag-then-release**. The Publish workflow is triggered by a published GitHub Release, not by a pushed tag — so the order is: create an annotated tag, push it, then create the Release against that tag.
 
+### Pre-release doc sweep (do this before you tag)
+
+Once all the code for a release has landed and before you cut the tag, sweep the published docs so they describe the release you're about to ship — not the one before it. Documentation drifts quietly between releases; this step is what keeps the published surface honest.
+
+Walk every operator-facing and contributor-facing doc and reconcile it against the current code: `README.md`, the `INSTALL.md` shipped in the archive (`release-assets/INSTALL.md`), `CONTRIBUTING.md`, the operator-facing files under `docs/`, the credits/team section, and the release notes you'll attach at cut time. Check the things that go stale: install and upgrade steps, the feature surface (app types, tool counts, supported platforms), configuration and environment keys, file paths, and the screenshots under `docs/` against the current dashboard. Fix the drift in the same pass. The result is that a reader of the published source on release day sees what the release actually does.
+
+This is a release step, not a separate project — it rides the cut. The changelog and the version stamp come next (the tag-cut flow below); the doc sweep is the thing you do right before them.
+
 ### The flow
 
 ```bash
@@ -76,6 +84,7 @@ These are targets, not contracts. Collabhost is a small project. If a critical a
 
 Before tagging a release, walk this list:
 
+- [ ] **Pre-release doc sweep.** Reconcile every published doc against the current code — README, the shipped `INSTALL.md`, CONTRIBUTING, the operator-facing files under `docs/`, the credits/team section, and the screenshots under `docs/`. Fix install/upgrade steps, feature surface, config/env keys, and paths that no longer match. See "Pre-release doc sweep" above for the full walk.
 - [ ] **Caddy upstream check.** Is there a newer Caddy release than the one pinned in `caddy.version`? Read its release notes and security advisories. If a CVE is fixed, treat the bump as required and surface it in the Collabhost release notes.
 - [ ] **Bump `caddy.version` if needed.** Single-line file at the repo root. The publish workflow feeds this version to `xcaddy build` for each target RID.
 - [ ] **Plugin upstream check.** For every line in `caddy-plugins.txt`, verify the pinned version is still current at the plugin's upstream repo (e.g. `github.com/caddy-dns/cloudflare`). Bump if a security fix or compatibility-with-new-Caddy-core release lands.

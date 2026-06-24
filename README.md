@@ -107,7 +107,7 @@ If no Caddy binary is configured, everything else still works (app management, p
 
 **Schema-driven configuration** — App settings are defined by capability schemas. New capabilities surface in the UI and through MCP without frontend or tool changes. Override defaults per-app, see what's customized vs. inherited.
 
-**Multi-runtime support** — Five built-in app types out of the box:
+**Multi-runtime support** — Seven built-in app types out of the box:
 
 | Type | What it runs |
 |------|-------------|
@@ -116,6 +116,10 @@ If no Caddy binary is configured, everything else still works (app management, p
 | `static-site` | Static file directories (served via Caddy file_server) |
 | `executable` | Arbitrary binaries and scripts |
 | `system-service` | Platform services managed by Collabhost itself |
+| `external-route` | A route to a service Collabhost does *not* run — a Docker container, a LAN host, a Tailscale node, any upstream you point it at. Collabhost fronts it with TLS and health checks; there's no process to supervise. |
+| `internal-service` | A supervised non-HTTP process — a database, a message broker, a custom-protocol service. Collabhost runs and watches it, but no reverse-proxy route is generated. |
+
+`system-service` is the seventh built-in type but is internal — it is the Proxy's own type, seeded by Collabhost at startup and not operator-registerable. The registration picker shows the six types above.
 
 **User management** — Header-based auth with administrator and agent roles. One-time API key reveal on creation. The same key authenticates the dashboard, the REST API, and the MCP server — mint a key for an agent and it can operate the platform.
 
@@ -290,17 +294,19 @@ Collabhost is built by a human-AI collaborative team. The bots are autonomous AI
 
 **Bill Wheelock** — Concept, design, and technical leadership — [mrbildo@mrbildo.net](mailto:mrbildo@mrbildo.net)
 
-**Bot Nolan** — Project management — [nolan@collabot.dev](mailto:nolan@collabot.dev)
+**Bot Nolan** — Project coordination — [nolan@collabot.dev](mailto:nolan@collabot.dev)
 
-**Bot Dana** — Logo, *War Machine* theme, frontend design, TypeScript — [dana@collabot.dev](mailto:dana@collabot.dev)
+**Bot Dana** — Frontend lead; logo and the *War Machine* design system — [dana@collabot.dev](mailto:dana@collabot.dev)
 
-**Bot Remy** — Backend design, architecture, C# — [remy@collabot.dev](mailto:remy@collabot.dev)
+**Bot Iris** — Frontend review; JavaScript and TypeScript — [iris@collabot.dev](mailto:iris@collabot.dev)
 
-**Bot Marcus** — Backend design, architecture, C# — [marcus@collabot.dev](mailto:marcus@collabot.dev)
+**Bot Remy** — Backend lead; architecture and C# — [remy@collabot.dev](mailto:remy@collabot.dev)
 
-**Bot Kai** — Code review, simplification, tooling, C# — [kai@collabot.dev](mailto:kai@collabot.dev)
+**Bot Marcus** — Backend architecture and domain modeling — [marcus@collabot.dev](mailto:marcus@collabot.dev)
 
-**Bot Theo** — Tooling, harness and skill authoring, infrastructure — [theo@collabot.dev](mailto:theo@collabot.dev)
+**Bot Kai** — Code review and simplification — [kai@collabot.dev](mailto:kai@collabot.dev)
+
+**Bot Theo** — IT manager — [theo@collabot.dev](mailto:theo@collabot.dev)
 
 ## License
 

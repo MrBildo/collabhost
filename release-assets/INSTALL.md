@@ -227,7 +227,7 @@ Then `.\startup.ps1`.
 
 | Variable | Overrides | Shape | Example |
 |----------|-----------|-------|---------|
-| `COLLABHOST_DATA_PATH`          | SQLite DB parent directory | Absolute directory path | `/srv/collabhost/data` |
+| `COLLABHOST_DATA_PATH`          | Platform data root — holds the SQLite DB, per-app data, bundle-extraction directories, and the default crash-log directory | Absolute directory path | `/srv/collabhost/data` |
 | `COLLABHOST_USER_TYPES_PATH`    | `TypeStore:UserTypesDirectory` | Absolute directory path | `/srv/collabhost/user-types` |
 | `COLLABHOST_CADDY_PATH`         | `Proxy:BinaryPath` — Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
 | `COLLABHOST_HOSTING_LISTEN_ADDRESS` | `Hosting:ListenAddress` — interface Kestrel binds to. Default `localhost` (loopback only). Set `0.0.0.0` to accept connections on every interface; pin to a specific NIC IP to scope by interface. See §5.5.5. | Hostname, IPv4, or IPv6 address | `0.0.0.0` |
@@ -242,7 +242,7 @@ Then `.\startup.ps1`.
 | `COLLABHOST_CONFIG_PATH`        | Absolute path to the operator-facing `appsettings.json` that Collabhost loads via an explicit `AddJsonFile`. Set by the system-scope installer to `/etc/collabhost/appsettings.json` so the canonical config lives outside the read-only install tree; **unset in user-scope**, where the binary's working-directory `appsettings.json` is used. To relocate the config in a system-scope install, set this in a systemd drop-in. | Absolute file path | `/etc/collabhost/appsettings.json` |
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
-| `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. | URL (no trailing slash) | `http://localhost:9000/releases/v1.3.0` |
+| `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. | URL (no trailing slash) | `http://localhost:9000/releases/vX.Y.Z` |
 | `COLLABHOST_INSTALL_SCRIPT_BASE_URL` | Install-script only — base URL for the script/lib mirror, the host the installer self-fetches `install-lib.sh` from when it is not co-located beside the script (the `curl ... \| bash` and standalone-download paths). Overrides the default GitHub Pages URL. Useful for testing install scripts against a local mirror. | URL (no trailing slash) | `http://localhost:9000/collabhost` |
 
 **Caddy binary resolution — two-tier precedence (highest first):**
@@ -1064,6 +1064,22 @@ supervised Caddy share a network namespace with subtle differences. If you
 see a healthy probe but failing user-facing requests (or vice versa), this
 is where to look first.
 
+#### 5.7.1 Internal-service apps (supervised processes with no route)
+
+The `internal-service` app type is the inverse of `external-route`: Collabhost
+runs and supervises the process, but no proxy route is generated. It's the
+right type for a non-HTTP process you want managed alongside everything else —
+a database, a key-value store, a message broker, any custom-protocol upstream
+that another app talks to directly.
+
+Lifecycle is the normal start / stop / restart / kill you get for any managed
+process, and the read-only-artifact / writable-data discipline in §5.6 applies
+exactly as it does for other process types. The one thing to know up front:
+because no Caddy route is emitted, an internal-service app has **no**
+`{slug}.<base-domain>` URL. Don't expect a subdomain, and don't walk the §9.10
+remote-dashboard diagnostic looking for a route that was never created — that's
+by design, not a misconfiguration.
+
 ### 5.8 MCP client setup
 
 Collabhost exposes a Model Context Protocol (MCP) server at
@@ -1173,7 +1189,7 @@ Should print `Collabhost <version>` matching the release you installed —
 for example:
 
 ```
-Collabhost 1.3.0
+Collabhost X.Y.Z
 ```
 
 ### 7.2 Status endpoint
@@ -2254,19 +2270,19 @@ the checksum against the release's `checksums.txt`.
 
 ```sh
 # Linux
-sha256sum -c collabhost-1.3.0-linux-x64.tar.gz.sha256
+sha256sum -c collabhost-X.Y.Z-linux-x64.tar.gz.sha256
 ```
 
 ```sh
 # macOS
-shasum -a 256 -c collabhost-1.3.0-osx-arm64.tar.gz.sha256
+shasum -a 256 -c collabhost-X.Y.Z-osx-arm64.tar.gz.sha256
 ```
 
 ```powershell
 # Windows
-$expected = (Get-Content checksums.txt | Select-String 'collabhost-1.3.0-win-x64.zip$').Line -split '\s+' | Select-Object -First 1
+$expected = (Get-Content checksums.txt | Select-String 'collabhost-X.Y.Z-win-x64.zip$').Line -split '\s+' | Select-Object -First 1
 if (-not $expected) { throw 'Checksum line not found for this archive.' }
-$actual   = (Get-FileHash -Algorithm SHA256 collabhost-1.3.0-win-x64.zip).Hash.ToLower()
+$actual   = (Get-FileHash -Algorithm SHA256 collabhost-X.Y.Z-win-x64.zip).Hash.ToLower()
 if ($expected -ne $actual) { throw 'Checksum mismatch.' } else { 'OK' }
 ```
 
