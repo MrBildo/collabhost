@@ -94,9 +94,10 @@ public static class ProxyEndpoints
             // target string for all 4 route surfaces. External-route apps (Card #348)
             // have no supervised process, so the resolver surfaces the operator-declared
             // upstream; supervised apps get "localhost:{port}" from the live process
-            // port. NOTE: this converges the file-server label from "Static Files" to
-            // "file-server" -- the value the other 3 surfaces already emit, so the parity
-            // test sees one string per app (display-only; no FE logic branches on it).
+            // port. NOTE: this surface (Routes table) already emitted "Static Files" for
+            // file-server apps; #435 converges the other 3 surfaces (App Detail + both MCP
+            // tools) from "file-server" to "Static Files", so the parity test sees one
+            // string per app (display-only; no FE logic branches on it).
             var hasExternalTarget = bindings.ContainsKey("external-target");
 
             var externalTarget = hasExternalTarget
