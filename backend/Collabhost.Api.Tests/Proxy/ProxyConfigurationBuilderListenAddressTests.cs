@@ -90,6 +90,64 @@ public class ProxyConfigurationBuilderListenAddressTests
         listen[1]!.GetValue<string>().ShouldBe(":8443");
     }
 
+    // --- #444: the auto-HTTPS redirect server must not bind :80 when the
+    // operator is fully on alt-ports. Caddy spins up an HTTP->HTTPS redirect on
+    // http_port (:80) for any TLS listener; on a host that cannot bind :80
+    // (rootless, second instance, restricted) the whole config fails to load.
+    // The fix suppresses the redirect (automatic_https.disable_redirects) ONLY
+    // when the listen set carries no standard port (:80 or :443) -- so the
+    // standard-port happy-path (#217 :443->:80 promotion, and the :80,:443
+    // default) stays byte-identical and prod is untouched.
+
+    [Fact]
+    public void Build_ListenAddressIsAltPortsPair_DisablesAutoHttpsRedirects()
+    {
+        var settings = MakeSettings(":8080,:8443");
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _hosting, _portal);
+
+        GetAutoHttpsDisableRedirects(config).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Build_ListenAddressIsSingleAltTlsPort_DisablesAutoHttpsRedirects()
+    {
+        // The card #444 repro: a lone ":8443" still drives Caddy to bind :80 for
+        // the redirect server, taking the config down on a host without
+        // CAP_NET_BIND_SERVICE.
+        var settings = MakeSettings(":8443");
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _hosting, _portal);
+
+        GetAutoHttpsDisableRedirects(config).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Build_ListenAddressIsDefaultStandardPorts_LeavesAutoHttpsRedirectsEnabled()
+    {
+        // The :80,:443 default (appsettings.json) keeps the redirect -- the host
+        // binds :80 itself. Emitting no automatic_https leaves Caddy's default
+        // behavior intact; prod runs on this.
+        var settings = MakeSettings(":80,:443");
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _hosting, _portal);
+
+        GetServer(config)["automatic_https"].ShouldBeNull();
+    }
+
+    [Fact]
+    public void Build_ListenAddressIsBare443_LeavesAutoHttpsRedirectsEnabled()
+    {
+        // The #217 happy-path Bill named as a hard constraint: a bare ":443" is
+        // promoted by Caddy into an HTTP->HTTPS-on-:80 redirect. :443 is a
+        // standard port, so no automatic_https override is emitted -- unchanged.
+        var settings = MakeSettings(":443");
+
+        var config = ProxyConfigurationBuilder.Build([], settings, _hosting, _portal);
+
+        GetServer(config)["automatic_https"].ShouldBeNull();
+    }
+
     private static ProxySettings MakeSettings(string listenAddress) =>
         new()
         {
@@ -100,10 +158,12 @@ public class ProxyConfigurationBuilderListenAddressTests
             AdminPort = 2019
         };
 
-    private static JsonArray GetListenArray(JsonObject config)
-    {
-        var listen = config["apps"]!["http"]!["servers"]!["srv0"]!["listen"]!.AsArray();
+    private static JsonObject GetServer(JsonObject config) =>
+        config["apps"]!["http"]!["servers"]!["srv0"]!.AsObject();
 
-        return listen;
-    }
+    private static JsonArray GetListenArray(JsonObject config) =>
+        GetServer(config)["listen"]!.AsArray();
+
+    private static bool GetAutoHttpsDisableRedirects(JsonObject config) =>
+        GetServer(config)["automatic_https"]!["disable_redirects"]!.GetValue<bool>();
 }

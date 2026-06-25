@@ -768,18 +768,74 @@ public static class ProxyConfigurationBuilder
             }
         };
 
-    private static JsonObject BuildHttpConfiguration(JsonArray routes, ProxySettings settings) =>
-        new()
+    private static JsonObject BuildHttpConfiguration(JsonArray routes, ProxySettings settings)
+    {
+        var server = new JsonObject
+        {
+            ["listen"] = BuildListenArray(settings.ListenAddress),
+            ["routes"] = routes
+        };
+
+        // Caddy's automatic-HTTPS spins up an HTTP->HTTPS redirect server on
+        // http_port (default :80) for any TLS listener. When the operator moves
+        // the proxy fully onto alt-ports (no :80 and no :443 -- e.g.
+        // COLLABHOST_PROXY_LISTEN_ADDRESS=":8080,:8443" or a lone ":8443"), that
+        // redirect server still tries to bind :80 -- which fails on exactly the
+        // host the override exists for (rootless / second instance / restricted,
+        // no CAP_NET_BIND_SERVICE), taking the whole config down with a
+        // "listening on :80: bind: permission denied" load error (#444).
+        // Disabling the redirect drops that :80 bind; the alt-ports listeners
+        // still serve HTTPS directly via the internal CA, which is the intended
+        // posture for the internal/tailnet deployments alt-ports targets.
+        //
+        // Gated on "no standard port present" rather than the narrower "no :80":
+        // the standard-port happy-paths -- the ":80,:443" default and the bare
+        // ":443" #217 promotion (prod runs on these and CAN bind :80) -- keep
+        // Caddy's redirect untouched, byte-identical to before this fix.
+        if (!ListenSetIncludesStandardPort(settings.ListenAddress))
+        {
+            server["automatic_https"] = new JsonObject
+            {
+                ["disable_redirects"] = true
+            };
+        }
+
+        return new JsonObject
         {
             ["servers"] = new JsonObject
             {
-                ["srv0"] = new JsonObject
-                {
-                    ["listen"] = BuildListenArray(settings.ListenAddress),
-                    ["routes"] = routes
-                }
+                ["srv0"] = server
             }
         };
+    }
+
+    // Whether the configured listen surface includes a standard HTTP/HTTPS port
+    // (:80 or :443) -- the signal that Caddy's auto-HTTPS :80 redirect server is
+    // wanted (the host is on standard ports and can bind :80). When neither is
+    // present the operator is fully on alt-ports and the redirect's :80 bind is
+    // the failure (#444). The leading colon in the EndsWith match anchors the
+    // port so ":8080"/":8443" do not false-match ":80"/":443" -- same matching
+    // shape as HasTlsListener.
+    private static bool ListenSetIncludesStandardPort(string listenAddress)
+    {
+        if (string.IsNullOrWhiteSpace(listenAddress))
+        {
+            return false;
+        }
+
+        var entries = listenAddress.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (var entry in entries)
+        {
+            if (entry.EndsWith(":80", StringComparison.Ordinal)
+                || entry.EndsWith(":443", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     // Parses the comma-separated ListenAddress into a Caddy listen array. Default
     // ":80,:443" becomes ["":80"", ":443""]. Caddy automatically promotes the :443 entry
