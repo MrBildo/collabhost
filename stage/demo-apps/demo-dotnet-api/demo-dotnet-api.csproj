@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Stage demo artifact (card #443). Standalone; deliberately NOT part of
+       Collabhost.slnx and outside backend/ so the repo's analyzers/Directory.Build
+       do not reach it. Built on the stage box by the demo seed (dotnet publish). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>demo-dotnet-api</AssemblyName>
+    <RootNamespace>DemoDotnetApi</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,7 @@
+# The demo apps are checked-in SOURCE artifacts. Their build outputs are produced
+# on the stage box (in /srv/stage/<slug>) by the seed, never committed here.
+bin/
+obj/
+publish/
+node_modules/
+package-lock.json
