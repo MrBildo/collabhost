@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # deploy-stage.sh -- Collabhost stage deploy, build-from-ref ON THE BOX (card #443).
 #
-# Invoked by the root-owned SSH forced-command dispatcher
-# (/usr/local/bin/stage-deploy-dispatch, Theo's half) as:
+# Invoked by the root-owned SSH forced-command dispatcher (Theo's half) as:
 #
 #     deploy-stage.sh --ref <branch|tag|sha> [--keep-data]
 #
@@ -11,23 +10,36 @@
 # directly). It streams its log to stdout/stderr -- which the dispatcher relays
 # back over the SSH pipe -- and its exit code becomes the ssh exit code.
 #
+# Privilege model (Theo's box-half security deviation -- see lib/stage-common.sh):
+# the script runs as the unprivileged `stage-deploy` user. The build runs entirely
+# unprivileged in a stage-deploy-owned checkout; every privileged step routes
+# through ONE root-owned helper, `sudo stage-privop <verb>` (the helper hardcodes
+# all stage paths -- no path crosses the sudo boundary). App registration is an
+# unprivileged HTTP POST to the local control plane. Linux-only.
+#
 # What it does, in order:
 #   1. parse + re-validate args; load the told-inputs (instance.env)
-#   2. sync the source checkout to <ref> (clone-if-absent, else fetch + checkout)
-#   3. build the REAL release archive from that ref, mirroring the prod publish
-#      pipeline (vite build -> bundled Caddy -> wwwroot hash -> single-file
-#      self-contained `dotnet publish` -> stage the 8-item archive -> verify it)
-#   4. stop the stage service
-#   5. swap in the new binary + caddy + wwwroot + docs (as the stage user)
-#   6. refresh stage config (smart-merge the ref's shipped appsettings)
-#   7. DEFAULT: wipe stage state (guarded) and re-seed the curated demo set
-#      --keep-data: skip BOTH the wipe AND the seed (code-only swap)
-#   8. start the stage service; wait for readiness
+#   2. sync the source checkout to <ref> at /home/stage-deploy/build/checkout
+#   3. build the REAL release output from that ref, mirroring the prod publish
+#      (vite build -> bundled Caddy -> wwwroot hash -> single-file self-contained
+#      `dotnet publish`) into /home/stage-deploy/build/publish, then verify it
+#   4. stop the stage service                       (privop stop)
+#   5. install the new binary + wwwroot + caddy      (privop install-artifacts,
+#                                                     privop install-caddy)
+#   6. DEFAULT: wipe stage state, guarded            (privop wipe-data [+ wipe-ca])
+#      --keep-data: skip the wipe (and the seed) -- code-only swap
+#   7. start the stage service; wait for readiness   (privop start)
+#   8. DEFAULT: seed the curated demo set            (privop seed-install + HTTP register)
 #   9. smoke-check the API + Portal
 #
-# The build runs as the invoking (stage-deploy) user in a stage-owned checkout;
-# every privileged step routes through the two primitives in lib/stage-common.sh
-# (systemctl <verb> <stage-service>, runuser -u <stage-user> -- ...). Linux-only.
+# NOTE (reconcile seam for Theo -- card #443): the earlier kit smart-merged the
+# ref's shipped appsettings into the stage config each deploy (`collabhost
+# --merge-appsettings`, run as the stage user). The stage-privop verb menu carries
+# no config-merge verb and Theo's default deploy sequence omits it -- the stage
+# config is owned by the stand-up (the unit's env block + a static appsettings),
+# not merged per deploy. So this script no longer touches stage config. If a ref
+# that ships a new appsettings key needs to reach the stage config, that wants a
+# new stage-privop verb (Theo's call); flagged in the PR + on the card.
 
 set -euo pipefail
 
@@ -54,16 +66,18 @@ Usage: deploy-stage.sh --ref <branch|tag|sha> [--keep-data] [--dry-run]
 EOF
 }
 
-# REF charset mirrors the dispatcher's allowlist exactly: must start alnum, then
-# [A-Za-z0-9._/-], and must not contain '..' (no parent traversal / option smuggling).
+# REF charset is byte-identical to Theo's dispatcher allowlist: must start alnum,
+# then [A-Za-z0-9._/-], length <= 200, and must not contain '..' (no parent
+# traversal / option smuggling). The dispatcher validates first (the security
+# boundary); this re-validation keeps the script safe if ever invoked directly.
 validate_ref() {
   local r="$1"
   [ -n "$r" ] || die "--ref is required"
   case "$r" in
     *..*) die "--ref must not contain '..': ${r}" ;;
   esac
-  if ! printf '%s' "$r" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]*$'; then
-    die "--ref has invalid characters (allowed: [A-Za-z0-9._/-], must start alnum): ${r}"
+  if ! printf '%s' "$r" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$'; then
+    die "--ref has invalid characters or is too long (allowed: [A-Za-z0-9._/-], must start alnum, <=200): ${r}"
   fi
 }
 
@@ -95,11 +109,9 @@ validate_ref "$REF"
 load_instance_env "${INSTANCE_ENV}"
 
 require_keys \
-  STAGE_SERVICE STAGE_USER \
-  STAGE_PREFIX STAGE_CONFIG STAGE_CONFIG_BASELINE \
+  STAGE_BUILD_ROOT STAGE_REPO_URL STAGE_RID \
   STAGE_DATA_ROOT STAGE_DATA STAGE_APP_DATA STAGE_CADDY_STORAGE STAGE_SRV \
-  STAGE_SRC STAGE_REPO_URL STAGE_RID \
-  STAGE_BASE_URL STAGE_ADMIN_KEY \
+  STAGE_BASE_URL STAGE_ADMIN_KEY_FILE \
   PROD_DATA PROD_PREFIX PROD_CONFIG_DIR
 
 # Optional knobs with defaults.
@@ -107,13 +119,14 @@ STAGE_CADDY_SOURCE="${STAGE_CADDY_SOURCE:-build}"   # build (mirror prod) | copy
 PROD_CADDY_PATH="${PROD_CADDY_PATH:-/opt/collabhost/bin/caddy}"
 STAGE_GIT_REMOTE="${STAGE_GIT_REMOTE:-origin}"
 STAGE_WIPE_CADDY="${STAGE_WIPE_CADDY:-0}"           # 0 keeps the internal CA (and its browser trust) across wipes
-STAGE_DEMO_APPS_DIR="${STAGE_DEMO_APPS_DIR:-${STAGE_SRC}/stage/demo-apps}"
 STAGE_READY_TIMEOUT="${STAGE_READY_TIMEOUT:-90}"
 STAGE_SMOKE_APP_URL="${STAGE_SMOKE_APP_URL:-}"      # optional through-proxy smoke (warn-only)
 
-STAGE_BIN="${STAGE_PREFIX}/bin"
-STAGE_WWWROOT="${STAGE_PREFIX}/wwwroot"
-BUILD_WS="${STAGE_SRC}/.stage-build"
+# Build-output paths (stage-deploy-owned; Theo's stage-privop verbs read from here).
+STAGE_SRC="${STAGE_BUILD_ROOT}/checkout"            # git checkout (curated demos at ./stage/demo-apps)
+PUBLISH_DIR="${STAGE_BUILD_ROOT}/publish"           # install-artifacts / install-caddy read this
+BUILD_WS="${STAGE_BUILD_ROOT}/work"                 # intermediate build scratch
+STAGE_DEMO_APPS_DIR="${STAGE_DEMO_APPS_DIR:-${STAGE_SRC}/stage/demo-apps}"
 
 # STAGE_RID (like every STAGE_*/PROD_* here) is a told input from the sourced
 # instance.env; shellcheck can't see the source, hence the directive.
@@ -127,6 +140,7 @@ sync_source() {
   if [ ! -d "${STAGE_SRC}/.git" ]; then
     log "cloning ${STAGE_REPO_URL} -> ${STAGE_SRC} (first deploy)"
     [ "${DRY_RUN}" -eq 1 ] && { log "DRY-RUN skip clone"; return 0; }
+    mkdir -p "$(dirname "${STAGE_SRC}")"
     git clone "${STAGE_REPO_URL}" "${STAGE_SRC}"
   fi
 
@@ -153,7 +167,8 @@ sync_source() {
   fi
 
   # --force resets tracked files to the ref; untracked build caches (node_modules,
-  # obj/, the Go module cache) survive for incremental speed. We do NOT `git clean`.
+  # obj/, the Go module cache, the demo build outputs) survive for incremental
+  # speed. We do NOT `git clean`.
   git -C "${STAGE_SRC}" checkout --force --detach "$target"
 
   local sha
@@ -162,12 +177,11 @@ sync_source() {
   log "checked out ${REF} @ ${sha} (version stamp ${STAGE_VERSION})"
 }
 
-# --- 3. build the real archive (mirror publish.yml) --------------------------
+# --- 3. build the real publish output (mirror publish.yml) -------------------
 
 build_archive() {
   if [ "${DRY_RUN}" -eq 1 ]; then
-    log "DRY-RUN skip build; EXTRACT_DIR would be ${BUILD_WS}/extract"
-    EXTRACT_DIR="${BUILD_WS}/extract"
+    log "DRY-RUN skip build; publish would land at ${PUBLISH_DIR}"
     return 0
   fi
 
@@ -176,14 +190,10 @@ build_archive() {
     die "STAGE_CADDY_SOURCE=build needs Go on PATH (xcaddy). Install Go on the box, or set STAGE_CADDY_SOURCE=copy in ${INSTANCE_ENV}."
   fi
 
-  local pub_dir="${BUILD_WS}/publish"
   local caddy_out="${BUILD_WS}/caddy-build"
-  local archive_dir="${BUILD_WS}/archive-stage"
-  local verify_dir="${BUILD_WS}/verify"
-  EXTRACT_DIR="${BUILD_WS}/extract"
 
-  rm -rf "${pub_dir}" "${archive_dir}" "${verify_dir}" "${EXTRACT_DIR}"
-  mkdir -p "${BUILD_WS}" "${caddy_out}" "${archive_dir}/LICENSES" "${verify_dir}" "${EXTRACT_DIR}"
+  rm -rf "${PUBLISH_DIR}" "${caddy_out}"
+  mkdir -p "${PUBLISH_DIR}/LICENSES" "${caddy_out}"
 
   # 3a. Frontend (vite build) -> dist, copied where dotnet publish picks it up.
   log "build: frontend (npm ci + vite build)"
@@ -204,7 +214,6 @@ build_archive() {
     *)
       die "STAGE_CADDY_SOURCE must be 'build' or 'copy', got: ${STAGE_CADDY_SOURCE}" ;;
   esac
-  chmod +x "${caddy_out}/caddy"
 
   # 3c. wwwroot content hash (the SAME script publish.yml shells; #342/#395).
   local wwwroot_hash
@@ -212,7 +221,8 @@ build_archive() {
   log "build: wwwroot hash ${wwwroot_hash}"
 
   # 3d. Single-file self-contained publish, embedding the hash -- prod's exact shape.
-  log "build: dotnet publish (single-file, self-contained, ${STAGE_RID})"
+  # Lands collabhost + appsettings.json + wwwroot/ directly into PUBLISH_DIR.
+  log "build: dotnet publish (single-file, self-contained, ${STAGE_RID}) -> ${PUBLISH_DIR}"
   dotnet publish "${STAGE_SRC}/backend/Collabhost.Api/Collabhost.Api.csproj" \
     -c Release \
     -r "${STAGE_RID}" \
@@ -220,44 +230,37 @@ build_archive() {
     -p:PublishSingleFile=true \
     -p:Version="${STAGE_VERSION}" \
     -p:WwwrootHash="${wwwroot_hash}" \
-    -o "${pub_dir}"
+    -o "${PUBLISH_DIR}"
 
-  # 3e. Stage the 8 contract items (mirrors publish.yml "Stage archive").
-  cp "${pub_dir}/collabhost"               "${archive_dir}/"
-  cp "${pub_dir}/appsettings.json"         "${archive_dir}/"
-  cp "${caddy_out}/caddy"                  "${archive_dir}/"
-  cp "${STAGE_SRC}/release-assets/INSTALL.md"     "${archive_dir}/"
-  cp "${STAGE_SRC}/release-assets/caddy-LICENSE"  "${archive_dir}/LICENSES/"
-  cp "${STAGE_SRC}/release-assets/caddy-NOTICE"   "${archive_dir}/LICENSES/"
-  cp -R "${pub_dir}/wwwroot"               "${archive_dir}/"
-  printf '%s' "${wwwroot_hash}"          > "${archive_dir}/wwwroot.sha256"
-  chmod +x "${archive_dir}/collabhost" "${archive_dir}/caddy"
+  # 3e. Assemble the rest of the publish dir the stage-privop install verbs read:
+  # caddy (install-caddy), the docs + licenses + hash sidecar (install-artifacts).
+  cp "${caddy_out}/caddy"                         "${PUBLISH_DIR}/caddy"
+  cp "${STAGE_SRC}/release-assets/INSTALL.md"     "${PUBLISH_DIR}/"
+  cp "${STAGE_SRC}/release-assets/caddy-LICENSE"  "${PUBLISH_DIR}/LICENSES/"
+  cp "${STAGE_SRC}/release-assets/caddy-NOTICE"   "${PUBLISH_DIR}/LICENSES/"
+  printf '%s' "${wwwroot_hash}"                 > "${PUBLISH_DIR}/wwwroot.sha256"
+  chmod +x "${PUBLISH_DIR}/collabhost" "${PUBLISH_DIR}/caddy"
 
-  # 3f. Build the real tar, then verify the 8-item flat contract by extracting it
-  # (mirrors publish.yml "Verify archive contents"). We install from the verified
-  # EXTRACT_DIR -- the operator's actual extract path -- not from the stage dir.
-  local archive="${BUILD_WS}/collabhost-${STAGE_VERSION}-${STAGE_RID}.tar.gz"
-  tar -czf "${archive}" -C "${archive_dir}" \
-    collabhost appsettings.json caddy INSTALL.md \
-    LICENSES/caddy-LICENSE LICENSES/caddy-NOTICE wwwroot wwwroot.sha256
-  tar -xzf "${archive}" -C "${EXTRACT_DIR}"
+  verify_publish "${PUBLISH_DIR}" "${wwwroot_hash}"
 
-  verify_archive "${EXTRACT_DIR}" "${wwwroot_hash}"
-
-  # Build outputs carry no secrets; make them world-readable so the swap (which
-  # runs AS the stage user) can read them out of the stage-deploy-owned checkout.
-  chmod -R a+rX "${EXTRACT_DIR}"
+  # Build outputs carry no secrets; make them world-readable so the privileged
+  # install verbs (run by the root helper) can read them out of the
+  # stage-deploy-owned tree regardless of how the helper drops privilege.
+  chmod -R a+rX "${PUBLISH_DIR}"
 }
 
-verify_archive() {
+# Verify the publish dir carries the contract install-artifacts / install-caddy
+# read -- mirrors publish.yml "Verify archive contents", checked directly on the
+# publish dir (no tar round-trip: the stage install verbs read this dir, not a tar).
+verify_publish() {
   local dir="$1" expect_hash="$2" problems=0 p
-  for p in collabhost appsettings.json caddy INSTALL.md \
+  for p in collabhost caddy appsettings.json INSTALL.md \
            LICENSES/caddy-LICENSE LICENSES/caddy-NOTICE wwwroot.sha256; do
-    [ -f "${dir}/${p}" ] || { warn "archive missing: ${p}"; problems=1; }
+    [ -f "${dir}/${p}" ] || { warn "publish missing: ${p}"; problems=1; }
   done
-  [ -d "${dir}/wwwroot" ]            || { warn "archive missing: wwwroot/"; problems=1; }
-  [ -f "${dir}/wwwroot/index.html" ] || { warn "archive missing: wwwroot/index.html"; problems=1; }
-  [ -n "$(ls -A "${dir}/wwwroot/assets" 2>/dev/null)" ] || { warn "archive: wwwroot/assets empty"; problems=1; }
+  [ -d "${dir}/wwwroot" ]            || { warn "publish missing: wwwroot/"; problems=1; }
+  [ -f "${dir}/wwwroot/index.html" ] || { warn "publish missing: wwwroot/index.html"; problems=1; }
+  [ -n "$(ls -A "${dir}/wwwroot/assets" 2>/dev/null)" ] || { warn "publish: wwwroot/assets empty"; problems=1; }
 
   local sidecar
   sidecar="$(cat "${dir}/wwwroot.sha256" 2>/dev/null || true)"
@@ -267,66 +270,47 @@ verify_archive() {
     warn "wwwroot.sha256 (${sidecar}) != computed (${expect_hash})"; problems=1
   fi
 
-  [ "${problems}" -eq 0 ] || die "archive contract verification failed"
-  log "archive contract verified: 8/8 items, flat layout, hash matches"
+  [ "${problems}" -eq 0 ] || die "publish contract verification failed"
+  log "publish contract verified: collabhost + caddy + wwwroot, hash matches"
 }
 
-# --- 5/6. swap artifacts + refresh config ------------------------------------
+# --- 5. install artifacts ----------------------------------------------------
 
-swap_artifacts() {
-  log "swap: installing binary + caddy + wwwroot + docs into ${STAGE_PREFIX} (as ${STAGE_USER})"
-  as_stage install -m 0755 "${EXTRACT_DIR}/collabhost" "${STAGE_BIN}/collabhost"
-  as_stage install -m 0755 "${EXTRACT_DIR}/caddy"      "${STAGE_BIN}/caddy"
-  as_stage install -m 0644 "${EXTRACT_DIR}/INSTALL.md" "${STAGE_PREFIX}/INSTALL.md"
-
-  # LICENSES: clear + repopulate, matching install-system.sh. The $1/$2 are meant to
-  # expand inside the runuser'd shell (positional args), not in this shell.
-  as_stage mkdir -p "${STAGE_PREFIX}/LICENSES"
-  # shellcheck disable=SC2016
-  as_stage bash -c 'rm -f "$1"/* && cp "$2"/caddy-LICENSE "$2"/caddy-NOTICE "$1"/' \
-    _ "${STAGE_PREFIX}/LICENSES" "${EXTRACT_DIR}/LICENSES"
-
-  # wwwroot: always overwrite (the Portal SPA must track the binary).
-  as_stage rm -rf "${STAGE_WWWROOT}"
-  as_stage cp -R "${EXTRACT_DIR}/wwwroot" "${STAGE_WWWROOT}"
-  as_stage install -m 0644 "${EXTRACT_DIR}/wwwroot.sha256" "${STAGE_PREFIX}/wwwroot.sha256"
+install_artifacts() {
+  # Privileged install of the freshly-built collabhost binary + wwwroot + docs,
+  # and the bundled caddy, into the stage prefix. Both verbs hardcode the stage
+  # paths and read the publish dir (${PUBLISH_DIR}); no path crosses sudo.
+  log "install: collabhost binary + wwwroot + docs (privop install-artifacts)"
+  privop install-artifacts
+  log "install: bundled caddy (privop install-caddy)"
+  privop install-caddy
 }
 
-refresh_config() {
-  # Smart-merge the ref's shipped appsettings into the stage config, preserving
-  # the isolation knobs Theo set at stand-up (Proxy.ListenAddress=:8080,:8443,
-  # BaseDomain, BinaryPath, DnsProvider) and adding any new keys the ref shipped.
-  # Same library the binary uses for prod reinstalls. The config is a TOLD input:
-  # if stand-up has not created it, fail loud rather than guessing isolation values.
-  if [ "${DRY_RUN}" -eq 1 ]; then
-    log "DRY-RUN would merge ${EXTRACT_DIR}/appsettings.json -> ${STAGE_CONFIG}"
-    return 0
-  fi
-  [ -f "${STAGE_CONFIG}" ] || die "stage config not found: ${STAGE_CONFIG} (stand-up must provision it with the isolation knobs)"
-  log "config: smart-merge shipped appsettings into ${STAGE_CONFIG}"
-  as_stage "${STAGE_BIN}/collabhost" --merge-appsettings \
-    "${EXTRACT_DIR}/appsettings.json" "${STAGE_CONFIG}" --baseline "${STAGE_CONFIG_BASELINE}"
-}
-
-# --- 7. wipe state -----------------------------------------------------------
+# --- 6. wipe state -----------------------------------------------------------
 
 wipe_state() {
-  log "wipe: clearing stage state (guarded, as ${STAGE_USER})"
-  wipe_dir_contents "${STAGE_DATA}"
-  wipe_dir_contents "${STAGE_APP_DATA}"
-  wipe_dir_contents "${STAGE_SRV}"
+  # Pre-flight defense-in-depth (the third layer -- see assert_wipe_target): the
+  # privileged wipe verbs pass NO path (the helper hardcodes the stage dirs), so
+  # we validate the instance.env-declared stage dirs -- which MUST mirror those
+  # hardcoded paths -- before invoking the verb, catching a told-input that names
+  # a prod path. The real wall is the helper (stage paths hardcoded, run as the
+  # stage user) + the prod-pathless sudoers.
+  assert_wipe_target "${STAGE_DATA}"
+  assert_wipe_target "${STAGE_APP_DATA}"
+  # STAGE_SRV is a told input from instance.env (not a typo of the derived STAGE_SRC).
+  # shellcheck disable=SC2153
+  assert_wipe_target "${STAGE_SRV}"
+  log "wipe: clearing stage state (privop wipe-data)"
+  privop wipe-data
+
   if [ "${STAGE_WIPE_CADDY}" = "1" ]; then
-    warn "STAGE_WIPE_CADDY=1: wiping the internal CA -- the box will need to re-trust stage's CA"
-    wipe_dir_contents "${STAGE_CADDY_STORAGE}"
+    assert_wipe_target "${STAGE_CADDY_STORAGE}"
+    warn "STAGE_WIPE_CADDY=1: wiping the internal CA (privop wipe-ca) -- the box will need to re-trust stage's CA"
+    privop wipe-ca
   fi
 }
 
-# --- 8. start + wait ---------------------------------------------------------
-
-start_service() {
-  log "start: ${STAGE_SERVICE}"
-  svc start
-}
+# --- 7. start + wait ---------------------------------------------------------
 
 wait_ready() {
   if [ "${DRY_RUN}" -eq 1 ]; then
@@ -343,9 +327,8 @@ wait_ready() {
     fi
     sleep 1
   done
-  # Diagnostics stay within the two privileged primitives: rather than `systemctl
-  # status --no-pager` (which would either page in the SSH pipe or miss the exact
-  # sudoers allowlist match), point the operator at the dispatcher's read verb.
+  # Diagnostics stay within the privileged helper: point the operator at the
+  # dispatcher's read verb rather than shelling `systemctl status` here.
   die "stage not ready within ${STAGE_READY_TIMEOUT}s -- diagnose with: ssh stage-deploy@<box> stage-logs"
 }
 
@@ -396,11 +379,10 @@ main() {
   sync_source
   build_archive
 
-  log "stop: ${STAGE_SERVICE}"
+  log "stop: stage service (privop stop)"
   svc stop || warn "stop returned non-zero (already stopped?) -- continuing"
 
-  swap_artifacts
-  refresh_config
+  install_artifacts
 
   if [ "${KEEP_DATA}" -eq 1 ]; then
     log "--keep-data: preserving stage state; skipping wipe + seed"
@@ -408,15 +390,17 @@ main() {
     wipe_state
   fi
 
-  start_service
+  log "start: stage service (privop start)"
+  svc start
   wait_ready
 
   if [ "${KEEP_DATA}" -eq 0 ]; then
-    log "seed: registering the curated demo set (register-if-absent)"
+    log "seed: building + installing + registering the curated demo set"
     if [ "${DRY_RUN}" -eq 1 ]; then
       log "DRY-RUN skip seed"
     else
       COLLABHOST_STAGE_INSTANCE_ENV="${INSTANCE_ENV}" \
+      STAGE_PRIVOP="${STAGE_PRIVOP}" \
       STAGE_DEMO_APPS_DIR="${STAGE_DEMO_APPS_DIR}" \
         bash "${KIT_DIR}/seed-demo-apps.sh"
     fi

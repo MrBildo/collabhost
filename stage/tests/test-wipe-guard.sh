@@ -47,7 +47,7 @@ accept /srv/stage
 accept /srv/stage/demo-dotnet-api
 
 echo "reject (prod / system / malformed):"
-reject /var/lib/collabhost           # prod data root (prefix of the stage root -- the trailing-slash guard must hold)
+reject /var/lib/collabhost           # prod data root -- rejected at the stage-marker check (no 'collabhost-stage'/'/srv/stage' marker), before the prod-anchor block is reached
 reject /var/lib/collabhost/data      # inside prod
 reject /opt/collabhost               # prod prefix
 reject /etc/collabhost               # prod config

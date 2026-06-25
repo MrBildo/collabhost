@@ -1,22 +1,30 @@
 #!/usr/bin/env bash
-# seed-demo-apps.sh -- register the curated demo set into a stage instance (card #443).
+# seed-demo-apps.sh -- build + install + register the curated demo set (card #443).
 #
-# Data-driven + REGISTER-IF-ABSENT + idempotent. Reads stage/demo-apps/manifest.json,
-# and for each app whose slug is not already registered: copies its artifact under
-# /srv/stage/<slug> (as the stage user), optionally builds it, registers it via the
-# public REST control plane (POST /api/v1/apps with X-User-Key), and best-effort
-# starts it. Safe to re-run against a populated instance -- already-present slugs are
-# skipped. Invoked by deploy-stage.sh on the default (wipe) path; also runnable
-# directly for a manual re-seed:
+# Reconciled to the stage-privop privilege model (Theo's box half):
+#   * per-app artifact BUILDS run UNPRIVILEGED in the checkout (as stage-deploy);
+#   * a single `sudo stage-privop seed-install` then copies the built demo trees
+#     from <checkout>/stage/demo-apps into /srv/stage/<slug> (as the stage user --
+#     the helper hardcodes both paths, no path crosses the sudo boundary);
+#   * registration is an unprivileged HTTP POST to the local control plane with the
+#     stage admin key (read from a 0600 file on disk, NOT the env).
+#
+# REGISTER-IF-ABSENT + idempotent -- already-registered slugs are skipped. Invoked
+# by deploy-stage.sh on the default (wipe) path; also runnable directly for a manual
+# re-seed:
 #
 #     COLLABHOST_STAGE_INSTANCE_ENV=/etc/collabhost-stage/instance.env \
 #       bash /opt/collabhost-stage/deploy/seed-demo-apps.sh
 #
-# Toolchain rule: an app that declares a `build` step it cannot satisfy (its
-# `requires` tool is absent) is SKIPPED with a warning -- registering an app whose
-# artifact was never built would just 502. No-build apps (static-site, external-route)
-# always register. `start` is best-effort (warn on failure), since a registered app
-# may still fail to start for runtime reasons. A genuine register HTTP failure is fatal.
+# Toolchain rule: an app that declares a `build` it cannot satisfy (its `requires`
+# tool is absent) is SKIPPED with a warning -- an un-built artifact would just 502.
+# No-build apps (static-site, external-route) always register. `start` is
+# best-effort (warn on failure). A genuine register HTTP failure is fatal.
+#
+# Demo dir name == slug (a reconcile constraint): stage-privop seed-install copies
+# <checkout>/stage/demo-apps/<dir> -> /srv/stage/<dir>, and the registration
+# artifact path resolves to /srv/stage/<slug>/<subpath>, so each demo's source dir
+# name MUST equal its slug. The seed asserts this (the current manifest satisfies it).
 
 set -euo pipefail
 
@@ -27,12 +35,21 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${DRY_RUN:=0}"
 INSTANCE_ENV="${COLLABHOST_STAGE_INSTANCE_ENV:-/etc/collabhost-stage/instance.env}"
 load_instance_env "${INSTANCE_ENV}"
-require_keys STAGE_BASE_URL STAGE_ADMIN_KEY STAGE_SRV STAGE_USER
+require_keys STAGE_BASE_URL STAGE_ADMIN_KEY_FILE STAGE_SRV
 require_cmd curl python3
 
 DEMO_APPS_DIR="${STAGE_DEMO_APPS_DIR:-${STAGE_SRC:-}/stage/demo-apps}"
 MANIFEST="${DEMO_APPS_DIR}/manifest.json"
 [ -f "${MANIFEST}" ] || die "demo-app manifest not found: ${MANIFEST}"
+
+# The stage admin key is a told secret on disk (0600 stage-deploy), not in the env.
+# v1.8.0: registration requires the Administrator role, which this key carries.
+ADMIN_KEY=""
+if [ "${DRY_RUN}" -eq 0 ]; then
+  [ -r "${STAGE_ADMIN_KEY_FILE}" ] \
+    || die "stage admin key not readable: ${STAGE_ADMIN_KEY_FILE} (stand-up must provision it 0600 stage-deploy)"
+  ADMIN_KEY="$(cat "${STAGE_ADMIN_KEY_FILE}")"
+fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -40,7 +57,7 @@ trap 'rm -rf "${WORK}"' EXIT
 # --- existing registrations (the idempotency key is AppListItem.Name == slug) ---
 
 existing_slugs() {
-  curl -fsS -H "X-User-Key: ${STAGE_ADMIN_KEY}" "${STAGE_BASE_URL}/api/v1/apps" \
+  curl -fsS -H "X-User-Key: ${ADMIN_KEY}" "${STAGE_BASE_URL}/api/v1/apps" \
     | python3 -c '
 import json, sys
 doc = json.load(sys.stdin)
@@ -56,7 +73,7 @@ for a in apps:
 # which `read` collapses -- runs of tabs would merge and empty fields would vanish,
 # shifting the columns. US is non-whitespace, so empty fields survive intact.
 # The per-app registration body (with {artifact} resolved to the absolute on-box
-# path -- subpath folded in here) is written to ${WORK}/<slug>.json.
+# path /srv/stage/<slug>/<subpath>) is written to ${WORK}/<slug>.json.
 
 build_plan() {
   local existing_file="$1"
@@ -124,7 +141,7 @@ register_app() {
   fi
   code="$(curl -sS -o "${resp}" -w '%{http_code}' \
     -X POST "${STAGE_BASE_URL}/api/v1/apps" \
-    -H "X-User-Key: ${STAGE_ADMIN_KEY}" \
+    -H "X-User-Key: ${ADMIN_KEY}" \
     -H 'Content-Type: application/json' \
     --data-binary "@${body}")"
   [ "${code}" = "201" ] || die "register ${slug} failed: HTTP ${code}: $(cat "${resp}" 2>/dev/null)"
@@ -139,14 +156,14 @@ start_app() {
   fi
   code="$(curl -sS -o /dev/null -w '%{http_code}' \
     -X POST "${STAGE_BASE_URL}/api/v1/apps/${slug}/start" \
-    -H "X-User-Key: ${STAGE_ADMIN_KEY}")"
+    -H "X-User-Key: ${ADMIN_KEY}")"
   case "${code}" in
     2*) log "started ${slug}" ;;
     *)  warn "start ${slug} returned HTTP ${code} (left registered, not running)" ;;
   esac
 }
 
-# --- main loop ----------------------------------------------------------------
+# --- plan (absent apps only) --------------------------------------------------
 
 EXISTING_FILE="${WORK}/existing.txt"
 if [ "${DRY_RUN}" -eq 1 ]; then
@@ -155,43 +172,58 @@ else
   existing_slugs > "${EXISTING_FILE}" || die "could not list existing apps at ${STAGE_BASE_URL}"
 fi
 
-REGISTERED=0
-SKIPPED_PRESENT=0
+PLAN_FILE="${WORK}/plan.usv"
+build_plan "${EXISTING_FILE}" > "${PLAN_FILE}"
+
+SKIP_FILE="${WORK}/toolchain-skip.txt"
+: > "${SKIP_FILE}"
 SKIPPED_TOOLCHAIN=0
+
+# --- phase 1: build each absent app's artifact UNPRIVILEGED in the checkout ----
 
 while IFS=$'\x1f' read -r slug artifact_source build requires start; do
   [ -n "${slug}" ] || continue
 
+  # seed-install copies <demo-apps>/<dir> -> /srv/stage/<dir>; the artifact path is
+  # /srv/stage/<slug>, so the demo source dir name must equal the slug.
+  if [ -n "${artifact_source}" ] && [ "${artifact_source}" != "${slug}" ]; then
+    die "demo '${slug}': artifactSource '${artifact_source}' must equal the slug (stage-privop seed-install preserves dir names)"
+  fi
+
   if [ -n "${build}" ] && ! requires_satisfied "${requires}"; then
     warn "skip ${slug}: build needs '${requires}' which is not on PATH"
+    printf '%s\n' "${slug}" >> "${SKIP_FILE}"
     SKIPPED_TOOLCHAIN=$((SKIPPED_TOOLCHAIN + 1))
     continue
   fi
 
-  dest="${STAGE_SRV}/${slug}"
-
-  # Copy the artifact tree into the stage-owned /srv/stage/<slug> (as the stage user).
-  if [ -n "${artifact_source}" ]; then
+  if [ -n "${build}" ]; then
     src="${DEMO_APPS_DIR}/${artifact_source}"
     [ -d "${src}" ] || die "artifact source missing: ${src}"
     if [ "${DRY_RUN}" -eq 1 ]; then
-      log "DRY-RUN would copy ${src} -> ${dest}"
-    else
-      # $1/$2 expand inside the runuser'd shell (positional args), not here.
-      # shellcheck disable=SC2016
-      as_stage bash -c 'rm -rf "$2" && mkdir -p "$2" && cp -R "$1/." "$2/"' _ "${src}" "${dest}"
-    fi
-  fi
-
-  # Optional build, run in the copied artifact dir AS the stage user.
-  if [ -n "${build}" ]; then
-    if [ "${DRY_RUN}" -eq 1 ]; then
-      log "DRY-RUN would build ${slug}: (cd ${dest} && ${build})"
+      log "DRY-RUN would build ${slug}: (cd ${src} && ${build})"
     else
       log "building ${slug}: ${build}"
-      as_stage bash -c "cd \"\$1\" && ${build}" _ "${dest}"
+      ( cd "${src}" && bash -c "${build}" )
     fi
   fi
+done < "${PLAN_FILE}"
+
+# --- phase 2: install the built demo trees into /srv/stage (privileged) --------
+# privop seed-install copies <checkout>/stage/demo-apps/* -> /srv/stage/* as the
+# stage user. Skipped when nothing is absent (an empty plan needs no copy).
+
+if [ -s "${PLAN_FILE}" ]; then
+  log "seed-install: copying built demo artifacts into ${STAGE_SRV} (privop seed-install)"
+  privop seed-install
+fi
+
+# --- phase 3: register + start each built app (unprivileged HTTP) --------------
+
+REGISTERED=0
+while IFS=$'\x1f' read -r slug artifact_source build requires start; do
+  [ -n "${slug}" ] || continue
+  grep -qxF "${slug}" "${SKIP_FILE}" && continue   # toolchain-skipped: artifact not built
 
   register_app "${slug}"
   REGISTERED=$((REGISTERED + 1))
@@ -199,7 +231,7 @@ while IFS=$'\x1f' read -r slug artifact_source build requires start; do
   if [ "${start}" = "1" ]; then
     start_app "${slug}"
   fi
-done < <(build_plan "${EXISTING_FILE}")
+done < "${PLAN_FILE}"
 
 # Count present-skips for the summary (apps already registered).
 SKIPPED_PRESENT="$(python3 - "${MANIFEST}" "${EXISTING_FILE}" <<'PY'

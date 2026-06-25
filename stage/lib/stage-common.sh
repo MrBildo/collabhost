@@ -2,15 +2,23 @@
 # stage-common.sh -- shared helpers for the Collabhost stage deploy kit (card #443).
 #
 # Sourced by deploy-stage.sh and seed-demo-apps.sh. Carries the logging helpers,
-# the told-inputs (instance.env) loader, the two privileged primitives the deploy
+# the told-inputs (instance.env) loader, the SINGLE privileged primitive the deploy
 # uses, and the wipe-safety guard. Linux-only by design -- this runs on the box,
 # never on a contributor workstation.
 #
-# The two privileged primitives (and nothing else) the kit needs from sudo:
-#   1. systemctl {start,stop,restart,status} <stage-service>
-#   2. runuser -u <stage-user> -- <argv>   (every stage-tree file op runs AS the
-#      stage service user, so the kernel's own ownership wall keeps it off prod)
-# Theo's /etc/sudoers.d/stage-deploy allowlists exactly these. See stage/README.md.
+# Privilege model (card #443, Theo's box-half security deviation from design 4.3):
+# the deploy runs as the unprivileged `stage-deploy` user and reaches privilege
+# through exactly ONE root-owned helper -- `sudo stage-privop <verb>`. The helper
+# HARDCODES every stage path, so no path and no wildcard ever crosses the sudo
+# boundary. (The earlier direct-sudo shape -- `sudo runuser/install/find <path>` --
+# had '..'-traversal-exploitable wildcard args toward prod; that is precisely the
+# shape this replaces.) Theo's /etc/sudoers.d/stage-deploy allowlists just one line:
+# `sudo <stage-privop> *`. The verb menu (Theo's helper owns each verb's hardcoded
+# paths + exact behavior):
+#   install-artifacts  install-caddy  wipe-data  wipe-ca  seed-install
+#   start | stop | restart | status   logs [N]
+# App registration is NOT privileged -- it is an HTTP POST to the local control
+# plane with the stage admin key (see seed-demo-apps.sh).
 
 # --- logging -----------------------------------------------------------------
 
@@ -26,21 +34,21 @@ require_cmd() {
 }
 
 # DRY_RUN is set by the caller (deploy-stage.sh --dry-run). When 1, the privileged
-# primitives print what they WOULD run and return success -- the whole script
-# becomes a read-only plan dump, runnable on any workstation for smoke-testing.
+# primitive prints what it WOULD run and returns success -- the whole script becomes
+# a read-only plan dump, runnable on any Linux/WSL workstation for smoke-testing.
 : "${DRY_RUN:=0}"
 
 # --- told inputs -------------------------------------------------------------
 
 # load_instance_env <path>: source the root-written, stage-deploy-readable env file
-# that names every stage path/port/service/key. Standard Hosting rule #1: the
-# writable locations are TOLD, never discovered. Missing file => fail loud.
+# that names every stage path/port/key. Standard Hosting rule #1: the writable
+# locations are TOLD, never discovered. Missing file => fail loud.
 load_instance_env() {
   local f="$1"
   [ -n "$f" ] || die "instance env path is empty"
   [ -f "$f" ] || die "instance env not found: ${f} (stand-up must provide this told input)"
   # set -a so every assignment in the file is exported for child processes (the
-  # seed subprocess, runuser, the binary's --merge-appsettings).
+  # seed subprocess, the build, curl).
   set -a
   # shellcheck disable=SC1090
   . "$f"
@@ -56,7 +64,11 @@ require_keys() {
   [ ${#missing[@]} -eq 0 ] || die "instance env missing required key(s): ${missing[*]}"
 }
 
-# --- privileged primitives ---------------------------------------------------
+# --- privileged primitive ----------------------------------------------------
+
+# Path to the root-owned helper -- the ONLY thing the kit ever sudo's. Theo's
+# stand-up installs it at the default; overridable for local authoring.
+STAGE_PRIVOP="${STAGE_PRIVOP:-/opt/collabhost-stage/deploy/stage-privop}"
 
 run_priv() {
   if [ "${DRY_RUN}" -eq 1 ]; then
@@ -66,28 +78,28 @@ run_priv() {
   sudo "$@"
 }
 
-# svc <verb> -- systemctl <verb> <STAGE_SERVICE>. Verb is constrained to the
-# documented set by the dispatcher's sudoers; we never pass a prod service name.
-svc() {
-  [ -n "${STAGE_SERVICE:-}" ] || die "svc: STAGE_SERVICE not set"
-  run_priv systemctl "$1" "${STAGE_SERVICE}"
+# privop <verb> [arg] -- the single privileged primitive. <verb> is one of the
+# documented stage-privop verbs; the optional [arg] is a bounded value (e.g. the
+# line count for `logs`). No stage path is ever passed -- the helper hardcodes them.
+privop() {
+  run_priv "${STAGE_PRIVOP}" "$@"
 }
 
-# as_stage <argv> -- run a command AS the stage service user. Every stage-tree
-# write/delete goes through here, so even a bug in the path math is caught by the
-# kernel: the stage user owns no prod byte and cannot touch prod (0750 collabhost).
-as_stage() {
-  [ -n "${STAGE_USER:-}" ] || die "as_stage: STAGE_USER not set"
-  run_priv runuser -u "${STAGE_USER}" -- "$@"
-}
+# svc <start|stop|restart|status> -- service-control verb (sugar over privop).
+svc() { privop "$1"; }
 
 # --- wipe-safety guard -------------------------------------------------------
 
-# assert_wipe_target <abs-path>: refuse, loudly, to let a clean-deploy wipe touch
-# anything but a stage path. Defense-in-depth ON TOP OF the OS-perms prod-wall and
-# the dispatcher's prod-pathless sudoers -- three independent layers. Reads the
-# stage roots (STAGE_DATA_ROOT, STAGE_SRV) and prod anchors (PROD_DATA,
-# PROD_PREFIX, PROD_CONFIG_DIR) from the instance env.
+# assert_wipe_target <abs-path>: classify a path as a legitimate stage wipe target,
+# or refuse loudly. Under the stage-privop model the privileged wipe (`privop
+# wipe-data` / `wipe-ca`) passes NO path -- the helper hardcodes the stage dirs --
+# so this is now a PRE-FLIGHT CONTRACT CHECK: before invoking the path-less wipe
+# verb, deploy-stage.sh runs this over the instance.env-declared stage dirs (which
+# MUST mirror the helper's hardcoded paths) to catch a told-input that names a prod
+# path. The load-bearing wall is Theo's helper (hardcoded stage paths, runs as the
+# stage user, kernel-denied every prod byte) + the prod-pathless sudoers; this guard
+# is the in-script third layer. Reads stage roots (STAGE_DATA_ROOT, STAGE_SRV) and
+# prod anchors (PROD_DATA, PROD_PREFIX, PROD_CONFIG_DIR) from the instance env.
 assert_wipe_target() {
   local target="$1" rp prod prp root rproot under=0
 
@@ -141,18 +153,4 @@ assert_wipe_target() {
       "${rp}"/*) die "wipe guard: target is an ancestor of prod anchor ${prp}: ${rp}" ;;
     esac
   done
-}
-
-# wipe_dir_contents <abs-path>: guard, then delete everything under the dir (incl.
-# dotfiles), keeping the dir itself (ownership/mode survive). Runs AS the stage
-# user. No-op if the dir does not exist.
-wipe_dir_contents() {
-  local d="$1"
-  assert_wipe_target "$d"
-  if [ "${DRY_RUN}" -eq 1 ]; then
-    log "DRY-RUN would wipe contents of: ${d}"
-    return 0
-  fi
-  # -mindepth 1 keeps the directory; -delete removes children depth-first.
-  as_stage find "$d" -mindepth 1 -depth -delete
 }
