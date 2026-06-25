@@ -38,7 +38,13 @@ load_instance_env "${INSTANCE_ENV}"
 require_keys STAGE_BASE_URL STAGE_ADMIN_KEY_FILE STAGE_SRV
 require_cmd curl python3
 
-DEMO_APPS_DIR="${STAGE_DEMO_APPS_DIR:-${STAGE_SRC:-}/stage/demo-apps}"
+# Default derives from the told-input STAGE_BUILD_ROOT (instance.env), NOT the
+# deploy-internal derived STAGE_SRC -- the reconcile dropped STAGE_SRC from
+# instance.env, so the documented standalone re-seed (which sets neither
+# STAGE_DEMO_APPS_DIR nor STAGE_SRC) must reach the checkout via STAGE_BUILD_ROOT.
+# The deploy path passes STAGE_DEMO_APPS_DIR explicitly, so this default is the
+# standalone-run path only. (#443; Kai C-2.)
+DEMO_APPS_DIR="${STAGE_DEMO_APPS_DIR:-${STAGE_BUILD_ROOT:-}/checkout/stage/demo-apps}"
 MANIFEST="${DEMO_APPS_DIR}/manifest.json"
 [ -f "${MANIFEST}" ] || die "demo-app manifest not found: ${MANIFEST}"
 
@@ -179,6 +185,10 @@ SKIP_FILE="${WORK}/toolchain-skip.txt"
 : > "${SKIP_FILE}"
 SKIPPED_TOOLCHAIN=0
 
+BUILD_FAIL_FILE="${WORK}/build-fail.txt"
+: > "${BUILD_FAIL_FILE}"
+SKIPPED_BUILD=0
+
 # --- phase 1: build each absent app's artifact UNPRIVILEGED in the checkout ----
 
 while IFS=$'\x1f' read -r slug artifact_source build requires start; do
@@ -204,7 +214,18 @@ while IFS=$'\x1f' read -r slug artifact_source build requires start; do
       log "DRY-RUN would build ${slug}: (cd ${src} && ${build})"
     else
       log "building ${slug}: ${build}"
-      ( cd "${src}" && bash -c "${build}" )
+      # A failed demo build is NON-FATAL: warn, skip this demo (never register an
+      # un-built artifact -- it would just 502), and continue with the rest. Same
+      # warn-skip-continue an absent toolchain gets above. The `|| build_rc=$?`
+      # keeps `set -e` from aborting the whole seed on one bad demo build (#443).
+      build_rc=0
+      ( cd "${src}" && bash -c "${build}" ) || build_rc=$?
+      if [ "${build_rc}" -ne 0 ]; then
+        warn "skip ${slug}: build failed (exit ${build_rc})"
+        printf '%s\n' "${slug}" >> "${BUILD_FAIL_FILE}"
+        SKIPPED_BUILD=$((SKIPPED_BUILD + 1))
+        continue
+      fi
     fi
   fi
 done < "${PLAN_FILE}"
@@ -223,7 +244,8 @@ fi
 REGISTERED=0
 while IFS=$'\x1f' read -r slug artifact_source build requires start; do
   [ -n "${slug}" ] || continue
-  grep -qxF "${slug}" "${SKIP_FILE}" && continue   # toolchain-skipped: artifact not built
+  grep -qxF "${slug}" "${SKIP_FILE}" && continue        # toolchain-skipped: artifact not built
+  grep -qxF "${slug}" "${BUILD_FAIL_FILE}" && continue  # build-failed: artifact not built
 
   register_app "${slug}"
   REGISTERED=$((REGISTERED + 1))
@@ -242,4 +264,10 @@ print(sum(1 for a in manifest.get("apps", []) if a["slug"] in existing))
 PY
 )"
 
-log "seed done: registered=${REGISTERED} already-present=${SKIPPED_PRESENT} skipped-toolchain=${SKIPPED_TOOLCHAIN}"
+log "seed done: registered=${REGISTERED} already-present=${SKIPPED_PRESENT} skipped-toolchain=${SKIPPED_TOOLCHAIN} skipped-build=${SKIPPED_BUILD}"
+if [ -s "${SKIP_FILE}" ]; then
+  warn "skipped (toolchain absent): $(tr '\n' ' ' < "${SKIP_FILE}")"
+fi
+if [ -s "${BUILD_FAIL_FILE}" ]; then
+  warn "skipped (build failed): $(tr '\n' ' ' < "${BUILD_FAIL_FILE}")"
+fi
