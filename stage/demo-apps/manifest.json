@@ -1,0 +1,89 @@
+{
+  "_comment": [
+    "Curated demo set for the Collabhost stage instance (card #443).",
+    "Data-driven: deploy-stage.sh's seed (seed-demo-apps.sh) reads this file and",
+    "registers every app whose slug is not already present (register-if-absent,",
+    "idempotent). The FINAL curated selection is a Dana/Bill call (it drives the",
+    "#440 screenshots) -- this is a sensible placeholder covering every distinct",
+    "dashboard row shape. Edit/add/remove entries here; no script change needed.",
+    "",
+    "Per-app fields:",
+    "  slug, displayName, appType   -- registration identity + type",
+    "  artifactSource               -- dir under stage/demo-apps/ copied to /srv/stage/<slug> (omit for route-only types)",
+    "  artifactSubpath              -- subdir of the copied tree that is the artifact (e.g. a build output dir)",
+    "  build                        -- shell command run in the copied dir AS the stage user (omit if none)",
+    "  requires                     -- space-separated tools that must be on PATH; if absent the app is skipped with a warning",
+    "  start                        -- POST /start after registering (default true)",
+    "  values                       -- registration overrides (section -> field -> value); '{artifact}' resolves to the absolute on-box artifact path"
+  ],
+  "apps": [
+    {
+      "slug": "demo-dotnet-api",
+      "displayName": "Demo .NET API",
+      "appType": "dotnet-app",
+      "artifactSource": "demo-dotnet-api",
+      "artifactSubpath": "publish",
+      "build": "dotnet publish -c Release -o publish --nologo",
+      "requires": "dotnet",
+      "start": true,
+      "values": {
+        "artifact": { "location": "{artifact}" }
+      }
+    },
+    {
+      "slug": "demo-node-widget",
+      "displayName": "Demo Node Widget",
+      "appType": "nodejs-app",
+      "artifactSource": "demo-node-widget",
+      "artifactSubpath": "",
+      "build": "npm install --omit=dev --no-audit --no-fund",
+      "requires": "npm node",
+      "start": true,
+      "values": {
+        "artifact": { "location": "{artifact}" }
+      }
+    },
+    {
+      "slug": "demo-static-site",
+      "displayName": "Demo Static Site",
+      "appType": "static-site",
+      "artifactSource": "demo-static-site",
+      "artifactSubpath": "",
+      "build": "",
+      "requires": "",
+      "start": true,
+      "values": {
+        "artifact": { "location": "{artifact}" }
+      }
+    },
+    {
+      "slug": "demo-external-route",
+      "displayName": "Demo External Route",
+      "appType": "external-route",
+      "build": "",
+      "requires": "",
+      "start": true,
+      "values": {
+        "external-target": { "host": "127.0.0.1", "port": 58500, "scheme": "http" }
+      }
+    },
+    {
+      "slug": "demo-internal-heartbeat",
+      "displayName": "Demo Internal Service",
+      "appType": "internal-service",
+      "artifactSource": "demo-internal-heartbeat",
+      "artifactSubpath": "publish",
+      "build": "dotnet publish -c Release -o publish --nologo",
+      "requires": "dotnet",
+      "start": true,
+      "values": {
+        "artifact": { "location": "{artifact}" },
+        "process": {
+          "discoveryStrategy": "Manual",
+          "command": "dotnet",
+          "arguments": "{artifact}/demo-internal-heartbeat.dll"
+        }
+      }
+    }
+  ]
+}
