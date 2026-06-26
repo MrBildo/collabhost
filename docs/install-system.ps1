@@ -23,21 +23,20 @@
     contents; appsettings.json is smart-merged; data and Caddy storage are
     left untouched.
 
-    Card #237. Sister of install-system.sh (Linux system-scope). Self-contained
-    by design -- the Windows shared-library extraction is deferred to v1.4
-    because the iwr-pipe-to-iex install path doesn't compose with a separate
-    library file (Q6 ruling).
+    Sister of install-system.sh (Linux system-scope). Self-contained by
+    design -- the Windows shared-library extraction is deferred because the
+    iwr-pipe-to-iex install path doesn't compose with a separate library file.
 
 .EXAMPLE
     # Elevated PowerShell only:
     iwr -UseBasicParsing https://mrbildo.github.io/collabhost/install-system.ps1 | iex
 
 .EXAMPLE
-    .\install-system.ps1 -Version v1.3.0
+    .\install-system.ps1 -Version vX.Y.Z
 
 .EXAMPLE
     # Pin via environment variable
-    $env:COLLABHOST_VERSION = 'v1.3.0'; .\install-system.ps1
+    $env:COLLABHOST_VERSION = 'vX.Y.Z'; .\install-system.ps1
 
 .EXAMPLE
     # Uninstall (preserve data)

@@ -81,6 +81,24 @@ Copy that key, open the dashboard at `http://localhost:58400`, and paste it into
 
 Re-running the installer is upgrade-safe: your `appsettings.json` and `data/` directory are preserved across versions. For full operator documentation — reinstall, upgrade, uninstall, configuration, troubleshooting — see the `INSTALL.md` shipped inside the release archive (or in your install directory after the first run).
 
+### Production / server install
+
+The one-liner above installs to your home directory and runs Collabhost under your login session — the right shape for a workstation. For a **headless server or a multi-operator box**, install at **system scope** instead: a dedicated service account, a canonical system layout (`/opt` + `/etc` + `/var/lib` on Linux, `%ProgramFiles%` + `%ProgramData%` on Windows), and a service that survives logout and reboot.
+
+**Linux:**
+
+```bash
+curl -fsSL https://mrbildo.github.io/collabhost/install-system.sh | sudo bash
+```
+
+**Windows (elevated PowerShell):**
+
+```powershell
+iwr -useb https://mrbildo.github.io/collabhost/install-system.ps1 | iex
+```
+
+See INSTALL.md §5.5.2 (Linux) and §5.5.4 (Windows) for the full system-scope walkthrough — what the installer lays down, how to verify it, and how to customize the service.
+
 ### Caddy is bundled
 
 The installer ships Caddy next to the Collabhost binary, and seeds `Proxy:BinaryPath` in `appsettings.json` to point at it on first install. No separate install step. On first launch, Collabhost starts the bundled Caddy as a supervised process and every registered app gets an automatic `{slug}.collab.internal` subdomain route.
