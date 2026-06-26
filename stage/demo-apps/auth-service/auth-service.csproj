@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Stage demo artifact (card #440). A second, dependency-free ASP.NET Core API
+       so the dashboard / app-list show more than one .NET service. Standalone:
+       NOT part of Collabhost.slnx and outside backend/. Built on the stage box by
+       the demo seed (dotnet publish). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>auth-service</AssemblyName>
+    <RootNamespace>AuthService</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>
