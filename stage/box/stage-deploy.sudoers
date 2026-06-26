@@ -1,0 +1,20 @@
+# /etc/sudoers.d/stage-deploy  (card #443)  -- install 0440 root:root, validate with `visudo -c`.
+#
+# stage-deploy's ONLY privilege: run the root-owned, fixed-verb, hardcoded-path
+# helper /opt/collabhost-stage/deploy/stage-privop -- and nothing else. That
+# helper is the privilege boundary: it touches only stage trees (/opt/collabhost-stage,
+# /var/lib/collabhost-stage, /srv/stage), so NO sudo invocation reachable from
+# here can name a production path. The bare-command grant (any args) is safe
+# because the helper allowlists its own verb and never turns a caller argument
+# into a path. This is deliberately NOT a set of raw `systemctl/install/find`
+# rules: wildcard path args in sudoers match `..` and are traversal-exploitable
+# toward prod -- the helper closes that class entirely.
+#
+# Second, independent wall: stage-deploy is NOT a member of the `collabhost`
+# group, so prod data (0750 collabhost) and config (0640 root:collabhost) are
+# unreadable by kernel permission regardless of this file.
+#
+# (No `Defaults:stage-deploy` lines: modern sudo does not require a tty by
+# default, and env_reset is already the global default -- so the grant line
+# alone is the whole policy, which keeps this file minimal and reviewable.)
+stage-deploy ALL=(root) NOPASSWD: /opt/collabhost-stage/deploy/stage-privop

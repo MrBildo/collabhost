@@ -1,0 +1,44 @@
+{
+  "ConnectionStrings": {
+    "Host": "Data Source=./data/collabhost.db"
+  },
+  "Auth": {
+    "AdminKey": null
+  },
+  "TypeStore": {
+    "UserTypesDirectory": "UserTypes"
+  },
+  "Hosting": {
+    "ListenAddress": "localhost",
+    "ListenPort": 58500
+  },
+  "Proxy": {
+    "BaseDomain": "stage.collab.internal",
+    "BinaryPath": "/opt/collabhost-stage/bin/caddy",
+    "ListenAddress": ":8080,:8443",
+    "CertLifetime": "168h",
+    "DnsProvider": "",
+    "DnsApiTokenEnvVar": "",
+    "StoragePath": ""
+  },
+  "Portal": {
+    "Subdomain": "collabhost"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "Diagnostics": {
+    "CrashLogs": {
+      "Directory": null,
+      "Retention": 10
+    },
+    "ActivityEvents": {
+      "MaxCount": 50000,
+      "MaxAgeDays": 90,
+      "SweepIntervalMinutes": 60
+    }
+  }
+}

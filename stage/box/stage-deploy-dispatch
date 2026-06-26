@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# stage-deploy-dispatch -- the SSH COMMAND BOUNDARY for stage deploys (card #443).
+#
+# Installed as the forced command on every stage-deploy authorized_keys line:
+#   command="/usr/local/bin/stage-deploy-dispatch <actor>",restrict <pubkey> <actor>
+# so that NO MATTER what the client types, sshd runs ONLY this script. What the
+# client typed arrives in $SSH_ORIGINAL_COMMAND as DATA TO VALIDATE -- it is
+# never eval'd, never word-expanded into a command, never globbed.
+#
+# Grammar (strict allowlist -- anything else is refused and logged):
+#   deploy-stage [--ref <ref>] [--keep-data]   (ref defaults to 'main')
+#   stage-logs                                  (read-only)
+#   stage-status                                (read-only)
+#
+# Owned root:root 0755 in /usr/local/bin. stage-deploy cannot modify it.
+# Reviewed like the security boundary it is.
+set -uo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 077
+
+readonly ACTOR="${1:-unknown}"
+readonly REQ="${SSH_ORIGINAL_COMMAND:-}"
+readonly DEPLOY_SCRIPT=/opt/collabhost-stage/deploy/deploy-stage.sh
+readonly PRIVOP=/opt/collabhost-stage/deploy/stage-privop
+readonly AUDIT=/var/log/stage-deploy/audit.log
+readonly MAXLEN=512
+readonly MAXTOK=8
+
+_log() {  # verdict
+  printf '%s\tactor=%s\tverdict=%s\treq=%q\n' \
+    "$(date -u +%FT%TZ)" "$ACTOR" "$1" "$REQ" >> "$AUDIT" 2>/dev/null || true
+}
+_refuse() { _log "refused:$1"; echo "stage-deploy: refused ($1)" >&2; exit 1; }
+
+# A script we are about to exec directly must be root-owned and not group/other
+# writable (tamper guard, defence in depth -- stage-deploy cannot write the
+# root-owned deploy dir, but we verify rather than assume).
+_trusted() {
+  local p="$1"
+  [ -f "$p" ] || return 1
+  [ "$(stat -c '%u' "$p" 2>/dev/null)" = "0" ] || return 1
+  [ -z "$(find "$p" -maxdepth 0 -perm /022 2>/dev/null)" ] || return 1
+}
+
+# Actor comes from our own forced-command line; validate defensively.
+[[ "$ACTOR" =~ ^[a-z][a-z0-9_-]{0,31}$ ]] || { echo "stage-deploy: bad actor" >&2; exit 1; }
+
+[ -n "$REQ" ] || _refuse "no-command"          # interactive ssh attempt -> no shell
+[ "${#REQ}" -le "$MAXLEN" ] || _refuse "too-long"
+case "$REQ" in *[$'\n\r\t']*) _refuse "control-char" ;; esac
+
+IFS=' ' read -ra TOK <<< "$REQ"                 # split on spaces only; never eval/glob
+[ "${#TOK[@]}" -ge 1 ] || _refuse "empty"
+[ "${#TOK[@]}" -le "$MAXTOK" ] || _refuse "too-many-tokens"
+
+case "${TOK[0]}" in
+  deploy-stage)
+    ref="main"; keep=""
+    i=1
+    while [ "$i" -lt "${#TOK[@]}" ]; do
+      t="${TOK[$i]}"
+      case "$t" in
+        --ref)      i=$((i+1)); [ "$i" -lt "${#TOK[@]}" ] || _refuse "ref-needs-value"; ref="${TOK[$i]}" ;;
+        --ref=*)    ref="${t#--ref=}" ;;
+        --keep-data) keep="--keep-data" ;;
+        *)          _refuse "bad-token" ;;
+      esac
+      i=$((i+1))
+    done
+    [[ "$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] || _refuse "bad-ref"
+    case "$ref" in *..*) _refuse "ref-traversal" ;; esac
+    _trusted "$DEPLOY_SCRIPT" || { _log "refused:deploy-script-untrusted-or-absent"
+      echo "stage-deploy: deploy-stage.sh is not installed (awaiting Remy's script on main, #443) or failed the tamper check" >&2; exit 1; }
+    _log "accepted"
+    if [ -n "$keep" ]; then exec "$DEPLOY_SCRIPT" --ref "$ref" --keep-data
+    else                    exec "$DEPLOY_SCRIPT" --ref "$ref"; fi
+    ;;
+  stage-logs)
+    [ "${#TOK[@]}" -eq 1 ] || _refuse "logs-no-args"
+    _log "accepted"; exec sudo -n "$PRIVOP" logs 200
+    ;;
+  stage-status)
+    [ "${#TOK[@]}" -eq 1 ] || _refuse "status-no-args"
+    _log "accepted"; exec sudo -n "$PRIVOP" status
+    ;;
+  *)
+    _refuse "unknown-verb"
+    ;;
+esac
