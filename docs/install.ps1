@@ -12,11 +12,11 @@
     iwr -UseBasicParsing https://mrbildo.github.io/collabhost/install.ps1 | iex
 
 .EXAMPLE
-    .\install.ps1 -Version v0.1.0
+    .\install.ps1 -Version vX.Y.Z
 
 .EXAMPLE
     # Pin via environment variable
-    $env:COLLABHOST_VERSION = 'v0.1.0'; .\install.ps1
+    $env:COLLABHOST_VERSION = 'vX.Y.Z'; .\install.ps1
 #>
 
 # Write-Host is intentional here -- this script is invoked via

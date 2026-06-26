@@ -146,6 +146,9 @@ line beneath the state label:
 The JSON `proxyState` value is the contract; the color and detail text are
 the operator-facing rendering of the same value.
 
+When `proxyState` is anything other than `running`, §9.0 maps each value to its
+first remediation step in one place — start there before the deeper walkthroughs.
+
 Apps published through Collabhost get subdomains under the proxy's base domain
 (`collab.internal` by default). You can change the base domain in
 `appsettings.json` or via `COLLABHOST_PROXY_BASE_DOMAIN` (§5).
@@ -497,6 +500,12 @@ sudo bash install-system.sh
 
 Pin to a specific release with `--version vX.Y.Z` or `COLLABHOST_VERSION=vX.Y.Z`.
 
+Unlike the user-scope `install.sh` (which takes `--install-path`),
+`install-system.sh` lays a **fixed canonical layout** — there is no
+`--install-path` flag, and the `/opt` + `/etc` + `/var/lib` split is the
+contract. To move an existing install onto it from non-canonical paths, see the
+consolidation note at the end of this section.
+
 **What the script creates:**
 
 | Path | Owner | Purpose |
@@ -577,9 +586,27 @@ will overwrite `/opt/collabhost/bin/collabhost`, `/opt/collabhost/bin/caddy`,
 and `/etc/systemd/system/collabhost.service`. It will smart-merge any existing
 `/etc/collabhost/appsettings.json` (preserving operator edits) and leave
 `/var/lib/collabhost/` untouched. If your hand-rolled install used different
-paths (e.g., a different config dir or data root), consolidate first or stay
-on your hand-rolled layout — `install-system.sh` does not relocate files from
-non-canonical paths.
+paths (e.g., a different config dir or data root), consolidate first (steps
+below) or stay on your hand-rolled layout — `install-system.sh` does not
+relocate files from non-canonical paths.
+
+**Consolidating a non-canonical install onto the canonical layout.** If your
+existing install lives outside the `/opt` + `/etc` + `/var/lib` split, move it
+onto the canonical layout with a clean re-install:
+
+1. Stop the existing install (whatever supervises it — a hand-rolled unit, a
+   foreground launch, etc.).
+2. Set your state aside: copy `data/` (and your Caddy storage directory, if it
+   sits elsewhere) to a safe location, and note any `appsettings.json`
+   customizations.
+3. Remove the non-canonical files so nothing stale shadows the new layout.
+4. Run `install-system.sh` — it lays the canonical `/opt` + `/etc` +
+   `/var/lib` layout from scratch.
+5. Relocate your saved `data/` into `/var/lib/collabhost/data/` (and Caddy
+   storage into `/var/lib/collabhost/caddy/`) with `collabhost:collabhost`
+   ownership, re-apply your `appsettings.json` edits to
+   `/etc/collabhost/appsettings.json`, and restart the service. §8.3 step 6
+   covers this cross-layout relocation and the ownership match in full.
 
 #### 5.5.3 Service equivalents (legacy / macOS)
 
@@ -587,6 +614,33 @@ For Windows operators on v1.3 and later, the canonical path is
 `install-system.ps1` (§5.5.4). The NSSM-based recipe was the
 operator-driven shape on v1.2 and earlier; it still works against the
 foreground binary if you have an existing rollout.
+
+**Migrating an existing NSSM rollout to the canonical service.** If you run
+Collabhost under NSSM from a v1.2-or-earlier rollout, move to the supported
+`install-system.ps1` Windows service:
+
+1. Stop and remove the NSSM service (from an elevated PowerShell):
+
+   ```powershell
+   nssm stop Collabhost
+   nssm remove Collabhost confirm
+   ```
+
+2. Note where the NSSM install kept its state. NSSM pointed at a foreground
+   binary in a directory you chose, so `data/` and `appsettings.json` sit next
+   to that binary, not under `%ProgramData%\Collabhost\`. Copy both aside if
+   they are not already in the canonical location.
+3. Run the canonical installer from an elevated PowerShell (§5.5.4):
+
+   ```powershell
+   iwr -UseBasicParsing https://mrbildo.github.io/collabhost/install-system.ps1 | iex
+   ```
+
+4. If you set state aside in step 2, copy it into the canonical layout —
+   `data/` to `%ProgramData%\Collabhost\data\`, your `appsettings.json` edits
+   into `%ProgramData%\Collabhost\config\appsettings.json` — then restart the
+   service (`Restart-Service Collabhost`). First boot against the existing
+   database runs the standard upgrade path (§8.1).
 
 For macOS, Collabhost does not ship a bundled service installer — the binary
 runs cleanly in the foreground (§1), and operators who want boot-survival
@@ -809,19 +863,21 @@ TLS-terminated dashboard access or direct API access.
 **Path A — canonical: Caddy on `:443` with the bundled internal CA.** This is
 the default routing posture. Caddy listens on `:80` and `:443` (`Proxy:ListenAddress`)
 and terminates TLS for `<slug>.collab.internal`. To reach the dashboard from
-another device:
+another device, set up the same four layers §9.10 walks for diagnosis, in the
+same order (closest-to-the-host first):
 
-1. **DNS for `*.collab.internal`** — non-public TLD, won't resolve over public
-   DNS. Add a `hosts` entry per device, or a wildcard record on a LAN DNS
-   server. See §9.10.2 for both shapes.
-2. **CA trust for the bundled internal CA** — browsers do not trust Caddy's
-   internal-CA root by default. Import the root cert on each device that
-   reaches the dashboard. See §9.11 for the per-OS walkthrough.
-3. **Privileged port `:443`** — the host must let Caddy bind. The system-scope
+1. **Privileged port `:443`** — the host must let Caddy bind. The system-scope
    install (§5.5.2) handles this by construction; user-scope needs `setcap`.
    See §9.10.1.
-4. **Host firewall** — if `ufw` / `firewalld` is enabled, allow inbound `:443`.
+2. **DNS for `*.collab.internal`** — non-public TLD, won't resolve over public
+   DNS. Add a `hosts` entry per device, or a wildcard record on a LAN DNS
+   server. See §9.10.2 for both shapes.
+3. **Host firewall** — if `ufw` / `firewalld` is enabled, allow inbound `:443`.
    See §9.10.3.
+4. **CA trust for the bundled internal CA** — browsers do not trust Caddy's
+   internal-CA root by default. Import the root cert on each device that
+   reaches the dashboard. See §9.11 for the per-OS walkthrough (and §9.10.4
+   for the diagnostic).
 
 **Path B — escape hatch: bind the API to a non-loopback interface.** If you
 own the TLS-termination story already (an upstream reverse proxy, a different
@@ -1288,6 +1344,16 @@ now-active overlay route returns `404` (shadowing the on-disk config) until the
 values are re-applied. The step is cheap and worth running on every upgrade
 thereafter.
 
+**Confirm your remote-dashboard reachability posture.** If you reached the
+dashboard from another device (not `localhost`) on your previous version, that
+access depends on either a non-loopback `Hosting:ListenAddress` (§5.5.5 Path B)
+or the Caddy / DNS / CA story (§5.5.5 Path A). The smart-merge preserves an
+operator-set `Hosting:ListenAddress`, but the shipped default is `localhost`
+(loopback only) — after the upgrade, confirm the value still matches your
+intended posture. If you set the address through a wrapper-script env override
+(`COLLABHOST_HOSTING_LISTEN_ADDRESS`), that override rides the wrapper, not the
+smart-merge, so check it survived too.
+
 To upgrade Collabhost, re-run the install script. The installer is
 **merge-safe by construction:**
 
@@ -1326,7 +1392,9 @@ On the first launch of a new binary against an existing database:
    data/backups/collabhost.db.bak-{yyyyMMddTHHmmssZ}-pre-v{fromSemver}-to-v{toSemver}
    ```
 
-   Example: `collabhost.db.bak-20260420T143022Z-pre-v1.2.0-to-v1.3.0`.
+   Example: `collabhost.db.bak-20260420T143022Z-pre-v{fromSemver}-to-v{toSemver}`
+   — the `{fromSemver}` / `{toSemver}` segments carry your actual from- and
+   to- versions.
 3. Migrations apply. On success, Collabhost records the new version as the
    last-booted version and proceeds with boot.
 4. On failure, Collabhost halts with a structured stderr block pointing at
@@ -1335,6 +1403,20 @@ On the first launch of a new binary against an existing database:
 Only the **five most recent** pre-migration backups are kept; the sixth
 rotates out the oldest. Operators who want longer retention can symlink
 `data/backups/` to any location they prefer.
+
+**Upgrading across several versions at once.** You can upgrade directly from
+any older Collabhost version to the latest — there is no need to step through
+intermediate releases in sequence. EF Core migrations are cumulative: on first
+boot the new binary applies every pending migration between your last-booted
+version and the current one, in order, behind a single pre-migration backup
+(named for the full `pre-v{fromSemver}-to-v{toSemver}` span). The §8.2
+smart-merge reconciles `appsettings.json` in one pass on the same boot. The one
+wrinkle for a very old starting point: the first upgrade *into* a smart-merge-aware
+release (operators coming from v0.1.x, which predate the baseline sidecar) runs
+in §8.2's conservative mode — every existing key is preserved and only brand-new
+keys are added — and seeds the baseline so later upgrades have the full
+three-way merge. After that one boot, a multi-version jump is no different from
+a single-step upgrade.
 
 ### 8.2 New configuration keys in newer versions
 
@@ -1549,6 +1631,24 @@ them. Pruning is a manual sweep if you want the bytes back.
 
 ## 9. Troubleshooting
 
+### 9.0 proxyState at a glance
+
+`/api/v1/status` reports a `proxyState` (the values are defined in §3). When it
+is anything other than `running`, start here — each value maps to its first
+remediation:
+
+| `proxyState` | What it means | First step |
+|--------------|---------------|------------|
+| `starting` | Caddy is still launching (transient). | Wait a few seconds and re-check. If it never reaches `running`, treat it as `failed` below. |
+| `running`  | Healthy. | No action. |
+| `degraded` | Caddy is alive but routes aren't reaching the public listener — almost always a privileged-port bind. | §9.2 (port `:80` / `:443` in use or unbindable), then §9.10.1 (privileged-port diagnostic). |
+| `failed`   | Caddy didn't pass its startup probe. | §9.1. |
+| `disabled` | No Caddy binary resolved at startup. | §5.4 (Caddy binary resolution) — set `COLLABHOST_CADDY_PATH` / `Proxy:BinaryPath`, or re-run the installer. |
+| `stopped`  | Caddy started and later stopped (e.g. a post-boot crash). | Restart Collabhost; check the crash log (§9.7). |
+
+The deeper walkthroughs (§9.1, §9.2, §9.10, §9.11) carry the full diagnosis;
+this table is the first hop from a non-`running` value.
+
 ### 9.1 "Caddy did not start" (`proxyState = "failed"`)
 
 Check `/api/v1/status` — if `proxyState` is `"failed"`, Caddy launched but did
@@ -1640,18 +1740,15 @@ If your terminal scrollback has lost it:
 
   The `crit` line containing the full ULID is what you want.
 
-UX improvements here are tracked in a follow-up; see the GitHub release notes
-for your version.
-
 ### 9.7 Binary crashes before I see anything
 
 Collabhost writes a crash log to disk on startup failure or unhandled exception.
 Look in:
 
 ```
-~/.collabhost/data/logs/                 (Linux / macOS, install.sh)
+~/.collabhost/bin/data/logs/             (Linux / macOS, install.sh)
 /var/log/collabhost/                     (Linux, install-system.sh)
-%USERPROFILE%\.collabhost\data\logs\     (Windows, install.ps1)
+%USERPROFILE%\.collabhost\bin\data\logs\ (Windows, install.ps1)
 %ProgramData%\Collabhost\logs\           (Windows, install-system.ps1)
 ```
 
@@ -1689,7 +1786,7 @@ like:
 Collabhost startup failed: migration failed
 
 Details:
-  - Backup created at: /home/user/.collabhost/bin/data/backups/collabhost.db.bak-20260420T143022Z-pre-v1.2.0-to-v1.3.0
+  - Backup created at: /home/user/.collabhost/bin/data/backups/collabhost.db.bak-20260420T143022Z-pre-v{fromSemver}-to-v{toSemver}
   - Migration attempted: AddActivityEvents
   - Exception: System.Data.SqliteException: SQLITE_ERROR: no such column: Foo
 
@@ -1705,17 +1802,19 @@ Steps:
 
 1. `cd $HOME/.collabhost/bin/data/`.
 2. `ls backups/` to see your pre-migration backups.
-3. Copy the most recent backup over the live DB:
+3. Copy the most recent backup over the live DB (use the actual filename from
+   the `ls backups/` listing in step 2 — the `{...}` segments below stand in
+   for your timestamp and from/to versions):
 
    ```sh
-   cp backups/collabhost.db.bak-20260420T143022Z-pre-v1.2.0-to-v1.3.0 collabhost.db
+   cp backups/collabhost.db.bak-{yyyyMMddTHHmmssZ}-pre-v{fromSemver}-to-v{toSemver} collabhost.db
    ```
 
    ```powershell
-   Copy-Item backups\collabhost.db.bak-20260420T143022Z-pre-v1.2.0-to-v1.3.0 collabhost.db -Force
+   Copy-Item backups\collabhost.db.bak-{yyyyMMddTHHmmssZ}-pre-v{fromSemver}-to-v{toSemver} collabhost.db -Force
    ```
 4. Re-install the previous version (rerun `install.sh` / `install.ps1` with
-   `--version v1.2.0` / `-Version v1.2.0`).
+   `--version v{fromSemver}` / `-Version v{fromSemver}`).
 5. Boot against the restored DB to confirm service is healthy.
 6. File an issue with the stderr block and the migration name.
 
