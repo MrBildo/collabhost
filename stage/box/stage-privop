@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# stage-privop -- the PRIVILEGED gate for Collabhost stage operations (card #443).
+#
+# This is the single root-owned helper that `stage-deploy` is granted (one
+# sudoers line) to run as root. It is the privilege boundary: every privileged
+# stage operation goes through a FIXED verb menu with HARDCODED, stage-only
+# paths. No caller-supplied path ever becomes an operation target, so path
+# traversal (`..`) toward a production path is impossible by construction --
+# the reason this exists instead of granting raw `sudo systemctl/install/find`
+# with wildcard args (those are traversal-vulnerable).
+#
+# Owned root:root 0755, lives in the root-owned /opt/collabhost-stage/deploy/.
+# stage-deploy cannot modify it. Reviewed like the security boundary it is.
+#
+# Invoked by:
+#   - Remy's deploy-stage.sh (the privileged steps of a deploy)
+#   - stage-deploy-dispatch (the read verbs: status, logs)
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 027
+
+# --- Hardcoded stage footprint. The ONLY paths this script ever touches. ---
+readonly PREFIX=/opt/collabhost-stage          # binaries + wwwroot (service reads)
+readonly DATA=/var/lib/collabhost-stage        # data / caddy CA / dotnet-bundle / build
+readonly SRV=/srv/stage                        # seeded managed-app artifacts
+readonly BUILD=/home/stage-deploy/build        # stage-deploy-owned checkout + build (the deployer's area)
+readonly PUBLISH="${BUILD}/publish"            # deploy-stage.sh build output (binary + wwwroot/)
+readonly DEMO="${BUILD}/checkout/stage/demo-apps"  # curated demo artifacts in the repo checkout
+readonly SVC_USER=collabhost-stage
+readonly UNIT=collabhost-stage
+readonly PROD_CADDY=/opt/collabhost/bin/caddy  # READ-only source for the (plugin-bearing) proxy binary
+
+# Defense in depth: assert any path we are about to mutate sits under a stage
+# root, even though all paths are constants. A future edit that introduces a
+# stray path is caught here rather than reaching production.
+_assert_stage() {
+  local p="$1" real
+  real="$(readlink -m -- "$p")"
+  case "$real" in
+    /opt/collabhost-stage|/opt/collabhost-stage/*) : ;;
+    /var/lib/collabhost-stage|/var/lib/collabhost-stage/*) : ;;
+    /srv/stage|/srv/stage/*) : ;;
+    *) echo "stage-privop: REFUSED -- '$real' is not under a stage root" >&2; exit 9 ;;
+  esac
+}
+
+_chown_stage() { chown -R "${SVC_USER}:${SVC_USER}" "$1"; }
+
+verb="${1:-}"
+case "$verb" in
+  install-artifacts)
+    # Place the freshly-built binary + Portal SPA into the stage prefix.
+    [ -x "${PUBLISH}/collabhost" ] || { echo "stage-privop: no built binary at ${PUBLISH}/collabhost" >&2; exit 3; }
+    _assert_stage "${PREFIX}/bin"; _assert_stage "${PREFIX}/wwwroot"
+    install -d -m 0755 -o "${SVC_USER}" -g "${SVC_USER}" "${PREFIX}/bin" "${PREFIX}/wwwroot"
+    install -m 0750 -o "${SVC_USER}" -g "${SVC_USER}" "${PUBLISH}/collabhost" "${PREFIX}/bin/collabhost"
+    if [ -d "${PUBLISH}/wwwroot" ]; then
+      rm -rf -- "${PREFIX}/wwwroot"; _assert_stage "${PREFIX}/wwwroot"
+      cp -a -- "${PUBLISH}/wwwroot" "${PREFIX}/wwwroot"
+    fi
+    # Ensure the proxy binary is present (copied from prod once; refresh via install-caddy).
+    [ -x "${PREFIX}/bin/caddy" ] || install -m 0750 -o "${SVC_USER}" -g "${SVC_USER}" "${PROD_CADDY}" "${PREFIX}/bin/caddy"
+    _chown_stage "${PREFIX}"
+    echo "stage-privop: install-artifacts OK"
+    ;;
+  install-caddy)
+    # Refresh stage's proxy binary. PREFER the freshly-built ${PUBLISH}/caddy so
+    # STAGE_CADDY_SOURCE=build's ref-pinned Caddy actually reaches stage; fall
+    # back to prod's (plugin-bearing) caddy ONLY when no built caddy is present
+    # (e.g. install-caddy run standalone, outside a deploy). Under =copy,
+    # ${PUBLISH}/caddy IS prod's caddy, so both modes land the correct binary.
+    _assert_stage "${PREFIX}/bin"
+    if   [ -x "${PUBLISH}/caddy" ]; then src_caddy="${PUBLISH}/caddy"
+    elif [ -x "${PROD_CADDY}" ];    then src_caddy="${PROD_CADDY}"
+    else echo "stage-privop: no caddy at ${PUBLISH}/caddy or ${PROD_CADDY}" >&2; exit 3
+    fi
+    install -d -m 0755 -o "${SVC_USER}" -g "${SVC_USER}" "${PREFIX}/bin"
+    install -m 0750 -o "${SVC_USER}" -g "${SVC_USER}" "${src_caddy}" "${PREFIX}/bin/caddy"
+    echo "stage-privop: install-caddy OK (from ${src_caddy})"
+    ;;
+  wipe-data)
+    # Clean baseline: drop runtime data + app-data. Keep the dirs, the CA, the
+    # build checkout, user-types. The curated seed then defines the baseline.
+    _assert_stage "${DATA}/data"
+    [ -d "${DATA}/data" ] && find "${DATA}/data" -mindepth 1 -delete
+    if [ -d "${DATA}/app-data" ]; then _assert_stage "${DATA}/app-data"; find "${DATA}/app-data" -mindepth 1 -delete; fi
+    echo "stage-privop: wipe-data OK"
+    ;;
+  wipe-ca)
+    # Fresh internal CA. NOTE: regenerates the stage root CA -- the browser
+    # trust note must be re-done after this.
+    _assert_stage "${DATA}/caddy"
+    [ -d "${DATA}/caddy" ] && find "${DATA}/caddy" -mindepth 1 -delete
+    echo "stage-privop: wipe-ca OK"
+    ;;
+  seed-install)
+    # Lay the curated demo artifacts (from the repo checkout) under /srv/stage.
+    [ -d "${DEMO}" ] || { echo "stage-privop: no demo artifacts at ${DEMO}" >&2; exit 3; }
+    _assert_stage "${SRV}"
+    install -d -m 0750 -o "${SVC_USER}" -g "${SVC_USER}" "${SRV}"
+    find "${SRV}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    cp -a -- "${DEMO}/." "${SRV}/"
+    _chown_stage "${SRV}"
+    echo "stage-privop: seed-install OK"
+    ;;
+  start|stop|restart)
+    exec systemctl "${verb}" "${UNIT}"
+    ;;
+  status)
+    exec systemctl status "${UNIT}" --no-pager
+    ;;
+  logs)
+    n="${2:-200}"
+    [[ "$n" =~ ^[0-9]+$ ]] || n=200
+    [ "$n" -gt 2000 ] && n=2000
+    exec journalctl -u "${UNIT}" -n "$n" --no-pager
+    ;;
+  *)
+    echo "stage-privop: REFUSED -- unknown verb '${verb}'" >&2
+    echo "valid: install-artifacts install-caddy wipe-data wipe-ca seed-install start stop restart status logs" >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,54 @@
+# Collabhost -- STAGE instance (disposable, isolated from production).
+#
+# Card #443. Stood up by Theo (IT). This unit is NOT installed by
+# install-system.sh; it is a hand-authored sibling of collabhost.service that
+# points an entirely separate Collabhost instance at a parallel `-stage`
+# footprint. It shares NO state, port, user, or path with production.
+#
+# Secret (COLLABHOST_ADMIN_KEY) lives in the 0600 drop-in
+# /etc/systemd/system/collabhost-stage.service.d/override.conf -- never inline.
+
+[Unit]
+Description=Collabhost (stage)
+Documentation=https://github.com/MrBildo/collabhost
+After=network-online.target
+Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=collabhost-stage
+Group=collabhost-stage
+WorkingDirectory=/opt/collabhost-stage
+ExecStart=/opt/collabhost-stage/bin/collabhost
+
+# Stage told-inputs: every writable location is configured, never derived from
+# cwd/home (Standard Hosting / Service Model clause #1). Each path is the
+# production path with a `-stage` suffix.
+Environment="COLLABHOST_DATA_PATH=/var/lib/collabhost-stage/data"
+Environment="COLLABHOST_USER_TYPES_PATH=/var/lib/collabhost-stage/user-types"
+Environment="COLLABHOST_LOGS_PATH=/var/log/collabhost-stage"
+Environment="COLLABHOST_PROXY_STORAGE_PATH=/var/lib/collabhost-stage/caddy"
+Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/collabhost-stage/dotnet-bundle"
+Environment="ASPNETCORE_CONTENTROOT=/opt/collabhost-stage"
+Environment="COLLABHOST_CONFIG_PATH=/etc/collabhost-stage/appsettings.json"
+Environment="DOTNET_ENVIRONMENT=Production"
+Environment="ASPNETCORE_ENVIRONMENT=Production"
+
+# Stage Caddy binds high ports (:8080 / :8443, set in appsettings) so NO
+# privileged-port capability is needed -- unlike prod, which needs
+# CAP_NET_BIND_SERVICE for :80/:443. Running non-root with no ambient caps is
+# strictly more hardened than prod here.
+
+Restart=on-failure
+RestartSec=5
+
+# Same "write only your own data dirs" hardening as prod, with the stage trees.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/collabhost-stage /var/log/collabhost-stage /etc/collabhost-stage
+
+[Install]
+WantedBy=multi-user.target

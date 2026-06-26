@@ -58,11 +58,13 @@ exercised; the deploy *kit itself* is pinned at the kit path and refreshed delib
 > **Kit ownership is `root:root` (a hard invariant — Theo's stand-up owns it).** The
 > dispatcher `exec`s `/opt/collabhost-stage/deploy/deploy-stage.sh` only after a tamper
 > check that the script is **uid 0 and not group/other-writable** (`stat -c '%u' == 0`).
-> So the kit-install step **must `chown -R root:root /opt/collabhost-stage/deploy`** after
-> copying `stage/*` in. A non-root owner (this drifted twice in stand-up) makes the
-> dispatcher refuse **every** deploy with `deploy-stage.sh ... failed the tamper check` —
-> a confusing failure mode for a permissions slip. This is a box-stand-up step (Theo's,
-> not yet repo-tracked); recorded here as the contract the stand-up must hold.
+> So the kit-install step **`chown -R root:root /opt/collabhost-stage/deploy`** after
+> copying `stage/*` in. A non-root owner (it drifted three times when laid out-of-band)
+> makes the dispatcher refuse **every** deploy with `deploy-stage.sh ... failed the tamper
+> check` — a confusing failure mode for a permissions slip. This is now **enforced in
+> `stage/box/stage-standup.sh`** (repo-tracked, #445): re-run the stand-up with the repo
+> `stage/` dir as its 2nd arg to (re)lay the kit root-owned, rather than copying it in
+> out-of-band.
 
 ## The privileged helper (`stage-privop`)
 
@@ -169,17 +171,12 @@ invoke. (Linux/WSL: the guard uses GNU `realpath -m`.)
 
 ## Open questions (first-live-deploy seams for Theo)
 
-- **`install-caddy` source path — CONFIRMED divergence, helper fix needed (Theo).** The
-  deploy builds/copies the caddy to land at `/home/stage-deploy/build/publish/caddy`, and
-  the contract is that `install-caddy` installs **that** binary. The current box helper
-  installs prod's bundled caddy (`/opt/collabhost/bin/caddy`) directly instead — **benign
-  under `STAGE_CADDY_SOURCE=copy`** (publish/caddy *is* a copy of prod's caddy) but
-  **silently wrong under `=build`**: the freshly-built, ref-pinned caddy is discarded and
-  stage runs prod's caddy, defeating `=build`'s whole purpose (exercising a `caddy.version`
-  bump on stage). The deploy now `warn`s loudly whenever `=build` is active. **Fix (Theo's
-  helper):** `install-caddy` should install `${PUBLISH}/caddy` (falling back to prod's caddy
-  only if absent) — which makes **both** modes correct, since `=copy` already stages prod's
-  caddy at that path.
+- **`install-caddy` source path — RESOLVED (#445).** `stage-privop install-caddy` now
+  installs `${PUBLISH}/caddy` (the freshly-built, ref-pinned caddy), falling back to prod's
+  bundled caddy only if no built caddy is present — so `=build` exercises the ref's
+  `caddy.version` pins and `=copy` still lands prod's caddy (the same binary at that path).
+  The deploy-side `=build` warn that compensated for the divergence has been dropped (Kai's
+  #319 K-1 removal trigger met). Helper source: `stage/box/stage-privop`.
 - **`seed-install` copy semantics** — the deploy assumes it copies
   `<checkout>/stage/demo-apps/*` → `/srv/stage/*` (dir name == slug). Confirm against the
   helper.

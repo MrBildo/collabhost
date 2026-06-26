@@ -285,14 +285,11 @@ install_artifacts() {
   log "install: collabhost binary + wwwroot + docs (privop install-artifacts)"
   privop install-artifacts
 
-  # SEAM (#443, flagged to Theo): the box helper's install-caddy must read
-  # ${PUBLISH_DIR}/caddy. If it instead installs prod's bundled caddy directly,
-  # that is BENIGN under =copy (publish/caddy IS prod's caddy) but SILENTLY WRONG
-  # under =build -- the freshly-built, ref-pinned caddy is discarded and stage runs
-  # prod's caddy. Surface it loudly here rather than let =build quietly no-op.
-  if [ "${STAGE_CADDY_SOURCE}" = "build" ]; then
-    warn "install-caddy must install ${PUBLISH_DIR}/caddy for STAGE_CADDY_SOURCE=build to take effect; if the box helper installs prod's caddy, the ref's Caddy pins are NOT exercised on stage (#443 -- helper fix is Theo's)"
-  fi
+  # The box helper's install-caddy installs ${PUBLISH_DIR}/caddy (the ref-pinned
+  # build under =build; prod's caddy under =copy, where they are the same binary),
+  # falling back to prod only if no built caddy is present -- so =build's pins
+  # reach stage. (Helper fixed in #445; the prior loud =build warn here was its
+  # removal-triggered compensation per Kai's #319 K-1, dropped now the fix landed.)
   log "install: bundled caddy (privop install-caddy)"
   privop install-caddy
 }
