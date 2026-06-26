@@ -278,10 +278,21 @@ verify_publish() {
 
 install_artifacts() {
   # Privileged install of the freshly-built collabhost binary + wwwroot + docs,
-  # and the bundled caddy, into the stage prefix. Both verbs hardcode the stage
-  # paths and read the publish dir (${PUBLISH_DIR}); no path crosses sudo.
+  # and the bundled caddy, into the stage prefix. The verbs hardcode the stage
+  # paths; no path crosses sudo. The deploy builds/copies the caddy to land at
+  # ${PUBLISH_DIR}/caddy, and the contract is that install-caddy installs THAT
+  # binary (so STAGE_CADDY_SOURCE=build's ref-pinned caddy actually reaches stage).
   log "install: collabhost binary + wwwroot + docs (privop install-artifacts)"
   privop install-artifacts
+
+  # SEAM (#443, flagged to Theo): the box helper's install-caddy must read
+  # ${PUBLISH_DIR}/caddy. If it instead installs prod's bundled caddy directly,
+  # that is BENIGN under =copy (publish/caddy IS prod's caddy) but SILENTLY WRONG
+  # under =build -- the freshly-built, ref-pinned caddy is discarded and stage runs
+  # prod's caddy. Surface it loudly here rather than let =build quietly no-op.
+  if [ "${STAGE_CADDY_SOURCE}" = "build" ]; then
+    warn "install-caddy must install ${PUBLISH_DIR}/caddy for STAGE_CADDY_SOURCE=build to take effect; if the box helper installs prod's caddy, the ref's Caddy pins are NOT exercised on stage (#443 -- helper fix is Theo's)"
+  fi
   log "install: bundled caddy (privop install-caddy)"
   privop install-caddy
 }

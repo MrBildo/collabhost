@@ -55,6 +55,15 @@ The kit lives at `stage/` in the repo; Theo's stand-up copies it to
 artifacts** come from the freshly-checked-out ref, so a ref's changes to those are
 exercised; the deploy *kit itself* is pinned at the kit path and refreshed deliberately.
 
+> **Kit ownership is `root:root` (a hard invariant — Theo's stand-up owns it).** The
+> dispatcher `exec`s `/opt/collabhost-stage/deploy/deploy-stage.sh` only after a tamper
+> check that the script is **uid 0 and not group/other-writable** (`stat -c '%u' == 0`).
+> So the kit-install step **must `chown -R root:root /opt/collabhost-stage/deploy`** after
+> copying `stage/*` in. A non-root owner (this drifted twice in stand-up) makes the
+> dispatcher refuse **every** deploy with `deploy-stage.sh ... failed the tamper check` —
+> a confusing failure mode for a permissions slip. This is a box-stand-up step (Theo's,
+> not yet repo-tracked); recorded here as the contract the stand-up must hold.
+
 ## The privileged helper (`stage-privop`)
 
 Theo's box-half deliberately **did not** build a direct-`sudo systemctl/install/chown/find`
@@ -131,11 +140,14 @@ only if `STAGE_WIPE_CADDY=1`). It can never reach prod:
 
 `seed-demo-apps.sh` reads `demo-apps/manifest.json` and seeds every app whose slug is not
 already present (idempotent — safe to re-run). It (1) builds each app's artifact
-**unprivileged** in the checkout (skipping any whose `requires` tool is absent — an un-built
-artifact would just 502), (2) runs `privop seed-install` once to copy the built demo trees
-into `/srv/stage/<slug>` (as the stage user), then (3) `POST /api/v1/apps` per app and a
-best-effort `POST /start`. A real register HTTP failure is fatal. **The demo source dir name
-must equal the slug** (seed-install preserves dir names; the artifact path resolves to
+**unprivileged** in the checkout (skipping — warn, continue — any whose `requires` tool is
+absent **or whose build command fails**; an un-built artifact would just 502, and one bad
+demo build must not abort an otherwise-green deploy), (2) runs `privop seed-install` once to
+copy the built demo trees into `/srv/stage/<slug>` (as the stage user), then (3)
+`POST /api/v1/apps` per app and a best-effort `POST /start`. A real register HTTP failure is
+fatal. The closing summary reports `registered` / `already-present` / `skipped-toolchain` /
+`skipped-build` counts and names the skipped demos. **The demo source dir name must equal the
+slug** (seed-install preserves dir names; the artifact path resolves to
 `/srv/stage/<slug>`) — the seed asserts this.
 
 The placeholder set covers every distinct dashboard row shape: `dotnet-app` (process +
@@ -157,8 +169,17 @@ invoke. (Linux/WSL: the guard uses GNU `realpath -m`.)
 
 ## Open questions (first-live-deploy seams for Theo)
 
-- **`install-caddy` source path** — the deploy puts the built caddy at
-  `/home/stage-deploy/build/publish/caddy`; confirm `install-caddy` reads it there.
+- **`install-caddy` source path — CONFIRMED divergence, helper fix needed (Theo).** The
+  deploy builds/copies the caddy to land at `/home/stage-deploy/build/publish/caddy`, and
+  the contract is that `install-caddy` installs **that** binary. The current box helper
+  installs prod's bundled caddy (`/opt/collabhost/bin/caddy`) directly instead — **benign
+  under `STAGE_CADDY_SOURCE=copy`** (publish/caddy *is* a copy of prod's caddy) but
+  **silently wrong under `=build`**: the freshly-built, ref-pinned caddy is discarded and
+  stage runs prod's caddy, defeating `=build`'s whole purpose (exercising a `caddy.version`
+  bump on stage). The deploy now `warn`s loudly whenever `=build` is active. **Fix (Theo's
+  helper):** `install-caddy` should install `${PUBLISH}/caddy` (falling back to prod's caddy
+  only if absent) — which makes **both** modes correct, since `=copy` already stages prod's
+  caddy at that path.
 - **`seed-install` copy semantics** — the deploy assumes it copies
   `<checkout>/stage/demo-apps/*` → `/srv/stage/*` (dir name == slug). Confirm against the
   helper.
@@ -166,4 +187,8 @@ invoke. (Linux/WSL: the guard uses GNU `realpath -m`.)
   whole stage config (no per-deploy merge), or add a config verb.
 - **Final demo-app curation** (Dana/Bill) — the exact set + count. Edit `manifest.json` only.
 - **Box toolchain** — `STAGE_CADDY_SOURCE=build` needs Go; the `nodejs-app` demo needs
-  `node`/`npm`; the `.NET` demos use SDK 10. Each fails/ skips loud if absent.
+  `node`/`npm`; the `.NET` demos need a .NET 10+ SDK. Each fails / skips loud if absent —
+  and a demo whose build *fails* is now skipped-with-warning too (not fatal), so one bad
+  demo build no longer aborts an otherwise-green deploy. The `.NET` demos carry their own
+  `stage/demo-apps/global.json` (permissive `rollForward`) so they build on any recent SDK,
+  independent of the product's pinned SDK (a lagging box SDK no longer breaks the seed).
