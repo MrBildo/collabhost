@@ -4,6 +4,10 @@
 # Claude Code (instance-local)
 .claude/*
 
+# Project instructions (instance-local) -- holds internal team/coordination
+# detail; kept untracked so internals are never published to the public repo.
+/CLAUDE.md
+
 # Auth keys
 .agents.env
 
