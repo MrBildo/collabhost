@@ -77,8 +77,10 @@ echo "== deploy kit -> /opt/collabhost-stage/deploy (root:root hard invariant) =
 if [ -n "$KIT" ]; then
   [ -f "$KIT/deploy-stage.sh" ] || { echo "kit '$KIT' has no deploy-stage.sh -- pass the repo stage/ dir"; exit 1; }
   if command -v rsync >/dev/null 2>&1; then
-    rsync -a --exclude='/box/' "$KIT"/ /opt/collabhost-stage/deploy/   # box/ = these stand-up artifacts, not the runtime kit
+    rsync -a --delete --exclude='/box/' --exclude='/stage-privop' "$KIT"/ /opt/collabhost-stage/deploy/   # mirror: --delete prunes files dropped from source; box/ (stand-up artifacts) + stage-privop (re-laid below) protected from deletion
   else
+    # mirror: drop top-level kit entries (preserve separately-laid stage-privop), then extract
+    find /opt/collabhost-stage/deploy -mindepth 1 -maxdepth 1 ! -name stage-privop -exec rm -rf {} +
     ( cd "$KIT" && tar --exclude=./box -cf - . ) | ( cd /opt/collabhost-stage/deploy && tar -xf - )
   fi
 else
