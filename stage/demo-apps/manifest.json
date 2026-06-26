@@ -1,11 +1,15 @@
 {
   "_comment": [
-    "Curated demo set for the Collabhost stage instance (card #443).",
+    "Curated demo set for the Collabhost stage instance (cards #443 / #440).",
     "Data-driven: deploy-stage.sh's seed (seed-demo-apps.sh) reads this file and",
     "registers every app whose slug is not already present (register-if-absent,",
-    "idempotent). The FINAL curated selection is a Dana/Bill call (it drives the",
-    "#440 screenshots) -- this is a sensible placeholder covering every distinct",
-    "dashboard row shape. Edit/add/remove entries here; no script change needed.",
+    "idempotent). This curated selection drives the #440 doc screenshots -- it is a",
+    "Dana/Bill call. It covers every distinct dashboard row shape with realistic,",
+    "operator-recognizable apps: two .NET services (one carrying real NuGet refs so",
+    "the Technology tab shows a populated dependency probe), two Node services (one",
+    "left STOPPED for status variety), a static docs site, an external route, and",
+    "two supervised internal services (a database + a key-value store -- the",
+    "canonical internal-service shapes).",
     "",
     "Per-app fields:",
     "  slug, displayName, appType   -- registration identity + type",
@@ -18,10 +22,10 @@
   ],
   "apps": [
     {
-      "slug": "demo-dotnet-api",
-      "displayName": "Demo .NET API",
+      "slug": "metrics-api",
+      "displayName": "Metrics API",
       "appType": "dotnet-app",
-      "artifactSource": "demo-dotnet-api",
+      "artifactSource": "metrics-api",
       "artifactSubpath": "publish",
       "build": "dotnet publish -c Release -o publish --nologo",
       "requires": "dotnet",
@@ -31,10 +35,23 @@
       }
     },
     {
-      "slug": "demo-node-widget",
-      "displayName": "Demo Node Widget",
+      "slug": "auth-service",
+      "displayName": "Auth Service",
+      "appType": "dotnet-app",
+      "artifactSource": "auth-service",
+      "artifactSubpath": "publish",
+      "build": "dotnet publish -c Release -o publish --nologo",
+      "requires": "dotnet",
+      "start": true,
+      "values": {
+        "artifact": { "location": "{artifact}" }
+      }
+    },
+    {
+      "slug": "webhook-relay",
+      "displayName": "Webhook Relay",
       "appType": "nodejs-app",
-      "artifactSource": "demo-node-widget",
+      "artifactSource": "webhook-relay",
       "artifactSubpath": "",
       "build": "npm install --omit=dev --no-audit --no-fund",
       "requires": "npm node",
@@ -44,10 +61,23 @@
       }
     },
     {
-      "slug": "demo-static-site",
-      "displayName": "Demo Static Site",
+      "slug": "notify-worker",
+      "displayName": "Notification Worker",
+      "appType": "nodejs-app",
+      "artifactSource": "notify-worker",
+      "artifactSubpath": "",
+      "build": "npm install --omit=dev --no-audit --no-fund",
+      "requires": "npm node",
+      "start": false,
+      "values": {
+        "artifact": { "location": "{artifact}" }
+      }
+    },
+    {
+      "slug": "internal-docs",
+      "displayName": "Internal Docs",
       "appType": "static-site",
-      "artifactSource": "demo-static-site",
+      "artifactSource": "internal-docs",
       "artifactSubpath": "",
       "build": "",
       "requires": "",
@@ -57,8 +87,8 @@
       }
     },
     {
-      "slug": "demo-external-route",
-      "displayName": "Demo External Route",
+      "slug": "grafana",
+      "displayName": "Grafana",
       "appType": "external-route",
       "build": "",
       "requires": "",
@@ -68,20 +98,38 @@
       }
     },
     {
-      "slug": "demo-internal-heartbeat",
-      "displayName": "Demo Internal Service",
+      "slug": "postgres",
+      "displayName": "Postgres",
       "appType": "internal-service",
-      "artifactSource": "demo-internal-heartbeat",
-      "artifactSubpath": "publish",
-      "build": "dotnet publish -c Release -o publish --nologo",
-      "requires": "dotnet",
+      "artifactSource": "postgres",
+      "artifactSubpath": "",
+      "build": "",
+      "requires": "node",
       "start": true,
       "values": {
         "artifact": { "location": "{artifact}" },
         "process": {
           "discoveryStrategy": "Manual",
-          "command": "dotnet",
-          "arguments": "{artifact}/demo-internal-heartbeat.dll"
+          "command": "node",
+          "arguments": "{artifact}/heartbeat.js postgres"
+        }
+      }
+    },
+    {
+      "slug": "valkey",
+      "displayName": "Valkey",
+      "appType": "internal-service",
+      "artifactSource": "valkey",
+      "artifactSubpath": "",
+      "build": "",
+      "requires": "node",
+      "start": true,
+      "values": {
+        "artifact": { "location": "{artifact}" },
+        "process": {
+          "discoveryStrategy": "Manual",
+          "command": "node",
+          "arguments": "{artifact}/heartbeat.js valkey"
         }
       }
     }

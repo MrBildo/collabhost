@@ -1,5 +1,0 @@
-{
-  "appName": "Demo Static Site",
-  "environment": "stage",
-  "note": "Demonstrates the static-site runtime-config-file capability (card #443)."
-}

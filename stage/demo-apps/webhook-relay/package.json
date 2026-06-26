@@ -1,8 +1,8 @@
 {
-  "name": "demo-node-widget",
+  "name": "webhook-relay",
   "version": "1.0.0",
   "private": true,
-  "description": "Collabhost stage demo - Node.js widget service (card #443)",
+  "description": "Collabhost stage demo - Node.js HTTP service (card #440)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
