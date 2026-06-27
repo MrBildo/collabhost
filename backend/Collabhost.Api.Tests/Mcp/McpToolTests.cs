@@ -825,6 +825,45 @@ public class McpToolTests(ApiFixture fixture)
         }
     }
 
+    [Fact]
+    public async Task RegisterApp_UnknownCapabilitySection_ReturnsError_DoesNotCreateApp()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var appName = $"mcp-unknown-section-{suffix}";
+
+        var (tools, scope) = CreateRegistrationTools();
+        using var _ = scope;
+
+        // #436, MCP surface: a capability section the resolved app type does not bind is rejected at
+        // registration. external-route binds neither process nor artifact, so installDirectory is
+        // not required (passed null); the MCP adapter parses the raw `settings` JSON and carries the
+        // unknown "garbage" section through to CreateAppOperation, which trips the strict-at-create
+        // reject -> tool error, and no app row is created.
+        var result = await tools.RegisterAppAsync
+        (
+            appName,
+            "external-route",
+            installDirectory: null,
+            settings: "{\"garbage\":{\"foo\":\"bar\"}}",
+            authKey: ApiFixture.AdminKey,
+            CancellationToken.None
+        );
+
+        (result.IsError ?? false).ShouldBeTrue();
+        GetFirstText(result).ShouldContain("Unknown capability section");
+
+        using var getRequest = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{appName}");
+        getRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+        var getResponse = await _client.SendAsync(getRequest);
+
+        getResponse.StatusCode.ShouldBe
+        (
+            HttpStatusCode.NotFound,
+            "App should not exist after a rejected MCP registration with an unknown capability section"
+        );
+    }
+
     // Card #406 PR 6, F-1 lock-test: the disclosed, deliberate parse-before-exists ordering on the MCP
     // surface. A doubly-invalid register_app -- an EXISTING slug AND malformed settings JSON -- now
     // surfaces the JSON-parse error (built at the adapter, before the operation runs), NOT the

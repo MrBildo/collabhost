@@ -173,6 +173,63 @@ public sealed class CreateAppOperationTests : IDisposable
     }
 
     [Fact]
+    public async Task UnknownCapabilitySection_ReturnsValidation_NoApp_NoEvent()
+    {
+        var (operation, _) = await CreateOperationAsync();
+
+        // #436: a section the resolved app type does not bind ("garbage" is not a capability at
+        // all) is rejected at registration, transactionally -- no row, no event. Before the fix
+        // CapabilityResolver.ValidateEdits returned zero errors for an unknown section (GetSchema
+        // null) so junk persisted silently. The reject message names the offending section.
+        var overrides = new JsonObject
+        {
+            ["garbage"] = new JsonObject { ["foo"] = "bar" }
+        };
+
+        var result = await operation.ExecuteAsync
+        (
+            new CreateAppCommand("junk-cfg", "Junk Config", "static-site", overrides),
+            CancellationToken.None
+        );
+
+        result.IsSuccess.ShouldBeFalse();
+        result.FailureKind.ShouldBe(OperationFailureKind.Validation);
+        result.Error.ShouldNotBeNullOrEmpty();
+        result.Error!.ShouldContain("garbage");
+
+        await AssertAppCountAsync(0);
+        await AssertNoEventRecordedAsync();
+    }
+
+    [Fact]
+    public async Task CatalogKnownButTypeUnboundSection_ReturnsValidation_NoApp()
+    {
+        var (operation, _) = await CreateOperationAsync();
+
+        // #436: the membership test is the RESOLVED TYPE'S bindings, not the builtin catalog.
+        // `process` is a real catalog capability (its schema is non-null), but static-site does
+        // not BIND it -- so a process override on a static-site must reject. This is the property
+        // that distinguishes "validate against the type's bindings" from "validate against the
+        // catalog"; the latter would wrongly accept this.
+        var overrides = new JsonObject
+        {
+            ["process"] = new JsonObject { ["command"] = "/usr/bin/whatever" }
+        };
+
+        var result = await operation.ExecuteAsync
+        (
+            new CreateAppCommand("unbound-cfg", "Unbound Config", "static-site", overrides),
+            CancellationToken.None
+        );
+
+        result.IsSuccess.ShouldBeFalse();
+        result.FailureKind.ShouldBe(OperationFailureKind.Validation);
+        result.Error!.ShouldContain("process");
+
+        await AssertAppCountAsync(0);
+    }
+
+    [Fact]
     public async Task StaticSite_Created_RecordsOneEvent_RouteDisabled_EmitsHint()
     {
         var (operation, proxy) = await CreateOperationAsync();
