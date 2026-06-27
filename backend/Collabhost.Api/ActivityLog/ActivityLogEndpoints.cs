@@ -1,6 +1,5 @@
-using System.Globalization;
-
 using Collabhost.Api.Authorization;
+using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.ActivityLog;
 
@@ -65,7 +64,7 @@ public static class ActivityLogEndpoints
 
         return new ActivityEventItem
         (
-            Id: e.Id.ToString(null, CultureInfo.InvariantCulture),
+            Id: e.Id.ToCanonicalString(),
             EventType: e.EventType,
             ActorId: e.ActorId,
             ActorName: e.ActorName,

@@ -1,5 +1,5 @@
-using System.Globalization;
 using Collabhost.Api.Data;
+using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.Authorization;
 
@@ -80,7 +80,7 @@ public class UserStore
         {
             Id = Ulid.NewUlid(),
             Name = name,
-            AuthKey = Ulid.NewUlid().ToString(null, CultureInfo.InvariantCulture),
+            AuthKey = Ulid.NewUlid().ToCanonicalString(),
             Role = role
         };
 

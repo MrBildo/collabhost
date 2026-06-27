@@ -1,8 +1,7 @@
-using System.Globalization;
-
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Registry;
+using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.Operations;
 
@@ -69,7 +68,7 @@ public abstract class Operation<TCommand, TResult>
         return RecordAsync
         (
             eventType,
-            app.Id.ToString(null, CultureInfo.InvariantCulture),
+            app.Id.ToCanonicalString(),
             app.Slug,
             metadataJson: null,
             ct
@@ -98,7 +97,7 @@ public abstract class Operation<TCommand, TResult>
         var activityEvent = new ActivityEvent
         {
             EventType = eventType,
-            ActorId = _currentUser.UserId.ToString(null, CultureInfo.InvariantCulture),
+            ActorId = _currentUser.UserId.ToCanonicalString(),
             ActorName = _currentUser.User.Name,
             AppId = appId,
             AppSlug = appSlug,

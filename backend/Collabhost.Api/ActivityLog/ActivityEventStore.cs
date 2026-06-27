@@ -1,6 +1,7 @@
 using System.Globalization;
 
 using Collabhost.Api.Data;
+using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.ActivityLog;
 
@@ -116,7 +117,7 @@ public class ActivityEventStore
             items.RemoveAt(items.Count - 1);
         }
 
-        var nextCursor = hasMore ? items[^1].Id.ToString(null, CultureInfo.InvariantCulture) : null;
+        var nextCursor = hasMore ? items[^1].Id.ToCanonicalString() : null;
 
         return new ActivityEventPage(items, nextCursor, hasMore);
     }

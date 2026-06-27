@@ -5,6 +5,7 @@ using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
+using Collabhost.Api.Shared;
 using Collabhost.Api.Supervisor;
 
 namespace Collabhost.Api.Dashboard;
@@ -55,8 +56,9 @@ public static class DashboardEndpoints
             var hasRouting = typeStore.HasBinding(app.AppTypeSlug, "routing");
             var routeEnabled = hasRouting && proxy.IsRouteEnabled(app.Slug);
 
-            // Use the same resolver as AppEndpoints so both strips agree on what "running" means.
-            var state = AppEndpoints.ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
+            // Use the shared resolver so the dashboard strip and the app list agree on what
+            // "running" means.
+            var state = AppStatusResolver.Resolve(hasProcess, process, hasRouting, routeEnabled);
 
             switch (state)
             {
@@ -118,7 +120,7 @@ public static class DashboardEndpoints
 
         var items = events.Select(e => new DashboardEventResponse
         (
-            Id: e.Id.ToString(null, CultureInfo.InvariantCulture),
+            Id: e.Id.ToCanonicalString(),
             Timestamp: e.Timestamp,
             Message: FormatEventMessage(e),
             AppSlug: e.AppSlug,

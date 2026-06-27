@@ -164,14 +164,7 @@ public class ProcessSupervisor
                     {
                         await _activityEventStore.RecordAsync
                         (
-                            new ActivityEvent
-                            {
-                                EventType = ActivityEventTypes.AppAutoStarted,
-                                ActorId = ActivityActor.SystemId,
-                                ActorName = ActivityActor.SystemName,
-                                AppId = app.Id.ToString(null, CultureInfo.InvariantCulture),
-                                AppSlug = app.Slug
-                            },
+                            ActivityEvent.ForSystem(ActivityEventTypes.AppAutoStarted, app.Id, app.Slug),
                             CancellationToken.None
                         );
                     }
@@ -880,15 +873,13 @@ public class ProcessSupervisor
             {
                 _activityEventStore.RecordAsync
                 (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppFatal,
-                        ActorId = ActivityActor.SystemId,
-                        ActorName = ActivityActor.SystemName,
-                        AppId = appId.ToString(null, CultureInfo.InvariantCulture),
-                        AppSlug = process.AppSlug,
-                        MetadataJson = JsonSerializer.Serialize(new { failureCount = process.StartupFailures })
-                    },
+                    ActivityEvent.ForSystem
+                    (
+                        ActivityEventTypes.AppFatal,
+                        appId,
+                        process.AppSlug,
+                        JsonSerializer.Serialize(new { failureCount = process.StartupFailures })
+                    ),
                     CancellationToken.None
                 ).GetAwaiter().GetResult();
             }
@@ -1035,15 +1026,13 @@ public class ProcessSupervisor
         {
             _activityEventStore.RecordAsync
             (
-                new ActivityEvent
-                {
-                    EventType = ActivityEventTypes.AppCrashed,
-                    ActorId = ActivityActor.SystemId,
-                    ActorName = ActivityActor.SystemName,
-                    AppId = appId.ToString(null, CultureInfo.InvariantCulture),
-                    AppSlug = process.AppSlug,
-                    MetadataJson = JsonSerializer.Serialize(new { exitCode })
-                },
+                ActivityEvent.ForSystem
+                (
+                    ActivityEventTypes.AppCrashed,
+                    appId,
+                    process.AppSlug,
+                    JsonSerializer.Serialize(new { exitCode })
+                ),
                 CancellationToken.None
             ).GetAwaiter().GetResult();
         }
@@ -1089,15 +1078,13 @@ public class ProcessSupervisor
             {
                 _activityEventStore.RecordAsync
                 (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppFatal,
-                        ActorId = ActivityActor.SystemId,
-                        ActorName = ActivityActor.SystemName,
-                        AppId = appId.ToString(null, CultureInfo.InvariantCulture),
-                        AppSlug = process.AppSlug,
-                        MetadataJson = JsonSerializer.Serialize(new { failureCount = process.RestartCount })
-                    },
+                    ActivityEvent.ForSystem
+                    (
+                        ActivityEventTypes.AppFatal,
+                        appId,
+                        process.AppSlug,
+                        JsonSerializer.Serialize(new { failureCount = process.RestartCount })
+                    ),
                     CancellationToken.None
                 ).GetAwaiter().GetResult();
             }
@@ -1172,18 +1159,16 @@ public class ProcessSupervisor
                     {
                         await _activityEventStore.RecordAsync
                         (
-                            new ActivityEvent
-                            {
-                                EventType = ActivityEventTypes.AppAutoRestarted,
-                                ActorId = ActivityActor.SystemId,
-                                ActorName = ActivityActor.SystemName,
-                                AppId = appId.ToString(null, CultureInfo.InvariantCulture),
-                                AppSlug = process.AppSlug,
-                                MetadataJson = JsonSerializer.Serialize
+                            ActivityEvent.ForSystem
+                            (
+                                ActivityEventTypes.AppAutoRestarted,
+                                appId,
+                                process.AppSlug,
+                                JsonSerializer.Serialize
                                 (
                                     new { restartCount = process.RestartCount, exitCode }
                                 )
-                            },
+                            ),
                             CancellationToken.None
                         );
                     }

@@ -1,5 +1,3 @@
-using System.Globalization;
-
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data;
@@ -110,14 +108,7 @@ public class ProxyAppSeeder
         {
             await _activityEventStore.RecordAsync
             (
-                new ActivityEvent
-                {
-                    EventType = ActivityEventTypes.AppSeeded,
-                    ActorId = ActivityActor.SystemId,
-                    ActorName = ActivityActor.SystemName,
-                    AppId = proxyApp.Id.ToString(null, CultureInfo.InvariantCulture),
-                    AppSlug = proxyApp.Slug
-                },
+                ActivityEvent.ForSystem(ActivityEventTypes.AppSeeded, proxyApp.Id, proxyApp.Slug),
                 CancellationToken.None
             );
         }
