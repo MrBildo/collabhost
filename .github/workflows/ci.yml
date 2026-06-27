@@ -188,6 +188,45 @@ jobs:
           fi
           echo "All cases pass."
 
+  source-comment-refs:
+    name: Source comment refs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Fail a PR when an added/modified line introduces an unresolvable internal
+    # reference (bare #N, Card #N, .agents/specs path, §N section) inside a
+    # source comment, across backend/**/*.cs and frontend/src/**/*.{ts,tsx}.
+    # The check is changed-lines-only (it does not require scrubbing the
+    # existing tree) and matches only within comment context, so a hex colour
+    # like "#123456" in code or a #region directive never false-positives.
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history so the changed-lines diff has a merge-base to work from.
+          fetch-depth: 0
+      - name: Self-test the linter
+        run: bash tools/test-source-comment-refs.sh
+      - name: Lint changed source comments
+        shell: bash
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PR_BASE}" ]; then
+            # Pull request: diff against the PR's base branch.
+            git fetch --no-tags origin "+refs/heads/${PR_BASE}:refs/remotes/origin/${PR_BASE}"
+            BASE="origin/${PR_BASE}"
+          else
+            # Push: diff against the commit the branch pointed at before the push.
+            BASE="${PUSH_BEFORE}"
+          fi
+          if [ -z "${BASE}" ] || [ "${BASE}" = "0000000000000000000000000000000000000000" ]; then
+            echo "No resolvable diff base (new branch / initial push); self-test only."
+            exit 0
+          fi
+          echo "Diffing against base: ${BASE}"
+          python3 tools/lint-source-comment-refs.py --diff "${BASE}"
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
