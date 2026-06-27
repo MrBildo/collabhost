@@ -23,7 +23,7 @@ public class ProxyAppSeederTests
 {
     // Card #196: bare-name PATH walking was removed. A name without a directory
     // separator now fails File.Exists and returns null. Operators routing to a
-    // system Caddy must use COLLABHOST_CADDY_PATH with an absolute path.
+    // system Caddy must use COLLABHOST_PROXY_BINARY_PATH with an absolute path.
     [Fact]
     public void ResolveBinaryPathSetting_BareName_ReturnsNull() =>
         CaddyResolver.ResolveBinaryPathSetting(OperatingSystem.IsWindows() ? "where" : "sh")

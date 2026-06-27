@@ -55,7 +55,7 @@ public class ProxyAppSeeder
         }
 
         // CaddyResolver is the single source of truth for binary resolution.
-        // Precedence: COLLABHOST_CADDY_PATH env > Proxy:BinaryPath config > null.
+        // Precedence: COLLABHOST_PROXY_BINARY_PATH env > Proxy:BinaryPath config > null.
         // Returns null when no Caddy is configured -- proxy subsystem soft-fails.
         var resolvedPath = CaddyResolver.Resolve(_settings, _logger);
 
@@ -64,8 +64,8 @@ public class ProxyAppSeeder
             _logger.LogWarning
             (
                 "No Caddy binary configured -- proxy subsystem disabled. " +
-                "Resolution order: COLLABHOST_CADDY_PATH env var, then Proxy:BinaryPath in appsettings.json. " +
-                "Re-run the installer to seed the bundled-sidecar path, or set COLLABHOST_CADDY_PATH " +
+                "Resolution order: COLLABHOST_PROXY_BINARY_PATH env var, then Proxy:BinaryPath in appsettings.json. " +
+                "Re-run the installer to seed the bundled-sidecar path, or set COLLABHOST_PROXY_BINARY_PATH " +
                 "to an absolute path. proxyState will report 'disabled' on /api/v1/status until resolved."
             );
 

@@ -38,9 +38,9 @@ The shipped installer (`docs/install.ps1` / `docs/install.sh`) seeds `Proxy:Bina
 }
 ```
 
-The resolver reads env var > appsettings > null. `COLLABHOST_CADDY_PATH` (env var) is the alternative if you'd rather not edit a settings file.
+The resolver reads env var > appsettings > null. `COLLABHOST_PROXY_BINARY_PATH` (env var) is the alternative if you'd rather not edit a settings file.
 
-**Getting a Caddy binary:** download from [caddyserver.com](https://caddyserver.com/docs/install) into `tools/caddy/`, or install globally with `winget install CaddyServer.Caddy` (Windows) / `sudo apt install caddy` (Linux). For a global install, point `Proxy:BinaryPath` (or `COLLABHOST_CADDY_PATH`) at the absolute path of the system binary.
+**Getting a Caddy binary:** download from [caddyserver.com](https://caddyserver.com/docs/install) into `tools/caddy/`, or install globally with `winget install CaddyServer.Caddy` (Windows) / `sudo apt install caddy` (Linux). For a global install, point `Proxy:BinaryPath` (or `COLLABHOST_PROXY_BINARY_PATH`) at the absolute path of the system binary.
 
 **Vanilla vs plugin-baked Caddy.** A vanilla Caddy is fine for everyday dev — the proxy defaults to Caddy's internal CA, which doesn't depend on any DNS plugin. The CI release pipeline produces a Caddy with `caddy-dns/cloudflare` (and any other plugins listed in `caddy-plugins.txt`) baked in via `xcaddy`; that binary is what end users get. If you're locally exercising the ACME branch (`Proxy:DnsProvider` set), you need the plugin-baked binary too. Reproduce the CI build locally with `tools/build-caddy.ps1` (Windows) or `tools/build-caddy.sh` (Linux/macOS); both read the same pin files (`caddy.version`, `xcaddy.version`, `caddy-plugins.txt`) the CI workflow does. Requires [Go](https://go.dev/dl/) on PATH.
 

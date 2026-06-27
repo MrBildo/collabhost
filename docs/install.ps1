@@ -454,10 +454,10 @@ try
     {
         # Non-fatal -- if we can't parse appsettings.json (operator has hand-edited it
         # into invalid JSON, for instance), fall through. The operator can set
-        # COLLABHOST_CADDY_PATH or fix the file by hand. Surface the failure so they
+        # COLLABHOST_PROXY_BINARY_PATH or fix the file by hand. Surface the failure so they
         # know to investigate.
         Write-Host "Warning: could not seed Proxy:BinaryPath in appsettings.json -- $($_.Exception.Message)"
-        Write-Host "Set COLLABHOST_CADDY_PATH to '$BundledCaddyPath' or repair the file by hand."
+        Write-Host "Set COLLABHOST_PROXY_BINARY_PATH to '$BundledCaddyPath' or repair the file by hand."
     }
 
     # data/ is never in the archive -- leave any existing directory untouched.

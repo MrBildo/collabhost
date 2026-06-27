@@ -246,7 +246,7 @@ describe('proxyStateDetail', () => {
   })
 
   test('disabled points at the env var and installer', () => {
-    expect(proxyStateDetail('disabled')).toBe('Re-run the installer or set COLLABHOST_CADDY_PATH')
+    expect(proxyStateDetail('disabled')).toBe('Re-run the installer or set COLLABHOST_PROXY_BINARY_PATH')
   })
 
   test('starting is transient warm-up text', () => {

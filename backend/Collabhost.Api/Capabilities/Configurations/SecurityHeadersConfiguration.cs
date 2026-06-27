@@ -121,7 +121,7 @@ public class SecurityHeadersConfiguration
                 + "Key is the HTTP header name (e.g. `X-Content-Type-Options`, `Referrer-Policy`); "
                 + "value is the header value (e.g. `nosniff`, `strict-origin-when-cross-origin`). "
                 + "When the upstream emits the same header, Collabhost's value wins "
-                + "(Caddy's `response.set` overwrites, it does not merge). "
+                + "(the proxy overwrites it, it does not merge). "
                 + "To suppress a type-level default header on this app, set its value to empty "
                 + "(the emitter drops empty-valued entries) -- this is the operator escape hatch "
                 + "for the `X-Content-Type-Options: nosniff` platform default. "

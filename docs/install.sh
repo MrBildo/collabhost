@@ -271,7 +271,7 @@ seed_with_awk() {
   # Fallback: targets the known seed shape ("BinaryPath": "" inside a Proxy
   # block) and rewrites it in place. Only used when python3 is unavailable.
   # Bails (no rewrite) if the seed shape isn't present -- the operator will
-  # have to set the key by hand or use COLLABHOST_CADDY_PATH.
+  # have to set the key by hand or use COLLABHOST_PROXY_BINARY_PATH.
   awk -v bundled="${BUNDLED_CADDY_PATH}" '
     BEGIN { in_proxy = 0; replaced = 0 }
     /"Proxy"[[:space:]]*:[[:space:]]*\{/ { in_proxy = 1; print; next }
@@ -287,12 +287,12 @@ seed_with_awk() {
 if command -v python3 >/dev/null 2>&1; then
   if ! seed_with_python; then
     echo "Warning: could not seed Proxy:BinaryPath in appsettings.json via python3." >&2
-    echo "Set COLLABHOST_CADDY_PATH to '${BUNDLED_CADDY_PATH}' or repair the file by hand." >&2
+    echo "Set COLLABHOST_PROXY_BINARY_PATH to '${BUNDLED_CADDY_PATH}' or repair the file by hand." >&2
   fi
 else
   if ! seed_with_awk; then
     echo "Warning: could not seed Proxy:BinaryPath in appsettings.json via awk." >&2
-    echo "Set COLLABHOST_CADDY_PATH to '${BUNDLED_CADDY_PATH}' or repair the file by hand." >&2
+    echo "Set COLLABHOST_PROXY_BINARY_PATH to '${BUNDLED_CADDY_PATH}' or repair the file by hand." >&2
   fi
 fi
 

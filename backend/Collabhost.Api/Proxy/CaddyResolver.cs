@@ -12,14 +12,14 @@ namespace Collabhost.Api.Proxy;
 // "disabled" state until they configure something.
 public static class CaddyResolver
 {
-    public const string EnvVarName = "COLLABHOST_CADDY_PATH";
+    public const string EnvVarName = "COLLABHOST_PROXY_BINARY_PATH";
 
     public static string? Resolve(ProxySettings settings, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(logger);
 
-        // 1. COLLABHOST_CADDY_PATH env var -- highest precedence among operator-visible sources.
+        // 1. COLLABHOST_PROXY_BINARY_PATH env var -- highest precedence among operator-visible sources.
         var envOverride = Environment.GetEnvironmentVariable(EnvVarName);
 
         if (!string.IsNullOrWhiteSpace(envOverride))
