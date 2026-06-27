@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Threading.Channels;
 
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Events;
 using Collabhost.Api.Registry;
 using Collabhost.Api.Shared;
@@ -29,7 +30,12 @@ public static class LogStreamEndpoints
     {
         var group = routes.MapGroup("/api/v1/apps").WithTags("Apps");
 
-        group.MapGet("/{slug}/logs/stream", StreamAppLogsAsync);
+        // The live log stream carries the same content as the /logs snapshot (which can include
+        // secrets), so it gates to Agent -- the read-only tier is refused. The role filter runs
+        // before the handler, so a read-only key is rejected before any stream is opened.
+        group
+            .MapGet("/{slug}/logs/stream", StreamAppLogsAsync)
+            .AddEndpointFilter(new RequireRoleFilter(UserRole.Agent));
     }
 
     private static async Task StreamAppLogsAsync

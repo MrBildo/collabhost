@@ -1,14 +1,20 @@
 using System.Globalization;
 
+using Collabhost.Api.Authorization;
+
 namespace Collabhost.Api.ActivityLog;
 
 public static class ActivityLogEndpoints
 {
     public static void Map(IEndpointRouteBuilder routes)
     {
+        // Activity events carry operational history (who started/stopped/killed what, settings
+        // changes, user lifecycle) and can include actor and metadata detail. Gated to Agent so
+        // the read-only observability tier is refused -- it sees current status, not the trail.
         var group = routes
             .MapGroup("/api/v1/events")
-            .WithTags("ActivityLog");
+            .WithTags("ActivityLog")
+            .AddEndpointFilter(new RequireRoleFilter(UserRole.Agent));
 
         group.MapGet("/", QueryEventsAsync);
     }
