@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
@@ -457,6 +459,40 @@ await using (var userSeedScope = app.Services.CreateAsyncScope())
     try
     {
         await userSeeder.SeedAsync(CancellationToken.None);
+    }
+    catch (AdminKeyConfigurationException ex)
+    {
+        // Operator misconfiguration -- a configured admin key that violates the AuthKey schema.
+        // Distinct from the generic seeder-failure catch below so the operator gets actionable
+        // recovery (fix the key) rather than the DB-corruption guidance. Same exit 40 (seeding-phase
+        // halt); the stderr summary is what distinguishes the two for an operator / smoke test.
+        app.Logger.LogCritical
+        (
+            ex,
+            "Startup halted: configured admin key is invalid (length {Length}, max {Max})",
+            ex.ConfiguredKeyLength,
+            ex.MaxKeyLength
+        );
+
+        StartupStderr.WriteAndPersist
+        (
+            "configured admin key is invalid",
+            [
+                ("Configured key length", ex.ConfiguredKeyLength.ToString(CultureInfo.InvariantCulture)),
+                ("Maximum allowed length", ex.MaxKeyLength.ToString(CultureInfo.InvariantCulture))
+            ],
+            [
+                "Set Auth:AdminKey (or the COLLABHOST_ADMIN_KEY environment variable) to a key no longer than 26 characters.",
+                "Collabhost-generated admin keys are 26-character ULIDs -- match that shape.",
+                "Or unset the configured key and let Collabhost generate one on first run (printed to stdout as 'Collabhost admin key:')."
+            ],
+            40,
+            crashLogDir,
+            crashLogRetention,
+            ex
+        );
+
+        return 40;
     }
     catch (Exception ex)
     {

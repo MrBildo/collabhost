@@ -144,7 +144,7 @@ public class UserSeedServiceTests : IAsyncLifetime
     [Fact]
     public async Task SeedAsync_Scenario2_EmptyDbWithConfiguredKey_InsertsAdminAndSuppressesStdout()
     {
-        const string ConfiguredKey = "01SCENARIO2KEY0000000000AA";
+        const string ConfiguredKey = "01KW5KB5AMWMRC8KN5JKZ9BYCV";
 
         var capture = new CapturingLogger<UserSeedService>();
         var service = CreateService(configuredAdminKey: ConfiguredKey, capture);
@@ -168,8 +168,8 @@ public class UserSeedServiceTests : IAsyncLifetime
     public async Task SeedAsync_Scenario3_DbHasUsersConfiguredKeyIsNew_InsertsAdditionalAdmin()
     {
         // Seed an initial admin (Scenario 1/2 equivalent) so the DB has users.
-        const string ExistingKey = "01EXISTING0ADMIN0KEY000000";
-        const string NewKey = "01BREAK0GLASS0KEY0000000AA";
+        const string ExistingKey = "01KW5KB5APT8PK1FS19DVCY2Q7";
+        const string NewKey = "01KW5KB5AP4FC4EDM2YE5GGPTC";
 
         await InsertUserAsync("Admin", ExistingKey, UserRole.Administrator);
 
@@ -188,8 +188,8 @@ public class UserSeedServiceTests : IAsyncLifetime
     [Fact]
     public async Task SeedAsync_Scenario3_PreservesExistingAdminRoleAndName()
     {
-        const string ExistingKey = "01EXISTING0ADMIN0KEY000000";
-        const string NewKey = "01BREAK0GLASS0KEY0000000AA";
+        const string ExistingKey = "01KW5KB5APT8PK1FS19DVCY2Q7";
+        const string NewKey = "01KW5KB5AP4FC4EDM2YE5GGPTC";
 
         await InsertUserAsync("Custom Admin Name", ExistingKey, UserRole.Administrator);
 
@@ -210,7 +210,7 @@ public class UserSeedServiceTests : IAsyncLifetime
     [Fact]
     public async Task SeedAsync_Idempotent_ConfiguredKeyMatchesExistingUser_NoOp()
     {
-        const string MatchingKey = "01MATCHING0ADMIN0KEY000000";
+        const string MatchingKey = "01KW5KB5AP9NCV4A890FTXEXCP";
 
         await InsertUserAsync("Admin", MatchingKey, UserRole.Administrator);
 
@@ -231,9 +231,9 @@ public class UserSeedServiceTests : IAsyncLifetime
         // Idempotency check is against any user's AuthKey, not just admins. If the configured
         // key happens to collide with an Agent's key, we treat it as a match and do not
         // insert a new admin (the operator would notice the config collision).
-        const string MatchingKey = "01AGENT0KEY000000000000000";
+        const string MatchingKey = "01KW5KB5AP98ZCEYX8DKAJZ7E8";
 
-        await InsertUserAsync("Existing Admin", "01EXISTING0ADMIN0KEY000000", UserRole.Administrator);
+        await InsertUserAsync("Existing Admin", "01KW5KB5APT8PK1FS19DVCY2Q7", UserRole.Administrator);
         await InsertUserAsync("Agent", MatchingKey, UserRole.Agent);
 
         var service = CreateService(configuredAdminKey: MatchingKey);
@@ -248,7 +248,7 @@ public class UserSeedServiceTests : IAsyncLifetime
     [Fact]
     public async Task SeedAsync_Idempotent_NoConfiguredKeyDbHasUsers_NoOp()
     {
-        const string ExistingKey = "01EXISTING0ADMIN0KEY000000";
+        const string ExistingKey = "01KW5KB5APT8PK1FS19DVCY2Q7";
 
         await InsertUserAsync("Admin", ExistingKey, UserRole.Administrator);
 
@@ -266,7 +266,7 @@ public class UserSeedServiceTests : IAsyncLifetime
     [Fact]
     public async Task SeedAsync_RestartWithSameConfiguredKey_StableSingleAdmin()
     {
-        const string ConfiguredKey = "01STABLE0KEY0000000000000A";
+        const string ConfiguredKey = "01KW5KB5APHF940SV6DWJS9Y52";
 
         var service = CreateService(configuredAdminKey: ConfiguredKey);
 
@@ -283,6 +283,75 @@ public class UserSeedServiceTests : IAsyncLifetime
 
         users.Count.ShouldBe(1);
         users[0].AuthKey.ShouldBe(ConfiguredKey);
+    }
+
+    // -- Configured-key shape validation (#168 MED) ----------------------
+
+    [Fact]
+    public async Task SeedAsync_ConfiguredKeyExceedsMaxLength_EmptyDb_ThrowsAndLeavesDbEmpty()
+    {
+        // One character over the AuthKey schema length. SQLite would silently persist it (MaxLength
+        // is not enforced at the DB layer), so the seed path must fail loud instead of accepting a
+        // schema-violating key.
+        var overLongKey = new string('A', User.AuthKeyMaxLength + 1);
+
+        var service = CreateService(configuredAdminKey: overLongKey);
+
+        var ex = await Should.ThrowAsync<AdminKeyConfigurationException>
+        (
+            () => service.SeedAsync(CancellationToken.None)
+        );
+
+        ex.ConfiguredKeyLength.ShouldBe(User.AuthKeyMaxLength + 1);
+        ex.MaxKeyLength.ShouldBe(User.AuthKeyMaxLength);
+
+        var users = await GetUsersAsync();
+
+        // Validation runs before any DB write -- no partial seed.
+        users.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task SeedAsync_ConfiguredKeyExceedsMaxLength_DbHasUsers_ThrowsBeforeAdditionalInsert()
+    {
+        const string ExistingKey = "01KW5KB5APT8PK1FS19DVCY2Q7";
+
+        await InsertUserAsync("Admin", ExistingKey, UserRole.Administrator);
+
+        var overLongKey = new string('B', User.AuthKeyMaxLength + 5);
+
+        var service = CreateService(configuredAdminKey: overLongKey);
+
+        await Should.ThrowAsync<AdminKeyConfigurationException>
+        (
+            () => service.SeedAsync(CancellationToken.None)
+        );
+
+        var users = await GetUsersAsync();
+
+        // Scenario 3 (break-glass) validation gates the additive insert -- existing admin
+        // untouched, no new row from the rejected key.
+        users.Count.ShouldBe(1);
+        users[0].AuthKey.ShouldBe(ExistingKey);
+    }
+
+    [Fact]
+    public async Task SeedAsync_ConfiguredKeyShorterThanMax_NonUlid_SeedsWithoutRejection()
+    {
+        // Length-only validation against the schema: a short custom key is still functional
+        // (AuthKeyResolver compares by string equality), so it must NOT be rejected even though it
+        // is not a 26-char ULID. Guards against over-tightening to a full ULID-parse check, which
+        // would break existing installs that configured a short custom key.
+        const string ShortKey = "shortkey99";
+
+        var service = CreateService(configuredAdminKey: ShortKey);
+
+        await service.SeedAsync(CancellationToken.None);
+
+        var users = await GetUsersAsync();
+
+        users.Count.ShouldBe(1);
+        users[0].AuthKey.ShouldBe(ShortKey);
     }
 
     // -- Atomicity (transaction rollback on SIGINT) -----------------------
@@ -313,8 +382,8 @@ public class UserSeedServiceTests : IAsyncLifetime
     {
         // Pre-existing admin -- Scenario 3 (break-glass insert) path.
         // Cancellation during the transaction must not commit the new admin row.
-        const string ExistingKey = "01EXISTING0ADMIN0KEY000000";
-        const string NewKey = "01BREAK0GLASS0KEY0000000AA";
+        const string ExistingKey = "01KW5KB5APT8PK1FS19DVCY2Q7";
+        const string NewKey = "01KW5KB5AP4FC4EDM2YE5GGPTC";
 
         await InsertUserAsync("Admin", ExistingKey, UserRole.Administrator);
 

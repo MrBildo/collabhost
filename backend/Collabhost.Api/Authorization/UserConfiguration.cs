@@ -20,7 +20,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasMaxLength(200);
 
         builder.Property(u => u.AuthKey)
-            .HasMaxLength(26);
+            .HasMaxLength(User.AuthKeyMaxLength);
 
         builder.HasIndex(u => u.AuthKey)
             .IsUnique();

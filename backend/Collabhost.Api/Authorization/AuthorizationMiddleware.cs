@@ -4,6 +4,11 @@ public class AuthorizationSettings
 {
     public const string SectionName = "Auth";
 
+    // Mutable by design, NOT an oversight. AddCollabhostAuthorization (_Registration.cs) applies
+    // the COLLABHOST_ADMIN_KEY env-over-config override via a PostConfigure delegate that assigns
+    // this property on the already-constructed options instance (same pattern as the other
+    // COLLABHOST_* path env vars). A PostConfigure delegate cannot assign an init-only setter
+    // (CS8852), so { get; init; } would break the env override -- the setter is load-bearing here.
     public string? AdminKey { get; set; }
 }
 
