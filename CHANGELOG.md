@@ -2,6 +2,12 @@
 
 All notable changes to Collabhost are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- **Registering an app now rejects unknown capability sections.** A registration request that names a capability section the app type does not support is refused with a clear error naming the section, instead of being silently accepted and stored. This is a deliberate clean break — requests that previously succeeded by quietly persisting an unsupported section will now fail and must be corrected. Settings updates are unaffected.
+
 ## v1.8.0 — 2026-06-24
 
 A hardening release: a broad pass of reliability, correctness, and security fixes, plus internal-quality and toolchain work. It also rolls a bundled-Caddy security update.

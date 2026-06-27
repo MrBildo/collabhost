@@ -114,10 +114,36 @@ public sealed class CreateAppOperation
         // UpdateSettingsOperation uses. The adapter already assembled the divergent input (REST's
         // discovery->process merge, MCP's installDirectory injection) into command.Overrides, so the
         // operation validates every section uniformly.
+        //
+        // #436: reject any capability section the resolved app type does not bind. Before this,
+        // CapabilityResolver.ValidateEdits returned zero errors when CapabilityCatalog.GetSchema was
+        // null for a section, so a junk section (a typo'd capability slug, an unbound capability)
+        // validated clean and was persisted SILENTLY. Registration is strict-at-create on BOTH
+        // surfaces (operator ruling): an unknown section is a hard failure here regardless of surface.
+        // This is the inverse of the settings-EDIT loop, which stays lenient (REST skips, MCP rejects
+        // mid-loop) -- only registration is strict. The membership test is the RESOLVED TYPE'S
+        // bindings, not the builtin catalog, so a user-defined type's own declared sections pass and
+        // only sections unknown to the resolved type reject; a catalog capability the type does not
+        // bind (e.g. `process` on a static-site) is rejected too.
+        var typeBindings = _typeStore.GetBindings(appType.Slug);
+
         var validatedOverrides = new List<(string SectionKey, JsonObject Overrides)>();
 
         foreach (var (sectionKey, sectionValueNode) in command.Overrides)
         {
+            if (typeBindings is null || !typeBindings.ContainsKey(sectionKey))
+            {
+                var knownSections = typeBindings is { Count: > 0 }
+                    ? string.Join(", ", typeBindings.Keys.Order(StringComparer.Ordinal))
+                    : "none";
+
+                return OperationResult<CreateAppOutcome>.Validation
+                (
+                    $"Unknown capability section '{sectionKey}' for app type '{appType.Slug}'. "
+                    + $"Known sections for this type: {knownSections}."
+                );
+            }
+
             if (sectionValueNode is not JsonObject sectionObject)
             {
                 continue;

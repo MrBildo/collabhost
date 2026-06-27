@@ -70,6 +70,54 @@ public class RegistrationValidationTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task RegisterWithUnknownCapabilitySection_ReturnsBadRequest_DoesNotCreateApp()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var slug = $"test-unknown-section-{suffix}";
+
+        // #436, REST surface: a capability section the resolved app type does not bind is rejected
+        // at registration. The REST adapter passes non-discovery/non-process sections through
+        // verbatim, so the unknown "garbage" section reaches CreateAppOperation and trips the
+        // strict-at-create reject -> 400, and no app row is created (registration is transactional).
+        var createPayload = new
+        {
+            name = slug,
+            displayName = "Unknown Section Test",
+            appTypeSlug = "static-site",
+            values = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["garbage"] = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["foo"] = "bar"
+                }
+            }
+        };
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
+        createRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+        createRequest.Content = JsonContent.Create(createPayload, options: _jsonOptions);
+
+        var createResponse = await _client.SendAsync(createRequest);
+
+        createResponse.StatusCode.ShouldBe
+        (
+            HttpStatusCode.BadRequest,
+            "Registration with an unknown capability section should return 400"
+        );
+
+        using var getRequest = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{slug}");
+        getRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+        var getResponse = await _client.SendAsync(getRequest);
+
+        getResponse.StatusCode.ShouldBe
+        (
+            HttpStatusCode.NotFound,
+            "App should not exist after a rejected registration with an unknown capability section"
+        );
+    }
+
+    [Fact]
     public async Task RegisterWithValidSettings_CreatesApp()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
