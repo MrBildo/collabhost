@@ -915,14 +915,7 @@ public class ProxyManager
             {
                 await _activityEventStore.RecordAsync
                 (
-                    new ActivityEvent
-                    {
-                        EventType = ActivityEventTypes.AppAutoStarted,
-                        ActorId = ActivityActor.SystemId,
-                        ActorName = ActivityActor.SystemName,
-                        AppId = app.Id.ToString(null, CultureInfo.InvariantCulture),
-                        AppSlug = app.Slug
-                    },
+                    ActivityEvent.ForSystem(ActivityEventTypes.AppAutoStarted, app.Id, app.Slug),
                     CancellationToken.None
                 );
             }

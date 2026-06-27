@@ -1,5 +1,3 @@
-using System.Globalization;
-
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
@@ -8,6 +6,7 @@ using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Installation;
 using Collabhost.Api.Operations;
 using Collabhost.Api.Proxy;
+using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.Registry;
 
@@ -217,7 +216,7 @@ public sealed class CreateAppOperation
         await RecordAsync
         (
             ActivityEventTypes.AppCreated,
-            app.Id.ToString(null, CultureInfo.InvariantCulture),
+            app.Id.ToCanonicalString(),
             app.Slug,
             JsonSerializer.Serialize(new { appTypeSlug = appType.Slug, displayName = app.DisplayName }),
             ct

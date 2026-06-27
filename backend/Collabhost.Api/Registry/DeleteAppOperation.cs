@@ -1,5 +1,3 @@
-using System.Globalization;
-
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
@@ -7,6 +5,7 @@ using Collabhost.Api.HealthChecks;
 using Collabhost.Api.Operations;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
+using Collabhost.Api.Shared;
 using Collabhost.Api.Supervisor;
 using Collabhost.Api.Supervisor.Resources;
 
@@ -77,7 +76,7 @@ public sealed class DeleteAppOperation
         }
 
         // Capture before delete -- app won't exist after store.DeleteAppAsync.
-        var appId = app.Id.ToString(null, CultureInfo.InvariantCulture);
+        var appId = app.Id.ToCanonicalString();
         var appSlug = app.Slug;
         var appDisplayName = app.DisplayName;
         var appTypeSlug = app.AppTypeSlug;

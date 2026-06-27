@@ -1,6 +1,5 @@
-using System.Globalization;
-
 using Collabhost.Api.Operations;
+using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.Registry;
 
@@ -59,7 +58,7 @@ internal static class AppRegistrationEndpoints
             $"/api/v1/apps/{outcome.Slug}",
             new CreateAppResponse
             (
-                outcome.Id.ToString(null, CultureInfo.InvariantCulture),
+                outcome.Id.ToCanonicalString(),
                 dataPathResolver.ResolveFor(outcome.Slug),
                 outcome.Hints
             )

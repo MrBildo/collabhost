@@ -1,5 +1,3 @@
-using System.Globalization;
-
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Capabilities;
@@ -7,6 +5,7 @@ using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Operations;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
+using Collabhost.Api.Shared;
 using Collabhost.Api.StaticSite;
 
 namespace Collabhost.Api.Registry;
@@ -248,7 +247,7 @@ public sealed class UpdateSettingsOperation
         await RecordAsync
         (
             ActivityEventTypes.AppSettingsUpdated,
-            app.Id.ToString(null, CultureInfo.InvariantCulture),
+            app.Id.ToCanonicalString(),
             app.Slug,
             JsonSerializer.Serialize(new { changedCapabilities }),
             ct

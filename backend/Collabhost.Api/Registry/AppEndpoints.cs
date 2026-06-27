@@ -100,7 +100,7 @@ public static class AppEndpoints
 
             var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-            var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
+            var status = AppStatusResolver.Resolve(hasProcess, process, hasRouting, routeEnabled);
 
             var appTypeDefinition = typeStore.GetBySlug(app.AppTypeSlug);
 
@@ -195,7 +195,7 @@ public static class AppEndpoints
 
         var routeEnabled = routingConfiguration is not null && proxy.IsRouteEnabled(app.Slug);
 
-        var status = ResolveStatus(hasProcess, snapshot?.State, hasRouting, routeEnabled);
+        var status = AppStatusResolver.Resolve(hasProcess, snapshot?.State, hasRouting, routeEnabled);
 
         // Restart policy + auto-start
         string? restartPolicyValue = null;
@@ -211,7 +211,7 @@ public static class AppEndpoints
                 restartBindingJson, overrideJson
             );
 
-            restartPolicyValue = restartConfiguration.Policy.ToString();
+            restartPolicyValue = restartConfiguration.Policy.ToName();
             restartPolicyValue = char.ToLowerInvariant(restartPolicyValue[0])
                 + restartPolicyValue[1..];
         }
@@ -494,32 +494,6 @@ public static class AppEndpoints
 
         return result.ToHttpResult();
     }
-
-    internal static ProcessState ResolveStatus
-    (
-        bool hasProcess,
-        ManagedProcess? process,
-        bool hasRouting,
-        bool routeEnabled
-    ) =>
-        ResolveStatus(hasProcess, process?.State, hasRouting, routeEnabled);
-
-    // Snapshot-friendly overload (Card #428). The detail-builder reads a single coherent
-    // ProcessStateSnapshot and derives status from snapshot.State, so it never re-reads
-    // process.State a second time. The ManagedProcess? overload above delegates here, so
-    // the list / dashboard paths stay byte-identical.
-    internal static ProcessState ResolveStatus
-    (
-        bool hasProcess,
-        ProcessState? processState,
-        bool hasRouting,
-        bool routeEnabled
-    ) =>
-        hasProcess
-            ? processState ?? ProcessState.Stopped
-            : hasRouting && routeEnabled
-                ? ProcessState.Running
-                : ProcessState.Stopped;
 
     private static bool CanStart(bool hasProcess, bool hasRouting, ProcessState status) =>
         (hasProcess || hasRouting) && status is ProcessState.Stopped or ProcessState.Crashed or ProcessState.Fatal;

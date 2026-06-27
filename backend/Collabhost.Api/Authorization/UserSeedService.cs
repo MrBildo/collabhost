@@ -1,7 +1,6 @@
-using System.Globalization;
-
 using Collabhost.Api.ActivityLog;
 using Collabhost.Api.Data;
+using Collabhost.Api.Shared;
 
 using Microsoft.Extensions.Options;
 
@@ -85,7 +84,7 @@ public class UserSeedService
     {
         var (adminKey, wasGenerated) = configuredKey is not null
             ? (configuredKey, false)
-            : (Ulid.NewUlid().ToString(null, CultureInfo.InvariantCulture), true);
+            : (Ulid.NewUlid().ToCanonicalString(), true);
 
         var admin = new User
         {
@@ -163,16 +162,11 @@ public class UserSeedService
         {
             await _activityEventStore.RecordAsync
             (
-                new ActivityEvent
-                {
-                    EventType = ActivityEventTypes.UserSeeded,
-                    ActorId = ActivityActor.SystemId,
-                    ActorName = ActivityActor.SystemName,
-                    MetadataJson = JsonSerializer.Serialize
-                    (
-                        new { role = "administrator", seedKind }
-                    )
-                },
+                ActivityEvent.ForSystem
+                (
+                    ActivityEventTypes.UserSeeded,
+                    metadataJson: JsonSerializer.Serialize(new { role = "administrator", seedKind })
+                ),
                 CancellationToken.None
             );
         }

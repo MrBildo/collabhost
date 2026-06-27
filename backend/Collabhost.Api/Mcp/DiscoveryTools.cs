@@ -7,6 +7,7 @@ using Collabhost.Api.Platform;
 using Collabhost.Api.Probes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
+using Collabhost.Api.Shared;
 using Collabhost.Api.Supervisor;
 
 using ModelContextProtocol.Protocol;
@@ -130,7 +131,7 @@ public class DiscoveryTools
 
             var (_, domain, routeEnabled) = ResolveRouting(app, bindings, overrides);
 
-            var resolvedStatus = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
+            var resolvedStatus = AppStatusResolver.Resolve(hasProcess, process, hasRouting, routeEnabled);
             var statusString = resolvedStatus.ToApiString();
 
             if (!string.IsNullOrEmpty(status) && !string.Equals(statusString, status, StringComparison.OrdinalIgnoreCase))
@@ -199,7 +200,7 @@ public class DiscoveryTools
 
         var (routingConfiguration, domain, routeEnabled) = ResolveRouting(app, bindings, overrides);
 
-        var status = ResolveStatus(hasProcess, process, hasRouting, routeEnabled);
+        var status = AppStatusResolver.Resolve(hasProcess, process, hasRouting, routeEnabled);
 
         string? restartPolicy = null;
 
@@ -216,7 +217,7 @@ public class DiscoveryTools
 
             if (restartConfig is not null)
             {
-                var policyName = restartConfig.Policy.ToString();
+                var policyName = restartConfig.Policy.ToName();
                 restartPolicy = char.ToLowerInvariant(policyName[0]) + policyName[1..];
             }
         }
@@ -386,17 +387,4 @@ public class DiscoveryTools
 
         return (config, domain, routeEnabled);
     }
-
-    private static ProcessState ResolveStatus
-    (
-        bool hasProcess,
-        ManagedProcess? process,
-        bool hasRouting,
-        bool routeEnabled
-    ) =>
-        hasProcess
-            ? process?.State ?? ProcessState.Stopped
-            : hasRouting && routeEnabled
-                ? ProcessState.Running
-                : ProcessState.Stopped;
 }
