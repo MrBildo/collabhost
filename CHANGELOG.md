@@ -7,6 +7,7 @@ All notable changes to Collabhost are documented here. This project adheres to [
 ### Changed
 
 - **Registering an app now rejects unknown capability sections.** A registration request that names a capability section the app type does not support is refused with a clear error naming the section, instead of being silently accepted and stored. This is a deliberate clean break — requests that previously succeeded by quietly persisting an unsupported section will now fail and must be corrected. Settings updates are unaffected.
+- **Breaking:** the environment variable that overrides the reverse-proxy binary location is renamed from `COLLABHOST_CADDY_PATH` to `COLLABHOST_PROXY_BINARY_PATH`, aligning it with the other `COLLABHOST_PROXY_*` variables. The old name is no longer read — operators who set it must switch to the new name. The `Proxy:BinaryPath` setting in `appsettings.json` is unchanged.
 
 ## v1.8.0 — 2026-06-24
 

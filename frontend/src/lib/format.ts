@@ -158,7 +158,7 @@ const PROXY_STATE_DETAILS: Record<ProxyState, string | undefined> = {
   running: undefined,
   degraded: 'Routes not reaching public listener',
   failed: 'Check logs, restart Collabhost',
-  disabled: 'Re-run the installer or set COLLABHOST_CADDY_PATH',
+  disabled: 'Re-run the installer or set COLLABHOST_PROXY_BINARY_PATH',
   stopped: 'Proxy app stopped',
 }
 

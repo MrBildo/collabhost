@@ -62,7 +62,7 @@ public class ExternalTargetConfiguration
             FieldType.Select,
             new FieldEditableAlways(),
             RequiresRestart: true,
-            HelpText: "Almost always 'http' for LAN / container targets -- Caddy "
+            HelpText: "Almost always 'http' for LAN / container targets -- the proxy "
                 + "handles public TLS termination. Use 'https' only when the "
                 + "upstream itself speaks TLS.",
             Options:

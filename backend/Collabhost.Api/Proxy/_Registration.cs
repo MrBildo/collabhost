@@ -119,7 +119,7 @@ public static class ProxyRegistration
 
         // BinaryPath is optional. CaddyResolver returns null when both env var and this
         // setting are unconfigured, and the proxy subsystem boots disabled. The
-        // COLLABHOST_CADDY_PATH env var is read directly by CaddyResolver and does not
+        // COLLABHOST_PROXY_BINARY_PATH env var is read directly by CaddyResolver and does not
         // need threading through settings.
         var binaryPath = section["BinaryPath"];
 

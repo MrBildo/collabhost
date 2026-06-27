@@ -169,10 +169,10 @@ public class ProxyManager
             _logger.LogWarning
             (
                 "No proxy app registered -- proxy subsystem disabled. " +
-                "No Caddy binary was resolved via COLLABHOST_CADDY_PATH or Proxy:BinaryPath. " +
+                "No Caddy binary was resolved via COLLABHOST_PROXY_BINARY_PATH or Proxy:BinaryPath. " +
                 "proxyState on /api/v1/status will report 'disabled'. " +
                 "Re-run the installer to seed the bundled-sidecar path, " +
-                "or set COLLABHOST_CADDY_PATH and restart Collabhost."
+                "or set COLLABHOST_PROXY_BINARY_PATH and restart Collabhost."
             );
 
             return;
@@ -367,7 +367,7 @@ public class ProxyManager
     // Post-launch admin-API probe. Soft-fail with visibility:
     // on success -> ProxyState.Running and route sync is activated.
     // on timeout -> ProxyState.Failed, proxy subsystem disabled for this process lifetime,
-    //              and loud error log pointing at COLLABHOST_CADDY_PATH / Proxy:BinaryPath.
+    //              and loud error log pointing at COLLABHOST_PROXY_BINARY_PATH / Proxy:BinaryPath.
     //
     // All time work flows through the injected TimeProvider so tests can advance a virtual
     // clock instead of waiting on wall-clock thread-pool timers. Card #258 -- Windows-CI
@@ -580,7 +580,7 @@ public class ProxyManager
             _logger.LogError
             (
                 "Caddy admin API did not become ready within 5s -- proxy subsystem disabled for this process lifetime " +
-                "(proxyState='failed'). Check Caddy logs, verify COLLABHOST_CADDY_PATH or Proxy:BinaryPath, " +
+                "(proxyState='failed'). Check Caddy logs, verify COLLABHOST_PROXY_BINARY_PATH or Proxy:BinaryPath, " +
                 "and restart Collabhost. The registry, supervisor, dashboard, and managed-app operations continue to function; " +
                 "HTTPS routing to {{slug}}.{BaseDomain} is offline until the proxy is restored.",
                 _settings.BaseDomain

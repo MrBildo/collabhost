@@ -303,7 +303,7 @@ public class ConfigurationTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Forces Caddy to regenerate its proxy configuration from the current app registry state. Use this when routes appear stale or when an app's domain is not resolving correctly. This is safe to call at any time -- it regenerates the full configuration idempotently.")]
+    [Description("Forces the proxy to regenerate its configuration from the current app registry state. Use this when routes appear stale or when an app's domain is not resolving correctly. This is safe to call at any time -- it regenerates the full configuration idempotently.")]
     public async Task<CallToolResult> ReloadProxyAsync
     (
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
@@ -338,7 +338,7 @@ public class ConfigurationTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Lists all proxy routes currently configured in Caddy. Each route shows the app slug, external domain ({slug}.<configured-base-domain>), upstream target, and whether the route is active. Use this to verify route configuration after starting or stopping an app.")]
+    [Description("Lists all proxy routes currently configured. Each route shows the app slug, external domain ({slug}.<configured-base-domain>), upstream target, and whether the route is active. Use this to verify route configuration after starting or stopping an app.")]
     public async Task<CallToolResult> ListRoutesAsync
     (
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
@@ -456,7 +456,7 @@ file static class ReloadProxyResultMapping
         result.IsSuccess
             ? McpResponseFormatter.Success
             (
-                "Proxy configuration reload requested. Caddy will regenerate its configuration from the current app registry state."
+                "Proxy configuration reload requested. The proxy will regenerate its configuration from the current app registry state."
             )
             : McpResponseFormatter.InvalidParameters(result.Error ?? string.Empty);
 }

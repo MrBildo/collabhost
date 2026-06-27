@@ -128,7 +128,7 @@ Returns JSON including a `proxyState` field. Values:
 | `running`  | Caddy is up and reachable. Normal healthy state. |
 | `degraded` | Caddy is alive but routes are not reaching the public listener. See §9.2. |
 | `failed`   | Caddy did not come up within the startup probe deadline. See §9 Troubleshooting. |
-| `disabled` | Caddy binary could not be resolved at startup. See §5 (`COLLABHOST_CADDY_PATH`). |
+| `disabled` | Caddy binary could not be resolved at startup. See §5 (`COLLABHOST_PROXY_BINARY_PATH`). |
 | `stopped`  | Caddy was started and has since stopped (e.g., crash post-boot). |
 
 On the dashboard the same state renders as a color-coded cell with a detail
@@ -140,7 +140,7 @@ line beneath the state label:
 | `running`  | green  | (none) |
 | `degraded` | amber  | `Routes not reaching public listener` |
 | `failed`   | red    | `Check logs, restart Collabhost` |
-| `disabled` | amber  | `Re-run the installer or set COLLABHOST_CADDY_PATH` |
+| `disabled` | amber  | `Re-run the installer or set COLLABHOST_PROXY_BINARY_PATH` |
 | `stopped`  | gray   | `Proxy app stopped` |
 
 The JSON `proxyState` value is the contract; the color and detail text are
@@ -232,7 +232,7 @@ Then `.\startup.ps1`.
 |----------|-----------|-------|---------|
 | `COLLABHOST_DATA_PATH`          | Platform data root — holds the SQLite DB, per-app data, bundle-extraction directories, and the default crash-log directory | Absolute directory path | `/srv/collabhost/data` |
 | `COLLABHOST_USER_TYPES_PATH`    | `TypeStore:UserTypesDirectory` | Absolute directory path | `/srv/collabhost/user-types` |
-| `COLLABHOST_CADDY_PATH`         | `Proxy:BinaryPath` — Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
+| `COLLABHOST_PROXY_BINARY_PATH`  | `Proxy:BinaryPath` — Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
 | `COLLABHOST_HOSTING_LISTEN_ADDRESS` | `Hosting:ListenAddress` — interface Kestrel binds to. Default `localhost` (loopback only). Set `0.0.0.0` to accept connections on every interface; pin to a specific NIC IP to scope by interface. See §5.5.5. | Hostname, IPv4, or IPv6 address | `0.0.0.0` |
 | `COLLABHOST_HOSTING_LISTEN_PORT` | `Hosting:ListenPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_PROXY_BASE_DOMAIN`  | `Proxy:BaseDomain` | Domain suffix | `collabhost.lan` |
@@ -250,10 +250,10 @@ Then `.\startup.ps1`.
 
 **Caddy binary resolution — two-tier precedence (highest first):**
 
-1. `COLLABHOST_CADDY_PATH` — absolute path to any Caddy binary, set in your startup wrapper. Highest precedence; useful for per-invocation overrides.
+1. `COLLABHOST_PROXY_BINARY_PATH` — absolute path to any Caddy binary, set in your startup wrapper. Highest precedence; useful for per-invocation overrides.
 2. `Proxy:BinaryPath` in `appsettings.json` — absolute path to a Caddy binary. The installer seeds this on first install with the bundled `caddy[.exe]` next to the Collabhost binary, so a fresh install works out of the box. Operator edits to this value are preserved across reinstalls — the installer only seeds when the key is absent or empty.
 
-If neither resolves to an existing file, Collabhost boots with `proxyState = disabled` (see §3). To recover, re-run the installer (which will seed the key when absent), set `COLLABHOST_CADDY_PATH` in a startup wrapper, or write an absolute path into `Proxy:BinaryPath` directly.
+If neither resolves to an existing file, Collabhost boots with `proxyState = disabled` (see §3). To recover, re-run the installer (which will seed the key when absent), set `COLLABHOST_PROXY_BINARY_PATH` in a startup wrapper, or write an absolute path into `Proxy:BinaryPath` directly.
 
 Operator-relevant framework-standard variables (not Collabhost-specific):
 
@@ -1643,7 +1643,7 @@ remediation:
 | `running`  | Healthy. | No action. |
 | `degraded` | Caddy is alive but routes aren't reaching the public listener — almost always a privileged-port bind. | §9.2 (port `:80` / `:443` in use or unbindable), then §9.10.1 (privileged-port diagnostic). |
 | `failed`   | Caddy didn't pass its startup probe. | §9.1. |
-| `disabled` | No Caddy binary resolved at startup. | §5.4 (Caddy binary resolution) — set `COLLABHOST_CADDY_PATH` / `Proxy:BinaryPath`, or re-run the installer. |
+| `disabled` | No Caddy binary resolved at startup. | §5.4 (Caddy binary resolution) — set `COLLABHOST_PROXY_BINARY_PATH` / `Proxy:BinaryPath`, or re-run the installer. |
 | `stopped`  | Caddy started and later stopped (e.g. a post-boot crash). | Restart Collabhost; check the crash log (§9.7). |
 
 The deeper walkthroughs (§9.1, §9.2, §9.10, §9.11) carry the full diagnosis;
@@ -1656,7 +1656,7 @@ not pass the startup probe within the deadline.
 
 Options:
 
-- Set `COLLABHOST_CADDY_PATH` (env var) or `Proxy:BinaryPath` (appsettings.json) to the
+- Set `COLLABHOST_PROXY_BINARY_PATH` (env var) or `Proxy:BinaryPath` (appsettings.json) to the
   absolute path of a known-working Caddy binary on the host
   (e.g., `/usr/local/bin/caddy`). The env var takes precedence; see §5.4 for the
   full two-tier resolution chain.

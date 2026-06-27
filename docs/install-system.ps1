@@ -653,7 +653,7 @@ try
     catch
     {
         Write-Host "Warning: could not seed Proxy:BinaryPath in appsettings.json -- $($_.Exception.Message)"
-        Write-Host "Set COLLABHOST_CADDY_PATH to '$BundledCaddyPath' or repair the file by hand."
+        Write-Host "Set COLLABHOST_PROXY_BINARY_PATH to '$BundledCaddyPath' or repair the file by hand."
     }
 
     if ($IsReinstall)
