@@ -1,6 +1,7 @@
 using System.Globalization;
 
 using Collabhost.Api.ActivityLog;
+using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Registry;
@@ -14,8 +15,13 @@ public static class DashboardEndpoints
     {
         var group = routes.MapGroup("/api/v1/dashboard").WithTags("Dashboard");
 
+        // Stats are aggregate counts (no secrets, no per-event detail), so they stay open to any
+        // authenticated user including the read-only tier. The event feed is the same operational
+        // history as /api/v1/events, so it gates to Agent to keep the read-only tier off events.
         group.MapGet("/stats", GetStatsAsync);
-        group.MapGet("/events", GetEventsAsync);
+        group
+            .MapGet("/events", GetEventsAsync)
+            .AddEndpointFilter(new RequireRoleFilter(UserRole.Agent));
     }
 
     private static async Task<IResult> GetStatsAsync

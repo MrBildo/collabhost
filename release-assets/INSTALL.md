@@ -1194,10 +1194,27 @@ fallback is a backward-compatibility path, not the recommended shape — new
 configurations should leave `headers` empty and let each agent supply
 `authKey` per call.
 
-**Administrator-only tools.** `delete_app` requires an administrator
-`authKey`. Other tools accept any active user key (administrator or agent).
-The role check happens per call; an agent attempting `delete_app` receives
-an authorization error from the server.
+**Roles and what each key can do.** There are three roles, checked per call:
+
+- **Administrator** — full access, including `delete_app` and the runtime
+  config-file import.
+- **Agent** — everything except the administrator-only operations above. An
+  agent can start, stop, restart, kill, register, and reconfigure apps, and
+  can read logs, settings, and the activity event log.
+- **Read-only** — observability only. A read-only key can read system status,
+  the app list, and app detail, but is **refused** every mutating operation
+  (start/stop/restart/kill/register/delete/settings changes) **and** the reads
+  that can carry secrets or operational history (logs, log stream, settings,
+  activity events). Use it for status pages, external monitors, and watcher
+  automation that should never hold start/kill authority — for example, an
+  automation flow that checks "are all my apps running" without being able to
+  touch them. Create one by assigning the read-only role when you create the
+  user.
+
+The role check happens per call on both the REST API and the MCP tools; a
+caller attempting an operation above its role receives an authorization error
+from the server. An agent attempting `delete_app`, or a read-only key
+attempting `start_app`, is refused.
 
 ---
 

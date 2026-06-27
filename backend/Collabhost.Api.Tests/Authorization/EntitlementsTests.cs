@@ -60,4 +60,41 @@ public class EntitlementsTests
         Entitlements.CanAccessTool(UserRole.Agent, "reload_proxy").ShouldBeTrue();
         Entitlements.CanAccessTool(UserRole.Agent, "register_app").ShouldBeTrue();
     }
+
+    // Property: on the MCP surface the read-only tier is granted the non-secret observability
+    // reads it exists for -- status, app list/detail, type catalog, route listing.
+    [Fact]
+    public void CanAccessTool_ReadOnly_NonSecretReads_ReturnsTrue()
+    {
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "get_system_status").ShouldBeTrue();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "list_apps").ShouldBeTrue();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "get_app").ShouldBeTrue();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "list_app_types").ShouldBeTrue();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "list_routes").ShouldBeTrue();
+    }
+
+    // Property: the read-only tier is denied reads that can surface secrets or operational
+    // history -- logs, settings, activity events. This is the real delta over the Agent role,
+    // which is granted all three.
+    [Fact]
+    public void CanAccessTool_ReadOnly_SecretBearingReads_ReturnsFalse()
+    {
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "get_logs").ShouldBeFalse();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "get_settings").ShouldBeFalse();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "list_events").ShouldBeFalse();
+    }
+
+    // Property: the read-only tier cannot mutate the control plane on the MCP surface.
+    [Fact]
+    public void CanAccessTool_ReadOnly_AllMutationTools_ReturnsFalse()
+    {
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "start_app").ShouldBeFalse();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "stop_app").ShouldBeFalse();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "restart_app").ShouldBeFalse();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "kill_app").ShouldBeFalse();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "update_settings").ShouldBeFalse();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "register_app").ShouldBeFalse();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "reload_proxy").ShouldBeFalse();
+        Entitlements.CanAccessTool(UserRole.ReadOnly, "delete_app").ShouldBeFalse();
+    }
 }
