@@ -1,5 +1,8 @@
 # AI tool configs (instance-local)
 .claude/*
+# NOTE (trip hazard): .github/* is an unconditional ignore. Any future tracked GitHub
+# config scoped to the backend subtree (e.g. backend/.github/dependabot.yml, a scoped
+# CODEOWNERS, project-specific Actions config) will silently fail to track and never
+# appear in `git status`. To track such a file, add a whitelist exception below it
+# (e.g. `!.github/dependabot.yml`). The pattern itself is intentional — leave it as-is.
 .github/*
-.opencode/*
-opencode.json
