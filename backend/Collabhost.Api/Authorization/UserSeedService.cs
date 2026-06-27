@@ -50,6 +50,18 @@ public class UserSeedService
             ? null
             : _authorizationSettings.AdminKey;
 
+        // Fail-loud-on-misconfiguration (Standard Hosting model #4): a configured key longer than
+        // the AuthKey schema allows would persist as-is (SQLite ignores MaxLength), silently
+        // violating the declared contract. Reject it at seed time -- before any DB write so neither
+        // Scenario 2 nor Scenario 3 inserts a partial/invalid row -- and let Program.cs halt startup
+        // with the canonical stderr block. Length-only against the schema: a shorter custom key is
+        // still functional (AuthKeyResolver compares by string equality), so over-rejecting it would
+        // break existing installs.
+        if (configuredKey is not null && configuredKey.Length > User.AuthKeyMaxLength)
+        {
+            throw new AdminKeyConfigurationException(configuredKey.Length, User.AuthKeyMaxLength);
+        }
+
         var hasUsers = await db.Users.AnyAsync(cancellationToken);
 
         if (!hasUsers)
@@ -103,7 +115,7 @@ public class UserSeedService
 
         await tx.CommitAsync(cancellationToken);
 
-        await RecordSeedActivityAsync("first-run");
+        await RecordSeedActivityAsync(SeedKinds.FirstRun);
 
         if (wasGenerated)
         {
@@ -149,7 +161,7 @@ public class UserSeedService
 
         await tx.CommitAsync(cancellationToken);
 
-        await RecordSeedActivityAsync("recovery-override");
+        await RecordSeedActivityAsync(SeedKinds.RecoveryOverride);
 
         _logger.LogInformation
         (
@@ -181,4 +193,27 @@ public class UserSeedService
             _logger.LogWarning(ex, "Failed to record activity event for admin user seed");
         }
     }
+}
+
+// Seed-kind discriminators recorded in the UserSeeded activity event's metadata. Const strings
+// (not an enum) on purpose: the values are serialized verbatim into the persisted MetadataJson, so
+// promoting to an enum would change the on-disk shape ("first-run" -> 0 or "FirstRun"). Const class
+// gives refactor safety while preserving the exact persisted values.
+file static class SeedKinds
+{
+    public const string FirstRun = "first-run";
+
+    public const string RecoveryOverride = "recovery-override";
+}
+
+// Thrown by UserSeedService.SeedAsync when a configured admin key fails shape validation. Program.cs
+// phase 8 maps this to the canonical startup-failure stderr block and halts with exit 40 (the
+// seeding-phase halt code). Fail-loud-on-misconfiguration: a malformed configured key halts the boot
+// rather than silently persisting a schema-violating value.
+public sealed class AdminKeyConfigurationException(int configuredKeyLength, int maxKeyLength)
+    : Exception("configured admin key is invalid")
+{
+    public int ConfiguredKeyLength { get; } = configuredKeyLength;
+
+    public int MaxKeyLength { get; } = maxKeyLength;
 }
