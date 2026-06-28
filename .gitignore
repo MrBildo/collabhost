@@ -70,7 +70,9 @@ tools/*
 !tools/build-caddy.sh
 !tools/compute-wwwroot-hash.sh
 !tools/generate-ids.cs
+!tools/lint-source-comment-refs.py
 !tools/lint-systemd-unit-drift.sh
+!tools/test-source-comment-refs.sh
 
 # OS files
 Thumbs.db
