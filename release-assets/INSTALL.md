@@ -720,8 +720,8 @@ Pin to a specific release with `-Version vX.Y.Z` or
 | `%ProgramFiles%\Collabhost\bin\collabhost.exe`, `caddy.exe` | read-only | Binaries |
 | `%ProgramFiles%\Collabhost\wwwroot\` | read-only | Portal SPA assets |
 | `%ProgramFiles%\Collabhost\INSTALL.md`, `LICENSES\` | read-only | Documentation |
-| `%ProgramData%\Collabhost\config\appsettings.json` | read/write | Operator-facing config |
-| `%ProgramData%\Collabhost\config\appsettings.shipped.json` | read/write | Smart-merge baseline (do not edit) |
+| `%ProgramData%\Collabhost\config\appsettings.json` | read-only | Operator-facing config |
+| `%ProgramData%\Collabhost\config\appsettings.shipped.json` | read-only | Smart-merge baseline (do not edit) |
 | `%ProgramData%\Collabhost\data\` | read/write | SQLite DB + pre-migration backups |
 | `%ProgramData%\Collabhost\user-types\` | read/write | Operator-authored AppType JSON |
 | `%ProgramData%\Collabhost\caddy\` | read/write | Caddy CA / account / cert storage |
@@ -735,19 +735,18 @@ is up before the service starts), and the virtual account
 managed local identity the Windows Service Control Manager provisions
 automatically — there is no password and no separate account to create or
 delete. The installer grants it Modify on each writable `%ProgramData%`
-directory above (the `icacls` grants); `%ProgramFiles%\Collabhost\` is never
-granted, so the running service cannot modify its own binaries or Portal
-assets.
+directory above (the `icacls` grants), and read-only on `config\` (the service
+reads `appsettings.json` but never writes config at runtime — matching the
+Linux install's read-only `appsettings.json` posture); `%ProgramFiles%\Collabhost\`
+is never granted, so the running service cannot modify its own binaries or
+Portal assets.
 
 The service binds the privileged ports `:80` / `:443` (via the bundled
 Caddy) directly. Unlike Linux, Windows does not restrict low-numbered ports
 to privileged accounts, so the virtual account binds them without a
 capability grant — there is no Windows equivalent of Linux's
-`setcap` / `AmbientCapabilities` dance. The installer additionally registers
-HTTP.sys URL ACL reservations for the account (`netsh http add urlacl`) as a
-defensive measure; Collabhost and Caddy serve over their own sockets rather
-than the HTTP.sys namespace, so these reservations are belt-and-suspenders,
-not a prerequisite for binding. (See §9.10.1 for the privileged-port topic.)
+`setcap` / `AmbientCapabilities` dance. (See §9.10.1 for the privileged-port
+topic.)
 
 Crash-recovery is wired via `sc.exe failure`: the service auto-restarts
 after the first and second failures (5-second delay each); the third
@@ -859,11 +858,6 @@ Equivalent manual recipe (if the script isn't available):
 
 ```powershell
 # Elevated PowerShell:
-# Remove the privileged-listener URL ACL reservations (machine-wide; they do
-# not vanish with the directories):
-netsh http delete urlacl url=http://+:80/
-netsh http delete urlacl url=https://+:443/
-
 Stop-Service  Collabhost
 sc.exe delete Collabhost
 
@@ -1977,13 +1971,6 @@ the dashboard System page for the same information rendered.
   Common culprits are IIS / the W3SVC service, or another HTTP.sys consumer
   holding a namespace reservation. Stop the conflicting service, or move
   Collabhost's listener (`Proxy:ListenAddress`) to non-privileged ports.
-
-  The system-scope installer (§5.5.4) registers HTTP.sys URL ACLs for the
-  `NT SERVICE\Collabhost` account as defense-in-depth. These are *not* what
-  lets the account bind the ports (socket binds don't consult the HTTP.sys
-  namespace), so a missing URL ACL is not the cause of a bind failure.
-  Inspect reservations with `netsh http show urlacl`; the installer's
-  `-Uninstall` removes the ones it added.
 
 **Service status check (Windows system-scope):**
 

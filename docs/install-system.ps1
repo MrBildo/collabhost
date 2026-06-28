@@ -15,7 +15,7 @@
       %ProgramFiles%\Collabhost\wwwroot\            -- frontend (Portal SPA, read-only to service)
       %ProgramFiles%\Collabhost\INSTALL.md          -- operator docs
       %ProgramFiles%\Collabhost\LICENSES\           -- bundled-binary license texts
-      %ProgramData%\Collabhost\config\appsettings.json          -- operator config (service R/W)
+      %ProgramData%\Collabhost\config\appsettings.json          -- operator config (service R)
       %ProgramData%\Collabhost\config\appsettings.shipped.json  -- smart-merge baseline
       %ProgramData%\Collabhost\data\                -- SQLite DB + backups (service R/W)
       %ProgramData%\Collabhost\user-types\          -- operator-authored AppType JSON (service R/W)
@@ -107,17 +107,20 @@ $DotnetBundleDir    = Join-Path $DataRoot          'dotnet-bundle'
 $AppSettingsPath    = Join-Path $ConfigDir         'appsettings.json'
 $BaselinePath       = Join-Path $ConfigDir         'appsettings.shipped.json'
 
-# The privileged-listener URL ACL reservations the installer registers for the
-# virtual account, and tears down on uninstall. Note: Caddy (Go raw sockets)
-# and Kestrel (managed-socket transport) bind :80/:443 directly and do NOT use
-# the HTTP.sys namespace, and Windows does not gate low-port socket binds by
-# account privilege -- so these reservations are defense-in-depth for the
-# HTTP.sys namespace, not the mechanism that lets the account bind the ports.
-$UrlAclReservations = @('http://+:80/', 'https://+:443/')
-
 # The %ProgramData% subdirectories the service account is granted Modify on.
 # %ProgramFiles% is deliberately absent: it stays read-only to the account.
-$WritableServiceDirs = @($ConfigDir, $DataDir, $UserTypesDir, $CaddyStorageDir, $LogDir, $DotnetBundleDir)
+# config/ is also absent: the service never writes config at runtime, so it is
+# granted Read below rather than Modify (see $ReadOnlyServiceDirs).
+$WritableServiceDirs = @($DataDir, $UserTypesDir, $CaddyStorageDir, $LogDir, $DotnetBundleDir)
+
+# The %ProgramData% subdirectories the service account is granted read-only.
+# config/ holds appsettings.json, which the service only ever reads (it reads
+# Auth:AdminKey and the rest of the config at startup). It never writes config
+# at runtime: the --merge-appsettings write runs install-time under the elevated
+# installer before the host builds, and settings persistence is DB-backed. This
+# matches the Linux install's read-only appsettings.json posture (0640
+# root:collabhost -- read-only to the service user).
+$ReadOnlyServiceDirs = @($ConfigDir)
 
 if ($Help)
 {
@@ -268,59 +271,26 @@ function Set-ServiceModifyAccess
     }
 }
 
-# Register an HTTP.sys URL ACL reservation for the service account. These are
-# defense-in-depth for the HTTP.sys namespace -- Caddy and Kestrel bind their
-# sockets directly and do not need them on a stock host -- so a failure here is
-# a warning, not a fatal error. netsh exits nonzero when the reservation already
-# exists (idempotent reinstall); that case is treated as success.
-function Add-ServiceUrlAcl
+# Grant the service account read-only (Read & Execute) access on one directory.
+# (OI)(CI) makes the grant inherit to files and subdirectories; /T re-applies it
+# across the existing tree so a prior LocalSystem-era install's config files
+# become readable by the virtual account after migration; RX (not M) is the
+# read-only grant -- the service reads config but never writes it. /C continues
+# past a per-item error rather than aborting the whole grant.
+function Set-ServiceReadAccess
 {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     [CmdletBinding()]
     param
     (
-        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$Account
     )
 
-    $output = & netsh.exe http add urlacl url=$Url user=$Account 2>&1
-    if ($LASTEXITCODE -eq 0)
+    & icacls.exe $Path /grant "${Account}:(OI)(CI)(RX)" /T /C | Out-Null
+    if ($LASTEXITCODE -ne 0)
     {
-        Write-Host "  Added URL ACL $Url -> $Account."
-        return
-    }
-
-    $joined = ($output | Out-String).Trim()
-    if ($joined -match 'already exists')
-    {
-        Write-Host "  URL ACL $Url already present -- leaving as-is."
-    }
-    else
-    {
-        Write-Host "  Warning: could not add URL ACL $Url ($joined). Socket binding is unaffected; this reservation is defense-in-depth only."
-    }
-}
-
-# Remove an HTTP.sys URL ACL reservation. A not-found result on uninstall is
-# expected (the reservation may never have been added -- e.g. removing a
-# LocalSystem-era install predating this account model), so it is not an error.
-function Remove-ServiceUrlAcl
-{
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
-    [CmdletBinding()]
-    param
-    (
-        [Parameter(Mandatory = $true)][string]$Url
-    )
-
-    & netsh.exe http delete urlacl url=$Url 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0)
-    {
-        Write-Host "  Removed URL ACL $Url."
-    }
-    else
-    {
-        Write-Host "  URL ACL $Url not present (nothing to remove)."
+        throw "icacls read grant on '$Path' for '$Account' failed with exit code $LASTEXITCODE."
     }
 }
 
@@ -329,14 +299,6 @@ function Remove-ServiceUrlAcl
 if ($Uninstall)
 {
     Write-Host "Uninstalling $ServiceName..."
-
-    # Tear down the privileged-listener URL ACL reservations before removing the
-    # service. They live in the HTTP.sys namespace machine-wide and do NOT vanish
-    # with the install directories, so they must be deleted explicitly.
-    foreach ($url in $UrlAclReservations)
-    {
-        Remove-ServiceUrlAcl -Url $url
-    }
 
     Stop-CollabhostServiceIfRunning
 
@@ -423,7 +385,7 @@ if ($Uninstall)
     # service is reinstalled.)
     Write-Host ''
     Write-Host "$ServiceName uninstalled."
-    Write-Host '  Service registration + virtual account retired; URL ACLs removed.'
+    Write-Host '  Service registration + virtual account retired.'
     return
 }
 
@@ -896,17 +858,14 @@ try
         Set-ServiceModifyAccess -Path $writableDir -Account $ServiceAccount
     }
 
-    # ---- Privileged-listener URL ACLs --------------------------------------
-
-    # Defense-in-depth HTTP.sys reservations for the virtual account. Caddy and
-    # Kestrel bind their sockets directly (not via HTTP.sys), and Windows does
-    # not gate low-port socket binds by account privilege, so these are not what
-    # lets the account bind :80/:443 -- but they cost nothing and harden the
-    # HTTP.sys namespace. -Uninstall removes them.
-    Write-Host 'Registering privileged-listener URL ACLs...'
-    foreach ($url in $UrlAclReservations)
+    # Grant the virtual account read-only access on config/. The service reads
+    # appsettings.json (Auth:AdminKey + the rest) at startup but never writes
+    # config at runtime, so Read -- not Modify -- is the correct grant. This
+    # matches the Linux install's read-only appsettings.json posture.
+    Write-Host "Granting $ServiceAccount read access to config directory..."
+    foreach ($readOnlyDir in $ReadOnlyServiceDirs)
     {
-        Add-ServiceUrlAcl -Url $url -Account $ServiceAccount
+        Set-ServiceReadAccess -Path $readOnlyDir -Account $ServiceAccount
     }
 
     # ---- Service-scoped environment variables ------------------------------
@@ -917,9 +876,9 @@ try
     # Environment="..." directives. The SCM reads these at service start and
     # injects them into the binary's process environment before ExecStart.
     #
-    # Card #246 (c2-A) baked the system-scope contract: when ASPNETCORE_CONTENTROOT
-    # is set, the binary resolves ContentRoot to %ProgramFiles%\Collabhost so
-    # wwwroot/ resolves correctly; COLLABHOST_CONFIG_PATH points the explicit
+    # The system-scope contract: when ASPNETCORE_CONTENTROOT is set, the binary
+    # resolves ContentRoot to %ProgramFiles%\Collabhost so wwwroot/ resolves
+    # correctly; COLLABHOST_CONFIG_PATH points the explicit
     # AddJsonFile call at %ProgramData%\Collabhost\config\appsettings.json. The
     # operator-facing path env vars (DATA, USER_TYPES, LOGS, PROXY_STORAGE)
     # override the shipped appsettings.json defaults so SQLite, user-types,
@@ -930,7 +889,7 @@ try
     # machine-scoped Development overrides leaking into the service.
     #
     # Shape: REG_MULTI_SZ value named "Environment" under the service key. The
-    # SCM honors this convention on Win10+/Server 2016+. Card #277.
+    # SCM honors this convention on Win10+/Server 2016+.
     $ServiceRegistryKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
     #
     # DOTNET_BUNDLE_EXTRACT_BASE_DIR points the single-file host's native-library
