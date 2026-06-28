@@ -47,6 +47,21 @@ printf '%s\n' '// per .agents/specs/foo.md' > "${WORK}/spec_path.cs"
 # JSX comment form {/* ... */}.
 printf '%s\n' '<div>{/* Card #7 */}</div>' > "${WORK}/jsx.tsx"
 
+# F-1 regressions: an unbalanced ' or " in JSX text (a contraction) or a regex
+# literal must NOT desync the lexer into swallowing a same-line comment ref.
+# Each opens a phantom string on the committed lexer; the desync-recovery fix
+# rewinds past the quote and rescans the rest of the line as code so the
+# trailing {/* */} or // ref is still caught.
+printf '%s\n' "<p>don't {/* Card #5 */}</p>" > "${WORK}/jsx_contraction.tsx"
+printf '%s\n' "const ok = /it's/.test(x); // see #5" > "${WORK}/regex_apostrophe.tsx"
+printf '%s\n' 'const re = /["x]/; // Card #9' > "${WORK}/regex_dquote.tsx"
+
+# C-1 regressions: a forbidden token must not ride inside a github-issues URL
+# token. The path is pinned to owner/repo, so neither a `.agents/specs` segment
+# nor a `#5` fragment can be smuggled past the allow-list strip.
+printf '%s\n' '// https://github.com/x/.agents/specs/issues/9' > "${WORK}/url_smuggle_spec.cs"
+printf '%s\n' '// https://github.com/x#5/issues/9' > "${WORK}/url_smuggle_hash.cs"
+
 echo "--- Violation cases (expect RED / exit 1) ---"
 expect_fail "card-ref"          "${WORK}/card_ref.cs"
 expect_fail "bare-hash"         "${WORK}/bare_hash.cs"
@@ -54,6 +69,11 @@ expect_fail "section-ref"       "${WORK}/section_ref.cs"
 expect_fail "spec-path"         "${WORK}/spec_path.cs"
 expect_fail "block-continuation" "${WORK}/block.tsx"
 expect_fail "jsx-comment"       "${WORK}/jsx.tsx"
+expect_fail "jsx-contraction"   "${WORK}/jsx_contraction.tsx"
+expect_fail "regex-apostrophe"  "${WORK}/regex_apostrophe.tsx"
+expect_fail "regex-dquote"      "${WORK}/regex_dquote.tsx"
+expect_fail "url-smuggle-spec"  "${WORK}/url_smuggle_spec.cs"
+expect_fail "url-smuggle-hash"  "${WORK}/url_smuggle_hash.cs"
 
 # --- Clean cases (must pass -> exit 0) --------------------------------------
 

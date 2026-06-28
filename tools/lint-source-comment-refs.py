@@ -58,7 +58,11 @@ FORBIDDEN = [
 ]
 
 # A resolvable citation -- allowed, removed before the forbidden patterns run.
-GITHUB_ISSUE_URL = re.compile(r"https?://github\.com/[^\s)]+/issues/\d+")
+# The path is pinned to exactly owner/repo (each segment [\w.-]+, no slash) so a
+# forbidden token can't ride inside the allowed URL: a greedy `[^\s)]+` would
+# swallow `x/.agents/specs` or `x#5` ahead of `/issues/N` and smuggle it past
+# the gate. owner/repo is the actual shape of a GitHub issue URL.
+GITHUB_ISSUE_URL = re.compile(r"https?://github\.com/[\w.-]+/[\w.-]+/issues/\d+")
 
 CONVENTION = (
     "Source comments must be resolvable by an external reader of the published "
@@ -73,6 +77,12 @@ CONVENTION = (
 # code, a string literal, a char literal, or a template literal contributes
 # NOTHING -- which is precisely why a `#123456` hex in a string or a `#region`
 # directive can never be mistaken for a comment reference.
+#
+# Scope: this gate is comment-context-scoped by design. A directive *label* such
+# as `#region Card #5` or `#pragma`/`#if` text is code, not a comment, so the
+# lexer emits nothing for it and the gate does not cover it. That fuzzy tail
+# (directive labels carrying internal refs in published source) is Part-2 scrub
+# territory, not this lint's job.
 
 def comment_text_by_line(source: str) -> dict[int, str]:
     out: dict[int, list[str]] = {}
@@ -147,6 +157,7 @@ def comment_text_by_line(source: str) -> dict[int, str]:
         # Ordinary string / char / template literal -- skipped, not comment.
         if c in ('"', "'", "`"):
             quote = c
+            body_start = i + 1  # first char after the opening quote
             i += 1
             while i < n:
                 if source[i] == "\\":  # backslash escape
@@ -155,12 +166,23 @@ def comment_text_by_line(source: str) -> dict[int, str]:
                     i += 2
                     continue
                 if source[i] == "\n":
-                    line += 1
-                    if quote != "`":  # un-escaped newline ends a normal string
+                    # A backtick template literal legitimately spans newlines.
+                    if quote == "`":
+                        line += 1
                         i += 1
-                        break
-                    i += 1
-                    continue
+                        continue
+                    # Desync recovery: a real single-line ' or " string ALWAYS
+                    # closes on its own line (an unterminated one is a compile
+                    # error). Reaching a newline still open means the opening
+                    # quote was never a string delimiter -- a JSX-text
+                    # contraction (don't, you're) or a regex literal (/it's/,
+                    # /["x]/) -- and everything we just skipped was really code.
+                    # Rewind to just past the opening quote and rescan the rest
+                    # of the line as code so a trailing // or {/* */} comment is
+                    # still seen. (line is NOT advanced: the newline that
+                    # triggered the rewind has not been crossed yet.)
+                    i = body_start
+                    break
                 if source[i] == quote:
                     i += 1
                     break
