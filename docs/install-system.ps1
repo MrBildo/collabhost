@@ -3,20 +3,25 @@
     Collabhost install script (Windows) -- SYSTEM SCOPE.
 
 .DESCRIPTION
-    Lays the canonical Windows server layout under root-owned paths and
-    registers Collabhost as a Windows Service running as LocalSystem.
+    Lays the canonical Windows server layout and registers Collabhost as a
+    Windows Service running under the dedicated virtual account
+    'NT SERVICE\Collabhost'. The %ProgramFiles% side is read-only to that
+    account; the %ProgramData% side is granted to it explicitly per writable
+    directory. This is the least-privilege Windows analog of the Linux
+    system install's dedicated 'collabhost' service user.
 
-      %ProgramFiles%\Collabhost\bin\collabhost.exe  -- binary
-      %ProgramFiles%\Collabhost\bin\caddy.exe       -- bundled Caddy
-      %ProgramFiles%\Collabhost\wwwroot\            -- frontend (Portal SPA)
+      %ProgramFiles%\Collabhost\bin\collabhost.exe  -- binary (read-only to service)
+      %ProgramFiles%\Collabhost\bin\caddy.exe       -- bundled Caddy (read-only to service)
+      %ProgramFiles%\Collabhost\wwwroot\            -- frontend (Portal SPA, read-only to service)
       %ProgramFiles%\Collabhost\INSTALL.md          -- operator docs
       %ProgramFiles%\Collabhost\LICENSES\           -- bundled-binary license texts
-      %ProgramData%\Collabhost\config\appsettings.json          -- operator config
+      %ProgramData%\Collabhost\config\appsettings.json          -- operator config (service R/W)
       %ProgramData%\Collabhost\config\appsettings.shipped.json  -- smart-merge baseline
-      %ProgramData%\Collabhost\data\                -- SQLite DB + backups
-      %ProgramData%\Collabhost\user-types\          -- operator-authored AppType JSON
-      %ProgramData%\Collabhost\caddy\               -- Caddy CA / cert storage
-      %ProgramData%\Collabhost\logs\                -- crash logs
+      %ProgramData%\Collabhost\data\                -- SQLite DB + backups (service R/W)
+      %ProgramData%\Collabhost\user-types\          -- operator-authored AppType JSON (service R/W)
+      %ProgramData%\Collabhost\caddy\               -- Caddy CA / cert storage (service R/W)
+      %ProgramData%\Collabhost\logs\                -- crash logs (service R/W)
+      %ProgramData%\Collabhost\dotnet-bundle\       -- single-file native-lib extract dir (service R/W)
 
     Requires an administrator-elevated PowerShell. Re-runnable: on re-run,
     binaries / wwwroot / LICENSES are overwritten with the new release's
@@ -72,6 +77,16 @@ $ProgressPreference = 'SilentlyContinue'
 $ServiceName        = 'Collabhost'
 $ServiceDisplayName = 'Collabhost'
 $ServiceDescription = 'Collabhost self-hosted application platform.'
+
+# The service runs under its own auto-managed virtual account rather than
+# LocalSystem. A virtual account ('NT SERVICE\<service-name>') needs no
+# password and no separate creation step -- the SCM provisions the SID and
+# grants the logon right when the service's logon identity is set to it. It is
+# a limited account: %ProgramFiles% stays un-writable by default, and the
+# writable %ProgramData% paths are granted to it explicitly below. This mirrors
+# the Linux system install's dedicated 'collabhost' user.
+$ServiceAccount     = "NT SERVICE\$ServiceName"
+
 $InstallPrefix      = Join-Path $env:ProgramFiles  'Collabhost'
 $BinDir             = Join-Path $InstallPrefix     'bin'
 $DataRoot           = Join-Path $env:ProgramData   'Collabhost'
@@ -80,8 +95,29 @@ $DataDir            = Join-Path $DataRoot          'data'
 $UserTypesDir       = Join-Path $DataRoot          'user-types'
 $CaddyStorageDir    = Join-Path $DataRoot          'caddy'
 $LogDir             = Join-Path $DataRoot          'logs'
+
+# Single-file native-library extraction target. The shipped binary is a
+# PublishSingleFile self-contained build with native-lib self-extract; on first
+# start it unpacks native libraries to a writable directory. LocalSystem could
+# fall back to a writable default temp; a limited virtual account cannot rely on
+# that, so we give it a granted directory and point DOTNET_BUNDLE_EXTRACT_BASE_DIR
+# at it (the Windows analog of the Linux unit's dotnet-bundle dir + env var).
+$DotnetBundleDir    = Join-Path $DataRoot          'dotnet-bundle'
+
 $AppSettingsPath    = Join-Path $ConfigDir         'appsettings.json'
 $BaselinePath       = Join-Path $ConfigDir         'appsettings.shipped.json'
+
+# The privileged-listener URL ACL reservations the installer registers for the
+# virtual account, and tears down on uninstall. Note: Caddy (Go raw sockets)
+# and Kestrel (managed-socket transport) bind :80/:443 directly and do NOT use
+# the HTTP.sys namespace, and Windows does not gate low-port socket binds by
+# account privilege -- so these reservations are defense-in-depth for the
+# HTTP.sys namespace, not the mechanism that lets the account bind the ports.
+$UrlAclReservations = @('http://+:80/', 'https://+:443/')
+
+# The %ProgramData% subdirectories the service account is granted Modify on.
+# %ProgramFiles% is deliberately absent: it stays read-only to the account.
+$WritableServiceDirs = @($ConfigDir, $DataDir, $UserTypesDir, $CaddyStorageDir, $LogDir, $DotnetBundleDir)
 
 if ($Help)
 {
@@ -89,7 +125,8 @@ if ($Help)
 Collabhost installer (Windows) -- SYSTEM scope
 
 Lays %ProgramFiles%\Collabhost + %ProgramData%\Collabhost and registers a
-Windows Service running as LocalSystem. Requires an elevated PowerShell.
+Windows Service running under the virtual account 'NT SERVICE\Collabhost'.
+Requires an elevated PowerShell.
 
 Usage: install-system.ps1 [options]
 
@@ -206,11 +243,100 @@ function Stop-CollabhostServiceIfRunning
     }
 }
 
+# ---- Least-privilege grant helpers ------------------------------------------
+
+# Grant the service account Modify on one writable directory. (OI)(CI) makes the
+# grant inherit to files and subdirectories created later; /T re-applies it
+# across the existing tree so files written under a prior LocalSystem-era
+# install become accessible to the virtual account after migration. /C continues
+# past a per-item error (e.g. a transiently locked file) rather than aborting
+# the whole grant.
+function Set-ServiceModifyAccess
+{
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Account
+    )
+
+    & icacls.exe $Path /grant "${Account}:(OI)(CI)M" /T /C | Out-Null
+    if ($LASTEXITCODE -ne 0)
+    {
+        throw "icacls grant on '$Path' for '$Account' failed with exit code $LASTEXITCODE."
+    }
+}
+
+# Register an HTTP.sys URL ACL reservation for the service account. These are
+# defense-in-depth for the HTTP.sys namespace -- Caddy and Kestrel bind their
+# sockets directly and do not need them on a stock host -- so a failure here is
+# a warning, not a fatal error. netsh exits nonzero when the reservation already
+# exists (idempotent reinstall); that case is treated as success.
+function Add-ServiceUrlAcl
+{
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][string]$Account
+    )
+
+    $output = & netsh.exe http add urlacl url=$Url user=$Account 2>&1
+    if ($LASTEXITCODE -eq 0)
+    {
+        Write-Host "  Added URL ACL $Url -> $Account."
+        return
+    }
+
+    $joined = ($output | Out-String).Trim()
+    if ($joined -match 'already exists')
+    {
+        Write-Host "  URL ACL $Url already present -- leaving as-is."
+    }
+    else
+    {
+        Write-Host "  Warning: could not add URL ACL $Url ($joined). Socket binding is unaffected; this reservation is defense-in-depth only."
+    }
+}
+
+# Remove an HTTP.sys URL ACL reservation. A not-found result on uninstall is
+# expected (the reservation may never have been added -- e.g. removing a
+# LocalSystem-era install predating this account model), so it is not an error.
+function Remove-ServiceUrlAcl
+{
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Url
+    )
+
+    & netsh.exe http delete urlacl url=$Url 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0)
+    {
+        Write-Host "  Removed URL ACL $Url."
+    }
+    else
+    {
+        Write-Host "  URL ACL $Url not present (nothing to remove)."
+    }
+}
+
 # ---- Uninstall path ---------------------------------------------------------
 
 if ($Uninstall)
 {
     Write-Host "Uninstalling $ServiceName..."
+
+    # Tear down the privileged-listener URL ACL reservations before removing the
+    # service. They live in the HTTP.sys namespace machine-wide and do NOT vanish
+    # with the install directories, so they must be deleted explicitly.
+    foreach ($url in $UrlAclReservations)
+    {
+        Remove-ServiceUrlAcl -Url $url
+    }
 
     Stop-CollabhostServiceIfRunning
 
@@ -232,6 +358,22 @@ if ($Uninstall)
         }
     }
 
+    # Remove the Application event-log source the installer pre-created (best
+    # effort -- a lingering source is harmless, but cleaning it up matches the
+    # rest of the uninstall).
+    try
+    {
+        if ([System.Diagnostics.EventLog]::SourceExists($ServiceName))
+        {
+            Write-Host "Removing '$ServiceName' event-log source..."
+            [System.Diagnostics.EventLog]::DeleteEventSource($ServiceName)
+        }
+    }
+    catch
+    {
+        Write-Host "  Could not remove event-log source: $($_.Exception.Message)"
+    }
+
     # Always remove %ProgramFiles%\Collabhost (binaries + wwwroot + docs).
     if (Test-Path -LiteralPath $InstallPrefix)
     {
@@ -239,8 +381,12 @@ if ($Uninstall)
         Remove-Item -LiteralPath $InstallPrefix -Recurse -Force
     }
 
-    # Config + logs always go. Caddy storage always goes (re-issuable on next install).
-    foreach ($removable in @($ConfigDir, $LogDir, $CaddyStorageDir, $UserTypesDir))
+    # Config + logs always go. Caddy storage and the dotnet-bundle extract dir
+    # always go (both re-issuable / re-extracted on next install). Removing these
+    # directories also reaps the icacls grants made to the service account on
+    # them -- the ACEs live on the directories, so deleting the directory removes
+    # the grant with it.
+    foreach ($removable in @($ConfigDir, $LogDir, $CaddyStorageDir, $UserTypesDir, $DotnetBundleDir))
     {
         if (Test-Path -LiteralPath $removable)
         {
@@ -270,8 +416,14 @@ if ($Uninstall)
         }
     }
 
+    # The 'NT SERVICE\Collabhost' virtual account is auto-managed by the SCM and
+    # needs no explicit deletion -- removing the service registration above
+    # retires it. (Any icacls grant that survives on a preserved data/ directory
+    # references the same service-name-derived SID and is re-validated if the
+    # service is reinstalled.)
     Write-Host ''
     Write-Host "$ServiceName uninstalled."
+    Write-Host '  Service registration + virtual account retired; URL ACLs removed.'
     return
 }
 
@@ -505,7 +657,7 @@ try
 
     # ---- Layout ------------------------------------------------------------
 
-    foreach ($dir in @($InstallPrefix, $BinDir, $DataRoot, $ConfigDir, $DataDir, $UserTypesDir, $CaddyStorageDir, $LogDir))
+    foreach ($dir in @($InstallPrefix, $BinDir, $DataRoot, $ConfigDir, $DataDir, $UserTypesDir, $CaddyStorageDir, $LogDir, $DotnetBundleDir))
     {
         if (-not (Test-Path -LiteralPath $dir))
         {
@@ -676,15 +828,21 @@ try
     # parsed correctly by the SCM.
     $ServiceBinaryPath = '"' + (Join-Path $BinDir 'collabhost.exe') + '"'
 
+    # Logon identity: the dedicated virtual account. sc.exe takes the account in
+    # the 'obj=' token with an empty 'password=' -- virtual accounts carry no
+    # password, and the SCM grants them the "log on as a service" right
+    # automatically (no separate account creation or privilege grant needed).
+    # On a re-run against a LocalSystem-era install this is the line that
+    # migrates the service to the least-privilege account.
     if (Get-CollabhostService)
     {
-        Write-Host "$ServiceName service already registered -- updating binary path..."
+        Write-Host "$ServiceName service already registered -- updating binary path + service account..."
         # New-Service has no Set-Service equivalent for BinaryPathName on PS 5.1
         # (Set-Service -BinaryPathName landed in PS 6.0). sc.exe config covers
         # both PS versions cleanly. Note: sc.exe's "key= value" syntax requires
         # a space AFTER the '=' (a leading space in PS argument parsing strips
         # the second token; `binPath= "..."` is two tokens, NOT one).
-        & sc.exe config $ServiceName binPath= $ServiceBinaryPath start= delayed-auto obj= LocalSystem | Out-Null
+        & sc.exe config $ServiceName binPath= $ServiceBinaryPath start= delayed-auto obj= $ServiceAccount password= '""' | Out-Null
         if ($LASTEXITCODE -ne 0)
         {
             throw "sc.exe config $ServiceName failed with exit code $LASTEXITCODE."
@@ -700,14 +858,14 @@ try
             -BinaryPathName $ServiceBinaryPath `
             -StartupType    Automatic | Out-Null
 
-        # Network-wait posture: depend on Tcpip + delayed-auto so the service
-        # starts after the network stack is up. Mirrors the Linux unit's
-        # After=network-online.target / Wants=network-online.target. sc.exe
-        # config writes are idempotent; running on every install is harmless.
-        & sc.exe config $ServiceName start= delayed-auto depend= Tcpip | Out-Null
+        # Set the virtual-account logon identity, then the network-wait posture:
+        # depend on Tcpip + delayed-auto so the service starts after the network
+        # stack is up (mirrors the Linux unit's After/Wants=network-online.target).
+        # sc.exe config writes are idempotent; running on every install is harmless.
+        & sc.exe config $ServiceName obj= $ServiceAccount password= '""' start= delayed-auto depend= Tcpip | Out-Null
         if ($LASTEXITCODE -ne 0)
         {
-            throw "sc.exe config $ServiceName start/depend failed with exit code $LASTEXITCODE."
+            throw "sc.exe config $ServiceName account/start/depend failed with exit code $LASTEXITCODE."
         }
     }
 
@@ -721,6 +879,34 @@ try
     if ($LASTEXITCODE -ne 0)
     {
         throw "sc.exe failure $ServiceName failed with exit code $LASTEXITCODE."
+    }
+
+    # ---- Least-privilege filesystem grants ---------------------------------
+
+    # Grant the virtual account Modify on each writable %ProgramData% directory.
+    # The service account resolves only once the service is registered (above),
+    # so this must run after registration and before the service starts (it
+    # needs write access at first boot: SQLite, crash logs, Caddy storage, and
+    # the single-file native-lib extract dir). %ProgramFiles% is intentionally
+    # never granted -- it stays read-only to the account, which is the whole
+    # point of moving off LocalSystem.
+    Write-Host "Granting $ServiceAccount write access to data directories..."
+    foreach ($writableDir in $WritableServiceDirs)
+    {
+        Set-ServiceModifyAccess -Path $writableDir -Account $ServiceAccount
+    }
+
+    # ---- Privileged-listener URL ACLs --------------------------------------
+
+    # Defense-in-depth HTTP.sys reservations for the virtual account. Caddy and
+    # Kestrel bind their sockets directly (not via HTTP.sys), and Windows does
+    # not gate low-port socket binds by account privilege, so these are not what
+    # lets the account bind :80/:443 -- but they cost nothing and harden the
+    # HTTP.sys namespace. -Uninstall removes them.
+    Write-Host 'Registering privileged-listener URL ACLs...'
+    foreach ($url in $UrlAclReservations)
+    {
+        Add-ServiceUrlAcl -Url $url -Account $ServiceAccount
     }
 
     # ---- Service-scoped environment variables ------------------------------
@@ -746,6 +932,13 @@ try
     # Shape: REG_MULTI_SZ value named "Environment" under the service key. The
     # SCM honors this convention on Win10+/Server 2016+. Card #277.
     $ServiceRegistryKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    #
+    # DOTNET_BUNDLE_EXTRACT_BASE_DIR points the single-file host's native-library
+    # self-extract at a directory the virtual account is granted to write. Under
+    # LocalSystem the default extract location (a writable system temp) sufficed;
+    # a limited virtual account cannot rely on that, so the writable location is
+    # told to the runtime rather than discovered -- the Windows analog of the
+    # Linux unit's DOTNET_BUNDLE_EXTRACT_BASE_DIR directive.
     $ServiceEnvVars = @(
         "ASPNETCORE_CONTENTROOT=$InstallPrefix",
         "COLLABHOST_CONFIG_PATH=$AppSettingsPath",
@@ -753,6 +946,7 @@ try
         "COLLABHOST_USER_TYPES_PATH=$UserTypesDir",
         "COLLABHOST_LOGS_PATH=$LogDir",
         "COLLABHOST_PROXY_STORAGE_PATH=$CaddyStorageDir",
+        "DOTNET_BUNDLE_EXTRACT_BASE_DIR=$DotnetBundleDir",
         'ASPNETCORE_ENVIRONMENT=Production',
         'DOTNET_ENVIRONMENT=Production'
     )
@@ -769,6 +963,36 @@ try
         -Value       $ServiceEnvVars `
         -Type        MultiString `
         -ErrorAction Stop
+
+    # ---- Event Log source --------------------------------------------------
+
+    # Pre-create the "Collabhost" Application-log event source from the elevated
+    # installer. Under the Windows Service, UseWindowsService() registers the
+    # Event Log logging provider with this source name, and the first-boot admin
+    # key is emitted only through ILogger -- so the Event Log is the operator's
+    # surface for retrieving it. Creating an event source writes under
+    # HKLM\SYSTEM\CurrentControlSet\Services\EventLog and needs administrator
+    # rights: LocalSystem could self-create it on first write, but the limited
+    # virtual account cannot. Without this step the source would be missing, the
+    # admin key would be unrecoverable, and the install unusable. Writing events
+    # to an existing source is permitted for the account, so creating it here
+    # (idempotently) is the fix. The source name must match Program.cs's
+    # options.ServiceName.
+    try
+    {
+        if (-not [System.Diagnostics.EventLog]::SourceExists($ServiceName))
+        {
+            Write-Host "Registering '$ServiceName' Application event-log source..."
+            [System.Diagnostics.EventLog]::CreateEventSource($ServiceName, 'Application')
+        }
+    }
+    catch
+    {
+        Write-Host "Warning: could not pre-create the '$ServiceName' event-log source -- $($_.Exception.Message)"
+        Write-Host "  The first-boot admin key may not surface in the Application event log under the"
+        Write-Host "  virtual account. If you cannot retrieve it, set Auth:AdminKey in"
+        Write-Host "  $AppSettingsPath to a known value and restart the service (break-glass; see INSTALL.md section 2)."
+    }
 
     # ---- Start service -----------------------------------------------------
 
@@ -807,6 +1031,7 @@ try
     Write-Host "  Data:        $DataDir\"
     Write-Host "  Logs:        $LogDir\"
     Write-Host "  Service:     $ServiceName  (sc.exe query $ServiceName)"
+    Write-Host "  Account:     $ServiceAccount  (least-privilege virtual account)"
     Write-Host ''
     if ($IsReinstall)
     {
