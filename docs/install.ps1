@@ -439,6 +439,23 @@ function Register-CollabhostUserService
     $existingGrantMarker = 0
     if (Get-CollabhostUserService)
     {
+        # An in-place upgrade does NOT re-supply the logon credential (the SCM
+        # persists it; see the sc.exe config call below), so silently switching the
+        # account would grant the new account the logon right while leaving the
+        # service running as the old one -- a silently-ignored override. Detect a
+        # genuine account change (compared by SID, so .\user / COMPUTERNAME\user /
+        # DOMAIN\user forms compare equal) and fail loud BEFORE granting anything.
+        $registeredAccount = (Get-CimInstance -ClassName Win32_Service -Filter "Name='$UserServiceName'" -ErrorAction SilentlyContinue).StartName
+        if ($registeredAccount)
+        {
+            $registeredSid = $null
+            try { $registeredSid = Resolve-AccountSid -AccountName $registeredAccount } catch { $registeredSid = $null }
+            if ($registeredSid -and (($registeredSid -join ',') -ne ($sidBytes -join ',')))
+            {
+                throw "$UserServiceName already runs as '$registeredAccount'. Changing the service account on an in-place upgrade is not supported -- run 'install.ps1 -UnregisterUserService' first, then re-run -RegisterUserService with the new -ServiceCredential."
+            }
+        }
+
         try
         {
             $existingGrantMarker = [int](Get-ItemProperty -LiteralPath $serviceRegistryKey -Name 'CollabhostGrantedLogonRight' -ErrorAction Stop).CollabhostGrantedLogonRight
@@ -481,12 +498,16 @@ function Register-CollabhostUserService
 
     if (Get-CollabhostUserService)
     {
-        Write-Host "$UserServiceName service already registered -- updating binary path + account..."
+        Write-Host "$UserServiceName service already registered -- updating binary path (logon credential preserved by the SCM)..."
         # Set-Service -BinaryPathName landed in PS 6.0; sc.exe config covers PS 5.1
-        # too. sc.exe's "key= value" syntax needs the space AFTER '=' (it is two
-        # tokens, not one). The account password is passed via sc.exe so the SCM
-        # stores it as the service's logon secret.
-        & sc.exe config $UserServiceName binPath= $binaryPathArg obj= $accountName password= $Credential.GetNetworkCredential().Password start= delayed-auto | Out-Null
+        # too. sc.exe's "key= value" syntax needs the space AFTER '=' (two tokens,
+        # not one). The logon account + password are deliberately NOT re-supplied
+        # here: the SCM already holds them from the initial registration and carries
+        # them across a binPath change, so a version-only upgrade has no reason to
+        # re-set them. Passing the password to sc.exe would put the operator secret
+        # on the process command line (readable via Win32_Process.CommandLine for
+        # the life of the call); a genuine account change was rejected above instead.
+        & sc.exe config $UserServiceName binPath= $binaryPathArg start= delayed-auto | Out-Null
         if ($LASTEXITCODE -ne 0)
         {
             throw "sc.exe config $UserServiceName failed with exit code $LASTEXITCODE."
@@ -680,8 +701,8 @@ if ($WantsServiceAction)
 {
     # The service switches register a machine-level Windows service (HKLM) and
     # grant an LSA right -- both need elevation. The plain install (no switch)
-    # stays non-elevated and writes only under $HOME. Q8 ruling (mirrored from
-    # install-system.ps1): hard-fail rather than UAC-relaunch, which does not
+    # stays non-elevated and writes only under $HOME. Mirrored from
+    # install-system.ps1: hard-fail rather than UAC-relaunch, which does not
     # compose with the iwr-pipe-to-iex flow.
     $runningOnWindows = $IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop'
     if (-not $runningOnWindows)
