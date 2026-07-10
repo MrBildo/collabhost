@@ -653,8 +653,8 @@ try
 
     # wwwroot.sha256 sidecar: build-time SHA-256 hash of the wwwroot/ tree,
     # written by the publish workflow. Lives at the install prefix root so the
-    # UAT runbook can compare against /api/v1/version.wwwrootHash (#342).
-    # Optional for archives predating #342 -- absence is silent.
+    # UAT runbook can compare against /api/v1/version.wwwrootHash.
+    # Optional for archives predating the wwwroot-hash sidecar -- absence is silent.
     $WwwrootSidecarSrc = Join-Path $ExtractDir 'wwwroot.sha256'
     if (Test-Path -LiteralPath $WwwrootSidecarSrc)
     {
