@@ -151,7 +151,7 @@ $UserServiceDescription = 'Collabhost self-hosted application platform (user-sco
 # SCM-managed virtual account derived from the service name. Carries no password
 # and is auto-granted the logon-as-service right, so an operator with no usable
 # password (Microsoft-account + PIN sign-in) can still register a boot service.
-# Same principal shape the system-scope install (install-system.ps1, #266) uses.
+# Same principal shape the system-scope install (install-system.ps1) uses.
 $UserServiceAccount     = "NT SERVICE\$UserServiceName"
 
 # The single-file binary's Windows Event Log source. UseWindowsService() in the
@@ -509,7 +509,7 @@ function Register-CollabhostUserService
     #    Microsoft-account + PIN sign-in, where the MSA password is unknown to the
     #    operator) and puts no secret on the box. It is given scoped access to the install
     #    tree via an explicit icacls grant. Mirrors the least-privilege virtual account
-    #    install-system.ps1 (#266) uses.
+    #    install-system.ps1 uses.
     #  * A real account (opt-in): the service runs as a named account -- either the
     #    operator's own (-RunAsCurrentUser prompts for the operator's password) or a
     #    specific/dedicated account (-Credential, from -ServiceCredential). Needs the
@@ -703,7 +703,7 @@ function Register-CollabhostUserService
     # enumerate them. This is NOT wider than the operator-account model, which runs as the
     # operator who already owns the whole tree. Run after the service exists so a virtual
     # account name resolves; the ACEs live on the directories, so removing the install
-    # removes the grant with it (mirrors install-system.ps1 #266).
+    # removes the grant with it (mirrors install-system.ps1).
     if ($needsFilesystemGrant)
     {
         Write-Host "Granting '$accountName' access to the install tree ($BinDir)..."
@@ -901,6 +901,11 @@ if ($VirtualAccount -and -not $RegisterUserService)
 if ($RunAsCurrentUser -and -not $RegisterUserService)
 {
     [Console]::Error.WriteLine('-RunAsCurrentUser only applies together with -RegisterUserService.')
+    exit 1
+}
+if ($ServiceCredential -and -not $RegisterUserService)
+{
+    [Console]::Error.WriteLine('-ServiceCredential only applies together with -RegisterUserService.')
     exit 1
 }
 if ($VirtualAccount -and $ServiceCredential)
@@ -1189,8 +1194,8 @@ try
 
     # wwwroot.sha256 sidecar: build-time SHA-256 hash of the wwwroot/ tree,
     # written by the publish workflow. Sits next to the binary so the UAT
-    # runbook can compare against /api/v1/version.wwwrootHash (#342). Optional
-    # for archives predating #342 -- absence is silent.
+    # runbook can compare against /api/v1/version.wwwrootHash. Optional
+    # for archives predating the wwwroot-hash sidecar -- absence is silent.
     $WwwrootSidecarSrc = Join-Path $ExtractDir 'wwwroot.sha256'
     if (Test-Path -LiteralPath $WwwrootSidecarSrc)
     {
@@ -1201,7 +1206,7 @@ try
     #
     # First install: copy the archive's shipped appsettings.json into place AND seed the sidecar
     # baseline (appsettings.shipped.json) so the next upgrade has a reference for distinguishing
-    # operator-edited keys from untouched defaults (card #161).
+    # operator-edited keys from untouched defaults.
     #
     # Upgrade: invoke `collabhost --merge-appsettings <shipped> <ondisk> --baseline <baseline>`
     # to perform the three-way merge. The new binary owns the merge logic so the same shape runs
@@ -1225,7 +1230,7 @@ try
         # appsettings.json as bytes, no merge) is what the operator already had.
         # Match "Collabhost X.Y.Z" or "Collabhost vX.Y.Z" -- the optional 'v' guards
         # against any future change to VersionInfo.Current's prefix without re-breaking
-        # the gate (card #213 root cause: the prior regex required 'v' that the binary
+        # the gate (the prior regex required 'v' that the binary
         # doesn't emit). Drop the major-version >= 1 constraint -- merge-appsettings
         # shipped in v1.0.0, so a v0.x binary won't recognize it and will exit non-zero,
         # which the gate already handles. Surface a warning when the regex misses so
