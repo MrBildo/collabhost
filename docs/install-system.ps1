@@ -791,11 +791,16 @@ try
     $ServiceBinaryPath = '"' + (Join-Path $BinDir 'collabhost.exe') + '"'
 
     # Logon identity: the dedicated virtual account. sc.exe takes the account in
-    # the 'obj=' token with an empty 'password=' -- virtual accounts carry no
-    # password, and the SCM grants them the "log on as a service" right
+    # the 'obj=' token with NO 'password=' token at all -- virtual accounts carry
+    # no password, and the SCM grants them the "log on as a service" right
     # automatically (no separate account creation or privilege grant needed).
-    # On a re-run against a LocalSystem-era install this is the line that
-    # migrates the service to the least-privilege account.
+    # Do NOT re-add `password= '""'`: PowerShell's single-quoted '""' is two
+    # literal quote characters, not an empty string, so the SCM sees a 2-char
+    # password and rejects the virtual account with exit 1057
+    # (ERROR_INVALID_SERVICE_ACCOUNT) on some Windows editions (observed on
+    # Windows 11 Home). The token-less form is the correct one for a virtual
+    # account. On a re-run against a LocalSystem-era install this is the line
+    # that migrates the service to the least-privilege account.
     if (Get-CollabhostService)
     {
         Write-Host "$ServiceName service already registered -- updating binary path + service account..."
@@ -804,7 +809,7 @@ try
         # both PS versions cleanly. Note: sc.exe's "key= value" syntax requires
         # a space AFTER the '=' (a leading space in PS argument parsing strips
         # the second token; `binPath= "..."` is two tokens, NOT one).
-        & sc.exe config $ServiceName binPath= $ServiceBinaryPath start= delayed-auto obj= $ServiceAccount password= '""' | Out-Null
+        & sc.exe config $ServiceName binPath= $ServiceBinaryPath start= delayed-auto obj= $ServiceAccount | Out-Null
         if ($LASTEXITCODE -ne 0)
         {
             throw "sc.exe config $ServiceName failed with exit code $LASTEXITCODE."
@@ -824,7 +829,7 @@ try
         # depend on Tcpip + delayed-auto so the service starts after the network
         # stack is up (mirrors the Linux unit's After/Wants=network-online.target).
         # sc.exe config writes are idempotent; running on every install is harmless.
-        & sc.exe config $ServiceName obj= $ServiceAccount password= '""' start= delayed-auto depend= Tcpip | Out-Null
+        & sc.exe config $ServiceName obj= $ServiceAccount start= delayed-auto depend= Tcpip | Out-Null
         if ($LASTEXITCODE -ne 0)
         {
             throw "sc.exe config $ServiceName account/start/depend failed with exit code $LASTEXITCODE."
