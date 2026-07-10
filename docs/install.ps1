@@ -32,6 +32,7 @@ param
     [switch]$RegisterUserService,
     [switch]$UnregisterUserService,
     [pscredential]$ServiceCredential,
+    [switch]$VirtualAccount,
     [switch]$Help
 )
 
@@ -107,7 +108,14 @@ Options:
                         elevated PowerShell.
   -ServiceCredential    PSCredential for the account the service runs as (used with
                         -RegisterUserService). Defaults to prompting for the current
-                        user's password.
+                        user's password. Not usable if you sign in with a Microsoft
+                        account or PIN (no local password) -- use -VirtualAccount.
+  -VirtualAccount       Register the service under the passwordless, machine-managed
+                        virtual account 'NT SERVICE\CollabhostUser' instead of your
+                        own account. Use this when your sign-in has no usable password
+                        (the common Microsoft-account + PIN case). No credential is
+                        prompted or required. The service is granted scoped access to
+                        the install tree. See INSTALL.md section 5.5.5.
   -Help                 Print this message and exit
 
 Environment:
@@ -128,6 +136,13 @@ Environment:
 $UserServiceName        = 'CollabhostUser'
 $UserServiceDisplayName = 'Collabhost (user-scope)'
 $UserServiceDescription = 'Collabhost self-hosted application platform (user-scope service).'
+
+# The passwordless service principal for -VirtualAccount: the per-service,
+# SCM-managed virtual account derived from the service name. Carries no password
+# and is auto-granted the logon-as-service right, so an operator with no usable
+# password (Microsoft-account + PIN sign-in) can still register a boot service.
+# Same principal shape the system-scope install (install-system.ps1, #266) uses.
+$UserServiceAccount     = "NT SERVICE\$UserServiceName"
 
 # The single-file binary's Windows Event Log source. UseWindowsService() in the
 # binary pins the source name to 'Collabhost' regardless of the SCM service name,
@@ -219,6 +234,36 @@ function Resolve-AccountSid
     $sidBytes = New-Object byte[] $sid.BinaryLength
     $sid.GetBinaryForm($sidBytes, 0)
     return , $sidBytes
+}
+
+# Compare a registered service StartName to a desired account for the account-change
+# guard. Human accounts vary by prefix (.\user / MACHINE\user / DOMAIN\user) so they
+# compare by SID; virtual accounts (NT SERVICE\*) and built-in principals have a
+# single canonical form and compare as strings -- their SID does not resolve via
+# NTAccount until the owning service exists, so a SID compare is unreliable for them.
+function Test-SameServiceAccount
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Registered,
+        [Parameter(Mandatory = $true)][string]$Desired
+    )
+
+    if ($Registered -like 'NT SERVICE\*' -or $Desired -like 'NT SERVICE\*')
+    {
+        return $Registered -ieq $Desired
+    }
+
+    try
+    {
+        $registeredSid = Resolve-AccountSid -AccountName $Registered
+        $desiredSid    = Resolve-AccountSid -AccountName $Desired
+        return ($registeredSid -join ',') -eq ($desiredSid -join ',')
+    }
+    catch
+    {
+        return $Registered -ieq $Desired
+    }
 }
 
 # Local Security Authority (LSA) interop for user-rights assignments. There is no
@@ -407,25 +452,46 @@ function Register-CollabhostUserService
     param
     (
         [Parameter(Mandatory = $true)][string]$BinDir,
-        [pscredential]$Credential
+        [pscredential]$Credential,
+        [switch]$VirtualAccount
     )
 
-    # Resolve the credential. Default to the current user; prompt for the password
-    # (the SCM needs it to start a named-account service at boot). The prompt is a
-    # host-UI call, so it works even though install.ps1 is documented as iwr-piped
-    # -- but -RegisterUserService is realistically run from a downloaded script.
-    if (-not $Credential)
+    # Two service-principal models:
+    #  * Operator account (default): the service runs as the operator's own account,
+    #    so it has the same filesystem access the foreground launch has (the
+    #    systemd --user parity the card was framed around). Needs the account password
+    #    -- the SCM stores it as an LSA secret to log the account on at boot.
+    #  * Virtual account (-VirtualAccount): the service runs as the per-service,
+    #    SCM-managed principal NT SERVICE\CollabhostUser. It carries NO password and
+    #    is auto-granted the logon-as-service right, so it is the correct path for an
+    #    operator with no usable password -- the common Microsoft-account + PIN
+    #    sign-in, where the MSA password is unknown to the operator. It is given scoped
+    #    access to the install tree via an explicit icacls grant instead of the ambient
+    #    access the operator-account model inherits. Mirrors the least-privilege
+    #    virtual account install-system.ps1 (#266) uses.
+    if ($VirtualAccount)
     {
-        $defaultUser = "$env:USERDOMAIN\$env:USERNAME"
-        $Credential  = Get-Credential -UserName $defaultUser -Message "Password for $defaultUser -- the account the CollabhostUser boot service will run as."
+        $accountName = $UserServiceAccount
     }
-    if (-not $Credential)
+    else
     {
-        throw 'A credential is required to register the user-scope service. Re-run with -ServiceCredential or supply the password when prompted.'
-    }
+        # Resolve the credential. Default to the current user; prompt for the password
+        # (the SCM needs it to start a named-account service at boot). The prompt is a
+        # host-UI call, so it works even though install.ps1 is documented as iwr-piped
+        # -- but -RegisterUserService is realistically run from a downloaded script.
+        if (-not $Credential)
+        {
+            $defaultUser = "$env:USERDOMAIN\$env:USERNAME"
+            $Credential  = Get-Credential -UserName $defaultUser -Message "Password for $defaultUser -- the account the CollabhostUser boot service will run as."
+        }
+        if (-not $Credential)
+        {
+            throw 'A credential is required to register the user-scope service. Re-run with -ServiceCredential, supply the password when prompted, or use -VirtualAccount for a passwordless machine-managed service account (see INSTALL.md section 5.5.5 -- the right choice for a Microsoft-account / PIN sign-in).'
+        }
 
-    $accountName = $Credential.UserName
-    $sidBytes    = Resolve-AccountSid -AccountName $accountName
+        $accountName = $Credential.UserName
+        $sidBytes    = Resolve-AccountSid -AccountName $accountName
+    }
 
     # Grant "Log on as a service". Track whether the account already held it so
     # -UnregisterUserService only revokes a right THIS installer added -- revoking
@@ -439,21 +505,18 @@ function Register-CollabhostUserService
     $existingGrantMarker = 0
     if (Get-CollabhostUserService)
     {
-        # An in-place upgrade does NOT re-supply the logon credential (the SCM
-        # persists it; see the sc.exe config call below), so silently switching the
-        # account would grant the new account the logon right while leaving the
-        # service running as the old one -- a silently-ignored override. Detect a
-        # genuine account change (compared by SID, so .\user / COMPUTERNAME\user /
-        # DOMAIN\user forms compare equal) and fail loud BEFORE granting anything.
+        # An in-place upgrade does NOT re-assign the service's logon identity beyond
+        # the binary-path update, so silently switching the account (operator <->
+        # virtual account, or one operator account to another) would leave the service
+        # running as the old principal while this run grants/scopes the new one -- a
+        # silently-ignored override. Detect a genuine account change and fail loud
+        # BEFORE granting anything. (See Test-SameServiceAccount for the SID-vs-string
+        # comparison that makes both human and virtual-account forms compare correctly.)
         $registeredAccount = (Get-CimInstance -ClassName Win32_Service -Filter "Name='$UserServiceName'" -ErrorAction SilentlyContinue).StartName
-        if ($registeredAccount)
+        if ($registeredAccount -and -not (Test-SameServiceAccount -Registered $registeredAccount -Desired $accountName))
         {
-            $registeredSid = $null
-            try { $registeredSid = Resolve-AccountSid -AccountName $registeredAccount } catch { $registeredSid = $null }
-            if ($registeredSid -and (($registeredSid -join ',') -ne ($sidBytes -join ',')))
-            {
-                throw "$UserServiceName already runs as '$registeredAccount'. Changing the service account on an in-place upgrade is not supported -- run 'install.ps1 -UnregisterUserService' first, then re-run -RegisterUserService with the new -ServiceCredential."
-            }
+            $reRunWith = if ($VirtualAccount) { '-RegisterUserService -VirtualAccount' } else { '-RegisterUserService with the new -ServiceCredential' }
+            throw "$UserServiceName already runs as '$registeredAccount'. Changing the service account on an in-place upgrade is not supported -- run 'install.ps1 -UnregisterUserService' first, then re-run $reRunWith."
         }
 
         try
@@ -466,21 +529,32 @@ function Register-CollabhostUserService
         }
     }
 
-    Initialize-LsaInterop
-    $alreadyHadRight = [Collabhost.LsaUserRights]::Has($sidBytes, $ServiceLogonRight)
-    if (-not $alreadyHadRight)
+    # The 'Log on as a service' right: the operator-account model must be granted it
+    # explicitly (and we record whether we added it, to revoke exactly that at
+    # uninstall). A virtual account is auto-granted the right by the SCM when it is set
+    # as the logon identity -- nothing to grant here, and nothing to revoke later.
+    if ($VirtualAccount)
     {
-        Write-Host "Granting '$accountName' the 'Log on as a service' right..."
-        [Collabhost.LsaUserRights]::Grant($sidBytes, $ServiceLogonRight)
+        $weOwnTheGrant = $false
     }
     else
     {
-        Write-Host "'$accountName' already holds the 'Log on as a service' right."
-    }
+        Initialize-LsaInterop
+        $alreadyHadRight = [Collabhost.LsaUserRights]::Has($sidBytes, $ServiceLogonRight)
+        if (-not $alreadyHadRight)
+        {
+            Write-Host "Granting '$accountName' the 'Log on as a service' right..."
+            [Collabhost.LsaUserRights]::Grant($sidBytes, $ServiceLogonRight)
+        }
+        else
+        {
+            Write-Host "'$accountName' already holds the 'Log on as a service' right."
+        }
 
-    # We are responsible for revoking the right at uninstall iff we added it now OR
-    # a prior run of this installer already recorded that it added it.
-    $weOwnTheGrant = (-not $alreadyHadRight) -or ($existingGrantMarker -eq 1)
+        # We are responsible for revoking the right at uninstall iff we added it now OR
+        # a prior run of this installer already recorded that it added it.
+        $weOwnTheGrant = (-not $alreadyHadRight) -or ($existingGrantMarker -eq 1)
+    }
 
     $serviceBinary = Join-Path $BinDir 'collabhost.exe'
     $binaryPathArg = '"' + $serviceBinary + '"'
@@ -498,7 +572,7 @@ function Register-CollabhostUserService
 
     if (Get-CollabhostUserService)
     {
-        Write-Host "$UserServiceName service already registered -- updating binary path (logon credential preserved by the SCM)..."
+        Write-Host "$UserServiceName service already registered -- updating binary path (logon identity preserved by the SCM)..."
         # Set-Service -BinaryPathName landed in PS 6.0; sc.exe config covers PS 5.1
         # too. sc.exe's "key= value" syntax needs the space AFTER '=' (two tokens,
         # not one). The logon account + password are deliberately NOT re-supplied
@@ -511,6 +585,31 @@ function Register-CollabhostUserService
         if ($LASTEXITCODE -ne 0)
         {
             throw "sc.exe config $UserServiceName failed with exit code $LASTEXITCODE."
+        }
+    }
+    elseif ($VirtualAccount)
+    {
+        Write-Host "Registering $UserServiceName service (boot-start, runs as '$accountName')..."
+        # New-Service has no virtual-account credential form (-Credential wants a
+        # PSCredential, i.e. a password), so create the service, then set its logon
+        # identity to the virtual account with sc.exe. The obj= token-less form is
+        # required: a virtual account carries no password, and passing `password= '""'`
+        # makes the SCM see a 2-char password and reject the account with exit 1057
+        # on some Windows editions (the same bug fixed in install-system.ps1). The
+        # service exists as LocalSystem only for the instant between these two calls
+        # and is never started until its identity is the virtual account (Start-Service
+        # is the last step).
+        New-Service `
+            -Name           $UserServiceName `
+            -DisplayName    $UserServiceDisplayName `
+            -Description    $UserServiceDescription `
+            -BinaryPathName $binaryPathArg `
+            -StartupType    Automatic | Out-Null
+
+        & sc.exe config $UserServiceName obj= $UserServiceAccount start= delayed-auto depend= Tcpip | Out-Null
+        if ($LASTEXITCODE -ne 0)
+        {
+            throw "sc.exe config $UserServiceName account/start/depend failed with exit code $LASTEXITCODE."
         }
     }
     else
@@ -531,6 +630,26 @@ function Register-CollabhostUserService
         if ($LASTEXITCODE -ne 0)
         {
             throw "sc.exe config $UserServiceName start/depend failed with exit code $LASTEXITCODE."
+        }
+    }
+
+    # Virtual account only: it is not the operator, so it does not inherit access to
+    # the install tree under the operator's profile the way the operator-account model
+    # does. Grant it Modify on the whole install tree -- binary, wwwroot, appsettings,
+    # data/, and dotnet-bundle/ all live together under $BinDir for a user-scope
+    # install, and this covers every writable subdir the binary creates at runtime
+    # (data/, logs) without having to enumerate them. This is NOT wider than the
+    # operator-account model, which runs as the operator who already owns the whole
+    # tree. Run after the service exists so NT SERVICE\CollabhostUser resolves; the
+    # ACEs live on the directories, so removing the install removes the grant with it
+    # (mirrors install-system.ps1 #266).
+    if ($VirtualAccount)
+    {
+        Write-Host "Granting '$accountName' access to the install tree ($BinDir)..."
+        & icacls.exe $BinDir /grant "${accountName}:(OI)(CI)M" /T /C | Out-Null
+        if ($LASTEXITCODE -ne 0)
+        {
+            throw "icacls grant on '$BinDir' for '$accountName' failed with exit code $LASTEXITCODE."
         }
     }
 
@@ -589,8 +708,16 @@ function Register-CollabhostUserService
     catch
     {
         Write-Host "Warning: Start-Service $UserServiceName failed -- $($_.Exception.Message)"
-        Write-Host "  A logon failure (error 1069/1326) usually means a wrong password or a missing"
-        Write-Host "  'Log on as a service' right. Verify the credential and re-run -RegisterUserService."
+        if ($VirtualAccount)
+        {
+            Write-Host "  Confirm '$accountName' has access to $BinDir (icacls) and the binary path is"
+            Write-Host "  correct, then re-run -RegisterUserService -VirtualAccount."
+        }
+        else
+        {
+            Write-Host "  A logon failure (error 1069/1326) usually means a wrong password or a missing"
+            Write-Host "  'Log on as a service' right. Verify the credential and re-run -RegisterUserService."
+        }
         throw
     }
 
@@ -665,10 +792,13 @@ function Unregister-CollabhostUserService
     }
 
     # Revoke "Log on as a service" only if the marker says this installer added it.
-    # LocalSystem/LocalService/NetworkService are built-in principals that never
-    # need the grant -- skip them outright as a second guard.
+    # LocalSystem/LocalService/NetworkService are built-in principals, and a virtual
+    # account (NT SERVICE\*, the -VirtualAccount path) is auto-granted the right by the
+    # SCM -- none of them ever needed an explicit grant, so skip them outright as a
+    # second guard. (A -VirtualAccount registration also leaves the marker at 0, so
+    # $weOwnTheGrant is already false for it; this is belt-and-suspenders.)
     $builtInAccounts = @('LocalSystem', 'NT AUTHORITY\LocalService', 'NT AUTHORITY\NetworkService', 'NT AUTHORITY\SYSTEM')
-    if ($weOwnTheGrant -and $accountName -and ($builtInAccounts -notcontains $accountName))
+    if ($weOwnTheGrant -and $accountName -and ($builtInAccounts -notcontains $accountName) -and ($accountName -notlike 'NT SERVICE\*'))
     {
         try
         {
@@ -696,6 +826,20 @@ function Unregister-CollabhostUserService
 # ---- Service switch gate ----------------------------------------------------
 
 $WantsServiceAction = $RegisterUserService -or $UnregisterUserService
+
+# -VirtualAccount is a modifier of -RegisterUserService and is mutually exclusive
+# with -ServiceCredential (the virtual account takes no credential). Fail loud on a
+# contradictory invocation rather than silently ignoring the flag.
+if ($VirtualAccount -and -not $RegisterUserService)
+{
+    [Console]::Error.WriteLine('-VirtualAccount only applies together with -RegisterUserService.')
+    exit 1
+}
+if ($VirtualAccount -and $ServiceCredential)
+{
+    [Console]::Error.WriteLine('-VirtualAccount and -ServiceCredential are mutually exclusive: -VirtualAccount registers the passwordless machine-managed account NT SERVICE\CollabhostUser, which takes no credential.')
+    exit 1
+}
 
 if ($WantsServiceAction)
 {
@@ -1164,7 +1308,7 @@ try
     if ($RegisterUserService)
     {
         Write-Host ''
-        Register-CollabhostUserService -BinDir $InstallPath -Credential $ServiceCredential
+        Register-CollabhostUserService -BinDir $InstallPath -Credential $ServiceCredential -VirtualAccount:$VirtualAccount
     }
 }
 finally
