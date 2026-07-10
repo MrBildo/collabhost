@@ -447,7 +447,7 @@ recipe). On Linux and Windows, pick based on who owns the host:
 |-------|----------|----------|--------|------------|
 | **Linux user-scope** (`install.sh` + `collabhost.user.service`) | Linux | Single-operator homelab; you own the box and your shell. No admin handoff planned. | Everything in `~/.collabhost/`. Service runs as your login user. | None beyond your shell. `loginctl enable-linger` keeps the unit alive across logout. |
 | **Linux system-scope** (`install-system.sh`) | Linux | Servers; multi-operator handoff; a "production" install you'd hand to a new admin without explanation. | Canonical `/opt/`, `/etc/`, `/var/lib/` split. Service runs as a dedicated `collabhost` system user. | Root (sudo) at install time and for upgrades. The running service is unprivileged. |
-| **Windows user-scope** (`install.ps1 -RegisterUserService`) | Windows | A single-operator install you own, where you still want boot-survival without an interactive login. The Windows analog of Linux user-scope + lingering. | Everything in `%USERPROFILE%\.collabhost\bin\`. Service runs under your own account — or a passwordless virtual account with `-VirtualAccount` (needed for Microsoft-account / PIN sign-ins; see §5.5.5). | Administrator-elevated PowerShell at register/unregister time (to register the service + grant the logon right); the plain install needs none. |
+| **Windows user-scope** (`install.ps1 -RegisterUserService`) | Windows | A single-operator install you own, where you still want boot-survival without an interactive login. The Windows analog of Linux user-scope + lingering. | Everything in `%USERPROFILE%\.collabhost\bin\`. Service runs under a passwordless machine-managed virtual account by default (no password needed — works for Microsoft-account / PIN sign-ins); optionally your own account (`-RunAsCurrentUser`) or a dedicated account (`-ServiceCredential`). See §5.5.5. | Administrator-elevated PowerShell at register/unregister time; the plain install needs none. |
 | **Windows system-scope** (`install-system.ps1`) | Windows | Workstations or servers where you want the service running across logout/reboot. The standard Windows shape. | `%ProgramFiles%\Collabhost\` (binaries, read-only to the service) + `%ProgramData%\Collabhost\` (data/config/logs, writable to the service). Service runs under the least-privilege virtual account `NT SERVICE\Collabhost`. | Administrator-elevated PowerShell at install time and for upgrades. |
 
 All shapes ship the same binary and the same config keys. The choice is about
@@ -613,8 +613,9 @@ onto the canonical layout with a clean re-install:
 
 For Windows operators on v1.3 and later, the canonical paths are native and
 ship in the box: `install-system.ps1` for a system-scope service (§5.5.4), or
-`install.ps1 -RegisterUserService` for a user-scope service that runs under your
-own account (§5.5.5). NSSM is no longer needed for either. The NSSM-based recipe
+`install.ps1 -RegisterUserService` for a user-scope service that runs under a
+passwordless machine-managed account by default (§5.5.5). NSSM is no longer
+needed for either. The NSSM-based recipe
 was the operator-driven shape on v1.2 and earlier; it still works against the
 foreground binary if you have an existing rollout, but new installs should use
 one of the native paths.
@@ -891,68 +892,88 @@ If you want a per-user install (everything under `%USERPROFILE%\.collabhost\bin\
 no `%ProgramFiles%` / `%ProgramData%` layout) but still want it to start at boot
 without you logging in, register the user-scope service. This is the Windows
 analog of the Linux user-scope shape plus `loginctl enable-linger` (§5.5.1): the
-service runs under **your own account**, with the same filesystem access your
-foreground launch has, and survives logout and reboot.
+service starts at boot and survives logout and reboot with no interactive login.
 
 Run the normal install with the `-RegisterUserService` switch from an
 **administrator-elevated** PowerShell:
 
 ```powershell
 # Elevated PowerShell. Installs to %USERPROFILE%\.collabhost\bin, then registers
-# the boot-start service under your account.
+# the boot-start service. No password prompted or required (see "Service account"
+# below).
 .\install.ps1 -RegisterUserService
 ```
 
 The plain install writes only under your profile and needs no elevation; the
 `-RegisterUserService` switch additionally registers a machine-level Windows
-service and grants your account a privilege, so it requires an elevated
-PowerShell. If you run it without elevation it stops with a clear message — it
-does **not** prompt UAC and re-launch (that path does not compose cleanly with
-`iwr | iex`).
+service, so it requires an elevated PowerShell. If you run it without elevation it
+stops with a clear message — it does **not** prompt UAC and re-launch (that path
+does not compose cleanly with `iwr | iex`).
 
-You will be prompted for your account's password (the Service Control Manager
-needs it to start the service at boot, before any interactive logon). To supply
-it non-interactively, pass `-ServiceCredential (Get-Credential)` or a stored
-`PSCredential`. To run the service under a different account, give that
-account's credential.
+**Service account — the passwordless default.** By default the service runs under
+a **passwordless, machine-managed virtual account**, `NT SERVICE\CollabhostUser` —
+the same kind of per-service, SCM-managed account the system-scope install uses
+(§5.5.4). Nothing is prompted: it carries no password, the Service Control Manager
+grants it the "Log on as a service" right automatically, and the installer grants
+it scoped access to your install tree (`%USERPROFILE%\.collabhost\bin`) so it can
+read the binary and write its data. This is the right default for most operators,
+and it is the **only** shape that works when you sign in with a **Microsoft account
+and a PIN** — there is no local password to hand the Service Control Manager (the
+MSA password lives with Microsoft, and a Windows Hello PIN is not a service
+credential). The trade-off: the service — and any app Collabhost supervises — runs
+as the machine-managed account, **not** as you, so it does not carry your user
+identity or your ambient file access outside the install tree. For a self-hosted
+control plane that is usually exactly what you want. You can select this default
+explicitly with `-VirtualAccount` (identical to `-RegisterUserService` with no
+account flag).
 
-**No usable password? (Microsoft-account / PIN sign-in) — use `-VirtualAccount`.**
-On the common Windows Home setup you sign in with a **Microsoft account and a
-PIN**, and there is **no local password** to hand the Service Control Manager —
-the MSA password lives with Microsoft rather than on the box, and a Windows
-Hello PIN is not a service credential. For this case (or any time you would
-rather not give the installer a password) register the service under a
-**passwordless, machine-managed virtual account** instead of your own:
+**Run under your own account — `-RunAsCurrentUser`.** If you want the service to
+run as **you** (carrying your identity and your ambient file access — the closest
+parallel to Linux `systemctl --user`), add `-RunAsCurrentUser`. You will be
+prompted for your account's password (the Service Control Manager needs it to start
+the service at boot, before any interactive logon), and the installer grants your
+account the "Log on as a service" right. This needs a **usable local password**, so
+it is not available for a Microsoft-account / PIN sign-in.
 
 ```powershell
-# Elevated PowerShell. No password prompted or required.
-.\install.ps1 -RegisterUserService -VirtualAccount
+# Elevated PowerShell. Prompts for your account password.
+.\install.ps1 -RegisterUserService -RunAsCurrentUser
 ```
 
-`-VirtualAccount` runs the service as **`NT SERVICE\CollabhostUser`** — the same
-kind of per-service, SCM-managed account the system-scope install uses (§5.5.4).
-It carries no password, the SCM grants it the logon-as-service right
-automatically, and the installer grants it scoped access to your install tree
-(`%USERPROFILE%\.collabhost\bin`) so it can read the binary and write its data.
-The trade-off vs. the default account model: the service — and any app
-Collabhost supervises — runs as the machine-managed account, **not** as you, so
-it does not carry your user identity or your ambient file access outside the
-install tree. For a self-hosted control plane that is usually exactly what you
-want. If you specifically need the service to run *as your own account* (and you
-have a usable password), use the default `-RegisterUserService` without
-`-VirtualAccount`. The two credential inputs are mutually exclusive:
-`-VirtualAccount` takes no `-ServiceCredential`.
+**Run under a dedicated account — `-ServiceCredential`.** To run the service under
+a **specific account you name** — typically a dedicated, least-privilege service
+account (e.g. a local `collabhost-svc` account) — pass its credential:
+
+```powershell
+# Elevated PowerShell. Runs the service as the named account.
+.\install.ps1 -RegisterUserService -ServiceCredential (Get-Credential)
+```
+
+The installer grants the named account the "Log on as a service" right **and**
+scoped access to the install tree automatically, so a dedicated account is
+**turnkey** — it starts and runs with no manual `icacls` step. (If the account you
+name happens to be your own, no filesystem grant is added — you already own the
+tree.)
+
+The three account choices are mutually exclusive — pick at most one of
+`-VirtualAccount` (the explicit default), `-RunAsCurrentUser`, or
+`-ServiceCredential`.
 
 **What the switch does, on top of the normal install:**
 
 - Registers a Windows service named **`CollabhostUser`** (distinct from the
   system-scope `Collabhost` service so the two can coexist), startup type
-  `Automatic (Delayed Start)`, dependency on `Tcpip`, running as your account.
-- Grants your account the **"Log on as a service"** right
-  (`SeServiceLogonRight`) so the service can start at boot with no interactive
-  login. The installer records that it made the grant so `-UnregisterUserService`
-  can revoke exactly what it added (a right your account already held is left
-  alone).
+  `Automatic (Delayed Start)`, with a dependency on `Tcpip`.
+- Sets the service account per your choice above (the passwordless virtual account
+  by default). For the virtual account the Service Control Manager auto-grants the
+  **"Log on as a service"** right; for a real account (`-RunAsCurrentUser` or a
+  `-ServiceCredential` account) the installer grants that right explicitly and
+  records that it made the grant, so `-UnregisterUserService` can revoke exactly
+  what it added (a right the account already held is left alone).
+- Grants the service account scoped **`Modify`** access to the install tree via
+  `icacls` when it does not already own it — the virtual account and a dedicated
+  named account both get this grant, so each is turnkey. Your own account already
+  owns the tree, so no grant is added there.
 - Sets `DOTNET_BUNDLE_EXTRACT_BASE_DIR` for the service to an account-owned
   directory under the install (a service starts with no loaded user profile, so
   the single-file binary's native-library extraction needs a writable location
@@ -963,17 +984,9 @@ have a usable password), use the default `-RegisterUserService` without
 - Wires crash-recovery (`sc.exe failure`): restart after the first and second
   failures, no action on the third so a crash-loop doesn't fight you.
 
-With **`-VirtualAccount`** the account-specific steps differ: no password is
-collected, the "Log on as a service" grant is skipped (the SCM grants it to the
-virtual account automatically), and the service is instead given scoped
-`Modify` access to the install tree via `icacls` (it is not your account, so it
-does not inherit access to your profile the way the default model does). The
-service, ports, event-log source, bundle dir, and crash-recovery are otherwise
-identical.
-
-**Privileged ports are not granted.** A user-account service does not get
-`:80` / `:443`; the user-scope service stays on the high-port default
-(`58400`). If you need the bundled Caddy to bind `:80` / `:443`, use the
+**Privileged ports are not granted.** The user-scope service does not get
+`:80` / `:443`; it stays on the high-port default (`58400`), whichever account
+model you choose. If you need the bundled Caddy to bind `:80` / `:443`, use the
 system-scope install (§5.5.4), whose virtual account binds privileged ports by
 construction. This is the central trade-off between the two Windows service
 shapes:
@@ -981,11 +994,11 @@ shapes:
 | | User-scope (`install.ps1 -RegisterUserService`) | System-scope (`install-system.ps1`) |
 |---|---|---|
 | Layout | `%USERPROFILE%\.collabhost\bin\` (one tree) | `%ProgramFiles%` (read-only) + `%ProgramData%` (writable) |
-| Service account | your own account — **or** the passwordless virtual account `NT SERVICE\CollabhostUser` with `-VirtualAccount` | least-privilege virtual account `NT SERVICE\Collabhost` |
-| Password required to register | yes (your account's) — **no** with `-VirtualAccount` | no (virtual account) |
+| Service account | passwordless virtual account `NT SERVICE\CollabhostUser` by default; optionally your own account (`-RunAsCurrentUser`) or a dedicated account (`-ServiceCredential`) | least-privilege virtual account `NT SERVICE\Collabhost` |
+| Password required to register | no (virtual account, default) — yes only for `-RunAsCurrentUser` / `-ServiceCredential` | no (virtual account) |
 | Privileged ports (`:80`/`:443`) | no — high port only (`58400`) | yes — bound by construction |
 | Boot start, no login | yes | yes |
-| Multi-operator handoff | tied to your account (default); account-independent with `-VirtualAccount` | yes (account-independent) |
+| Multi-operator handoff | account-independent by default; tied to an account with `-RunAsCurrentUser` | yes (account-independent) |
 | Elevation | only for register/unregister | install + every upgrade |
 
 **Verify the install:**
@@ -1008,27 +1021,30 @@ If you still can't find the key, use the configured-key break-glass path: set
 `Auth:AdminKey` in `%USERPROFILE%\.collabhost\bin\appsettings.json` to a known
 value and restart the service (`Restart-Service CollabhostUser`). See §2.
 
-**Upgrade:** re-run with the same switches you registered with (include
-`-VirtualAccount` if you used it). The installer stops the service before
+**Upgrade:** re-run with the same account flag you registered with (add
+`-RunAsCurrentUser` or the same `-ServiceCredential` if you used one; the
+passwordless default needs no flag). The installer stops the service before
 overwriting the binary (Windows locks a running EXE), refreshes the binary /
 `wwwroot/` / `LICENSES/`, smart-merges `appsettings.json`, re-applies the service
 configuration, and restarts:
 
 ```powershell
-.\install.ps1 -RegisterUserService                 # latest, runs as your account
-.\install.ps1 -RegisterUserService -VirtualAccount # latest, passwordless virtual account
-.\install.ps1 -RegisterUserService -Version v1.2.3 # pinned
+.\install.ps1 -RegisterUserService                    # latest, passwordless default
+.\install.ps1 -RegisterUserService -RunAsCurrentUser  # latest, runs as your account
+.\install.ps1 -RegisterUserService -Version v1.2.3    # pinned
 ```
 
-Changing the service *account* on an in-place upgrade (your account ⇄ the
-virtual account) is refused with a clear message — run `-UnregisterUserService`
+Changing the service *account* on an in-place upgrade (e.g. the virtual account ⇄
+your own account) is refused with a clear message — run `-UnregisterUserService`
 first, then re-register with the account model you want.
 
-**Unregister:** removes the service and revokes the "Log on as a service" right
-the installer granted, leaving your installed files and data in place. (A
-`-VirtualAccount` install granted no such right — the SCM auto-managed it — so
-there is nothing to revoke; the virtual account is retired with the service, and
-its `icacls` grants live on the install tree, cleared when you delete it.)
+**Unregister:** removes the service and, for a real-account install
+(`-RunAsCurrentUser` / `-ServiceCredential`), revokes the "Log on as a service"
+right the installer granted — leaving your installed files and data in place. (The
+passwordless virtual-account default granted no such right — the SCM auto-managed
+it — so there is nothing to revoke; the virtual account is retired with the
+service, and its `icacls` grants live on the install tree, cleared when you delete
+it.)
 
 ```powershell
 .\install.ps1 -UnregisterUserService

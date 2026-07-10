@@ -33,6 +33,7 @@ param
     [switch]$UnregisterUserService,
     [pscredential]$ServiceCredential,
     [switch]$VirtualAccount,
+    [switch]$RunAsCurrentUser,
     [switch]$Help
 )
 
@@ -94,28 +95,37 @@ Options:
   -InstallPath PATH     Install to PATH (default: $HOME\.collabhost\bin)
   -SkipPath             Do not modify User PATH environment variable
   -RegisterUserService  After installing, register a boot-start Windows service
-                        ('CollabhostUser') that runs under your account. Requires
-                        an elevated PowerShell. The service starts at boot with no
-                        interactive login required (the installer grants your
-                        account the "Log on as a service" right). Privileged ports
-                        (80/443) are NOT granted -- the service stays on the
-                        high-port default (58400). For the system-scope shape
-                        (least-privilege virtual account, %ProgramFiles% layout),
+                        ('CollabhostUser'). By default the service runs under a
+                        passwordless, machine-managed virtual account -- no password
+                        is prompted or required, and it survives reboot with no
+                        interactive login. (To run under a real account instead, see
+                        -ServiceCredential and -RunAsCurrentUser.) Requires an
+                        elevated PowerShell. Privileged ports (80/443) are NOT
+                        granted -- the service stays on the high-port default
+                        (58400). For the system-scope shape (%ProgramFiles% layout),
                         use install-system.ps1 instead. See INSTALL.md section 5.5.
-  -UnregisterUserService  Stop and remove the 'CollabhostUser' service and revoke
-                        the "Log on as a service" right the installer granted.
-                        Leaves your installed files and data in place. Requires an
-                        elevated PowerShell.
-  -ServiceCredential    PSCredential for the account the service runs as (used with
-                        -RegisterUserService). Defaults to prompting for the current
-                        user's password. Not usable if you sign in with a Microsoft
-                        account or PIN (no local password) -- use -VirtualAccount.
-  -VirtualAccount       Register the service under the passwordless, machine-managed
-                        virtual account 'NT SERVICE\CollabhostUser' instead of your
-                        own account. Use this when your sign-in has no usable password
-                        (the common Microsoft-account + PIN case). No credential is
-                        prompted or required. The service is granted scoped access to
-                        the install tree. See INSTALL.md section 5.5.5.
+  -UnregisterUserService  Stop and remove the 'CollabhostUser' service and revoke the
+                        "Log on as a service" right if the installer granted one (the
+                        default virtual-account install grants none). Leaves your
+                        installed files and data in place. Requires an elevated
+                        PowerShell.
+  -ServiceCredential    PSCredential for a specific account the service runs as -- a
+                        dedicated service account or your own (opt-in, used with
+                        -RegisterUserService). The account is granted scoped access to
+                        the install tree automatically, so a dedicated account is
+                        turnkey (no manual icacls step). Not usable for a Microsoft-
+                        account / PIN sign-in with no local password -- use the default
+                        (virtual account) instead.
+  -RunAsCurrentUser     Opt in to running the service under your own signed-in account
+                        (used with -RegisterUserService). Prompts for your account
+                        password (the SCM needs it to start the service at boot). Choose
+                        this when the service should carry your identity and ambient file
+                        access. Requires a usable password.
+  -VirtualAccount       Explicitly select the default passwordless machine-managed
+                        virtual account 'NT SERVICE\CollabhostUser' (same as
+                        -RegisterUserService with no account flag). No credential is
+                        prompted or required; the service gets scoped access to the
+                        install tree. See INSTALL.md section 5.5.5.
   -Help                 Print this message and exit
 
 Environment:
@@ -263,6 +273,40 @@ function Test-SameServiceAccount
     catch
     {
         return $Registered -ieq $Desired
+    }
+}
+
+# True when the given account is the identity running this installer -- i.e. the account
+# that owns the freshly-created install tree ($BinDir is created by New-Item as the caller,
+# and a per-user profile tree grants its owner full control by inheritance). Such an account
+# already has the filesystem access the service needs, so it is skipped for the icacls grant;
+# any OTHER principal (the virtual account, or a dedicated named service account) does not own
+# the tree and must be granted scoped access. On any resolution failure, return $false so the
+# grant runs -- a redundant grant to an account that already has access is harmless, whereas
+# withholding a grant an account genuinely needs breaks its start.
+function Test-IsInstallerIdentity
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$AccountName
+    )
+
+    try
+    {
+        $currentSid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User
+
+        $resolved = $AccountName
+        if ($resolved.StartsWith('.\'))
+        {
+            $resolved = "$env:COMPUTERNAME\" + $resolved.Substring(2)
+        }
+        $accountSid = (New-Object System.Security.Principal.NTAccount($resolved)).Translate([System.Security.Principal.SecurityIdentifier])
+
+        return $accountSid.Equals($currentSid)
+    }
+    catch
+    {
+        return $false
     }
 }
 
@@ -456,29 +500,39 @@ function Register-CollabhostUserService
         [switch]$VirtualAccount
     )
 
-    # Two service-principal models:
-    #  * Operator account (default): the service runs as the operator's own account,
-    #    so it has the same filesystem access the foreground launch has (the
-    #    systemd --user parity the card was framed around). Needs the account password
-    #    -- the SCM stores it as an LSA secret to log the account on at boot.
-    #  * Virtual account (-VirtualAccount): the service runs as the per-service,
-    #    SCM-managed principal NT SERVICE\CollabhostUser. It carries NO password and
-    #    is auto-granted the logon-as-service right, so it is the correct path for an
-    #    operator with no usable password -- the common Microsoft-account + PIN
-    #    sign-in, where the MSA password is unknown to the operator. It is given scoped
-    #    access to the install tree via an explicit icacls grant instead of the ambient
-    #    access the operator-account model inherits. Mirrors the least-privilege
-    #    virtual account install-system.ps1 (#266) uses.
+    # Three service-principal models (the caller resolves which via -VirtualAccount /
+    # -Credential; the passwordless virtual account is the default):
+    #  * Virtual account (default, or explicit -VirtualAccount): the service runs as the
+    #    per-service, SCM-managed principal NT SERVICE\CollabhostUser. It carries NO
+    #    password and is auto-granted the logon-as-service right, so it is the right
+    #    default -- it works for an operator with no usable password (the common
+    #    Microsoft-account + PIN sign-in, where the MSA password is unknown to the
+    #    operator) and puts no secret on the box. It is given scoped access to the install
+    #    tree via an explicit icacls grant. Mirrors the least-privilege virtual account
+    #    install-system.ps1 (#266) uses.
+    #  * A real account (opt-in): the service runs as a named account -- either the
+    #    operator's own (-RunAsCurrentUser prompts for the operator's password) or a
+    #    specific/dedicated account (-Credential, from -ServiceCredential). Needs the
+    #    account password -- the SCM stores it as an LSA secret to log the account on at
+    #    boot. A dedicated (non-operator) account does not own the install tree, so it is
+    #    given the same scoped icacls grant the virtual account gets; the operator's own
+    #    account already owns the tree (systemd --user parity) and needs none.
     if ($VirtualAccount)
     {
         $accountName = $UserServiceAccount
+
+        # The virtual account is not the operator and inherits no access to the install
+        # tree -- it always needs the scoped icacls grant.
+        $needsFilesystemGrant = $true
     }
     else
     {
-        # Resolve the credential. Default to the current user; prompt for the password
-        # (the SCM needs it to start a named-account service at boot). The prompt is a
-        # host-UI call, so it works even though install.ps1 is documented as iwr-piped
-        # -- but -RegisterUserService is realistically run from a downloaded script.
+        # Resolve the credential. For -RunAsCurrentUser (no -ServiceCredential) default to
+        # the current user and prompt for the password (the SCM needs it to start a
+        # named-account service at boot); for -ServiceCredential the credential is already
+        # supplied. The prompt is a host-UI call, so it works even though install.ps1 is
+        # documented as iwr-piped -- but the service switches are realistically run from a
+        # downloaded script.
         if (-not $Credential)
         {
             $defaultUser = "$env:USERDOMAIN\$env:USERNAME"
@@ -486,11 +540,18 @@ function Register-CollabhostUserService
         }
         if (-not $Credential)
         {
-            throw 'A credential is required to register the user-scope service. Re-run with -ServiceCredential, supply the password when prompted, or use -VirtualAccount for a passwordless machine-managed service account (see INSTALL.md section 5.5.5 -- the right choice for a Microsoft-account / PIN sign-in).'
+            throw 'A credential is required to run the user-scope service under a real account. Supply the password when prompted, pass -ServiceCredential, or drop -RunAsCurrentUser to register the passwordless machine-managed virtual account (the default -- the right choice for a Microsoft-account / PIN sign-in). See INSTALL.md section 5.5.5.'
         }
 
         $accountName = $Credential.UserName
         $sidBytes    = Resolve-AccountSid -AccountName $accountName
+
+        # A dedicated (non-operator) account does not own the install tree the way the
+        # operator's own account does (the installer created $BinDir as the operator), so
+        # it needs the same scoped icacls grant the virtual account gets. The operator's
+        # own account already owns the tree -- no grant, preserving the pre-existing
+        # operator-account behavior.
+        $needsFilesystemGrant = -not (Test-IsInstallerIdentity -AccountName $accountName)
     }
 
     # Grant "Log on as a service". Track whether the account already held it so
@@ -515,7 +576,7 @@ function Register-CollabhostUserService
         $registeredAccount = (Get-CimInstance -ClassName Win32_Service -Filter "Name='$UserServiceName'" -ErrorAction SilentlyContinue).StartName
         if ($registeredAccount -and -not (Test-SameServiceAccount -Registered $registeredAccount -Desired $accountName))
         {
-            $reRunWith = if ($VirtualAccount) { '-RegisterUserService -VirtualAccount' } else { '-RegisterUserService with the new -ServiceCredential' }
+            $reRunWith = if ($VirtualAccount) { '-RegisterUserService (the default passwordless virtual account)' } else { '-RegisterUserService with the intended -ServiceCredential or -RunAsCurrentUser' }
             throw "$UserServiceName already runs as '$registeredAccount'. Changing the service account on an in-place upgrade is not supported -- run 'install.ps1 -UnregisterUserService' first, then re-run $reRunWith."
         }
 
@@ -633,17 +694,17 @@ function Register-CollabhostUserService
         }
     }
 
-    # Virtual account only: it is not the operator, so it does not inherit access to
-    # the install tree under the operator's profile the way the operator-account model
-    # does. Grant it Modify on the whole install tree -- binary, wwwroot, appsettings,
-    # data/, and dotnet-bundle/ all live together under $BinDir for a user-scope
-    # install, and this covers every writable subdir the binary creates at runtime
-    # (data/, logs) without having to enumerate them. This is NOT wider than the
-    # operator-account model, which runs as the operator who already owns the whole
-    # tree. Run after the service exists so NT SERVICE\CollabhostUser resolves; the
-    # ACEs live on the directories, so removing the install removes the grant with it
-    # (mirrors install-system.ps1 #266).
-    if ($VirtualAccount)
+    # Grant the service account scoped access to the install tree when it does not already
+    # own it: the virtual account (never the operator) and a dedicated named account both
+    # need it; the operator's own account already owns the tree and is skipped. Grant Modify
+    # on the whole install tree -- binary, wwwroot, appsettings, data/, and dotnet-bundle/
+    # all live together under $BinDir for a user-scope install, and this covers every
+    # writable subdir the binary creates at runtime (data/, logs) without having to
+    # enumerate them. This is NOT wider than the operator-account model, which runs as the
+    # operator who already owns the whole tree. Run after the service exists so a virtual
+    # account name resolves; the ACEs live on the directories, so removing the install
+    # removes the grant with it (mirrors install-system.ps1 #266).
+    if ($needsFilesystemGrant)
     {
         Write-Host "Granting '$accountName' access to the install tree ($BinDir)..."
         & icacls.exe $BinDir /grant "${accountName}:(OI)(CI)M" /T /C | Out-Null
@@ -827,12 +888,19 @@ function Unregister-CollabhostUserService
 
 $WantsServiceAction = $RegisterUserService -or $UnregisterUserService
 
-# -VirtualAccount is a modifier of -RegisterUserService and is mutually exclusive
-# with -ServiceCredential (the virtual account takes no credential). Fail loud on a
-# contradictory invocation rather than silently ignoring the flag.
+# The service-principal flags modify -RegisterUserService. The passwordless virtual account
+# is the default; -ServiceCredential (a specific/dedicated account) and -RunAsCurrentUser
+# (the signed-in operator) are the real-account opt-ins, and -VirtualAccount is the explicit
+# spelling of the default. The real-account opt-ins and the virtual account are mutually
+# exclusive -- fail loud on a contradictory invocation rather than silently ignoring a flag.
 if ($VirtualAccount -and -not $RegisterUserService)
 {
     [Console]::Error.WriteLine('-VirtualAccount only applies together with -RegisterUserService.')
+    exit 1
+}
+if ($RunAsCurrentUser -and -not $RegisterUserService)
+{
+    [Console]::Error.WriteLine('-RunAsCurrentUser only applies together with -RegisterUserService.')
     exit 1
 }
 if ($VirtualAccount -and $ServiceCredential)
@@ -840,14 +908,31 @@ if ($VirtualAccount -and $ServiceCredential)
     [Console]::Error.WriteLine('-VirtualAccount and -ServiceCredential are mutually exclusive: -VirtualAccount registers the passwordless machine-managed account NT SERVICE\CollabhostUser, which takes no credential.')
     exit 1
 }
+if ($RunAsCurrentUser -and $VirtualAccount)
+{
+    [Console]::Error.WriteLine('-RunAsCurrentUser and -VirtualAccount are mutually exclusive: -RunAsCurrentUser runs the service as your signed-in account, -VirtualAccount as the passwordless machine-managed account NT SERVICE\CollabhostUser.')
+    exit 1
+}
+if ($RunAsCurrentUser -and $ServiceCredential)
+{
+    [Console]::Error.WriteLine('-RunAsCurrentUser and -ServiceCredential are mutually exclusive: -RunAsCurrentUser runs the service as your signed-in account, -ServiceCredential as a specific account you name.')
+    exit 1
+}
+
+# Resolve the service-principal model. The passwordless virtual account is the default
+# (no operator password, survives reboot with no interactive login -- the right choice for
+# a Microsoft-account / PIN sign-in). A real account is used only when the operator opts in
+# with -ServiceCredential or -RunAsCurrentUser. -VirtualAccount is the explicit spelling of
+# the default. (Mutually-exclusive combinations were rejected above.)
+$useVirtualAccount = $VirtualAccount -or -not ($ServiceCredential -or $RunAsCurrentUser)
 
 if ($WantsServiceAction)
 {
-    # The service switches register a machine-level Windows service (HKLM) and
-    # grant an LSA right -- both need elevation. The plain install (no switch)
-    # stays non-elevated and writes only under $HOME. Mirrored from
-    # install-system.ps1: hard-fail rather than UAC-relaunch, which does not
-    # compose with the iwr-pipe-to-iex flow.
+    # The service switches register a machine-level Windows service (HKLM),
+    # pre-create an event-log source, and (for a real-account model) grant an LSA
+    # right -- all need elevation. The plain install (no switch) stays non-elevated
+    # and writes only under $HOME. Mirrored from install-system.ps1: hard-fail
+    # rather than UAC-relaunch, which does not compose with the iwr-pipe-to-iex flow.
     $runningOnWindows = $IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop'
     if (-not $runningOnWindows)
     {
@@ -1308,7 +1393,7 @@ try
     if ($RegisterUserService)
     {
         Write-Host ''
-        Register-CollabhostUserService -BinDir $InstallPath -Credential $ServiceCredential -VirtualAccount:$VirtualAccount
+        Register-CollabhostUserService -BinDir $InstallPath -Credential $ServiceCredential -VirtualAccount:$useVirtualAccount
     }
 }
 finally
