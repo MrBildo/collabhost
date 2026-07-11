@@ -453,6 +453,10 @@ recipe). On Linux and Windows, pick based on who owns the host:
 All shapes ship the same binary and the same config keys. The choice is about
 **filesystem layout and who owns the process**, not features.
 
+The two Windows service shapes are **alternatives, not co-residents**: each runs the
+bundled Caddy front door on `:80` / `:443` (Windows does not gate low ports by account —
+see §5.5.5), so a single host runs the user-scope *or* the system-scope service, not both.
+
 #### 5.5.1 User-scope service (default `install.sh` flow)
 
 For a persistent user-scope install, a systemd unit template ships at:
@@ -961,8 +965,9 @@ The three account choices are mutually exclusive — pick at most one of
 
 **What the switch does, on top of the normal install:**
 
-- Registers a Windows service named **`CollabhostUser`** (distinct from the
-  system-scope `Collabhost` service so the two can coexist), startup type
+- Registers a Windows service named **`CollabhostUser`** (a distinct service
+  *name* from the system-scope `Collabhost` service — though the two cannot run on
+  one host at once; see the front-door note below), startup type
   `Automatic (Delayed Start)`, with a dependency on `Tcpip`.
 - Sets the service account per your choice above (the passwordless virtual account
   by default). For the virtual account the Service Control Manager auto-grants the
@@ -984,19 +989,25 @@ The three account choices are mutually exclusive — pick at most one of
 - Wires crash-recovery (`sc.exe failure`): restart after the first and second
   failures, no action on the third so a crash-loop doesn't fight you.
 
-**Privileged ports are not granted.** The user-scope service does not get
-`:80` / `:443`; it stays on the high-port default (`58400`), whichever account
-model you choose. If you need the bundled Caddy to bind `:80` / `:443`, use the
-system-scope install (§5.5.4), whose virtual account binds privileged ports by
-construction. This is the central trade-off between the two Windows service
-shapes:
+**The bundled Caddy front door binds `:80` / `:443`.** Like every Collabhost shape,
+the user-scope service starts the bundled Caddy reverse proxy on `:80` / `:443` (the
+dashboard itself stays on loopback `58400` — see §1); Caddy is the front door, `58400`
+is the internal dashboard port, not an alternative to the privileged ports. Windows
+does **not** gate low-numbered ports by account, so the service's Caddy binds `:80` /
+`:443` under the passwordless virtual account (or whichever account you choose) with no
+capability dance — the same reason the system-scope install (§5.5.4) binds them. One
+consequence: because **both** Windows service shapes want `:80` / `:443`, they are
+**alternatives, not co-residents** — a single host runs the user-scope *or* the
+system-scope service, not both (the second to start finds `:80` / `:443` already held,
+and its Caddy fails to bind). The two shapes differ in filesystem layout and who owns
+the process, not in ports:
 
 | | User-scope (`install.ps1 -RegisterUserService`) | System-scope (`install-system.ps1`) |
 |---|---|---|
 | Layout | `%USERPROFILE%\.collabhost\bin\` (one tree) | `%ProgramFiles%` (read-only) + `%ProgramData%` (writable) |
 | Service account | passwordless virtual account `NT SERVICE\CollabhostUser` by default; optionally your own account (`-RunAsCurrentUser`) or a dedicated account (`-ServiceCredential`) | least-privilege virtual account `NT SERVICE\Collabhost` |
 | Password required to register | no (virtual account, default) — yes only for `-RunAsCurrentUser` / `-ServiceCredential` | no (virtual account) |
-| Privileged ports (`:80`/`:443`) | no — high port only (`58400`) | yes — bound by construction |
+| Front door on `:80`/`:443` | yes — bundled Caddy binds them (Windows doesn't gate low ports) | yes — bundled Caddy binds them |
 | Boot start, no login | yes | yes |
 | Multi-operator handoff | account-independent by default; tied to an account with `-RunAsCurrentUser` | yes (account-independent) |
 | Elevation | only for register/unregister | install + every upgrade |
