@@ -447,7 +447,7 @@ recipe). On Linux and Windows, pick based on who owns the host:
 |-------|----------|----------|--------|------------|
 | **Linux user-scope** (`install.sh` + `collabhost.user.service`) | Linux | Single-operator homelab; you own the box and your shell. No admin handoff planned. | Everything in `~/.collabhost/`. Service runs as your login user. | None beyond your shell. `loginctl enable-linger` keeps the unit alive across logout. |
 | **Linux system-scope** (`install-system.sh`) | Linux | Servers; multi-operator handoff; a "production" install you'd hand to a new admin without explanation. | Canonical `/opt/`, `/etc/`, `/var/lib/` split. Service runs as a dedicated `collabhost` system user. | Root (sudo) at install time and for upgrades. The running service is unprivileged. |
-| **Windows system-scope** (`install-system.ps1`) | Windows | Workstations or servers where you want the service running across logout/reboot. The standard Windows shape. | `%ProgramFiles%\Collabhost\` (binaries) + `%ProgramData%\Collabhost\` (data/config/logs). Service runs as `LocalSystem`. | Administrator-elevated PowerShell at install time and for upgrades. |
+| **Windows system-scope** (`install-system.ps1`) | Windows | Workstations or servers where you want the service running across logout/reboot. The standard Windows shape. | `%ProgramFiles%\Collabhost\` (binaries, read-only to the service) + `%ProgramData%\Collabhost\` (data/config/logs, writable to the service). Service runs under the least-privilege virtual account `NT SERVICE\Collabhost`. | Administrator-elevated PowerShell at install time and for upgrades. |
 
 All shapes ship the same binary and the same config keys. The choice is about
 **filesystem layout and who owns the process**, not features.
@@ -683,8 +683,12 @@ release; for now, the foreground-launch path (§1) plus a hand-rolled
 #### 5.5.4 System-scope service on Windows (`install-system.ps1`)
 
 Lays the canonical Windows server layout and registers Collabhost as a
-Windows Service running under `LocalSystem`. Requires an
-administrator-elevated PowerShell.
+Windows Service running under the dedicated, least-privilege virtual account
+`NT SERVICE\Collabhost`. The `%ProgramFiles%` side stays read-only to the
+service; the writable `%ProgramData%` directories are granted to the account
+explicitly. This is the Windows analog of the Linux system install's
+dedicated `collabhost` service user. Requires an administrator-elevated
+PowerShell.
 
 ```powershell
 # Run from an elevated PowerShell:
@@ -711,25 +715,38 @@ Pin to a specific release with `-Version vX.Y.Z` or
 
 **What the script creates:**
 
-| Path | Owner | Purpose |
-|------|-------|---------|
-| `%ProgramFiles%\Collabhost\bin\collabhost.exe`, `caddy.exe` | SYSTEM | Binaries (read-only for the service) |
-| `%ProgramFiles%\Collabhost\wwwroot\` | SYSTEM | Portal SPA assets |
-| `%ProgramFiles%\Collabhost\INSTALL.md`, `LICENSES\` | SYSTEM | Documentation |
-| `%ProgramData%\Collabhost\config\appsettings.json` | service account R/W | Operator-facing config |
-| `%ProgramData%\Collabhost\config\appsettings.shipped.json` | service account R | Smart-merge baseline (do not edit) |
-| `%ProgramData%\Collabhost\data\` | service account R/W | SQLite DB + pre-migration backups |
-| `%ProgramData%\Collabhost\user-types\` | service account R/W | Operator-authored AppType JSON |
-| `%ProgramData%\Collabhost\caddy\` | service account R/W | Caddy CA / account / cert storage |
-| `%ProgramData%\Collabhost\logs\` | service account R/W | Crash logs |
+| Path | Service-account access | Purpose |
+|------|-----------------------|---------|
+| `%ProgramFiles%\Collabhost\bin\collabhost.exe`, `caddy.exe` | read-only | Binaries |
+| `%ProgramFiles%\Collabhost\wwwroot\` | read-only | Portal SPA assets |
+| `%ProgramFiles%\Collabhost\INSTALL.md`, `LICENSES\` | read-only | Documentation |
+| `%ProgramData%\Collabhost\config\appsettings.json` | read-only | Operator-facing config |
+| `%ProgramData%\Collabhost\config\appsettings.shipped.json` | read-only | Smart-merge baseline (do not edit) |
+| `%ProgramData%\Collabhost\data\` | read/write | SQLite DB + pre-migration backups |
+| `%ProgramData%\Collabhost\user-types\` | read/write | Operator-authored AppType JSON |
+| `%ProgramData%\Collabhost\caddy\` | read/write | Caddy CA / account / cert storage |
+| `%ProgramData%\Collabhost\logs\` | read/write | Crash logs |
+| `%ProgramData%\Collabhost\dotnet-bundle\` | read/write | Single-file native-library extract dir |
 
 The service is registered with name `Collabhost`, startup type
 `Automatic (Delayed Start)`, dependency on `Tcpip` (so the network stack
-is up before the service starts), and `LocalSystem` as the security
-principal. `LocalSystem` is the most-privileged service account on Windows
-and binds privileged ports (`:80` / `:443`) without any explicit URL ACL —
-this is the Windows analog of Linux's `AmbientCapabilities=CAP_NET_BIND_SERVICE`
-on the system unit. (See §9.10.1 for the privileged-port topic.)
+is up before the service starts), and the virtual account
+`NT SERVICE\Collabhost` as the security principal. A virtual account is a
+managed local identity the Windows Service Control Manager provisions
+automatically — there is no password and no separate account to create or
+delete. The installer grants it Modify on each writable `%ProgramData%`
+directory above (the `icacls` grants), and read-only on `config\` (the service
+reads `appsettings.json` but never writes config at runtime — matching the
+Linux install's read-only `appsettings.json` posture); `%ProgramFiles%\Collabhost\`
+is never granted, so the running service cannot modify its own binaries or
+Portal assets.
+
+The service binds the privileged ports `:80` / `:443` (via the bundled
+Caddy) directly. Unlike Linux, Windows does not restrict low-numbered ports
+to privileged accounts, so the virtual account binds them without a
+capability grant — there is no Windows equivalent of Linux's
+`setcap` / `AmbientCapabilities` dance. (See §9.10.1 for the privileged-port
+topic.)
 
 Crash-recovery is wired via `sc.exe failure`: the service auto-restarts
 after the first and second failures (5-second delay each); the third
@@ -764,9 +781,15 @@ Get-WinEvent -LogName Application -MaxEvents 200 |
   Select-Object -First 1 -ExpandProperty Message
 ```
 
-If the event log doesn't carry the line, the crash log under
-`%ProgramData%\Collabhost\logs\` is the secondary surface — the
-admin-key emit is also persisted there on first boot.
+The installer pre-registers the `Collabhost` Application-log event source
+during install, so the service can write this line under the virtual account
+(a limited account cannot create the source itself the way `LocalSystem`
+could). If you still can't find the key — the source registration failed, or
+first boot happened before it was registered — use the configured-key
+break-glass path: set `Auth:AdminKey` in
+`%ProgramData%\Collabhost\config\appsettings.json` to a known value and
+restart the service (`Restart-Service Collabhost`). See §2 for the
+break-glass behavior.
 
 **Customize the service:** do not edit the registration directly. The
 canonical knobs are:
@@ -776,36 +799,38 @@ canonical knobs are:
   `Hosting:ListenAddress`, etc.). Changes survive upgrades; the smart-merge
   in §8.2 preserves operator edits.
 - **`sc.exe config Collabhost ...`** — service-level knobs (binary path,
-  startup type, dependencies, account). For example, to switch from
-  `LocalSystem` to a less-privileged account, see the next item.
+  startup type, dependencies, logon account).
 - **Registry under `HKLM\SYSTEM\CurrentControlSet\Services\Collabhost\`**
   — the SCM stores configuration here. Edit only if you know exactly what
   you're doing.
 
 The service-config block has no static reference file (the SCM persists it
 in the registry, not on disk), so there's no equivalent of systemd's
-`/etc/systemd/system/collabhost.service.d/override.conf`. To swap to a
-non-`LocalSystem` account (e.g., `NT AUTHORITY\NETWORK SERVICE` or a
-dedicated local account), grant URL ACL ownership for the privileged
-listeners first:
+`/etc/systemd/system/collabhost.service.d/override.conf`.
+
+The default `NT SERVICE\Collabhost` virtual account is already the
+least-privilege shape and is what most operators should keep. If you have a
+specific reason to run under a different principal — for example a domain
+account so the service can reach network resources under that identity —
+switch the logon account and re-grant the writable data directories to the
+new principal (the installer's `icacls` grants are scoped to the virtual
+account):
 
 ```powershell
-# Grant the new principal the right to bind :80 and :443:
-netsh http add urlacl url=http://+:80/  user="NT AUTHORITY\NETWORK SERVICE"
-netsh http add urlacl url=https://+:443/ user="NT AUTHORITY\NETWORK SERVICE"
+# Elevated PowerShell. Replace <account>/<password> with your principal.
+sc.exe config Collabhost obj= "<account>" password= "<password>"
 
-# Switch the service account:
-sc.exe config Collabhost obj= "NT AUTHORITY\NETWORK SERVICE"
-
-# Grant the principal write access on the data dirs (filesystem ACLs are
-# separate from URL ACLs):
-icacls "%ProgramData%\Collabhost"     /grant "NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M" /T
+# Grant write access on each writable data directory:
+foreach ($d in 'config','data','user-types','caddy','logs','dotnet-bundle') {
+    icacls "$env:ProgramData\Collabhost\$d" /grant "<account>:(OI)(CI)M" /T /C
+}
 Restart-Service Collabhost
 ```
 
-`LocalSystem` is the v1.3 default and the path of least friction. Switching
-to a less-privileged principal is operator territory; the URL ACL recipe
-above is the load-bearing piece (without it, Caddy can't bind `:443`).
+Privileged-port binding needs no extra grant on Windows (see §9.10.1). If
+you switch principals and later re-run `install-system.ps1` to upgrade, the
+installer re-applies the `NT SERVICE\Collabhost` account — re-apply your
+custom principal afterward.
 
 **Upgrade:**
 
@@ -835,14 +860,23 @@ Equivalent manual recipe (if the script isn't available):
 # Elevated PowerShell:
 Stop-Service  Collabhost
 sc.exe delete Collabhost
+
+# Remove the Application event-log source the installer registered:
+[System.Diagnostics.EventLog]::DeleteEventSource('Collabhost')
+
 Remove-Item -Recurse -Force "$env:ProgramFiles\Collabhost"
 Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\config"
 Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\logs"
 Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\caddy"
 Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\user-types"
+Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\dotnet-bundle"
 # Optional: clear the operator database too.
 Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\data"
 ```
+
+The `NT SERVICE\Collabhost` virtual account is auto-managed — deleting the
+service registration (`sc.exe delete`) retires it; there is no account to
+delete by hand.
 
 The script's `-Uninstall` switch and the recipe above are equivalent in
 effect — pick whichever fits your operations workflow.
@@ -1921,29 +1955,22 @@ the dashboard System page for the same information rendered.
   to non-privileged ports (`:8080,:8443`) and front Collabhost behind an
   upstream proxy or router NAT rule that owns `:443`.
 
-- **Windows system-scope install (§5.5.4):** by construction, the service
-  runs as `LocalSystem`, which binds privileged ports without an explicit
-  URL ACL. If you see `permission denied` after switching the service
-  account away from `LocalSystem`, you need a URL ACL grant for the new
-  principal:
+- **Windows (all install shapes):** Windows does **not** restrict
+  low-numbered ports to privileged accounts the way Linux does — any account
+  can bind `:80` / `:443` via a normal socket, which is how the bundled Caddy
+  binds them. So `permission denied` on a privileged port is almost never an
+  account-privilege problem on Windows; it is usually a **port conflict** —
+  another listener already owns the port. Find it with:
 
   ```powershell
-  # Elevated PowerShell:
-  netsh http add urlacl url=http://+:80/  user="<account>"
-  netsh http add urlacl url=https://+:443/ user="<account>"
-  Restart-Service Collabhost
+  Get-NetTCPConnection -LocalPort 443 -State Listen |
+    Select-Object LocalAddress, OwningProcess
+  Get-Process -Id (Get-NetTCPConnection -LocalPort 443 -State Listen).OwningProcess
   ```
 
-  Replace `<account>` with the principal you assigned via `sc.exe config
-  Collabhost obj= ...` (e.g., `NT AUTHORITY\NETWORK SERVICE`,
-  `NT SERVICE\Collabhost`, or a domain account). To inspect existing ACLs,
-  use `netsh http show urlacl`. Reverting the URL ACLs is symmetric:
-  `netsh http delete urlacl url=http://+:80/`.
-
-- **Windows user-scope install (§5.5.1):** the foreground binary inherits
-  the operator's account, which can bind privileged ports if the operator
-  is local admin. For a non-admin operator, the same `netsh http add
-  urlacl` recipe applies.
+  Common culprits are IIS / the W3SVC service, or another HTTP.sys consumer
+  holding a namespace reservation. Stop the conflicting service, or move
+  Collabhost's listener (`Proxy:ListenAddress`) to non-privileged ports.
 
 **Service status check (Windows system-scope):**
 
