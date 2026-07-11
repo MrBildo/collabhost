@@ -100,10 +100,12 @@ Options:
                         is prompted or required, and it survives reboot with no
                         interactive login. (To run under a real account instead, see
                         -ServiceCredential and -RunAsCurrentUser.) Requires an
-                        elevated PowerShell. Privileged ports (80/443) are NOT
-                        granted -- the service stays on the high-port default
-                        (58400). For the system-scope shape (%ProgramFiles% layout),
-                        use install-system.ps1 instead. See INSTALL.md section 5.5.
+                        elevated PowerShell. The dashboard stays on loopback 58400;
+                        the bundled Caddy front door binds 80/443 (Windows does not
+                        gate low ports by account), so this shape and the system-scope
+                        shape cannot co-reside on one host. For the system-scope shape
+                        (%ProgramFiles% layout), use install-system.ps1 instead. See
+                        INSTALL.md section 5.5.
   -UnregisterUserService  Stop and remove the 'CollabhostUser' service and revoke the
                         "Log on as a service" right if the installer granted one (the
                         default virtual-account install grants none). Leaves your
@@ -244,6 +246,35 @@ function Resolve-AccountSid
     $sidBytes = New-Object byte[] $sid.BinaryLength
     $sid.GetBinaryForm($sidBytes, 0)
     return , $sidBytes
+}
+
+# Normalize a service-account name to the 'MACHINE\name' form that BOTH New-Service and
+# icacls accept. Get-Credential and -ServiceCredential can hand back a bare name
+# ('collabhost-svc') or the '.\name' local form, and the two APIs disagree on what they
+# take: New-Service rejects a bare name (exit 1057, "account name is invalid or does not
+# exist"), while icacls cannot map the '.\name' form (exit 1332, ERROR_NONE_MAPPED). Only
+# the machine-qualified 'MACHINE\name' satisfies both. A name that already carries a
+# domain/machine qualifier (DOMAIN\user, MACHINE\user) or is a UPN (user@domain) is a
+# deliberate, already-qualified choice and passes through unchanged -- so a domain service
+# account stays domain-qualified; only a bare SAMAccountName or a '.\' local name is treated
+# as a local account and qualified with this computer's name (mirrors the '.\' handling in
+# Resolve-AccountSid / Test-IsInstallerIdentity).
+function Get-QualifiedAccountName
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$AccountName
+    )
+
+    if ($AccountName.StartsWith('.\'))
+    {
+        return "$env:COMPUTERNAME\" + $AccountName.Substring(2)
+    }
+    if (-not $AccountName.Contains('\') -and -not $AccountName.Contains('@'))
+    {
+        return "$env:COMPUTERNAME\$AccountName"
+    }
+    return $AccountName
 }
 
 # Compare a registered service StartName to a desired account for the account-change
@@ -543,7 +574,17 @@ function Register-CollabhostUserService
             throw 'A credential is required to run the user-scope service under a real account. Supply the password when prompted, pass -ServiceCredential, or drop -RunAsCurrentUser to register the passwordless machine-managed virtual account (the default -- the right choice for a Microsoft-account / PIN sign-in). See INSTALL.md section 5.5.5.'
         }
 
-        $accountName = $Credential.UserName
+        # Normalize the operator-supplied name to the 'MACHINE\name' form both New-Service
+        # and icacls accept (see Get-QualifiedAccountName -- a bare or '.\' name from
+        # Get-Credential / -ServiceCredential fails one or the other). Rebuild the credential
+        # on the normalized name so New-Service registers under a name it accepts; the same
+        # $accountName then flows to the icacls grant, the SID lookup, the account-change
+        # guard, and every operator-facing message.
+        $accountName = Get-QualifiedAccountName -AccountName $Credential.UserName
+        if ($accountName -ne $Credential.UserName)
+        {
+            $Credential = New-Object System.Management.Automation.PSCredential($accountName, $Credential.Password)
+        }
         $sidBytes    = Resolve-AccountSid -AccountName $accountName
 
         # A dedicated (non-operator) account does not own the install tree the way the
