@@ -233,7 +233,7 @@ Then `.\startup.ps1`.
 | `COLLABHOST_DATA_PATH`          | Platform data root — holds the SQLite DB, per-app data, bundle-extraction directories, and the default crash-log directory | Absolute directory path | `/srv/collabhost/data` |
 | `COLLABHOST_USER_TYPES_PATH`    | `TypeStore:UserTypesDirectory` | Absolute directory path | `/srv/collabhost/user-types` |
 | `COLLABHOST_PROXY_BINARY_PATH`  | `Proxy:BinaryPath` — Caddy binary location | Absolute file path | `/usr/local/bin/caddy` |
-| `COLLABHOST_HOSTING_LISTEN_ADDRESS` | `Hosting:ListenAddress` — interface Kestrel binds to. Default `localhost` (loopback only). Set `0.0.0.0` to accept connections on every interface; pin to a specific NIC IP to scope by interface. See §5.5.5. | Hostname, IPv4, or IPv6 address | `0.0.0.0` |
+| `COLLABHOST_HOSTING_LISTEN_ADDRESS` | `Hosting:ListenAddress` — interface Kestrel binds to. Default `localhost` (loopback only). Set `0.0.0.0` to accept connections on every interface; pin to a specific NIC IP to scope by interface. See §5.5.6. | Hostname, IPv4, or IPv6 address | `0.0.0.0` |
 | `COLLABHOST_HOSTING_LISTEN_PORT` | `Hosting:ListenPort` | Integer 1-65535 | `58400` |
 | `COLLABHOST_PROXY_BASE_DOMAIN`  | `Proxy:BaseDomain` | Domain suffix | `collabhost.lan` |
 | `COLLABHOST_PROXY_LISTEN_ADDRESS` | `Proxy:ListenAddress` | Caddy listen spec, comma-separated for multiple ports | `:80,:443` (default) or `:8080,:8443` |
@@ -439,7 +439,7 @@ copy the value out first.
 
 ### 5.5 Running as a service
 
-Four service-wrapper shapes ship in v1: two on Linux, one on Windows, and an
+Five service-wrapper shapes ship in v1: two on Linux, two on Windows, and an
 operator-driven path on macOS (no shipped template, documented as a worked
 recipe). On Linux and Windows, pick based on who owns the host:
 
@@ -447,10 +447,15 @@ recipe). On Linux and Windows, pick based on who owns the host:
 |-------|----------|----------|--------|------------|
 | **Linux user-scope** (`install.sh` + `collabhost.user.service`) | Linux | Single-operator homelab; you own the box and your shell. No admin handoff planned. | Everything in `~/.collabhost/`. Service runs as your login user. | None beyond your shell. `loginctl enable-linger` keeps the unit alive across logout. |
 | **Linux system-scope** (`install-system.sh`) | Linux | Servers; multi-operator handoff; a "production" install you'd hand to a new admin without explanation. | Canonical `/opt/`, `/etc/`, `/var/lib/` split. Service runs as a dedicated `collabhost` system user. | Root (sudo) at install time and for upgrades. The running service is unprivileged. |
+| **Windows user-scope** (`install.ps1 -RegisterUserService`) | Windows | A single-operator install you own, where you still want boot-survival without an interactive login. The Windows analog of Linux user-scope + lingering. | Everything in `%USERPROFILE%\.collabhost\bin\`. Service runs under a passwordless machine-managed virtual account by default (no password needed — works for Microsoft-account / PIN sign-ins); optionally your own account (`-RunAsCurrentUser`) or a dedicated account (`-ServiceCredential`). See §5.5.5. | Administrator-elevated PowerShell at register/unregister time; the plain install needs none. |
 | **Windows system-scope** (`install-system.ps1`) | Windows | Workstations or servers where you want the service running across logout/reboot. The standard Windows shape. | `%ProgramFiles%\Collabhost\` (binaries, read-only to the service) + `%ProgramData%\Collabhost\` (data/config/logs, writable to the service). Service runs under the least-privilege virtual account `NT SERVICE\Collabhost`. | Administrator-elevated PowerShell at install time and for upgrades. |
 
 All shapes ship the same binary and the same config keys. The choice is about
 **filesystem layout and who owns the process**, not features.
+
+The two Windows service shapes are **alternatives, not co-residents**: each runs the
+bundled Caddy front door on `:80` / `:443` (Windows does not gate low ports by account —
+see §5.5.5), so a single host runs the user-scope *or* the system-scope service, not both.
 
 #### 5.5.1 User-scope service (default `install.sh` flow)
 
@@ -610,10 +615,14 @@ onto the canonical layout with a clean re-install:
 
 #### 5.5.3 Service equivalents (legacy / macOS)
 
-For Windows operators on v1.3 and later, the canonical path is
-`install-system.ps1` (§5.5.4). The NSSM-based recipe was the
-operator-driven shape on v1.2 and earlier; it still works against the
-foreground binary if you have an existing rollout.
+For Windows operators on v1.3 and later, the canonical paths are native and
+ship in the box: `install-system.ps1` for a system-scope service (§5.5.4), or
+`install.ps1 -RegisterUserService` for a user-scope service that runs under a
+passwordless machine-managed account by default (§5.5.5). NSSM is no longer
+needed for either. The NSSM-based recipe
+was the operator-driven shape on v1.2 and earlier; it still works against the
+foreground binary if you have an existing rollout, but new installs should use
+one of the native paths.
 
 **Migrating an existing NSSM rollout to the canonical service.** If you run
 Collabhost under NSSM from a v1.2-or-earlier rollout, move to the supported
@@ -881,7 +890,183 @@ delete by hand.
 The script's `-Uninstall` switch and the recipe above are equivalent in
 effect — pick whichever fits your operations workflow.
 
-#### 5.5.5 Headless deployment — reaching the dashboard from another device
+#### 5.5.5 User-scope service on Windows (`install.ps1 -RegisterUserService`)
+
+If you want a per-user install (everything under `%USERPROFILE%\.collabhost\bin\`,
+no `%ProgramFiles%` / `%ProgramData%` layout) but still want it to start at boot
+without you logging in, register the user-scope service. This is the Windows
+analog of the Linux user-scope shape plus `loginctl enable-linger` (§5.5.1): the
+service starts at boot and survives logout and reboot with no interactive login.
+
+Run the normal install with the `-RegisterUserService` switch from an
+**administrator-elevated** PowerShell:
+
+```powershell
+# Elevated PowerShell. Installs to %USERPROFILE%\.collabhost\bin, then registers
+# the boot-start service. No password prompted or required (see "Service account"
+# below).
+.\install.ps1 -RegisterUserService
+```
+
+The plain install writes only under your profile and needs no elevation; the
+`-RegisterUserService` switch additionally registers a machine-level Windows
+service, so it requires an elevated PowerShell. If you run it without elevation it
+stops with a clear message — it does **not** prompt UAC and re-launch (that path
+does not compose cleanly with `iwr | iex`).
+
+**Service account — the passwordless default.** By default the service runs under
+a **passwordless, machine-managed virtual account**, `NT SERVICE\CollabhostUser` —
+the same kind of per-service, SCM-managed account the system-scope install uses
+(§5.5.4). Nothing is prompted: it carries no password, the Service Control Manager
+grants it the "Log on as a service" right automatically, and the installer grants
+it scoped access to your install tree (`%USERPROFILE%\.collabhost\bin`) so it can
+read the binary and write its data. This is the right default for most operators,
+and it is the **only** shape that works when you sign in with a **Microsoft account
+and a PIN** — there is no local password to hand the Service Control Manager (the
+MSA password lives with Microsoft, and a Windows Hello PIN is not a service
+credential). The trade-off: the service — and any app Collabhost supervises — runs
+as the machine-managed account, **not** as you, so it does not carry your user
+identity or your ambient file access outside the install tree. For a self-hosted
+control plane that is usually exactly what you want. You can select this default
+explicitly with `-VirtualAccount` (identical to `-RegisterUserService` with no
+account flag).
+
+**Run under your own account — `-RunAsCurrentUser`.** If you want the service to
+run as **you** (carrying your identity and your ambient file access — the closest
+parallel to Linux `systemctl --user`), add `-RunAsCurrentUser`. You will be
+prompted for your account's password (the Service Control Manager needs it to start
+the service at boot, before any interactive logon), and the installer grants your
+account the "Log on as a service" right. This needs a **usable local password**, so
+it is not available for a Microsoft-account / PIN sign-in.
+
+```powershell
+# Elevated PowerShell. Prompts for your account password.
+.\install.ps1 -RegisterUserService -RunAsCurrentUser
+```
+
+**Run under a dedicated account — `-ServiceCredential`.** To run the service under
+a **specific account you name** — typically a dedicated, least-privilege service
+account (e.g. a local `collabhost-svc` account) — pass its credential:
+
+```powershell
+# Elevated PowerShell. Runs the service as the named account.
+.\install.ps1 -RegisterUserService -ServiceCredential (Get-Credential)
+```
+
+The installer grants the named account the "Log on as a service" right **and**
+scoped access to the install tree automatically, so a dedicated account is
+**turnkey** — it starts and runs with no manual `icacls` step. (If the account you
+name happens to be your own, no filesystem grant is added — you already own the
+tree.)
+
+The three account choices are mutually exclusive — pick at most one of
+`-VirtualAccount` (the explicit default), `-RunAsCurrentUser`, or
+`-ServiceCredential`.
+
+**What the switch does, on top of the normal install:**
+
+- Registers a Windows service named **`CollabhostUser`** (a distinct service
+  *name* from the system-scope `Collabhost` service — though the two cannot run on
+  one host at once; see the front-door note below), startup type
+  `Automatic (Delayed Start)`, with a dependency on `Tcpip`.
+- Sets the service account per your choice above (the passwordless virtual account
+  by default). For the virtual account the Service Control Manager auto-grants the
+  **"Log on as a service"** right; for a real account (`-RunAsCurrentUser` or a
+  `-ServiceCredential` account) the installer grants that right explicitly and
+  records that it made the grant, so `-UnregisterUserService` can revoke exactly
+  what it added (a right the account already held is left alone).
+- Grants the service account scoped **`Modify`** access to the install tree via
+  `icacls` when it does not already own it — the virtual account and a dedicated
+  named account both get this grant, so each is turnkey. Your own account already
+  owns the tree, so no grant is added there.
+- Sets `DOTNET_BUNDLE_EXTRACT_BASE_DIR` for the service to an account-owned
+  directory under the install (a service starts with no loaded user profile, so
+  the single-file binary's native-library extraction needs a writable location
+  told to it explicitly).
+- Pre-registers the `Collabhost` Application event-log source so the first-boot
+  admin key surfaces in the event log (the service runs headless, so the key is
+  emitted only through the logging pipeline — see below).
+- Wires crash-recovery (`sc.exe failure`): restart after the first and second
+  failures, no action on the third so a crash-loop doesn't fight you.
+
+**The bundled Caddy front door binds `:80` / `:443`.** Like every Collabhost shape,
+the user-scope service starts the bundled Caddy reverse proxy on `:80` / `:443` (the
+dashboard itself stays on loopback `58400` — see §1); Caddy is the front door, `58400`
+is the internal dashboard port, not an alternative to the privileged ports. Windows
+does **not** gate low-numbered ports by account, so the service's Caddy binds `:80` /
+`:443` under the passwordless virtual account (or whichever account you choose) with no
+capability dance — the same reason the system-scope install (§5.5.4) binds them. One
+consequence: because **both** Windows service shapes want `:80` / `:443`, they are
+**alternatives, not co-residents** — a single host runs the user-scope *or* the
+system-scope service, not both (the second to start finds `:80` / `:443` already held,
+and its Caddy fails to bind). The two shapes differ in filesystem layout and who owns
+the process, not in ports:
+
+| | User-scope (`install.ps1 -RegisterUserService`) | System-scope (`install-system.ps1`) |
+|---|---|---|
+| Layout | `%USERPROFILE%\.collabhost\bin\` (one tree) | `%ProgramFiles%` (read-only) + `%ProgramData%` (writable) |
+| Service account | passwordless virtual account `NT SERVICE\CollabhostUser` by default; optionally your own account (`-RunAsCurrentUser`) or a dedicated account (`-ServiceCredential`) | least-privilege virtual account `NT SERVICE\Collabhost` |
+| Password required to register | no (virtual account, default) — yes only for `-RunAsCurrentUser` / `-ServiceCredential` | no (virtual account) |
+| Front door on `:80`/`:443` | yes — bundled Caddy binds them (Windows doesn't gate low ports) | yes — bundled Caddy binds them |
+| Boot start, no login | yes | yes |
+| Multi-operator handoff | account-independent by default; tied to an account with `-RunAsCurrentUser` | yes (account-independent) |
+| Elevation | only for register/unregister | install + every upgrade |
+
+**Verify the install:**
+
+```powershell
+Get-Service CollabhostUser
+curl http://localhost:58400/api/v1/status
+```
+
+On a fresh install, capture the admin key (it emits once on first boot — see
+§2). Under the service the key surfaces in the Application event log:
+
+```powershell
+Get-WinEvent -LogName Application -MaxEvents 200 |
+  Where-Object { $_.ProviderName -like 'collabhost*' -and $_.Message -match 'Collabhost admin key:' } |
+  Select-Object -First 1 -ExpandProperty Message
+```
+
+If you still can't find the key, use the configured-key break-glass path: set
+`Auth:AdminKey` in `%USERPROFILE%\.collabhost\bin\appsettings.json` to a known
+value and restart the service (`Restart-Service CollabhostUser`). See §2.
+
+**Upgrade:** re-run with the same account flag you registered with (add
+`-RunAsCurrentUser` or the same `-ServiceCredential` if you used one; the
+passwordless default needs no flag). The installer stops the service before
+overwriting the binary (Windows locks a running EXE), refreshes the binary /
+`wwwroot/` / `LICENSES/`, smart-merges `appsettings.json`, re-applies the service
+configuration, and restarts:
+
+```powershell
+.\install.ps1 -RegisterUserService                    # latest, passwordless default
+.\install.ps1 -RegisterUserService -RunAsCurrentUser  # latest, runs as your account
+.\install.ps1 -RegisterUserService -Version v1.2.3    # pinned
+```
+
+Changing the service *account* on an in-place upgrade (e.g. the virtual account ⇄
+your own account) is refused with a clear message — run `-UnregisterUserService`
+first, then re-register with the account model you want.
+
+**Unregister:** removes the service and, for a real-account install
+(`-RunAsCurrentUser` / `-ServiceCredential`), revokes the "Log on as a service"
+right the installer granted — leaving your installed files and data in place. (The
+passwordless virtual-account default granted no such right — the SCM auto-managed
+it — so there is nothing to revoke; the virtual account is retired with the
+service, and its `icacls` grants live on the install tree, cleared when you delete
+it.)
+
+```powershell
+.\install.ps1 -UnregisterUserService
+```
+
+(The shared `Collabhost` event-log source is intentionally left in place on
+unregister — it is harmless and may be in use by a co-installed system-scope
+service. To remove the install itself, delete `%USERPROFILE%\.collabhost\bin`
+and remove it from your User PATH.)
+
+#### 5.5.6 Headless deployment — reaching the dashboard from another device
 
 By default, the Collabhost API binds **loopback only** (`Hosting:ListenAddress`
 defaults to `localhost`). On a workstation install this is the right posture:
@@ -1341,6 +1526,9 @@ sudo systemctl stop collabhost
 # Windows system-scope service (canonical, v1.3+, §5.5.4)
 Stop-Service Collabhost
 
+# Windows user-scope service (install.ps1 -RegisterUserService, §5.5.5)
+Stop-Service CollabhostUser
+
 # Windows / NSSM (legacy, v1.2 and earlier, §5.5.3)
 nssm stop Collabhost
 ```
@@ -1397,8 +1585,8 @@ thereafter.
 
 **Confirm your remote-dashboard reachability posture.** If you reached the
 dashboard from another device (not `localhost`) on your previous version, that
-access depends on either a non-loopback `Hosting:ListenAddress` (§5.5.5 Path B)
-or the Caddy / DNS / CA story (§5.5.5 Path A). The smart-merge preserves an
+access depends on either a non-loopback `Hosting:ListenAddress` (§5.5.6 Path B)
+or the Caddy / DNS / CA story (§5.5.6 Path A). The smart-merge preserves an
 operator-set `Hosting:ListenAddress`, but the shipped default is `localhost`
 (loopback only) — after the upgrade, confirm the value still matches your
 intended posture. If you set the address through a wrapper-script env override
