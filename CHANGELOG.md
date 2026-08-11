@@ -2,12 +2,29 @@
 
 All notable changes to Collabhost are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## v1.9.0 — 2026-08-10
+
+Windows install hardening and parity, a read-only control-plane key tier, and stricter startup validation.
+
+### Added
+
+- **Windows system service now runs under a dedicated, least-privilege virtual account** instead of `LocalSystem`, tightening the system-scope security posture on par with the Linux service story.
+- **`-RegisterUserService` install option** for Windows user-scope, service-managed installs — a native PowerShell service-registration path, no third-party tooling required.
+- **Read-only / scoped control-plane key tier** — a key that observes the platform (system status, the app list, and app detail) without start/stop/kill, registration, or settings authority, and without the secret-bearing reads (logs, settings, activity events). Minted through the REST API and MCP.
 
 ### Changed
 
 - **Registering an app now rejects unknown capability sections.** A registration request that names a capability section the app type does not support is refused with a clear error naming the section, instead of being silently accepted and stored. This is a deliberate clean break — requests that previously succeeded by quietly persisting an unsupported section will now fail and must be corrected. Settings updates are unaffected.
+- **The configured admin key's shape is now validated at startup** — a misconfigured admin key fails loudly and early instead of being silently accepted.
 - **Breaking:** the environment variable that overrides the reverse-proxy binary location is renamed from `COLLABHOST_CADDY_PATH` to `COLLABHOST_PROXY_BINARY_PATH`, aligning it with the other `COLLABHOST_PROXY_*` variables. The old name is no longer read — operators who set it must switch to the new name. The `Proxy:BinaryPath` setting in `appsettings.json` is unchanged.
+
+### Fixed
+
+- Alternate-ports deployments no longer have the automatic HTTPS `:80` redirect forced on them, so custom-port setups behave correctly.
+
+### Internal
+
+- A source-comment hygiene CI lint now blocks unresolvable internal references from entering published source, alongside shared-helper extraction and dead-config cleanup. No operator-facing behavior change.
 
 ## v1.8.0 — 2026-06-24
 
