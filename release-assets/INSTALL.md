@@ -1542,6 +1542,16 @@ For a foreground launch (no service wrapper), `Ctrl-C` on the running process
 is sufficient — Collabhost's shutdown path drains its supervised children
 before exiting.
 
+**Breaking in v1.9.0 — the proxy-binary env override was renamed.** If you point
+Collabhost at a specific Caddy binary with the `COLLABHOST_CADDY_PATH` environment
+variable (typically in a startup wrapper), rename it to `COLLABHOST_PROXY_BINARY_PATH`
+before upgrading. The old name is **no longer read** — an install that still sets only
+`COLLABHOST_CADDY_PATH` silently loses the override and falls back to `Proxy:BinaryPath`
+in `appsettings.json` (or, if that key is unset, boots with `proxyState = disabled`). The
+`Proxy:BinaryPath` appsettings key is unchanged; only the environment-variable name moved,
+to align with the rest of the `COLLABHOST_PROXY_*` family. See §5.4 for the full
+resolution chain.
+
 **Linux user-scope only — re-apply `cap_net_bind_service` after upgrade.** If
 your user-scope install relies on `setcap cap_net_bind_service=+ep` to let
 the bundled Caddy bind `:80` / `:443` without root, that capability is an
