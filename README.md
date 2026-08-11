@@ -139,7 +139,7 @@ If no Caddy binary is configured, everything else still works (app management, p
 
 `system-service` is the seventh built-in type but is internal — it is the Proxy's own type, seeded by Collabhost at startup and not operator-registerable. The registration picker shows the six types above.
 
-**User management** — Header-based auth with administrator and agent roles. One-time API key reveal on creation. The same key authenticates the dashboard, the REST API, and the MCP server — mint a key for an agent and it can operate the platform.
+**User management** — Header-based auth with administrator, agent, and read-only roles. One-time API key reveal on creation. The same key authenticates the dashboard, the REST API, and the MCP server — mint a key for an agent and it can operate the platform, or a read-only key for a monitor that should observe but never mutate.
 
 **Technology probing** — Automatic detection of runtimes, frameworks, and dependencies for registered apps. No manual tagging required. Surfaces in the dashboard and in `get_app` MCP responses.
 
@@ -260,6 +260,7 @@ Drop that in your project's `.mcp.json` (or the equivalent for your client) and 
 |------|--------|
 | Administrator | Full tool surface (18 tools) plus user management through the REST API. |
 | Agent | 17 of 18 tools. Everything except `delete_app` (deletion is administrator-only). |
+| Read-only | Observability only. Reads system status, the app list, and app detail; refused every mutating operation and the secret-bearing reads (logs, settings, activity events). |
 
 ### Tool surface
 
@@ -283,7 +284,7 @@ Apps are identified by **slug** throughout (e.g. `my-api-server`), not by ULID. 
 | Frontend | React 19, TypeScript, Vite |
 | Design System | *War Machine* (custom — dark, monospace, industrial) |
 | Reverse Proxy | Caddy (managed via JSON admin API) |
-| Orchestration | .NET Aspire 13.3 (preview), OpenTelemetry |
+| Orchestration | .NET Aspire 13.4 (stable), OpenTelemetry |
 | Testing | xUnit + Shouldly (backend), Vitest (frontend) |
 | Linting | Roslyn analyzers (backend), Biome (frontend) |
 
