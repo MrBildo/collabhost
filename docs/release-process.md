@@ -43,7 +43,8 @@ gh release create vX.Y.Z \
 - Parses the tag (must match `vX.Y.Z` or `vX.Y.Z-<pre-release>`, SemVer 2.0 §9; build metadata `+...` is rejected).
 - Builds the frontend once and runs the per-RID build matrix (`linux-x64`, `linux-arm64`, `osx-arm64`, `win-x64`).
 - Stages the **eight-item archive contract** per RID (collabhost binary, caddy binary, `appsettings.json`, `INSTALL.md`, `LICENSES/caddy-LICENSE`, `LICENSES/caddy-NOTICE`, `wwwroot/`, `wwwroot.sha256`) into a flat layout, archives it, and computes a per-leg `.sha256`. The `wwwroot.sha256` sidecar is a 64-hex digest of the staged `wwwroot/` tree, embedded into the binary at the same time via `-p:WwwrootHash=…` (surfaced at runtime as `/api/v1/version.wwwrootHash`); the sidecar lets UAT and operators detect partial-strip or post-install tampering by comparing the on-disk file to the running binary's reported value.
-- Uploads `collabhost-<ver>-<rid>.<ext>` + its `.sha256` to the Release as assets (`--clobber`), then aggregates all per-leg sums into a single `checksums.txt` uploaded to the Release.
+- Hands each archive and its `.sha256` to a final `release` job as workflow artifacts. The build jobs run npm and dotnet, whose packages can run their own code, so they hold a read-only token; only the `release` job can write to the Release, and it runs no package manager.
+- In the `release` job: aggregates the per-leg sums into `checksums.txt` and checks all four archives against it, signs a build-provenance attestation for the archives, verifies each one with the `gh attestation verify` command INSTALL.md §11 gives operators, then uploads the archives, their `.sha256` files and `checksums.txt` to the Release (`--clobber`, naming anything it replaces). If that job fails after a fix, re-run it alone: the artifacts are kept for 7 days.
 
 ### Post-release validation
 
@@ -51,7 +52,7 @@ gh release create vX.Y.Z \
 
 ### Pre-cut UAT archive production
 
-`publish.yml` is gated on a published GitHub Release, so it cannot produce archives against `main@<sha>` for a *pre-cut* UAT run. The supported mechanism for that case is `.github/workflows/publish-dryrun.yml` dispatched manually — it builds the same eight-item archive contract with the same `wwwroot.sha256` sidecar and the same embedded `WwwrootHash`, uploaded as workflow-run artifacts instead of Release assets.
+`publish.yml` is gated on a published GitHub Release, so it cannot produce archives against `main@<sha>` for a *pre-cut* UAT run. The supported mechanism for that case is `.github/workflows/publish-dryrun.yml` dispatched manually — it builds the same eight-item archive contract with the same `wwwroot.sha256` sidecar and the same embedded `WwwrootHash`, uploaded as workflow-run artifacts instead of Release assets. A manual dry run also signs and verifies a provenance attestation for its archives (signed by `publish-dryrun.yml`, so the operator's command, which names `publish.yml`, refuses them); pull-request dry runs skip the signing.
 
 ## Bundled-binary CVE response
 

@@ -66,6 +66,8 @@ docs/uat-fixtures/build/
 # Local tools -- ignore everything by default (downloaded binaries, scratch
 # subprojects), but track the scripts and source files contributors share.
 tools/*
+!tools/assert-admin-key-file.ps1
+!tools/assert-admin-key-file.sh
 !tools/assert-windows-install-acl.ps1
 !tools/build-caddy.ps1
 !tools/build-caddy.sh

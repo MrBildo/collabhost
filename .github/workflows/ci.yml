@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main, 'release/*']
 
+# Every job here only reads the repository, so that is all the token can do,
+# whatever the repository's default token permissions are set to.
+permissions:
+  contents: read
+
 jobs:
   build-and-format:
     name: Build & Format
@@ -14,8 +19,10 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           global-json-file: global.json
       - name: Restore
@@ -37,8 +44,10 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           global-json-file: global.json
       - name: Restore
@@ -49,7 +58,7 @@ jobs:
         run: dotnet test Collabhost.Api.Tests/Collabhost.Api.Tests.csproj --no-build --verbosity normal --report-xunit-trx --report-xunit-trx-filename api-test-results.trx --results-directory Collabhost.Api.Tests/TestResults
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: api-test-results-${{ matrix.os }}
           path: backend/Collabhost.Api.Tests/TestResults/api-test-results.trx
@@ -65,8 +74,10 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           global-json-file: global.json
       - name: Restore
@@ -87,27 +98,65 @@ jobs:
         run: dotnet test Collabhost.AppHost.Tests/Collabhost.AppHost.Tests.csproj --no-build --verbosity normal --report-xunit-trx --report-xunit-trx-filename smoke-test-results.trx --results-directory Collabhost.AppHost.Tests/TestResults
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: smoke-test-results
           path: backend/Collabhost.AppHost.Tests/TestResults/smoke-test-results.trx
 
+  # actionlint comes straight from its upstream release, checked against a
+  # pinned SHA-256, not through a wrapper action: the wrapper used before
+  # installed actionlint from a third-party fork by piping a downloaded script
+  # to bash, and by default passed the job even when actionlint found errors.
+  # actionlint runs ShellCheck over every run: script, so ShellCheck must be
+  # present or that half of the check would silently not happen.
   actionlint:
     name: Lint workflows
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
-      - uses: reviewdog/action-actionlint@v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          reporter: github-pr-check
+          persist-credentials: false
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          ARCHIVE="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "${RUNNER_TEMP}/${ARCHIVE}" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${ARCHIVE}"
+          echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/${ARCHIVE}" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${RUNNER_TEMP}/${ARCHIVE}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          echo "${RUNNER_TEMP}/actionlint" >> "${GITHUB_PATH}"
+      - name: Lint
+        env:
+          # actionlint's Go template for GitHub error annotations. actionlint
+          # turns the literal \n into a newline before parsing the template.
+          ANNOTATIONS: '{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}\n{{end}}'
+        run: |
+          set -euo pipefail
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            echo "ShellCheck is not on the runner; actionlint would skip the run: scripts." >&2
+            exit 1
+          fi
+          actionlint -version
+          shellcheck --version | head -2
+          # Plain output for the log; on failure, again as annotations on the PR.
+          if ! actionlint -color; then
+            actionlint -format "${ANNOTATIONS}" || true
+            exit 1
+          fi
 
   systemd-unit-drift:
     name: Systemd unit drift
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
       - name: Lint systemd unit vs install-system.sh heredoc
         run: bash tools/lint-systemd-unit-drift.sh
 
@@ -116,7 +165,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
       # Exercise publish.yml's "Parse tag" regex against representative inputs.
       # Card #251 extended the original ^vX.Y.Z$ to accept SemVer 2.0 §9
       # pre-release identifiers (vX.Y.Z[-pre.release.ids]). This guard pins
@@ -199,10 +250,12 @@ jobs:
     # existing tree) and matches only within comment context, so a hex colour
     # like "#123456" in code or a #region directive never false-positives.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           # Full history so the changed-lines diff has a merge-base to work from.
           fetch-depth: 0
+          # The later fetch of the base branch is anonymous (public repo).
+          persist-credentials: false
       - name: Self-test the linter
         run: bash tools/test-source-comment-refs.sh
       - name: Lint changed source comments
@@ -234,14 +287,18 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
+      # --ignore-scripts, as in the release build (publish.yml), so every PR
+      # proves the frontend still builds and tests without install scripts.
       - name: Install
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Lint
         run: npm run lint
       - name: Format check
@@ -252,7 +309,7 @@ jobs:
         run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=junit.xml
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: frontend-test-results
           path: frontend/junit.xml
