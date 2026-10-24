@@ -165,7 +165,9 @@ INSTALL.md             This file
 LICENSES/
   caddy-LICENSE        Caddy's Apache 2.0 license text
   caddy-NOTICE         Caddy's NOTICE file
-wwwroot/               Dashboard static assets (HTML/JS/CSS for the operator console)
+wwwroot/               Dashboard static assets (HTML/JS/CSS/fonts for the operator console)
+  licenses/            IBM Plex font licenses (SIL Open Font License 1.1)
+wwwroot.sha256         Build-time content hash of wwwroot/ (compare with /api/v1/version)
 ```
 
 `data/` is created on first run next to the binary. It holds `collabhost.db`

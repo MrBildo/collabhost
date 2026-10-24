@@ -119,7 +119,7 @@ const ANSI_SEQUENCE_RE = /\x1b(?:\[[0-9;]*[A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\)
 // hosted app could use them to make a log line look like a different line or to
 // reorder what the operator reads.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point
-const UNSAFE_TEXT_RE = /[\x00-\x08\x0a-\x1f\x7f-\x9f‪-‮⁦-⁩]/g
+const UNSAFE_TEXT_RE = /[\x00-\x08\x0a-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g
 
 function parseAnsiToSegments(text: string): AnsiSegment[] {
   if (text === '') return []

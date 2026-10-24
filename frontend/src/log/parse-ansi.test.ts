@@ -150,12 +150,12 @@ describe('parseAnsiToSegments', () => {
   })
 
   test('bidirectional override and isolate characters are removed', () => {
-    const result = parseAnsiToSegments('user‮gnp.exe⁦x⁩‬')
+    const result = parseAnsiToSegments('user\u202egnp.exe\u2066x\u2069\u202c')
     expect(result).toEqual([{ text: 'usergnp.exex', color: null, bold: false, dim: false }])
   })
 
   test('removal applies inside coloured segments and drops segments left empty', () => {
-    const result = parseAnsiToSegments('\x1b[31m\x00\x1b[32mok‮')
+    const result = parseAnsiToSegments('\x1b[31m\x00\x1b[32mok\u202e')
     expect(result).toEqual([{ text: 'ok', color: '--wm-green', bold: false, dim: false }])
   })
 
