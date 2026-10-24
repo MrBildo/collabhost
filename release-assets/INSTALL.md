@@ -764,6 +764,19 @@ resets any permission changes made by hand inside it, and empties
 `dotnet-bundle\` (the service re-extracts its native libraries there on the
 next start).
 
+Before it stops the service, the script also looks for anything under
+`%ProgramData%\Collabhost\` it did not create: an item owned by another
+account, an item `Administrators` cannot open, or an item whose permissions
+have been switched off from inheriting. It takes each one back (makes
+`Administrators` the owner and resets its permissions) and names it in its
+output. If it finds a **junction or symbolic link** anywhere in that folder, it
+stops and names the link without changing anything and without stopping the
+service, because a permission change applied through a link lands on whatever
+the link points at. Collabhost never creates links there. Delete the link
+itself (`rmdir <path>` for a directory link, `del <path>` for a file link;
+neither touches the target) and re-run. To keep data on another drive, set its
+location in `appsettings.json` instead of linking the folder.
+
 The service binds the privileged ports `:80` / `:443` (via the bundled
 Caddy) directly. Unlike Linux, Windows does not restrict low-numbered ports
 to privileged accounts, so the virtual account binds them without a
@@ -999,12 +1012,34 @@ The three account choices are mutually exclusive — pick at most one of
   both get this grant, so each is turnkey. Your own account already owns the
   tree, so no grant is added there. The grant is **read-only** on the tree and
   **`Modify`** only on the three directories the service writes: `data\` (the
-  database, its backups and crash logs), `UserTypes\` and `dotnet-bundle\`. The
-  service therefore cannot replace `collabhost.exe`, `caddy.exe`, `wwwroot\` or
+  database, its backups and crash logs), `UserTypes\` and `dotnet-bundle\`. On
+  the default install directory (`%USERPROFILE%\.collabhost\bin`), the service
+  therefore cannot replace `collabhost.exe`, `caddy.exe`, `wwwroot\` or
   `appsettings.json` — this directory is on your `PATH`, and you run `collabhost`
-  elevated for `--update-hosts` (§9.10.2). If you point the database, the user
-  types directory or crash logs somewhere else in `appsettings.json`, grant the
-  service account `Modify` on that location yourself.
+  elevated for `--update-hosts` (§9.10.2). That holds only where nobody else has
+  write access to the directory: your profile folder grants none. If you install
+  somewhere else with `-InstallPath`, the directory inherits its parent's
+  permissions, and some grant every user write access (a folder made directly
+  under `C:\` gives Authenticated Users `Modify`). Then any local user, and the
+  service account with them, can replace the binaries whatever this grant says.
+  The installer warns when it finds such permissions on the install directory or
+  on `collabhost.exe`; it does not change permissions on a directory you chose.
+  Use the default directory, or remove those permissions yourself.
+
+  If you point any of these somewhere else in `appsettings.json`, grant the
+  service account `Modify` on that location yourself: the database, the user
+  types directory, crash logs, or the proxy's certificate storage
+  (`Proxy:StoragePath` / `COLLABHOST_PROXY_STORAGE_PATH`, where the bundled Caddy
+  keeps its certificates and the private key of its local certificate
+  authority). The database and user types are checked at startup and fail there
+  with a "not writable" error. The certificate storage is not checked, so a
+  missing grant shows up later, when the proxy first issues a certificate.
+- Refuses to change permissions if it finds a junction or symbolic link inside
+  the install directory, and says which. The check runs before the service is
+  stopped, so a refusal leaves the running service as it was. A permission
+  change applied through a link lands on whatever the link points at, and the
+  installer never creates links there. Delete the link itself (`rmdir <path>` or
+  `del <path>`; neither touches the target) and re-run.
 - Sets `DOTNET_BUNDLE_EXTRACT_BASE_DIR` for the service to an account-owned
   directory under the install (a service starts with no loaded user profile, so
   the single-file binary's native-library extraction needs a writable location
@@ -1065,7 +1100,9 @@ overwriting the binary (Windows locks a running EXE), refreshes the binary /
 `wwwroot/` / `LICENSES/`, smart-merges `appsettings.json`, re-applies the service
 configuration and the install-tree permissions, and restarts. A service
 registered by an earlier version, which gave the service account `Modify` on the
-whole install tree, gets the narrower grant on this upgrade with no further step:
+whole install tree, gets the narrower grant on this upgrade with no further step.
+A plain re-run without `-RegisterUserService` leaves the service and its
+permissions as they were, and warns that it did:
 
 ```powershell
 .\install.ps1 -RegisterUserService                    # latest, passwordless default
