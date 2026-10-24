@@ -20,18 +20,21 @@
   </ItemGroup>
 
   <!-- Runtime / framework. The 10.0.x line tracks the .NET 10 servicing band,
-       kept aligned at a single patch across the family. Held at 10.0.8: a cold
-       CPM restore surfaced an NU1605 downgrade — the test graph transitively
-       pulls Microsoft.Extensions.Configuration.Binder 10.0.8 (via
-       Mvc.Testing -> Hosting), which floors Microsoft.Extensions.Configuration
-       at >= 10.0.8. Bumping the whole family to 10.0.8 resolves it at root and
-       avoids intra-family skew (the exact drift CPM exists to prevent). -->
+       kept aligned at a single patch across the family (a cold CPM restore once
+       surfaced an NU1605 downgrade when the test graph's transitive
+       Microsoft.Extensions.Configuration.Binder floored Configuration above the
+       pinned patch; moving the whole family together avoids that skew).
+       The patch matches the runtime the SDK in global.json bundles into the
+       self-contained release, so move these together with the SDK pin. 10.0.13
+       also brings Microsoft.Data.Sqlite onto SQLitePCLRaw 2.1.13 (SQLite 3.53,
+       outside CVE-2025-6965's affected range) and Microsoft.AspNetCore.OpenApi
+       onto Microsoft.OpenApi 2.12 (outside CVE-2026-49451's). -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.8" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />
     <PackageVersion Include="Ulid" Version="1.4.1" />
   </ItemGroup>
@@ -68,18 +71,21 @@
   <!-- Security pin (transitive). Aspire 13.4.1 transitively pulls MessagePack
        2.5.192 (via StreamJsonRpc), which falls in the vulnerable range of
        advisory GHSA-hv8m-jj95-wg3x (LZ4 decompression out-of-bounds read / DoS,
-       patched at 2.5.301). 2.5.302 is the latest 2.5.x and matches Microsoft's
-       own remediation for this Aspire-transitive case. Collabhost does not call
-       MessagePack directly; this only governs the orchestration/test-host graph.
-       Remove once the Aspire train ships a build that no longer floors below the
-       patched version. -->
+       patched at 2.5.301) and of CVE-2026-92707 / GHSA-qhrr-8q5h-9q3h
+       (nested-array allocation DoS, patched at 2.5.303). Pinned to 2.5.307, the
+       newest 2.5.x: the maintainer's release notes for 2.5.303, 2.5.305 and
+       2.5.307 each carry a security fix, and Aspire 13.6.2 and later request
+       2.5.307 themselves. Collabhost does not call MessagePack directly and it
+       is not in the shipped binary; this only governs the orchestration and
+       test-host graph. Remove once the Aspire version in use requests 2.5.307
+       or later on its own. -->
   <ItemGroup>
-    <PackageVersion Include="MessagePack" Version="2.5.302" />
+    <PackageVersion Include="MessagePack" Version="2.5.307" />
   </ItemGroup>
 
   <!-- Test infrastructure (Collabhost.Api.Tests, Collabhost.AppHost.Tests).
        Mvc.Testing + Configuration are part of the 10.0.x BCL servicing band
-       above and are held at the same 10.0.8 patch.
+       above and are held at the same patch.
 
        xUnit v3 (#393): xunit.v3 is the v3 meta-package (replaces the v2 `xunit`).
        Microsoft Testing Platform is the dotnet-test runner — selected via the
@@ -91,8 +97,8 @@
        it targets v2 only (no v3 package); v3 has built-in skipping
        (Assert.SkipWhen/SkipUnless + Xunit.Sdk.SkipException). -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.8" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.5.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />

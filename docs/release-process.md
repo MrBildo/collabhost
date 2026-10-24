@@ -85,30 +85,37 @@ These are targets, not contracts. Collabhost is a small project. If a critical a
 Before tagging a release, walk this list:
 
 - [ ] **Pre-release doc sweep.** Reconcile every published doc against the current code — README, the shipped `INSTALL.md`, CONTRIBUTING, the operator-facing files under `docs/`, the credits/team section, and the screenshots under `docs/`. Fix install/upgrade steps, feature surface, config/env keys, and paths that no longer match. See "Pre-release doc sweep" above for the full walk.
+- [ ] **.NET servicing check.** A release is a self-contained publish, so the .NET runtime and ASP.NET Core (Kestrel) inside every archive are the ones the SDK in `global.json` bundles. Compare `global.json`'s `sdk.version` with the latest 10.0.4xx SDK in the [.NET 10 release notes](https://github.com/dotnet/core/blob/main/release-notes/10.0/README.md). If a newer servicing release is out (they usually carry CVE fixes), bump `global.json` and move the 10.0.x package family in `backend/Directory.Packages.props` to the matching patch in the same change. The publish workflow's "Verify bundled .NET runtime" step fails a leg whose binary carries a different runtime than the pinned SDK bundles.
+- [ ] **Go toolchain check.** Caddy statically links the Go standard library (`crypto/tls`, `net/http`, `crypto/x509`), so `go.version` is a shipped dependency. Bump it to the newest patch of its minor line when [Go releases](https://go.dev/doc/devel/release) list security fixes. The build fails if the binary records a different toolchain.
+- [ ] **Scan the built Caddy.** `govulncheck -mode=binary <caddy>` on a locally built binary (`tools/build-caddy.*`) lists advisories in the Go modules Caddy compiles in. A fix that Caddy's own release has not picked up yet can be taken through `caddy-replaces.txt`; remove the line once `caddy.version` carries it.
 - [ ] **Caddy upstream check.** Is there a newer Caddy release than the one pinned in `caddy.version`? Read its release notes and security advisories. If a CVE is fixed, treat the bump as required and surface it in the Collabhost release notes.
 - [ ] **Bump `caddy.version` if needed.** Single-line file at the repo root. The publish workflow feeds this version to `xcaddy build` for each target RID.
 - [ ] **Plugin upstream check.** For every line in `caddy-plugins.txt`, verify the pinned version is still current at the plugin's upstream repo (e.g. `github.com/caddy-dns/cloudflare`). Bump if a security fix or compatibility-with-new-Caddy-core release lands.
 - [ ] **Smoke-test the new Caddy version against `CaddyClient`.** Collabhost talks to Caddy through the admin API (`POST /load`, `PATCH /config/...`). Caddy occasionally tightens admin-API behaviour between minors. Run `aspire start` or a standalone backend with the bumped version, register a managed app, exercise route reload. Log lines should be clean.
-- [ ] **Run the dry-run pipeline.** `.github/workflows/publish-dryrun.yml` builds the same archives the real release will produce. Required if `caddy.version`, `xcaddy.version`, or `caddy-plugins.txt` changed. The post-build step asserts every plugin's Caddy module is reachable via `caddy list-modules` — a missing plugin fails the leg, so a bump that breaks plugin compatibility surfaces here, not in production.
+- [ ] **Run the dry-run pipeline.** `.github/workflows/publish-dryrun.yml` builds the same archives the real release will produce. Required if `global.json`, `caddy.version`, `xcaddy.version`, `go.version`, `caddy-plugins.txt`, or `caddy-replaces.txt` changed. The post-build step asserts every plugin's Caddy module is reachable via `caddy list-modules` — a missing plugin fails the leg, so a bump that breaks plugin compatibility surfaces here, not in production.
 - [ ] **Run the install-integration workflow.** Trigger `install-integration.yml` via `workflow_dispatch` and confirm at minimum the `linux-arm64` leg passes (the QEMU leg only runs on manual dispatch and post-release `workflow_run`).
 - [ ] **Run a release UAT pass.** Before tagging, exercise a freshly-built archive end-to-end — install it, register and run an app of each hosted type, and confirm the dashboard, routing, and TLS all come up clean. The UAT gate is **advisory** (no CI enforcement); record the result wherever you track release readiness and reference it in the release notes so the pass is visible.
 - [ ] **Credit upstream in release notes.** When a release rolls a Caddy security fix, note the CVE ID(s) and link the upstream advisory. Don't quietly ship security fixes — give operators a reason to update.
 
 ### Version pin mechanism
 
-Three pin files at the repo root drive the bundled Caddy build, all consumed by the publish workflow (`.github/workflows/publish.yml`):
+Five pin files at the repo root drive the bundled Caddy build, all consumed by the publish workflow (`.github/workflows/publish.yml`):
 
 | File | Shape | Purpose |
 |---|---|---|
-| `caddy.version` | Single-line plain text (e.g. `2.11.2`) | Caddy core version. Fed to `xcaddy build vX.Y.Z`. |
-| `xcaddy.version` | Single-line plain text (e.g. `0.4.5`) | Pinned `xcaddy` itself, installed via `go install` at build time. Bumping is rare — only when xcaddy ships a build-side fix. |
+| `caddy.version` | Single-line plain text (e.g. `2.11.7`) | Caddy core version. Fed to `xcaddy build vX.Y.Z`. |
+| `xcaddy.version` | Single-line plain text (e.g. `0.4.7`) | Pinned `xcaddy` itself, installed via `go install` at build time. Bumping is rare — only when xcaddy ships a build-side fix. |
+| `go.version` | Single-line plain text (e.g. `1.26.10`) | The Go toolchain Caddy is compiled with (`setup-go` reads it; `GOTOOLCHAIN=local` stops a module from switching toolchains). The workflow checks the toolchain the binary records against it. |
 | `caddy-plugins.txt` | One plugin per non-comment line: `<go-module-path>  <version>  <caddy-module-id>` | Plugins baked into the build. The third column (`caddy-module-id`) is what `caddy list-modules` prints once the plugin is loaded; the workflow grep-asserts it post-build. |
+| `caddy-replaces.txt` | One override per non-comment line: `<go-module-path>  <version>` | Go module overrides (`xcaddy build --replace`), for taking a dependency's security fix before a Caddy release carries it. `tools/verify-caddy-build.sh` reads the binary (`go version -m`) and fails when an override is missing, or when the build already requires that version or a newer one (the line is then dead or holding the module back), with an instruction to delete it. Each line says why it exists. |
+
+The .NET side has one pin: `global.json`'s `sdk.version`, which CI and both publish workflows install exactly (`setup-dotnet` with `global-json-file`). `rollForward: patch` lets a contributor build with any later 10.0.4xx patch locally; CI always uses the pinned one. `tools/verify-bundled-runtime.sh` is the check the publish workflows run on each built binary.
 
 **Bumping Caddy** now means a coordinated walk: bump `caddy.version`, then check whether each plugin in `caddy-plugins.txt` has a newer release tag compatible with the new Caddy core. The dry-run pipeline catches mismatches at build time (Go's module resolution refuses incompatible combinations) and at verify time (a plugin that loaded but moved its Caddy module ID will fail the assertion).
 
 **Adding a plugin:** append a line to `caddy-plugins.txt` with the three columns. The CI build step assembles `--with` flags from the file; no workflow edit needed. Update [CONTRIBUTING.md](../CONTRIBUTING.md) if the plugin enables a new operator-facing setting.
 
-**Local reproduction.** `tools/build-caddy.ps1` (Windows) and `tools/build-caddy.sh` (Linux/macOS) read the same three pin files and produce a binary structurally identical to the CI build. Requires [Go](https://go.dev/dl/) on PATH. Useful for verifying a bump locally before pushing.
+**Local reproduction.** `tools/build-caddy.ps1` (Windows) and `tools/build-caddy.sh` (Linux/macOS) read the same pin files and produce a binary structurally identical to the CI build. They select the `go.version` toolchain through `GOTOOLCHAIN`, so any Go 1.21 or later on PATH works (it downloads the pinned toolchain). Useful for verifying a bump locally before pushing.
 
 ### Future scope
 
