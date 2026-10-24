@@ -872,9 +872,15 @@ jobs:
       EXT: ${{ matrix.ext }}
       COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
       CADDY_BIN: ${{ matrix.caddy_bin }}
-    # Needs no token permission: it reads only this run's artifacts.
-    permissions: {}
+    permissions:
+      contents: read
     steps:
+      # Only tools/ is needed: the admin-key check script.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: tools
+
       - name: Download archive artifact
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -1034,6 +1040,14 @@ jobs:
               exit 1
             }
             echo "HTTP smoke check passed: status, root, deep link."
+
+            # Same admin-key check as install-integration.yml: the first run
+            # also saves the key, owner-only, in the data directory, and it
+            # must be the key it printed.
+            bash "${GITHUB_WORKSPACE}/tools/assert-admin-key-file.sh" \
+              --data-dir "${INSTALL_DIR}/data" \
+              --stdout "${LOG}" \
+              --url "http://localhost:${PORT}"
           fi
 
           # Bounded stop ladder: SIGINT -> 5s grace -> SIGTERM -> 3s grace -> SIGKILL.
@@ -1113,6 +1127,12 @@ jobs:
             if ($deep.Content -notmatch '(?i)<!doctype html') { throw 'SPA fallback not wired: /apps returned non-HTML.' }
 
             Write-Host 'HTTP smoke check passed: status, root, deep link.'
+
+            # Same admin-key check as install-integration.yml.
+            & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-admin-key-file.ps1') `
+              -DataDir (Join-Path $InstallDir 'data') `
+              -StdoutLog $log `
+              -Url "http://localhost:$port"
           }
 
           if (-not $proc.HasExited) {

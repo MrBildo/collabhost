@@ -392,6 +392,15 @@ jobs:
           fi
           echo "wwwroot hash content-match verified: sidecar == /api/v1/version.wwwrootHash."
 
+          # The first run also saves the key, owner-only, in the data
+          # directory (what a headless install reads), and it must be the key
+          # it printed. The step runs from $HOME, so the script is named by its
+          # full path.
+          bash "${GITHUB_WORKSPACE}/tools/assert-admin-key-file.sh" \
+            --data-dir "${INSTALL_DIR}/data" \
+            --stdout "${LOG}" \
+            --url "http://localhost:${PORT}"
+
           # Bounded stop ladder: SIGINT -> 5s grace -> SIGTERM -> 3s grace -> SIGKILL.
           # Mirrors the linux-arm64 (QEMU) leg exactly. Worst-case bounded at ~8s.
           kill -INT "${PID}" 2>/dev/null || true
@@ -623,6 +632,14 @@ jobs:
           }
           Write-Host 'wwwroot hash content-match verified: sidecar == /api/v1/version.wwwrootHash.'
 
+          # The first run also saves the key in the data directory, and it must
+          # be the key it printed. The step runs from $HOME, so the script is
+          # named by its full path.
+          & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-admin-key-file.ps1') `
+            -DataDir (Join-Path $InstallDir 'data') `
+            -StdoutLog $log `
+            -Url "http://localhost:$port"
+
           # Stop the process (Windows has no clean SIGINT for our P/Invoke
           # process group from PS without GenerateConsoleCtrlEvent gymnastics;
           # Stop-Process is sufficient -- the integration test's success
@@ -826,7 +843,10 @@ jobs:
           if (-not (Test-Path -LiteralPath (Join-Path $env:DATA_ROOT 'data\collabhost.db'))) { throw 'The service did not create its database.' }
           # Re-check after the service has written its own files.
           & tools/assert-windows-install-acl.ps1 -Scope System -Path $env:DATA_ROOT -Account 'NT SERVICE\Collabhost' -Expect Restricted
-          Write-Host 'Fresh install: service created its database and answered /api/v1/status.'
+          # A service has no console: the key file is how its operator gets the
+          # first admin key.
+          & tools/assert-admin-key-file.ps1 -DataDir (Join-Path $env:DATA_ROOT 'data') -Url 'http://localhost:58400'
+          Write-Host 'Fresh install: service created its database and admin key file, and answered /api/v1/status.'
 
       - name: Teardown
         if: always()
@@ -925,7 +945,10 @@ jobs:
           if (-not $ok) { throw 'Status endpoint never came up under the service.' }
           if (-not (Test-Path -LiteralPath (Join-Path $bin 'data\collabhost.db'))) { throw 'The service did not create its database.' }
           & tools/assert-windows-install-acl.ps1 -Scope User -Path $bin -Account 'NT SERVICE\CollabhostUser' -Expect Restricted
-          Write-Host 'Fresh registration: service created its database and answered /api/v1/status.'
+          # A service has no console: the key file is how its operator gets the
+          # first admin key.
+          & tools/assert-admin-key-file.ps1 -DataDir (Join-Path $bin 'data') -Url 'http://localhost:58400'
+          Write-Host 'Fresh registration: service created its database and admin key file, and answered /api/v1/status.'
 
       # A plain install into a directory every user can write to. The parent gets
       # the grant a drive root such as C:\ carries (Authenticated Users, Modify,
@@ -1148,6 +1171,13 @@ jobs:
               fi
               echo "wwwroot hash content-match verified (linux-arm64)."
 
+              # The first run also saves the key, owner-only, in the data
+              # directory, and it must be the key it printed.
+              bash /work/tools/assert-admin-key-file.sh \
+                --data-dir "${INSTALL_DIR}/data" \
+                --stdout "${LOG}" \
+                --url "http://localhost:${PORT}"
+
               kill -INT "${PID}" 2>/dev/null || true
               for _ in $(seq 1 10); do kill -0 "${PID}" 2>/dev/null || break; sleep 0.5; done
               kill -TERM "${PID}" 2>/dev/null || true
@@ -1294,6 +1324,24 @@ jobs:
           echo "Service did not emit 'Now listening on:' within 60s." >&2
           sudo journalctl -u collabhost --no-pager --since '5 min ago' >&2 || true
           exit 1
+
+      # Under systemd, standard output is the journal, so the first run must
+      # not print the generated admin key: the journal keeps it, readable by
+      # more people than the operator. The key goes only to
+      # initial-admin-key.txt in the data directory, readable by the service
+      # user alone, and the journal records where the file is. The script
+      # never prints the key.
+      - name: Admin key saved to a file, kept out of the journal
+        shell: bash
+        run: |
+          set -euo pipefail
+          JOURNAL_DUMP="${RUNNER_TEMP}/collabhost-journal.txt"
+          sudo journalctl -u collabhost --no-pager | tee "${JOURNAL_DUMP}" > /dev/null
+          sudo bash tools/assert-admin-key-file.sh \
+            --data-dir /var/lib/collabhost/data \
+            --owner collabhost \
+            --journal "${JOURNAL_DUMP}" \
+            --url http://localhost:58400
 
       # Layer 2 -- /api/v1/status shape. The cascade-killer assertion: a service
       # can be `active (running)` while proxyState is "disabled" and
@@ -1445,20 +1493,9 @@ jobs:
       # "Unknown key name" warning visible from the very first boot; #245
       # "WebRootPath was not found" + "Portal reachability check: Missing"
       # visible long before any HTTP probe). A fresh boot should have ZERO
-      # warnings or errors.
-      #
-      # Bootstrap filter (card #243 fix-up #2): UserSeedService.LogCritical emits
-      # intentionally at crit: so operators see the generated admin key regardless
-      # of configured log level. The .NET console formatter writes this as a 2-line
-      # block in the journal:
-      #   line 1 (framework header): crit: Collabhost.Api.Authorization.UserSeedService[0]
-      #   line 2 (message body):     Collabhost admin key: <ULID>
-      # The prior grep -v 'admin key' only removed line 2; line 1 escaped the
-      # filter. The awk pre-pass treats the pair as a unit: suppress line 1 when
-      # line 2 is the bootstrap body. A real critical error from UserSeedService
-      # (e.g. DB write failure) would produce a different continuation and surfaces
-      # normally. The "Admin-key bootstrap line" step above validates this path
-      # independently, so suppressing it here avoids double-counting.
+      # warnings or errors. The first-run admin key no longer comes through
+      # the log at all (see the admin key step above), so nothing is
+      # filtered out: any crit: line is a real failure.
       - name: Journal warning scan
         shell: bash
         run: |
@@ -1469,16 +1506,7 @@ jobs:
           # diagnostic that #241 emitted. The grep is line-anchored to ": " so
           # it doesn't match the timestamp's seconds field or random log content
           # that happens to contain "warn".
-          #
-          # awk pre-pass strips the intentional UserSeedService bootstrap 2-line
-          # block (header + "Collabhost admin key:" body) before grep runs.
-          # A real critical from UserSeedService produces a different body line
-          # and falls through to grep normally.
           OFFENDERS="$(echo "${JOURNAL}" \
-            | awk '/crit:.*UserSeedService/ { hold=$0; skip=1; next }
-                   skip && /Collabhost admin key:/ { skip=0; next }
-                   skip { print hold; skip=0 }
-                   { print }' \
             | grep -iE '(^|\s)(warn|fail|crit):\s|unknown key' || true)"
           if [[ -n "${OFFENDERS}" ]]; then
             echo "Journal contains warnings/errors on a fresh boot:" >&2
