@@ -218,6 +218,8 @@ public class ExternalTargetConfigurationTests
     [InlineData("100.100.100.200", true)]
     [InlineData("metadata.google.internal", true)]
     [InlineData("METADATA.GOOGLE.INTERNAL", true)]
+    [InlineData("169.254.169.254.", true)]
+    [InlineData("metadata.google.internal.", true)]
     public void ValidateEdits_LinkLocalOrMetadataHost_Rejected(string host, bool allowPublicHosts)
     {
         var overrides = new JsonObject

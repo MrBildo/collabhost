@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using Collabhost.Api.Authorization;
+using Collabhost.Api.Capabilities;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Mcp;
 using Collabhost.Api.Platform;
@@ -496,6 +498,121 @@ public class McpToolTests(ApiFixture fixture)
         {
             await DeleteTestAppAsync(slug);
         }
+    }
+
+    // REST reports a field's editability as its kind (always / locked / derived); MCP reports a
+    // boolean. The two must agree on every field: the boolean is true exactly when the kind is
+    // "always", the only kind update_settings accepts an edit to. The three apps between them bind
+    // every capability, so a field that changes kind, or a new kind, shows up here on whichever
+    // surface was not updated.
+    [Fact]
+    public async Task GetSettings_EditableAgreesWithRestOnEveryField()
+    {
+        List<string> slugs =
+        [
+            await CreateTestAppAsync(),
+            await CreateExternalRouteAppAsync("10.0.0.5", 8080, "http"),
+            await CreateDotnetAppAsync()
+        ];
+
+        try
+        {
+            var capabilitiesSeen = new HashSet<string>(StringComparer.Ordinal);
+            var kindsSeen = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var slug in slugs)
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{slug}/settings");
+                request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+                var response = await _client.SendAsync(request);
+                response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+                var restKinds = new Dictionary<string, string>(StringComparer.Ordinal);
+                var restDocument = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+                foreach (var section in restDocument["sections"]!.AsArray())
+                {
+                    var sectionKey = section!["key"]!.GetValue<string>();
+                    capabilitiesSeen.Add(sectionKey);
+
+                    foreach (var field in section["fields"]!.AsArray())
+                    {
+                        restKinds[$"{sectionKey}.{field!["key"]!.GetValue<string>()}"] = field["editable"]!["mode"]!.GetValue<string>();
+                    }
+                }
+
+                var (tools, scope) = CreateConfigurationTools();
+                using var _ = scope;
+
+                var result = await tools.GetSettingsAsync(slug, authKey: ApiFixture.AdminKey, CancellationToken.None);
+                (result.IsError ?? false).ShouldBeFalse();
+
+                var mcpEditable = new Dictionary<string, bool>(StringComparer.Ordinal);
+
+                foreach (var section in JsonNode.Parse(GetFirstText(result))!["sections"]!.AsArray())
+                {
+                    var sectionKey = section!["key"]!.GetValue<string>();
+
+                    foreach (var field in section["fields"]!.AsArray())
+                    {
+                        mcpEditable[$"{sectionKey}.{field!["key"]!.GetValue<string>()}"] = field["editable"]!.GetValue<bool>();
+                    }
+                }
+
+                mcpEditable.Keys.Order(StringComparer.Ordinal).ShouldBe(restKinds.Keys.Order(StringComparer.Ordinal));
+
+                foreach (var (field, kind) in restKinds)
+                {
+                    kindsSeen.Add(kind);
+
+                    mcpEditable[field].ShouldBe
+                    (
+                        string.Equals(kind, "always", StringComparison.Ordinal),
+                        $"{slug}: {field} is '{kind}' on REST"
+                    );
+                }
+            }
+
+            // The fixture has to hold what the check compares, or it passes by having nothing to compare.
+            CapabilityCatalog.All.Keys.Except(capabilitiesSeen, StringComparer.Ordinal).ShouldBeEmpty();
+            kindsSeen.ShouldBe(["always", "derived", "locked"], ignoreOrder: true);
+        }
+        finally
+        {
+            foreach (var slug in slugs)
+            {
+                await DeleteTestAppAsync(slug);
+            }
+        }
+    }
+
+    private async Task<string> CreateDotnetAppAsync()
+    {
+        var slug = $"mcp-dotnet-{Guid.NewGuid().ToString("N")[..8]}";
+
+        var payload = new
+        {
+            name = slug,
+            displayName = "MCP Dotnet App",
+            appTypeSlug = "dotnet-app",
+            values = new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal)
+            {
+                ["artifact"] = new(StringComparer.Ordinal)
+                {
+                    ["location"] = "/tmp/dummy"
+                }
+            }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
+        request.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+        request.Content = JsonContent.Create(payload, options: _jsonOptions);
+
+        var response = await _client.SendAsync(request);
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        return slug;
     }
 
     [Fact]

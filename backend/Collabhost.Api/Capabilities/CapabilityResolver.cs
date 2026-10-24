@@ -277,10 +277,12 @@ public static partial class CapabilityResolver
 
     // True for a host naming a link-local address (IPv4 169.254.0.0/16, IPv6 fe80::/10, or the
     // IPv4-mapped IPv6 form of the former) or a cloud instance-metadata endpoint. An IPv6 literal
-    // may arrive bracketed, as it would inside a URL.
+    // may arrive bracketed, as it would inside a URL. A trailing dot (the DNS root, as in
+    // "metadata.google.internal.") names the same target, and the permissive public-host policy
+    // accepts it, so it is dropped before either comparison.
     internal static bool IsLinkLocalOrMetadataHost(string host)
     {
-        var trimmed = host.Trim();
+        var trimmed = host.Trim().TrimEnd('.');
 
         if (string.Equals(trimmed, _gcpMetadataHostname, StringComparison.OrdinalIgnoreCase))
         {
