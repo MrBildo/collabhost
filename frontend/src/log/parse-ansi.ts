@@ -104,8 +104,22 @@ function xterm256ToRgb(index: number): { r: number; g: number; b: number } {
   return { r: grey, g: grey, b: grey }
 }
 
+// CSI sequences (`ESC [ params letter`) and OSC sequences (`ESC ] body` ended by
+// BEL or `ESC \`). The OSC body may not contain BEL or ESC: an unterminated OSC
+// then stops scanning at the next escape instead of running to the end of the
+// line, which kept a long line of `ESC ]` repeats from parsing in quadratic time.
+// Log lines are a hosted app's own output, so the parser must stay linear on
+// hostile input.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape codes use control characters by definition
-const ANSI_SEQUENCE_RE = /\x1b(?:\[[0-9;]*[A-Za-z]|\].*?(?:\x07|\x1b\\))/g
+const ANSI_SEQUENCE_RE = /\x1b(?:\[[0-9;]*[A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\))/g
+
+// Characters removed from displayed log text once escape sequences are parsed:
+// C0 controls except tab, DEL, C1 controls, and the bidirectional embedding,
+// override and isolate characters. None of them render as visible text, and a
+// hosted app could use them to make a log line look like a different line or to
+// reorder what the operator reads.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point
+const UNSAFE_TEXT_RE = /[\x00-\x08\x0a-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g
 
 function parseAnsiToSegments(text: string): AnsiSegment[] {
   if (text === '') return []
@@ -116,10 +130,15 @@ function parseAnsiToSegments(text: string): AnsiSegment[] {
   let dim = false
   let lastIndex = 0
 
+  function pushText(raw: string): void {
+    const visible = raw.replace(UNSAFE_TEXT_RE, '')
+    if (visible !== '') segments.push({ text: visible, color, bold, dim })
+  }
+
   for (const match of text.matchAll(ANSI_SEQUENCE_RE)) {
     const matchStart = match.index
     if (matchStart > lastIndex) {
-      segments.push({ text: text.slice(lastIndex, matchStart), color, bold, dim })
+      pushText(text.slice(lastIndex, matchStart))
     }
     lastIndex = matchStart + match[0].length
 
@@ -131,7 +150,7 @@ function parseAnsiToSegments(text: string): AnsiSegment[] {
 
       // Index-based walk so the 38/48 extended-color directives can consume
       // their trailing args (38;5;n / 38;2;r;g;b) rather than letting those
-      // args bleed back into the loop as standalone SGR codes (FE-UI-03).
+      // args bleed back into the loop as standalone SGR codes.
       // Out-of-range reads fall back to NaN, which Number.isFinite rejects.
       let i = 0
       while (i < codes.length) {
@@ -186,7 +205,7 @@ function parseAnsiToSegments(text: string): AnsiSegment[] {
 
   // Remaining text after the last escape sequence
   if (lastIndex < text.length) {
-    segments.push({ text: text.slice(lastIndex), color, bold, dim })
+    pushText(text.slice(lastIndex))
   }
 
   return segments
