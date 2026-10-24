@@ -20,6 +20,9 @@ public class UserSeedServiceTests : IAsyncLifetime
     private TestDbContextFactory _dbFactory = null!;
     private ActivityEventStore _activityEventStore = null!;
 
+    // What the service printed to standard output, captured per test.
+    private readonly StringWriter _standardOutput = new();
+
     public async ValueTask InitializeAsync()
     {
         _dataDirectory = Path.Combine
@@ -46,9 +49,11 @@ public class UserSeedServiceTests : IAsyncLifetime
         _activityEventStore = new ActivityEventStore(_dbFactory, NullLogger<ActivityEventStore>.Instance);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         GC.SuppressFinalize(this);
+
+        await _standardOutput.DisposeAsync();
 
         if (Directory.Exists(_dataDirectory))
         {
@@ -61,19 +66,26 @@ public class UserSeedServiceTests : IAsyncLifetime
                 // Best-effort cleanup
             }
         }
-
-        return ValueTask.CompletedTask;
     }
+
+    private string KeyFilePath => Path.Combine(_dataDirectory, FirstRunAdminKeyAnnouncer.KeyFileName);
 
     private UserSeedService CreateService(string? configuredAdminKey) =>
         CreateService(configuredAdminKey, NullLogger<UserSeedService>.Instance);
 
-    private UserSeedService CreateService(string? configuredAdminKey, ILogger<UserSeedService> logger) =>
+    private UserSeedService CreateService
+    (
+        string? configuredAdminKey,
+        ILogger<UserSeedService> logger,
+        bool standardOutputIsJournal = false,
+        string? dataDirectory = null
+    ) =>
         new
         (
             _dbFactory,
             Options.Create(new AuthorizationSettings { AdminKey = configuredAdminKey }),
             _activityEventStore,
+            new FirstRunAdminKeyAnnouncer(dataDirectory ?? _dataDirectory, () => _standardOutput, standardOutputIsJournal),
             logger
         );
 
@@ -117,10 +129,13 @@ public class UserSeedServiceTests : IAsyncLifetime
         admin.Role.ShouldBe(UserRole.Administrator);
         admin.AuthKey.Length.ShouldBe(26); // ULID length
 
-        // The admin key is surfaced via ILogger.LogCritical so the Console provider emits it
-        // on stdout in production without tripping xunit's per-test Console capture. Operators
-        // grep for "Collabhost admin key:" (#152 contract, #158 owns UX polish).
-        capture.ShouldHaveLogged(LogLevel.Critical, $"Collabhost admin key: {admin.AuthKey}");
+        // The operator gets the key on standard output (the line operators and install checks grep
+        // for) and in a file in the data directory. No log record carries it: every logging provider
+        // is a sink (the Windows Event Log, journald) that outlives the moment of capture.
+        _standardOutput.ToString().ShouldContain($"Collabhost admin key: {admin.AuthKey}", Case.Sensitive);
+        (await File.ReadAllTextAsync(KeyFilePath)).Trim().ShouldBe(admin.AuthKey);
+        capture.ShouldNotHaveLoggedAtAnyLevel(admin.AuthKey);
+        capture.ShouldHaveLogged(LogLevel.Information, KeyFilePath);
     }
 
     [Fact]
@@ -136,7 +151,79 @@ public class UserSeedServiceTests : IAsyncLifetime
         users.Count.ShouldBe(1);
         users[0].AuthKey.Length.ShouldBe(26);
 
-        capture.ShouldHaveLogged(LogLevel.Critical, "Collabhost admin key:");
+        _standardOutput.ToString().ShouldContain($"Collabhost admin key: {users[0].AuthKey}", Case.Sensitive);
+        capture.ShouldNotHaveLoggedAtAnyLevel(users[0].AuthKey);
+    }
+
+    // Under systemd, standard output is the journal, so printing the key there would keep it in the
+    // journal. The key goes to the file only, and the log says where that file is.
+    [Fact]
+    public async Task SeedAsync_Scenario1_StandardOutputIsJournal_KeyOnlyInFile()
+    {
+        var capture = new CapturingLogger<UserSeedService>();
+        var service = CreateService(configuredAdminKey: null, capture, standardOutputIsJournal: true);
+
+        await service.SeedAsync(CancellationToken.None);
+
+        var admin = (await GetUsersAsync()).Single();
+
+        _standardOutput.ToString().ShouldBeEmpty();
+        (await File.ReadAllTextAsync(KeyFilePath)).Trim().ShouldBe(admin.AuthKey);
+        capture.ShouldNotHaveLoggedAtAnyLevel(admin.AuthKey);
+        capture.ShouldHaveLogged(LogLevel.Information, KeyFilePath);
+    }
+
+    // A key file left by an earlier first run (the database was reset, the file was not) is replaced
+    // with the new key, not kept.
+    [Fact]
+    public async Task SeedAsync_Scenario1_StaleKeyFile_IsReplaced()
+    {
+        await File.WriteAllTextAsync(KeyFilePath, "01OLDKEY0FROM0EARLIER0RUN0\n");
+
+        var service = CreateService(configuredAdminKey: null);
+
+        await service.SeedAsync(CancellationToken.None);
+
+        var admin = (await GetUsersAsync()).Single();
+
+        (await File.ReadAllTextAsync(KeyFilePath)).Trim().ShouldBe(admin.AuthKey);
+    }
+
+    // The key file is the only way a headless install can read the key, so a seed that cannot write
+    // it must not commit: the database stays empty and the next boot is a first run again.
+    [Fact]
+    public async Task SeedAsync_Scenario1_KeyFileCannotBeWritten_ThrowsAndLeavesDbEmpty()
+    {
+        var missingDirectory = Path.Combine(_dataDirectory, "does-not-exist");
+
+        var service = CreateService
+        (
+            configuredAdminKey: null,
+            NullLogger<UserSeedService>.Instance,
+            dataDirectory: missingDirectory
+        );
+
+        await Should.ThrowAsync<DirectoryNotFoundException>(() => service.SeedAsync(CancellationToken.None));
+
+        (await GetUsersAsync()).Count.ShouldBe(0);
+        _standardOutput.ToString().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task SeedAsync_Scenario1_KeyFile_IsReadableByOwnerOnly()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Unix file modes; on Windows the file takes the data directory's ACL");
+
+            return;
+        }
+
+        var service = CreateService(configuredAdminKey: null);
+
+        await service.SeedAsync(CancellationToken.None);
+
+        File.GetUnixFileMode(KeyFilePath).ShouldBe(UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
     // -- Scenario 2 ------------------------------------------------------
@@ -157,9 +244,10 @@ public class UserSeedServiceTests : IAsyncLifetime
         users[0].AuthKey.ShouldBe(ConfiguredKey);
         users[0].Role.ShouldBe(UserRole.Administrator);
 
-        // No Critical emission: the operator already has the key (Scenario 2 -- configured
-        // first run). Critical is the admin-key-visibility channel; Scenario 2 must not emit.
-        capture.ShouldNotHaveLogged(LogLevel.Critical, "Collabhost admin key:");
+        // Nothing handed out: the operator already has the key (Scenario 2 -- configured first run).
+        _standardOutput.ToString().ShouldBeEmpty();
+        File.Exists(KeyFilePath).ShouldBeFalse();
+        capture.ShouldNotHaveLoggedAtAnyLevel(ConfiguredKey);
     }
 
     // -- Scenario 3 ------------------------------------------------------
@@ -260,7 +348,9 @@ public class UserSeedServiceTests : IAsyncLifetime
         var users = await GetUsersAsync();
 
         users.Count.ShouldBe(1);
-        capture.ShouldNotHaveLogged(LogLevel.Critical, "Collabhost admin key:");
+        _standardOutput.ToString().ShouldBeEmpty();
+        File.Exists(KeyFilePath).ShouldBeFalse();
+        capture.ShouldNotHaveLoggedAtAnyLevel(ExistingKey);
     }
 
     [Fact]
@@ -406,7 +496,7 @@ public class UserSeedServiceTests : IAsyncLifetime
 }
 
 // Captures ILogger calls so assertions can inspect level + rendered message. File-scoped:
-// only UserSeedService tests need to verify the admin-key emission channel.
+// only UserSeedService tests need to verify what the seed logs -- and that the admin key isn't in it.
 file sealed class CapturingLogger<T> : ILogger<T>
 {
     private readonly List<(LogLevel Level, string Message)> _entries = [];
@@ -436,10 +526,10 @@ file sealed class CapturingLogger<T> : ILogger<T>
             $"Expected a log entry at {level} containing '{messageSubstring}' but captured: {string.Join(" | ", _entries)}"
         );
 
-    public void ShouldNotHaveLogged(LogLevel level, string messageSubstring) =>
+    public void ShouldNotHaveLoggedAtAnyLevel(string messageSubstring) =>
         _entries.ShouldNotContain
         (
-            e => e.Level == level && e.Message.Contains(messageSubstring, StringComparison.Ordinal),
-            $"Expected NO log entry at {level} containing '{messageSubstring}' but captured: {string.Join(" | ", _entries)}"
+            e => e.Message.Contains(messageSubstring, StringComparison.Ordinal),
+            $"Expected NO log entry containing '{messageSubstring}' but captured: {string.Join(" | ", _entries)}"
         );
 }

@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 using Collabhost.Api.Capabilities;
 using Collabhost.Api.Capabilities.Configurations;
@@ -114,7 +115,6 @@ public class ExternalTargetConfigurationTests
     [InlineData("192.168.1.1")]
     [InlineData("172.16.0.1")]
     [InlineData("172.31.255.255")]
-    [InlineData("169.254.1.1")]
     [InlineData("foo.local")]
     [InlineData("bar.lan")]
     [InlineData("crawl4ai.local")]
@@ -197,6 +197,52 @@ public class ExternalTargetConfigurationTests
         );
 
         errors.ShouldContain(e => e.Contains("host", StringComparison.Ordinal));
+    }
+
+    // ---- Link-local and cloud instance-metadata hosts: refused under every policy ----
+    //
+    // A route to one of these makes a hostname anyone on the network can reach into a relay to the
+    // machine's instance-metadata service, which hands out cloud credentials. AllowPublicHosts opens
+    // public hostnames, not these, so the refusal holds with the flag on as well.
+
+    [Theory]
+    [InlineData("169.254.169.254", false)]
+    [InlineData("169.254.169.254", true)]
+    [InlineData("169.254.1.1", false)]
+    [InlineData("169.254.1.1", true)]
+    [InlineData("fe80::1", false)]
+    [InlineData("fe80::1", true)]
+    [InlineData("[fe80::1]", true)]
+    [InlineData("::ffff:169.254.169.254", true)]
+    [InlineData("fd00:ec2::254", true)]
+    [InlineData("100.100.100.200", true)]
+    [InlineData("metadata.google.internal", true)]
+    [InlineData("METADATA.GOOGLE.INTERNAL", true)]
+    public void ValidateEdits_LinkLocalOrMetadataHost_Rejected(string host, bool allowPublicHosts)
+    {
+        var overrides = new JsonObject
+        {
+            ["host"] = host,
+            ["port"] = 80
+        };
+
+        var errors = CapabilityResolver.ValidateEdits
+        (
+            "external-target", overrides, isNewApp: true, allowPublicHosts: allowPublicHosts
+        );
+
+        errors.ShouldContain(e => e.Contains("host", StringComparison.Ordinal) && e.Contains("instance-metadata", StringComparison.Ordinal));
+    }
+
+    // The wire form ships to the dashboard as the field's ValuePattern, so it must refuse what the
+    // server refuses -- otherwise the form accepts a link-local host the server then rejects.
+    [Fact]
+    public void ExternalTargetHostPatternString_WireForm_RefusesLinkLocal()
+    {
+        var wire = new Regex(CapabilityResolver.ExternalTargetHostPatternString, RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
+
+        wire.IsMatch("169.254.169.254").ShouldBeFalse();
+        wire.IsMatch("10.0.0.1").ShouldBeTrue();
     }
 
     // ---- Wire-vs-compile regex discipline (per #310 LESSON) ----

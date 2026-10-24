@@ -330,8 +330,10 @@ public sealed class CreateAppOperationTests : IDisposable
         (
             _appStore,
             typeStore,
+            capabilityStore,
             proxy,
             proxySettings,
+            new PortalSettings { Subdomain = "collabhost" },
             new ExternalTargetSettings { AllowPublicHosts = false },
             _currentUser,
             _activityEventStore

@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 using Microsoft.Extensions.Options;
 
 namespace Collabhost.Api.Authorization;
@@ -23,7 +26,7 @@ public class AuthKeyResolver
         var adminKey = _authorizationSettings.CurrentValue.AdminKey;
 
         // Config key bypass: permanent lockout override -- always works even if DB is empty
-        if (adminKey is not null && authKey == adminKey)
+        if (adminKey is not null && KeysMatch(authKey, adminKey))
         {
             var user = await _userStore.GetByAuthKeyAsync(authKey, ct);
 
@@ -50,4 +53,14 @@ public class AuthKeyResolver
 
         return await _userStore.GetByAuthKeyAsync(authKey, ct);
     }
+
+    // Compared in fixed time, so how long a wrong guess takes to reject says nothing about how many of
+    // its leading characters were right. Keys of different lengths still return early; the length of
+    // a configured key is not the secret.
+    internal static bool KeysMatch(string presentedKey, string configuredKey) =>
+        CryptographicOperations.FixedTimeEquals
+        (
+            Encoding.UTF8.GetBytes(presentedKey),
+            Encoding.UTF8.GetBytes(configuredKey)
+        );
 }

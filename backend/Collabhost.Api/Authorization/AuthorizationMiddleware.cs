@@ -47,9 +47,10 @@ public class AuthorizationMiddleware
 
         var userKey = context.Request.Headers["X-User-Key"].FirstOrDefault();
 
-        // Query param auth is only allowed for SSE endpoints where EventSource
-        // cannot set custom headers (browser limitation)
-        if (userKey is null && path.EndsWith("/logs/stream", StringComparison.OrdinalIgnoreCase))
+        // Query param auth is only allowed on an endpoint that opts in (the SSE log stream, because a
+        // browser EventSource cannot set custom headers). Routing has already selected the endpoint by
+        // the time this runs, so the check reads its metadata rather than matching the URL's shape.
+        if (userKey is null && context.GetEndpoint()?.Metadata.GetMetadata<AllowQueryStringKeyAttribute>() is not null)
         {
             userKey = context.Request.Query["key"].FirstOrDefault();
         }

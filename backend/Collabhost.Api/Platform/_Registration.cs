@@ -16,4 +16,15 @@ public static class PlatformRegistration
             return services;
         }
     }
+
+    extension(IApplicationBuilder app)
+    {
+        public IApplicationBuilder UseResponseSecurityHeaders() =>
+            app.Use((context, next) =>
+            {
+                context.Response.OnStarting(ResponseSecurityHeaders.ApplyAsync, context.Response);
+
+                return next(context);
+            });
+    }
 }

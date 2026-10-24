@@ -6,13 +6,14 @@ using Microsoft.Extensions.Options;
 
 namespace Collabhost.Api.Authorization;
 
-// Admin-user seeding. Implements the 3-scenario model (#164 startup contract):
+// Admin-user seeding. Implements the 3-scenario startup model:
 //
 //   Scenario 1 -- Blind first run: empty DB, no configured key. Generate a ULID, insert an
-//                 Admin user with that key, write the key to stdout so the operator can
-//                 capture it (#158 owns the UX; this stays behaviour-stable).
+//                 Admin user with that key, and hand the key to the operator through
+//                 FirstRunAdminKeyAnnouncer (standard output and a file in the data
+//                 directory -- never a log; see that type for why).
 //   Scenario 2 -- Configured first run: empty DB, configured key present. Insert an Admin
-//                 user with the configured key. No stdout (operator already has it).
+//                 user with the configured key. Nothing printed (operator already has it).
 //   Scenario 3 -- Override on subsequent boot: DB has users, configured key present and
 //                 does not match any existing user's AuthKey. Insert a NEW Admin user with
 //                 the configured key (break-glass additive behavior). Existing admins
@@ -25,6 +26,7 @@ public class UserSeedService
     IDbContextFactory<AppDbContext> dbFactory,
     IOptions<AuthorizationSettings> authorizationSettings,
     ActivityEventStore activityEventStore,
+    FirstRunAdminKeyAnnouncer adminKeyAnnouncer,
     ILogger<UserSeedService> logger
 )
 {
@@ -35,6 +37,9 @@ public class UserSeedService
 
     private readonly ActivityEventStore _activityEventStore = activityEventStore
         ?? throw new ArgumentNullException(nameof(activityEventStore));
+
+    private readonly FirstRunAdminKeyAnnouncer _adminKeyAnnouncer = adminKeyAnnouncer
+        ?? throw new ArgumentNullException(nameof(adminKeyAnnouncer));
 
     private readonly ILogger<UserSeedService> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -112,24 +117,45 @@ public class UserSeedService
         db.Users.Add(admin);
         await db.SaveChangesAsync(cancellationToken);
 
+        // The key file is written before the commit. If it cannot be written, the seed rolls back
+        // and startup halts rather than committing a key a headless install has no way to read. The
+        // next boot is then still a first run, and tries again.
+        if (wasGenerated)
+        {
+            _adminKeyAnnouncer.WriteKeyFile(adminKey);
+        }
+
         await tx.CommitAsync(cancellationToken);
 
         await RecordSeedActivityAsync(SeedKinds.FirstRun);
 
         if (wasGenerated)
         {
+            // Safe to log: the first ten characters of a ULID are its timestamp, so this prefix
+            // confirms seeding ran without carrying any of the key's random part.
             var keyHint = adminKey[..Math.Min(8, adminKey.Length)] + "...";
 
             _logger.LogInformation("Admin user seeded. Key: {AdminKeyHint}", keyHint);
 
-            // Full key surfaced at Critical so operators see it on stdout via the Console
-            // provider -- the Scenario 1 "blind first run" UX contract from #152 / #156.3.
-            // ILogger.LogCritical (not Console.WriteLine) because xunit captures Console.Out
-            // per-test via a StringWriter that gets disposed between tests; a Console.Write
-            // during subsequent WebApplicationFactory startup hits a disposed writer. #158
-            // owns the UX polish (format, recovery-if-missed). Operator-grepable marker:
-            // "Collabhost admin key:".
-            _logger.LogCritical("Collabhost admin key: {AdminKey}", adminKey);
+            // The key itself goes to the operator only, by the channels FirstRunAdminKeyAnnouncer
+            // describes. The log carries where the file is, never the key.
+            if (_adminKeyAnnouncer.PrintToStandardOutput(adminKey))
+            {
+                _logger.LogInformation
+                (
+                    "The generated admin key is also saved in {AdminKeyFilePath}. Store it somewhere safe, then delete that file.",
+                    _adminKeyAnnouncer.KeyFilePath
+                );
+            }
+            else
+            {
+                _logger.LogInformation
+                (
+                    "The generated admin key is saved in {AdminKeyFilePath} (not printed: standard output goes to the system journal). "
+                    + "Store it somewhere safe, then delete that file.",
+                    _adminKeyAnnouncer.KeyFilePath
+                );
+            }
         }
         else
         {
