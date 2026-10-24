@@ -279,18 +279,168 @@ function Invoke-IcaclsCommand
     }
 }
 
+# Junctions and symbolic links under a tree, the root included. Collabhost never
+# creates one in its data or install tree, and icacls /T walks through a directory
+# junction into its target and changes the ACLs there, with or without /L
+# (inheritance set on a parent directory does not cross one). Whoever could write
+# into the tree before this installer restricted it (any local user on an older
+# system install, the service account on an older user-scope install) could create
+# a junction, and an elevated ACL change would then land on whatever it points at.
+# The installer refuses to go on instead (see Get-LinkRefusalMessage).
+# -ErrorAction Stop: a directory that cannot be listed could hide a link, so it is
+# an error here, not something to skip.
+function Get-LinkInTree
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $items = @(Get-Item -LiteralPath $Path -Force) + @(Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction Stop)
+    return @($items | Where-Object { $_.Attributes -band [System.IO.FileAttributes]::ReparsePoint } | ForEach-Object { $_.FullName })
+}
+
+function Get-LinkRefusalMessage
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$Links,
+        [Parameter(Mandatory = $true)][string]$State
+    )
+
+    $list = ($Links | ForEach-Object { "  $_" }) -join [Environment]::NewLine
+    return @"
+Found a junction or symbolic link inside ${Path}:
+$list
+Collabhost never creates links there, and this installer will not change permissions
+through one: the change would land on whatever the link points at. $State
+If you did not create the link, delete the link itself and re-run the installer
+('rmdir <path>' for a directory link, 'del <path>' for a file link; neither touches
+the target). If you created it to keep data elsewhere, move the data back into
+$Path and set the location in appsettings.json instead.
+"@
+}
+
+# Take back, one item at a time, anything under %ProgramData%\Collabhost that this
+# installer cannot simply reset: items Administrators cannot list or read, items
+# with inheritance switched off or a Deny entry, and items owned by anyone other
+# than SYSTEM, Administrators, TrustedInstaller, the account running this
+# installer or the service account. While older installs left the tree writable
+# by every local user, any of them could create such an item, and one that
+# excludes Administrators would otherwise stop the recursive lockdown halfway.
+# Each item gets 'takeown /A' (Administrators become the owner, using the
+# take-ownership privilege, so it works whatever the item's ACL says) and then a
+# reset to inherit from its parent. Neither call recurses or prompts. A directory
+# that could not be listed is listable after that, so the scan repeats until it
+# finds nothing. Runs BEFORE the service is stopped and refuses links (see
+# Get-LinkInTree), so if it throws, the running install is left as it was.
+function Repair-CollabhostDataRoot
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ServiceAccount
+    )
+
+    if (-not (Test-Path -LiteralPath $Path))
+    {
+        return
+    }
+
+    $sidType = [System.Security.Principal.SecurityIdentifier]
+    $trustedOwners = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($sid in @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'))
+    {
+        [void]$trustedOwners.Add($sid)
+    }
+    [void]$trustedOwners.Add(([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value)
+    try
+    {
+        [void]$trustedOwners.Add((New-Object System.Security.Principal.NTAccount($ServiceAccount)).Translate($sidType).Value)
+    }
+    catch
+    {
+        # The service is not registered yet (fresh install), so it owns nothing here.
+        Write-Verbose "Service account $ServiceAccount does not resolve yet: $_"
+    }
+
+    for ($pass = 1; $pass -le 20; $pass++)
+    {
+        $listErrors = $null
+        $items = @(Get-Item -LiteralPath $Path -Force) + @(Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue -ErrorVariable listErrors)
+
+        $links = @($items | Where-Object { $_.Attributes -band [System.IO.FileAttributes]::ReparsePoint } | ForEach-Object { $_.FullName })
+        if ($links.Count -gt 0)
+        {
+            throw (Get-LinkRefusalMessage -Path $Path -Links $links -State 'The service has not been stopped, and nothing Collabhost created has been changed.')
+        }
+
+        $retake = New-Object System.Collections.Generic.List[string]
+        foreach ($listError in @($listErrors))
+        {
+            $target = [string]$listError.TargetObject
+            if (-not $target)
+            {
+                throw "Could not list part of ${Path}: $($listError.Exception.Message)"
+            }
+            $retake.Add($target)
+        }
+
+        foreach ($item in $items)
+        {
+            try
+            {
+                $acl = Get-Acl -LiteralPath $item.FullName
+                $owner = $acl.GetOwner($sidType).Value
+                $hasDeny = @($acl.GetAccessRules($true, $true, $sidType) | Where-Object { $_.AccessControlType -eq 'Deny' }).Count -gt 0
+                # The root's inheritance is switched off by design once an install has run.
+                $blocked = $acl.AreAccessRulesProtected -and ($item.FullName.TrimEnd('\') -ne $Path.TrimEnd('\'))
+                if ($blocked -or $hasDeny -or -not $trustedOwners.Contains($owner))
+                {
+                    $retake.Add($item.FullName)
+                }
+            }
+            catch
+            {
+                $retake.Add($item.FullName)
+            }
+        }
+
+        if ($retake.Count -eq 0)
+        {
+            return
+        }
+
+        foreach ($itemPath in @($retake | Select-Object -Unique))
+        {
+            Write-Host "  Taking back $itemPath (its owner or permissions were not set by this installer)..."
+            $takeownOutput = & takeown.exe /F $itemPath /A 2>&1
+            if ($LASTEXITCODE -ne 0)
+            {
+                throw "Could not take ownership of '$itemPath' (takeown exit code $LASTEXITCODE). Nothing else has been changed and the service has not been stopped. Inspect and delete it, then re-run.`n$($takeownOutput -join [Environment]::NewLine)"
+            }
+            Invoke-IcaclsCommand -Arguments @($itemPath, '/reset', '/Q')
+        }
+    }
+
+    throw "Items under $Path still could not be taken back after 20 passes. Nothing else has been changed and the service has not been stopped."
+}
+
 # Restrict the whole %ProgramData%\Collabhost tree to SYSTEM and Administrators.
-# Runs on every install and upgrade, before any config is written, so the tree is
-# never more open than this while the installer works in it. Three steps, in
-# this order so no step re-opens access:
-#   1. Administrators become the owner of every item. An owner can always rewrite
-#      an item's ACL, so a file or folder created earlier by someone else (the old
-#      inherited ACL let any local user create them) must not keep its creator as
-#      owner.
-#   2. Inheritance from %ProgramData% is broken at the root: SYSTEM and
+# Runs on every install and upgrade, after Repair-CollabhostDataRoot and before
+# any config is written, so the tree is never more open than this while the
+# installer works in it. In this order:
+#   1. Inheritance from %ProgramData% is broken at the root: SYSTEM and
 #      Administrators get full control, inherited by everything below, and
-#      BUILTIN\Users and CREATOR OWNER are no longer passed down.
-#   3. Every item below the root is reset to inherit only, which drops explicit
+#      BUILTIN\Users and CREATOR OWNER are no longer passed down. From here on
+#      nobody else can create anything in the tree.
+#   2. The tree is checked for links again, now that it can no longer change
+#      underneath the check. The recursive steps below must not follow one.
+#   3. Administrators become the owner of every item. An owner can always rewrite
+#      an item's ACL, so a file or folder created earlier by someone else must not
+#      keep its creator as owner.
+#   4. Every item below the root is reset to inherit only, which drops explicit
 #      ACEs and inheritance blocks left on individual files or folders.
 # The service account's own access is added afterwards by
 # Grant-CollabhostServiceAccess, once the service exists and its SID resolves.
@@ -307,8 +457,15 @@ function Protect-CollabhostDataRoot
     $system         = '*S-1-5-18'
     $administrators = '*S-1-5-32-544'
 
-    Invoke-IcaclsCommand -Arguments @($Path, '/setowner', $administrators, '/T', '/Q')
     Invoke-IcaclsCommand -Arguments @($Path, '/inheritance:r', '/grant:r', "${system}:(OI)(CI)F", "${administrators}:(OI)(CI)F", '/Q')
+
+    $links = Get-LinkInTree -Path $Path
+    if ($links.Count -gt 0)
+    {
+        throw (Get-LinkRefusalMessage -Path $Path -Links $links -State 'The service is stopped; delete the link and re-run the installer to finish.')
+    }
+
+    Invoke-IcaclsCommand -Arguments @($Path, '/setowner', $administrators, '/T', '/Q')
     Invoke-IcaclsCommand -Arguments @((Join-Path $Path '*'), '/reset', '/T', '/Q')
 }
 
@@ -343,7 +500,9 @@ function Grant-CollabhostServiceAccess
 # re-extracts on the next start, so this only costs a few seconds, and it means
 # nothing that was planted there while the directory was writable by other local
 # users (older installs) survives into the new install. Run only while the
-# service is stopped.
+# service is stopped, and only after Protect-CollabhostDataRoot: by then the tree
+# holds no links and every item is owned by Administrators and inherits their full
+# control, so nothing a former planter left can block the delete or redirect it.
 function Clear-CollabhostBundleCache
 {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
@@ -674,6 +833,16 @@ try
     # "Preserved: ..." reassurance line on reinstalls.
     $IsReinstall = (Test-Path -LiteralPath $AppSettingsPath) -or (Test-Path -LiteralPath $DataDir)
 
+    # Before stopping anything: take back items in %ProgramData%\Collabhost that an
+    # older install's open permissions let another local user create, and refuse to
+    # go on if the tree contains a link. If this throws, the running install is
+    # untouched (see Repair-CollabhostDataRoot).
+    if (Test-Path -LiteralPath $DataRoot)
+    {
+        Write-Host "Checking $DataRoot for items this installer did not create..."
+        Repair-CollabhostDataRoot -Path $DataRoot -ServiceAccount $ServiceAccount
+    }
+
     # Anomaly F: Windows file-locking requires stop-before-binary-replace. If
     # the service is registered AND running, we MUST stop it before overwriting
     # %ProgramFiles%\Collabhost\bin\collabhost.exe -- the OS holds an exclusive
@@ -697,8 +866,18 @@ try
     # this is what removes the BUILTIN\Users access that install was left with.
     # The service account is granted its own access after registration, below.
     Write-Host "Restricting $DataRoot to SYSTEM and Administrators..."
-    Clear-CollabhostBundleCache -Path $DotnetBundleDir
     Protect-CollabhostDataRoot -Path $DataRoot
+
+    # On an upgrade the service already exists, so give it its access back now
+    # rather than after the binary copy, merge and sc.exe steps below: if one of
+    # those fails, the stopped service can still be started. (The same grant runs
+    # again after registration; /grant:r makes that a no-op.)
+    if (Get-CollabhostService)
+    {
+        Grant-CollabhostServiceAccess -Account $ServiceAccount -WritableDirs $WritableServiceDirs -ReadOnlyDirs $ReadOnlyServiceDirs
+    }
+
+    Clear-CollabhostBundleCache -Path $DotnetBundleDir
 
     # ---- Install bundle artifacts ------------------------------------------
 

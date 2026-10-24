@@ -18,10 +18,13 @@
         but not write everything under the read-only directories.
 
     -Scope User -Expect Restricted
-        A user-scope install directory: the service account can read every
-        item, can write and delete everything under the writable directories,
-        and has no write-type right on anything else (the binaries, wwwroot,
-        appsettings.json, the directory itself).
+        A user-scope install directory: no item carries an ACE for BUILTIN\Users,
+        Everyone, Authenticated Users, CREATOR OWNER or INTERACTIVE (those would
+        let every local user, and the service account through its group
+        membership, past the account's own grant); the service account can read
+        every item, can write and delete everything under the writable
+        directories, and has no write-type right on anything else (the binaries,
+        wwwroot, appsettings.json, the directory itself).
 
     -Expect Open
         The negative control for an upgrade test: asserts the pre-fix posture
@@ -147,11 +150,11 @@ foreach ($item in $items)
         {
             $violations.Add("${full}: unexpected Deny ACE for $sid")
         }
-        if ($Scope -eq 'System')
-        {
-            if ($broadSids.ContainsKey($sid)) { $violations.Add("${full}: $($broadSids[$sid]) has $($rule.FileSystemRights)") }
-            elseif ($allowedSids -notcontains $sid) { $violations.Add("${full}: unexpected principal $sid has $($rule.FileSystemRights)") }
-        }
+        # Both scopes: a broad principal reaches the service account through group
+        # membership and every other local user directly, so its ACEs are not
+        # governed by the account's own grant.
+        if ($broadSids.ContainsKey($sid)) { $violations.Add("${full}: $($broadSids[$sid]) has $($rule.FileSystemRights)") }
+        elseif ($Scope -eq 'System' -and $allowedSids -notcontains $sid) { $violations.Add("${full}: unexpected principal $sid has $($rule.FileSystemRights)") }
     }
 
     if ($Scope -eq 'System')
