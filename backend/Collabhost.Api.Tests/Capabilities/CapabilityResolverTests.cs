@@ -282,7 +282,7 @@ public class CapabilityResolverTests
     }
 
     [Fact]
-    public void ValidateEdits_DerivedField_AllowedForNewApp()
+    public void ValidateEdits_AlwaysEditableField_AllowedForNewApp()
     {
         var overrides = new JsonObject
         {
@@ -292,6 +292,62 @@ public class CapabilityResolverTests
         var errors = CapabilityResolver.ValidateEdits("routing", overrides, true);
 
         errors.Count.ShouldBe(0);
+    }
+
+    // serveMode comes from the app type. Registration is the one moment the other locked fields take
+    // a value, so it is also the moment a type-decided field must refuse one.
+    [Fact]
+    public void ValidateEdits_ServeMode_RejectedAtRegistration()
+    {
+        var overrides = new JsonObject
+        {
+            ["serveMode"] = "FileServer"
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, true);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("serveMode");
+        errors[0].ShouldContain("Determined by app type");
+    }
+
+    [Theory]
+    [InlineData("{slug}.{baseDomain}")]
+    [InlineData("custom.example.com")]
+    [InlineData("api-{slug}.{baseDomain}")]
+    [InlineData("{slug}.apps.example.com")]
+    public void ValidateEdits_DomainPatternWithHostnameShape_AcceptedForNewApp(string domainPattern)
+    {
+        var overrides = new JsonObject
+        {
+            ["domainPattern"] = domainPattern
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, true);
+
+        errors.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("*.example.com")]
+    [InlineData("{http.request.host}")]
+    [InlineData("{host}.example.com")]
+    [InlineData("my app.example.com")]
+    [InlineData("example.com/admin")]
+    [InlineData("example.com:8443")]
+    [InlineData("under_score.example.com")]
+    [InlineData("{slug}.{baseDomain}\n")]
+    public void ValidateEdits_DomainPatternNotHostnameShaped_RejectedForNewApp(string domainPattern)
+    {
+        var overrides = new JsonObject
+        {
+            ["domainPattern"] = domainPattern
+        };
+
+        var errors = CapabilityResolver.ValidateEdits("routing", overrides, true);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldContain("domainPattern");
     }
 
     [Fact]

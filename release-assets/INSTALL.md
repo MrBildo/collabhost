@@ -30,7 +30,8 @@ On first launch, Collabhost:
 
 1. Creates `data/` and `data/backups/` next to the binary (0700 on POSIX).
 2. Creates `collabhost.db` and applies all migrations.
-3. Seeds the admin user and **prints the admin key to stdout**.
+3. Seeds the admin user, **prints the admin key to stdout**, and saves a copy
+   to `data/initial-admin-key.txt`.
 4. Starts the bundled Caddy reverse proxy on `:80` and `:443` (the default
    `Proxy:ListenAddress` is `:80,:443` — Caddy auto-redirects HTTP to HTTPS).
 5. Listens on `http://localhost:58400` for the dashboard.
@@ -46,23 +47,21 @@ ports, DNS, the host firewall, and CA trust.
 ## 2. Your admin key
 
 On the **very first launch** against an empty database, Collabhost seeds an
-admin user and emits the full authentication key (a ULID) as a critical-level
-log line exactly once. Two lines emit back-to-back:
+admin user, prints the full authentication key (a ULID) to standard output
+exactly once, and saves the same key to `initial-admin-key.txt` in its data
+directory:
 
 ```
-info: Collabhost.Api.Authorization.UserSeedService[0]
-      Admin user seeded. Key: 01JABCDE...
-crit: Collabhost.Api.Authorization.UserSeedService[0]
-      Collabhost admin key: 01JABCDEFGHJKMNPQRSTVWXYZ
+Collabhost admin key: 01JABCDEFGHJKMNPQRSTVWXYZ
 ```
 
-The `info` line carries a truncated 8-character hint — it confirms that seeding
-ran but is not the full key. The `crit` line carries the full ULID; that is
-the value you need. The `crit:` prefix renders with distinct color/intensity in
-most terminals, so it stands out in scrollback.
+That line carries the full ULID; it is the value you need. Log lines beside it
+confirm that seeding ran (`Admin user seeded. Key: 01JABCDE...`) and name the
+key file. They carry only the key's first eight characters, which are the
+ULID's timestamp, never the key itself.
 
-**Operator-grepable substring:** `Collabhost admin key:` (on the `crit` line,
-case-sensitive). Example:
+**Operator-grepable substring:** `Collabhost admin key:` (case-sensitive).
+Example:
 
 ```sh
 # Linux / macOS
@@ -74,16 +73,27 @@ grep 'Collabhost admin key:' first-boot.log
 Select-String 'Collabhost admin key:' first-boot.log
 ```
 
-**Where the key shows up.** Wherever `collabhost`'s stdout goes. If you
-launched the binary in a terminal, it prints there. If you piped stdout to a
-log file or a log aggregator (`journald`, `rsyslog`, a cloud sink), the full
-key lands in that sink too — you can recover it from the log export. **Rotate
-the key in the dashboard once you have copied it** if you would rather the full
-value not remain in your log backend indefinitely.
+**Where the key shows up.** On standard output and in the key file — never in
+a log. If you launched the binary in a terminal, it prints there; if you
+redirected standard output to a file, it lands in that file. Collabhost does
+not send the key through its logging, so it does not reach the Windows Event
+Log, `journald`, or any log exporter. One exception to printing: when
+Collabhost runs as a systemd service whose standard output is the journal, it
+leaves the key off standard output (the journal would keep it). Read the key
+file instead.
 
-**Capture it immediately.** Copy the value from the `crit` line, save it in a
-password manager or a secrets store. Paste it into the dashboard's login
-prompt; it is also the `X-User-Key` header for API calls.
+**The key file.** `initial-admin-key.txt` sits in the data directory, next to
+`collabhost.db` (`data/` beside the binary by default, or
+`COLLABHOST_DATA_PATH` when set). On Linux and macOS it is created readable
+only by the account Collabhost runs as (mode 0600); on Windows it takes the
+data directory's permissions, the same as the database. On a headless service
+install it is how you read the key. Once you have stored the key, delete the
+file; Collabhost does not need it.
+
+**Capture it immediately.** Copy the value from the `Collabhost admin key:`
+line (or the key file) and save it in a password manager or a secrets store.
+Paste it into the dashboard's login prompt; it is also the `X-User-Key` header
+for API calls.
 
 If you missed it on first boot, see §9 Troubleshooting → "Admin key missing
 from scrollback."
@@ -165,7 +175,9 @@ INSTALL.md             This file
 LICENSES/
   caddy-LICENSE        Caddy's Apache 2.0 license text
   caddy-NOTICE         Caddy's NOTICE file
-wwwroot/               Dashboard static assets (HTML/JS/CSS for the operator console)
+wwwroot/               Dashboard static assets (HTML/JS/CSS/fonts for the operator console)
+  licenses/            IBM Plex font licenses (SIL Open Font License 1.1)
+wwwroot.sha256         Build-time content hash of wwwroot/ (compare with /api/v1/version)
 ```
 
 `data/` is created on first run next to the binary. It holds `collabhost.db`
@@ -539,12 +551,14 @@ journalctl -u collabhost --since '5 min ago'
 curl http://localhost:58400/api/v1/status
 ```
 
-On a fresh install, capture the admin key (it emits once on first boot — see
-§2):
+On a fresh install, read the admin key from the key file. It is written once on
+first boot and kept out of the journal (see §2):
 
 ```sh
-journalctl -u collabhost --since '5 min ago' | grep 'Collabhost admin key:'
+sudo cat /var/lib/collabhost/data/initial-admin-key.txt
 ```
+
+Delete the file once you have stored the key.
 
 **Customize the unit:** do not edit `/etc/systemd/system/collabhost.service`
 directly — `install-system.sh` overwrites it on every upgrade. Instead, drop
@@ -807,21 +821,18 @@ The dashboard response should be HTTP 200 with a body starting with
 `<!DOCTYPE html>`. If you see HTTP 401, the SPA shell middleware didn't pick
 up `wwwroot/` — check §9.10 for diagnosis.
 
-On a fresh install, capture the admin key (it emits once on first boot — see
-§2). Under the Windows Service the key surfaces in the Application event
-log:
+On a fresh install, read the admin key from the key file, written once on first
+boot (see §2). In an elevated PowerShell:
 
 ```powershell
-Get-WinEvent -LogName Application -MaxEvents 200 |
-  Where-Object { $_.ProviderName -like 'collabhost*' -and $_.Message -match 'Collabhost admin key:' } |
-  Select-Object -First 1 -ExpandProperty Message
+Get-Content "$env:ProgramData\Collabhost\data\initial-admin-key.txt"
 ```
 
-The installer pre-registers the `Collabhost` Application-log event source
-during install, so the service can write this line under the virtual account
-(a limited account cannot create the source itself the way `LocalSystem`
-could). If you still can't find the key — the source registration failed, or
-first boot happened before it was registered — use the configured-key
+Delete the file once you have stored the key. The key does not go to the
+Application event log; the installer still pre-registers the `Collabhost`
+event source so the service's warnings and errors can reach that log under the
+virtual account (a limited account cannot create the source itself the way
+`LocalSystem` could). If you can't find the key file, use the configured-key
 break-glass path: set `Auth:AdminKey` in
 `%ProgramData%\Collabhost\config\appsettings.json` to a known value and
 restart the service (`Restart-Service Collabhost`). See §2 for the
@@ -1044,9 +1055,9 @@ The three account choices are mutually exclusive — pick at most one of
   directory under the install (a service starts with no loaded user profile, so
   the single-file binary's native-library extraction needs a writable location
   told to it explicitly).
-- Pre-registers the `Collabhost` Application event-log source so the first-boot
-  admin key surfaces in the event log (the service runs headless, so the key is
-  emitted only through the logging pipeline — see below).
+- Pre-registers the `Collabhost` Application event-log source, so the service's
+  warnings and errors reach the event log under a limited account. (The
+  first-boot admin key never goes there; it is saved to a file — see below.)
 - Wires crash-recovery (`sc.exe failure`): restart after the first and second
   failures, no action on the third so a crash-loop doesn't fight you.
 
@@ -1080,16 +1091,15 @@ Get-Service CollabhostUser
 curl http://localhost:58400/api/v1/status
 ```
 
-On a fresh install, capture the admin key (it emits once on first boot — see
-§2). Under the service the key surfaces in the Application event log:
+On a fresh install, read the admin key from the key file, written once on first
+boot (see §2):
 
 ```powershell
-Get-WinEvent -LogName Application -MaxEvents 200 |
-  Where-Object { $_.ProviderName -like 'collabhost*' -and $_.Message -match 'Collabhost admin key:' } |
-  Select-Object -First 1 -ExpandProperty Message
+Get-Content "$env:USERPROFILE\.collabhost\bin\data\initial-admin-key.txt"
 ```
 
-If you still can't find the key, use the configured-key break-glass path: set
+Delete the file once you have stored the key. If you can't find it, use the
+configured-key break-glass path: set
 `Auth:AdminKey` in `%USERPROFILE%\.collabhost\bin\appsettings.json` to a known
 value and restart the service (`Restart-Service CollabhostUser`). See §2.
 
@@ -1364,7 +1374,7 @@ offline use `stop_app` to disable the route; `start_app` re-enables it.
 **Host restrictions and the `ExternalTarget:AllowPublicHosts` opt-in:**
 
 By default, the platform restricts the `host` field on `external-target` to
-loopback / RFC1918 / link-local IPv4 / `*.local` / `*.lan` / IPv6 loopback.
+loopback / RFC1918 IPv4 / `*.local` / `*.lan` / IPv6 loopback.
 This is the "homelab + container + Tailscale" audience; the first operator
 who tries to register `api.openai.com` as an upstream discovers the platform
 has an opinion.
@@ -1384,6 +1394,17 @@ To front a public hostname (a SaaS upstream you want behind a
 Or via env var: `COLLABHOST_EXTERNAL_TARGET_ALLOW_PUBLIC_HOSTS=true`. With
 the flag on, the strict-anchor host pattern is bypassed; a permissive
 hostname-shape check still rejects whitespace / blanks / illegal characters.
+
+**Never allowed, under any setting:** link-local addresses (`169.254.0.0/16`,
+`fe80::/10`) and cloud instance-metadata endpoints (`169.254.169.254`,
+`fd00:ec2::254`, `100.100.100.200`, `metadata.google.internal`). On a cloud
+machine, a route to one of these would let anyone who can reach the route's
+hostname read the machine's cloud credentials. The check covers these literal
+addresses and that hostname; with `AllowPublicHosts` on, a public DNS name that
+resolves to a link-local address is not caught, so turn the flag on only where
+you trust everyone who can register an app. External routes registered before
+this check existed keep routing; review `GET /api/v1/routes` for any upstream
+in those ranges.
 
 **`scheme` field:**
 
@@ -2016,19 +2037,23 @@ re-create the directory with the correct owner.
 
 ### 9.6 Admin key missing from scrollback
 
-The admin key emits once, to stdout, on first launch against an empty database.
-If your terminal scrollback has lost it:
+The admin key prints once, to stdout, on first launch against an empty
+database, and is saved to `initial-admin-key.txt` in the data directory. If
+your terminal scrollback has lost it:
 
-- **Check your log destination first.** The full key emits as a `crit`-level
-  ILogger line, so it lands wherever `collabhost`'s stdout goes — including
-  `journald`, `rsyslog`, a file redirect, or a cloud log sink. Search for the
-  substring `Collabhost admin key:` in your log backend before attempting
-  recovery:
+- **Read the key file first.** It sits in the data directory, next to
+  `collabhost.db`:
 
   ```sh
-  journalctl -u collabhost | grep 'Collabhost admin key:'
-  grep 'Collabhost admin key:' /path/to/collabhost.log
+  cat ~/.collabhost/bin/data/initial-admin-key.txt          # user-scope install
+  sudo cat /var/lib/collabhost/data/initial-admin-key.txt   # system-scope install
   ```
+
+  Collabhost keeps the key out of its logs, so `journalctl`, the Windows Event
+  Log and log exports will not have it. (An install whose first boot ran an
+  older Collabhost logged the key at the `crit` level instead; search that
+  log for `Collabhost admin key:`, and if you redirected stdout to a file,
+  search the file the same way.)
 
 - **Break-glass on a running install (Scenario 3).** Set `COLLABHOST_ADMIN_KEY`
   to a new ULID and relaunch. If the configured key doesn't match any existing
@@ -2052,7 +2077,7 @@ If your terminal scrollback has lost it:
   grep 'Collabhost admin key:' collabhost-firstboot.log
   ```
 
-  The `crit` line containing the full ULID is what you want.
+  The `Collabhost admin key:` line containing the full ULID is what you want.
 
 ### 9.7 Binary crashes before I see anything
 

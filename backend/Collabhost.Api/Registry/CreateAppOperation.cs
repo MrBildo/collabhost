@@ -5,6 +5,7 @@ using Collabhost.Api.Capabilities.Configurations;
 using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Installation;
 using Collabhost.Api.Operations;
+using Collabhost.Api.Portal;
 using Collabhost.Api.Proxy;
 using Collabhost.Api.Shared;
 
@@ -44,8 +45,10 @@ public sealed class CreateAppOperation
 (
     AppStore store,
     TypeStore typeStore,
+    CapabilityStore capabilityStore,
     ProxyManager proxy,
     ProxySettings proxySettings,
+    PortalSettings portalSettings,
     ExternalTargetSettings externalTargetSettings,
     ICurrentUser currentUser,
     ActivityEventStore activityEventStore
@@ -70,11 +73,17 @@ public sealed class CreateAppOperation
     private readonly TypeStore _typeStore = typeStore
         ?? throw new ArgumentNullException(nameof(typeStore));
 
+    private readonly CapabilityStore _capabilityStore = capabilityStore
+        ?? throw new ArgumentNullException(nameof(capabilityStore));
+
     private readonly ProxyManager _proxy = proxy
         ?? throw new ArgumentNullException(nameof(proxy));
 
     private readonly ProxySettings _proxySettings = proxySettings
         ?? throw new ArgumentNullException(nameof(proxySettings));
+
+    private readonly PortalSettings _portalSettings = portalSettings
+        ?? throw new ArgumentNullException(nameof(portalSettings));
 
     // Card #348, D3. Threaded into CapabilityResolver.ValidateEdits when the section under edit is
     // external-target so the host-pattern check honors the operator's public-hosts opt-in.
@@ -161,6 +170,34 @@ public sealed class CreateAppOperation
             validatedOverrides.Add((sectionKey, sectionObject));
         }
 
+        // The proxy routes by hostname, so a routed app's resolved hostname decides which requests
+        // reach it. Registration is an Agent-level action, so the name must be well formed and not
+        // already answered for -- by the dashboard or by another app -- or one registration could put
+        // its route in front of someone else's traffic. Checked before anything is persisted.
+        var hostname = ResolveHostname(appType.Slug, command.Slug, validatedOverrides);
+
+        if (hostname is not null)
+        {
+            if (!CapabilityResolver.IsWellFormedHostname(hostname))
+            {
+                return OperationResult<CreateAppOutcome>.Validation
+                (
+                    $"routing.domainPattern: resolves to '{hostname}', which is not a valid hostname "
+                    + "(each dot-separated label must be 1-63 characters and must not start or end with '-')."
+                );
+            }
+
+            var claimant = await FindHostnameClaimantAsync(hostname, ct);
+
+            if (claimant is not null)
+            {
+                return OperationResult<CreateAppOutcome>.Conflict
+                (
+                    $"routing.domainPattern: '{hostname}' is already {claimant}."
+                );
+            }
+        }
+
         var app = new App
         {
             Slug = command.Slug,
@@ -231,36 +268,32 @@ public sealed class CreateAppOperation
             await RecordAsync(ActivityEventTypes.AppStarted, app, ct);
         }
 
-        // Card #345: surface a one-line `collabhost --update-hosts` hint, scoped to routed app types
-        // (system-service / process-only stays silent -- no Caddy route, no hosts entry). The dedup of
-        // the ~40-line method duplicated in both surface files (Marcus §2.1).
-        var hints = ResolveHelpfulNextSteps(appType.Slug, app.Slug, validatedOverrides);
+        // Surface a one-line `collabhost --update-hosts` hint for routed app types (a system-service
+        // or process-only registration has no proxy route and no hosts entry, so it stays silent).
+        var hints = ResolveHelpfulNextSteps(hostname);
 
         return OperationResult<CreateAppOutcome>.Success(new CreateAppOutcome(app.Id, app.Slug, hints));
     }
 
-    // The helpful-next-steps hint resolution, folded in from the two duplicated surface copies
-    // (Marcus §2.1 dedup). Only routed app types get the hosts hint -- a system-service or process-
-    // only registration never gets a Caddy route, so it stays silent. Resolves the effective domain
-    // through the same CapabilityResolver path the routing surface uses so an operator-set
-    // DomainPattern is reflected in the hint.
-    private IReadOnlyList<string> ResolveHelpfulNextSteps
+    private static IReadOnlyList<string> ResolveHelpfulNextSteps(string? hostname) =>
+        hostname is null ? [] : [HostsHintBuilder.Compose(hostname)];
+
+    // The hostname a routed app will answer on: the type's routing default merged with this
+    // registration's routing override, resolved through the same CapabilityResolver path the proxy
+    // uses, so an operator-set domain pattern is what gets checked and hinted. Null for a type with
+    // no routing binding (no proxy route, so no hostname).
+    private string? ResolveHostname
     (
         string appTypeSlug,
         string slug,
         IReadOnlyList<(string SectionKey, JsonObject Overrides)> validatedOverrides
     )
     {
-        if (!_typeStore.HasBinding(appTypeSlug, "routing"))
-        {
-            return [];
-        }
-
         var bindings = _typeStore.GetBindings(appTypeSlug);
 
         if (bindings is null || !bindings.TryGetValue("routing", out var routingBindingJson))
         {
-            return [];
+            return null;
         }
 
         string? overrideJson = null;
@@ -276,8 +309,47 @@ public sealed class CreateAppOperation
 
         var routing = CapabilityResolver.Resolve<RoutingConfiguration>(routingBindingJson, overrideJson);
 
-        var hostname = CapabilityResolver.ResolveDomain(routing.DomainPattern, slug, _proxySettings.BaseDomain);
+        return CapabilityResolver.ResolveDomain(routing.DomainPattern, slug, _proxySettings.BaseDomain);
+    }
 
-        return [HostsHintBuilder.Compose(hostname)];
+    // Who already answers on this hostname, phrased for the conflict message, or null when nobody
+    // does. Hostnames compare case-insensitively, as DNS and the proxy's host match do.
+    private async Task<string?> FindHostnameClaimantAsync(string hostname, CancellationToken ct)
+    {
+        var dashboardHostname = $"{_portalSettings.Subdomain}.{_proxySettings.BaseDomain}";
+
+        if (string.Equals(hostname, dashboardHostname, StringComparison.OrdinalIgnoreCase))
+        {
+            return "the dashboard's hostname";
+        }
+
+        foreach (var existing in await _store.ListAsync(ct))
+        {
+            if (!_typeStore.HasBinding(existing.AppTypeSlug, "routing"))
+            {
+                continue;
+            }
+
+            var routing = await _capabilityStore.ResolveAsync<RoutingConfiguration>("routing", existing, ct);
+
+            if (routing is null)
+            {
+                continue;
+            }
+
+            var existingHostname = CapabilityResolver.ResolveDomain
+            (
+                routing.DomainPattern,
+                existing.Slug,
+                _proxySettings.BaseDomain
+            );
+
+            if (string.Equals(hostname, existingHostname, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"used by app '{existing.Slug}'";
+            }
+        }
+
+        return null;
     }
 }

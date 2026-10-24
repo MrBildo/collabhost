@@ -23,7 +23,7 @@ public class AuthorizationRegistrationTests
     private static AuthorizationSettings BuildSettings(IConfiguration configuration)
     {
         var services = new ServiceCollection();
-        services.AddCollabhostAuthorization(configuration);
+        services.AddCollabhostAuthorization(configuration, Path.GetTempPath());
         services.AddLogging();
 
         using var provider = services.BuildServiceProvider();

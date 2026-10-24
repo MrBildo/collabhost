@@ -4,7 +4,7 @@ public static class AuthorizationRegistration
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddCollabhostAuthorization(IConfiguration configuration)
+        public IServiceCollection AddCollabhostAuthorization(IConfiguration configuration, string dataDirectory)
         {
             services.Configure<AuthorizationSettings>
             (
@@ -35,6 +35,18 @@ public static class AuthorizationRegistration
             // halt startup with an explicit exit code via StartupStderr, matching the
             // ProxyAppSeeder pattern in phase (7).
             services.AddSingleton<UserSeedService>();
+
+            // Console.Out is read when the key is printed, not here, so the writer is whatever
+            // standard output is at that moment.
+            services.AddSingleton
+            (
+                _ => new FirstRunAdminKeyAnnouncer
+                (
+                    dataDirectory,
+                    () => Console.Out,
+                    FirstRunAdminKeyAnnouncer.StandardOutputIsJournal()
+                )
+            );
 
             services.AddSingleton<UserStore>();
             services.AddSingleton<AuthKeyResolver>();

@@ -357,6 +357,7 @@ if [ -n "${IS_REINSTALL}" ]; then
   echo "Restart Collabhost to pick up the new binary. Your admin key and configuration are preserved."
 else
   echo "Next: open a new terminal and run 'collabhost'. On first boot it prints your admin key -- copy it immediately."
+  echo "  (Current releases also save a copy to ${INSTALL_PATH}/data/initial-admin-key.txt; delete it once the key is stored.)"
 fi
 echo "After registering apps, run 'sudo collabhost --update-hosts' so <slug>.collab.internal resolves from this host. See INSTALL.md section 9.10.2."
 echo "See ${INSTALL_PATH}/INSTALL.md for configuration, env-var overrides, and upgrade notes."

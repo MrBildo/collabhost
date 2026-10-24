@@ -158,11 +158,12 @@ $UserServiceAccount     = "NT SERVICE\$UserServiceName"
 
 # The single-file binary's Windows Event Log source. UseWindowsService() in the
 # binary pins the source name to 'Collabhost' regardless of the SCM service name,
-# so the first-boot admin key (emitted only via ILogger when running headless as a
-# service) surfaces under this source. The installer pre-creates it because a
-# limited account cannot create an event-log source on first write the way an
-# elevated/SYSTEM context can; writing to an existing source is permitted. Shared
-# with a system-scope install if one is present -- creation is idempotent.
+# so the service's warnings and errors surface under this source. (The first-boot
+# admin key does not: it is saved to data\initial-admin-key.txt and never logged.)
+# The installer pre-creates the source because a limited account cannot create an
+# event-log source on first write the way an elevated/SYSTEM context can; writing
+# to an existing source is permitted. Shared with a system-scope install if one is
+# present -- creation is idempotent.
 $UserServiceEventSource = 'Collabhost'
 
 # The privilege the account must hold to run a service with no interactive login.
@@ -951,9 +952,10 @@ function Register-CollabhostUserService
     # exactly what this installer added (DWORD 1 = revoke at uninstall; 0 = leave).
     Set-ItemProperty -LiteralPath $serviceRegistryKey -Name 'CollabhostGrantedLogonRight' -Value ([int]$weOwnTheGrant) -Type DWord -ErrorAction Stop
 
-    # Pre-create the Event Log source so the first-boot admin key surfaces. The
-    # service runs headless (no console), so the key emits only via ILogger ->
-    # Windows Event Log under the 'Collabhost' source.
+    # Pre-create the Event Log source so the service's warnings and errors reach the
+    # Application log. The service runs headless (no console), so the log is where an
+    # operator sees them. The first-boot admin key is not among them: it is saved to
+    # data\initial-admin-key.txt.
     try
     {
         if (-not [System.Diagnostics.EventLog]::SourceExists($UserServiceEventSource))
@@ -965,9 +967,10 @@ function Register-CollabhostUserService
     catch
     {
         Write-Host "Warning: could not pre-create the '$UserServiceEventSource' event-log source -- $($_.Exception.Message)"
-        Write-Host "  The first-boot admin key may not surface in the Application event log. If you cannot"
-        Write-Host "  retrieve it, set Auth:AdminKey in $InstallPath\appsettings.json to a known value and"
-        Write-Host "  restart the service (break-glass; see INSTALL.md section 2)."
+        Write-Host "  The service's warnings and errors may not reach the Application event log. If you cannot"
+        Write-Host "  find the first-boot admin key in $InstallPath\data\initial-admin-key.txt (or, on releases"
+        Write-Host "  from before that file, in the event log), set Auth:AdminKey in $InstallPath\appsettings.json"
+        Write-Host "  to a known value and restart the service (break-glass; see INSTALL.md section 2)."
     }
 
     Write-Host "Starting $UserServiceName..."
@@ -1002,7 +1005,9 @@ function Register-CollabhostUserService
     Write-Host "  Get-Service $UserServiceName"
     Write-Host '  curl http://localhost:58400/api/v1/status'
     Write-Host ''
-    Write-Host 'First boot prints the admin key once -- under the service it surfaces in the Application event log:'
+    Write-Host 'First boot saves the admin key once, to a file:'
+    Write-Host "  Get-Content `"$InstallPath\data\initial-admin-key.txt`"   (then delete the file)"
+    Write-Host '  No such file? Releases from before the key file logged it to the Application event log instead:'
     Write-Host '  Get-WinEvent -LogName Application -MaxEvents 200 |'
     Write-Host "    Where-Object { `$_.ProviderName -like 'collabhost*' -and `$_.Message -match 'Collabhost admin key:' } |"
     Write-Host '    Select-Object -First 1 -ExpandProperty Message'
@@ -1619,6 +1624,7 @@ try
     else
     {
         Write-Host "Next: open a new terminal and run 'collabhost'. On first boot it prints your admin key -- copy it immediately."
+        Write-Host "  (Current releases also save a copy to $InstallPath\data\initial-admin-key.txt; delete it once the key is stored.)"
     }
     Write-Host "After registering apps, run 'Start-Process collabhost -ArgumentList ''--update-hosts'' -Verb RunAs' so <slug>.collab.internal resolves from this host. See INSTALL.md section 9.10.2."
     Write-Host "See $InstallPath\INSTALL.md for configuration, env-var overrides, and upgrade notes."
