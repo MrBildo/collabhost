@@ -248,7 +248,7 @@ builder.Services.AddDataAccess(builder.Configuration, builder.Environment.Conten
 builder.Services.AddMemoryCache();
 
 // Auth
-builder.Services.AddCollabhostAuthorization(builder.Configuration);
+builder.Services.AddCollabhostAuthorization(builder.Configuration, effectiveDataDir);
 
 // Type store
 builder.Services.AddTypeStore(typeStoreSettings);
@@ -270,12 +270,6 @@ builder.Services.AddMcp();
 
 // OpenAPI
 builder.Services.AddOpenApi();
-
-// CORS (dev only)
-if (builder.Environment.IsDevelopment())
-{
-    builder.Services.AddCors();
-}
 
 var app = builder.Build();
 
@@ -484,7 +478,7 @@ await using (var userSeedScope = app.Services.CreateAsyncScope())
             [
                 "Set Auth:AdminKey (or the COLLABHOST_ADMIN_KEY environment variable) to a key no longer than 26 characters.",
                 "Collabhost-generated admin keys are 26-character ULIDs -- match that shape.",
-                "Or unset the configured key and let Collabhost generate one on first run (printed to stdout as 'Collabhost admin key:')."
+                "Or unset the configured key and let Collabhost generate one on first run (printed to stdout as 'Collabhost admin key:' and saved to initial-admin-key.txt in the data directory)."
             ],
             40,
             crashLogDir,
@@ -517,13 +511,21 @@ await using (var userSeedScope = app.Services.CreateAsyncScope())
     }
 }
 
-// Dev-only surface (OpenAPI + CORS) stays gated. These are developer conveniences, not
-// production behavior.
+// Dev-only surface (OpenAPI) stays gated. A developer convenience, not production behavior.
+//
+// There is deliberately no CORS policy, in any environment. The dashboard's dev server proxies
+// /api to this host, so the browser never calls the API cross-origin; a permissive policy would
+// only let any website a developer visits drive their local Development API with whatever admin
+// key they configured.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-    app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 }
+
+// Framing / content-sniffing / referrer headers on every response this host serves (dashboard
+// shell, static assets, API, auth-wall 401s). Added ahead of the Portal and auth middleware so
+// every response either of them writes carries the headers too.
+app.UseResponseSecurityHeaders();
 
 // Portal: static-asset shipping for the embedded React dashboard. UseDefaultFiles +
 // UseStaticFiles + a SPA-fallback middleware all run in the middleware phase BEFORE auth

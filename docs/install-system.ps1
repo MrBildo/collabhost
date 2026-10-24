@@ -932,14 +932,13 @@ try
 
     # Pre-create the "Collabhost" Application-log event source from the elevated
     # installer. Under the Windows Service, UseWindowsService() registers the
-    # Event Log logging provider with this source name, and the first-boot admin
-    # key is emitted only through ILogger -- so the Event Log is the operator's
-    # surface for retrieving it. Creating an event source writes under
-    # HKLM\SYSTEM\CurrentControlSet\Services\EventLog and needs administrator
-    # rights: LocalSystem could self-create it on first write, but the limited
-    # virtual account cannot. Without this step the source would be missing, the
-    # admin key would be unrecoverable, and the install unusable. Writing events
-    # to an existing source is permitted for the account, so creating it here
+    # Event Log logging provider with this source name, and the service's
+    # warnings and errors surface there (the first-boot admin key does not: it is
+    # saved to data\initial-admin-key.txt and never logged). Creating an event
+    # source writes under HKLM\SYSTEM\CurrentControlSet\Services\EventLog and
+    # needs administrator rights: LocalSystem could self-create it on first
+    # write, but the limited virtual account cannot. Writing events to an
+    # existing source is permitted for the account, so creating it here
     # (idempotently) is the fix. The source name must match Program.cs's
     # options.ServiceName.
     try
@@ -953,8 +952,9 @@ try
     catch
     {
         Write-Host "Warning: could not pre-create the '$ServiceName' event-log source -- $($_.Exception.Message)"
-        Write-Host "  The first-boot admin key may not surface in the Application event log under the"
-        Write-Host "  virtual account. If you cannot retrieve it, set Auth:AdminKey in"
+        Write-Host "  The service's warnings and errors may not reach the Application event log under the"
+        Write-Host "  virtual account. If you cannot find the first-boot admin key in $DataDir\initial-admin-key.txt"
+        Write-Host "  (or, on releases from before that file, in the event log), set Auth:AdminKey in"
         Write-Host "  $AppSettingsPath to a known value and restart the service (break-glass; see INSTALL.md section 2)."
     }
 
@@ -1003,8 +1003,10 @@ try
     }
     else
     {
-        Write-Host 'First boot: collabhost prints its admin key once at startup.'
-        Write-Host '  Under the Windows Service, the key surfaces in the Application event log:'
+        Write-Host 'First boot: collabhost saves its admin key once, to a file.'
+        Write-Host '  Read it from an elevated PowerShell, then delete the file:'
+        Write-Host "    Get-Content `"$DataDir\initial-admin-key.txt`""
+        Write-Host '  No such file? Releases from before the key file logged it to the Application event log instead:'
         Write-Host '    Get-WinEvent -LogName Application -MaxEvents 200 |'
         Write-Host "      Where-Object { `$_.ProviderName -like 'collabhost*' -and `$_.Message -match 'Collabhost admin key:' } |"
         Write-Host '      Select-Object -First 1 -ExpandProperty Message'

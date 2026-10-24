@@ -42,14 +42,19 @@ public class RoutingConfiguration
             "Domain Pattern",
             FieldType.Text,
             new FieldEditableLocked("Set during registration"),
-            RequiresRestart: true
+            RequiresRestart: true,
+            ValuePattern: CapabilityResolver.DomainPatternString,
+            ValuePatternMessage: CapabilityResolver.DomainPatternMessage
         ),
+        // Derived, not Locked: the app type decides it, so registration takes no value for it
+        // either (a Locked field is the registrant's to set once). The dashboard renders both the
+        // same way -- read-only with the reason beside it.
         new
         (
             "serveMode",
             "Serve Mode",
             FieldType.Select,
-            new FieldEditableLocked("Determined by app type"),
+            new FieldEditableDerived("Determined by app type"),
             RequiresRestart: true,
             Options: [.. Enum.GetValues<ServeMode>()
                 .Select(v => new FieldOption(v.ToString(), FormatServeMode(v)))]

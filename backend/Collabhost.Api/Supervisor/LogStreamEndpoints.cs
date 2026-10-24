@@ -32,10 +32,13 @@ public static class LogStreamEndpoints
 
         // The live log stream carries the same content as the /logs snapshot (which can include
         // secrets), so it gates to Agent -- the read-only tier is refused. The role filter runs
-        // before the handler, so a read-only key is rejected before any stream is opened.
+        // before the handler, so a read-only key is rejected before any stream is opened. It is the
+        // one endpoint that accepts its key in the query string: a browser EventSource cannot send
+        // the X-User-Key header.
         group
             .MapGet("/{slug}/logs/stream", StreamAppLogsAsync)
-            .AddEndpointFilter(new RequireRoleFilter(UserRole.Agent));
+            .AddEndpointFilter(new RequireRoleFilter(UserRole.Agent))
+            .WithMetadata(new AllowQueryStringKeyAttribute());
     }
 
     private static async Task StreamAppLogsAsync

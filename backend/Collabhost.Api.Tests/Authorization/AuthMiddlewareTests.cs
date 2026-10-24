@@ -256,4 +256,39 @@ public class AuthMiddlewareTests(ApiFixture fixture)
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
+
+    // The ?key= query fallback belongs to the live log stream endpoint itself, not to every URL that
+    // ends the way its route does. A path with the same tail that is not that endpoint gets nothing
+    // from a key in its query string: the request stops at the auth wall instead of passing it and
+    // falling through to a 404.
+    [Fact]
+    public async Task QueryStringKey_OnPathThatOnlyEndsLikeTheLogStream_Returns401()
+    {
+        using var request = new HttpRequestMessage
+        (
+            HttpMethod.Get,
+            $"/api/v1/users/logs/stream?key={ApiFixture.AdminKey}"
+        );
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    // Same rule on the log stream's own route with a method it does not serve: the request matches
+    // no endpoint that accepts a query-string key, so the key is ignored (pre-fix it authenticated
+    // and the request fell through to a 405).
+    [Fact]
+    public async Task QueryStringKey_OnLogStreamRouteWithUnservedMethod_Returns401()
+    {
+        using var request = new HttpRequestMessage
+        (
+            HttpMethod.Post,
+            $"/api/v1/apps/any-app/logs/stream?key={ApiFixture.AdminKey}"
+        );
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
 }

@@ -70,14 +70,13 @@ Then launch it:
 collabhost
 ```
 
-On first run, Collabhost seeds an administrator account and emits the API key once as a critical-level log line:
+On first run, Collabhost seeds an administrator account, prints the API key once, and saves a copy to `initial-admin-key.txt` in its data directory:
 
 ```
-crit: Collabhost.Api.Authorization.UserSeedService[0]
-      Collabhost admin key: 01JRSB8XH7D4Z2K9N0MFQPTVCW
+Collabhost admin key: 01JRSB8XH7D4Z2K9N0MFQPTVCW
 ```
 
-Copy that key, open the dashboard at `http://localhost:58400`, and paste it into the API key prompt. You're in.
+Copy that key, open the dashboard at `http://localhost:58400`, and paste it into the API key prompt. You're in. Once the key is stored somewhere safe, delete the file. The key never goes to a log.
 
 Re-running the installer is upgrade-safe: your `appsettings.json` and `data/` directory are preserved across versions. For full operator documentation — reinstall, upgrade, uninstall, configuration, troubleshooting — see the `INSTALL.md` shipped inside the release archive (or in your install directory after the first run).
 

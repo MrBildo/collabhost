@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using System.Net.Sockets;
 
 namespace Collabhost.Api.Capabilities;
 
@@ -90,30 +92,34 @@ public static partial class CapabilityResolver
     [GeneratedRegex(@"^[!#$%&'*+.^_`|~0-9A-Za-z-]+\z", RegexOptions.None, 100)]
     private static partial Regex SecurityHeaderKeyPattern { get; }
 
-    // External-target host contract (Card #348). Permits loopback / RFC1918 /
-    // link-local IPv4 / IPv6 loopback / *.local / *.lan -- the homelab /
-    // container / Tailscale audience. ExternalTargetSettings.AllowPublicHosts
-    // bypasses this pattern when an operator opts in to public-hostname
-    // upstreams.
+    // External-target host contract. Permits loopback / RFC1918 IPv4 / IPv6
+    // loopback / *.local / *.lan -- the homelab / container / Tailscale
+    // audience. ExternalTargetSettings.AllowPublicHosts bypasses this pattern
+    // when an operator opts in to public-hostname upstreams. Link-local
+    // (169.254.0.0/16) is deliberately absent: it holds the cloud
+    // instance-metadata endpoint, which IsLinkLocalOrMetadataHost refuses under
+    // every policy.
     //
     // Wire form uses $ (JavaScript-safe ECMA-262 anchor); compiled form uses
     // \z to refuse trailing \n -- a host bearing a newline is a config
     // landmine, not a legitimate hostname. The wire-vs-compile mapping lives
-    // in ResolveValuePattern (mirrors the existing ResolveKeyPattern split
-    // per #310).
+    // in ResolveValuePattern (mirrors the existing ResolveKeyPattern split).
     public const string ExternalTargetHostPatternString =
         @"^(localhost|127\.0\.0\.1|::1|"
         + @"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
         + @"192\.168\.\d{1,3}\.\d{1,3}|"
         + @"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
-        + @"169\.254\.\d{1,3}\.\d{1,3}|"
         + @"[A-Za-z0-9-]+\.local|"
         + @"[A-Za-z0-9-]+\.lan)$";
 
     public const string ExternalTargetHostPatternMessage =
-        "Host must be localhost, 127.0.0.1, ::1, an RFC1918 / link-local IPv4 "
-        + "address, or a *.local / *.lan hostname. To front a public hostname, "
+        "Host must be localhost, 127.0.0.1, ::1, an RFC1918 IPv4 address, "
+        + "or a *.local / *.lan hostname. To front a public hostname, "
         + "set ExternalTarget:AllowPublicHosts = true in appsettings.";
+
+    public const string ExternalTargetForbiddenHostMessage =
+        "Host is a link-local or cloud instance-metadata address. Collabhost never "
+        + "proxies to these, whatever ExternalTarget:AllowPublicHosts is set to.";
 
     [GeneratedRegex
     (
@@ -121,13 +127,39 @@ public static partial class CapabilityResolver
         + @"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
         + @"192\.168\.\d{1,3}\.\d{1,3}|"
         + @"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
-        + @"169\.254\.\d{1,3}\.\d{1,3}|"
         + @"[A-Za-z0-9-]+\.local|"
         + @"[A-Za-z0-9-]+\.lan)\z",
         RegexOptions.None,
         100
     )]
     private static partial Regex ExternalTargetHostPattern { get; }
+
+    // Instance-metadata endpoints outside 169.254.0.0/16: AWS over IPv6, and
+    // Alibaba Cloud. (AWS, Azure, GCP, Oracle and DigitalOcean over IPv4 all sit
+    // at 169.254.169.254, which the link-local check covers.)
+    private static readonly IPAddress _awsMetadataIPv6 = IPAddress.Parse("fd00:ec2::254");
+
+    private static readonly IPAddress _alibabaMetadataIPv4 = IPAddress.Parse("100.100.100.200");
+
+    // GCP's documented metadata hostname. A name is a weak guard on its own --
+    // any DNS name can resolve to a link-local address -- but refusing the one
+    // every cloud tutorial uses keeps it out of a route by accident.
+    private const string _gcpMetadataHostname = "metadata.google.internal";
+
+    // Shape of routing.domainPattern: hostname characters plus the two tokens ResolveDomain
+    // substitutes. Anything else in braces would reach the proxy as one of its own placeholders
+    // (which can match every hostname), and '*' would be a wildcard host -- either way a route
+    // answering for hostnames that belong to other apps. Whether the resolved name has well-formed
+    // labels is checked once the slug and base domain are known (IsWellFormedHostname). Wire form
+    // uses $ (JavaScript-safe); compiled form uses \z.
+    public const string DomainPatternString = @"^([A-Za-z0-9.-]|\{slug\}|\{baseDomain\})+$";
+
+    public const string DomainPatternMessage =
+        "Domain pattern must be a hostname: letters, digits, '.', '-', and the tokens {slug} and "
+        + "{baseDomain} (for example \"{slug}.{baseDomain}\" or \"{slug}.apps.example.com\").";
+
+    [GeneratedRegex(@"^([A-Za-z0-9.-]|\{slug\}|\{baseDomain\})+\z", RegexOptions.ExplicitCapture, 100)]
+    private static partial Regex DomainPattern { get; }
 
     // Permissive shape fallback when AllowPublicHosts is on. "host is a
     // non-empty string that looks like a hostname or IP" -- alphanumeric +
@@ -185,6 +217,28 @@ public static partial class CapabilityResolver
             .Replace("{slug}", slug, StringComparison.OrdinalIgnoreCase)
             .Replace("{baseDomain}", baseDomain, StringComparison.OrdinalIgnoreCase);
 
+    // A resolved hostname is well formed when every dot-separated label is 1-63 characters and
+    // neither starts nor ends with a hyphen, and the whole name is at most 253 characters -- so no
+    // leading, trailing or doubled dot. Characters are not re-checked here: the pattern's own are
+    // (DomainPatternString), the slug's are by Slug, and the base domain is operator configuration.
+    public static bool IsWellFormedHostname(string hostname)
+    {
+        if (hostname.Length is 0 or > 253)
+        {
+            return false;
+        }
+
+        foreach (var label in hostname.Split('.'))
+        {
+            if (label.Length is 0 or > 63 || label[0] == '-' || label[^1] == '-')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // Maps a schema-declared key-pattern string to its precompiled regex.
     // KeyPattern is set only by trusted server-side schema code (FieldDescriptor
     // in *Configuration.Schema), never by operator input, so the canonical
@@ -214,9 +268,51 @@ public static partial class CapabilityResolver
     // defense-in-depth for a future schema pattern that forgets to register
     // here -- it never sees untrusted input.
     public static Regex? ResolveValuePattern(string patternString, bool allowPublicHosts = false) =>
-        patternString == ExternalTargetHostPatternString
-            ? (allowPublicHosts ? null : ExternalTargetHostPattern)
-            : new Regex(patternString, RegexOptions.None, TimeSpan.FromMilliseconds(100));
+        patternString switch
+        {
+            ExternalTargetHostPatternString => allowPublicHosts ? null : ExternalTargetHostPattern,
+            DomainPatternString => DomainPattern,
+            _ => new Regex(patternString, RegexOptions.None, TimeSpan.FromMilliseconds(100))
+        };
+
+    // True for a host naming a link-local address (IPv4 169.254.0.0/16, IPv6 fe80::/10, or the
+    // IPv4-mapped IPv6 form of the former) or a cloud instance-metadata endpoint. An IPv6 literal
+    // may arrive bracketed, as it would inside a URL. A trailing dot (the DNS root, as in
+    // "metadata.google.internal.") names the same target, and the permissive public-host policy
+    // accepts it, so it is dropped before either comparison.
+    internal static bool IsLinkLocalOrMetadataHost(string host)
+    {
+        var trimmed = host.Trim().TrimEnd('.');
+
+        if (string.Equals(trimmed, _gcpMetadataHostname, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!IPAddress.TryParse(trimmed.TrimStart('[').TrimEnd(']'), out var address))
+        {
+            return false;
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        return address.AddressFamily switch
+        {
+            AddressFamily.InterNetwork => IsIPv4LinkLocal(address) || address.Equals(_alibabaMetadataIPv4),
+            AddressFamily.InterNetworkV6 => address.IsIPv6LinkLocal || address.Equals(_awsMetadataIPv6),
+            _ => false
+        };
+    }
+
+    private static bool IsIPv4LinkLocal(IPAddress address)
+    {
+        var bytes = address.GetAddressBytes();
+
+        return bytes[0] == 169 && bytes[1] == 254;
+    }
 
     public static IReadOnlyList<string> ValidateEdits
     (
@@ -251,11 +347,15 @@ public static partial class CapabilityResolver
 
             var field = schema.Single(f => string.Equals(f.Key, property.Key, StringComparison.Ordinal));
 
+            // Locked: set once, at registration, then fixed. Derived: never taken from input at all --
+            // the value comes from elsewhere (the app type), so registration refuses it as firmly as
+            // an edit does. Registration is an Agent-level action, so a field only the app type should
+            // decide must not be settable "just once".
             if (field.Editable is FieldEditableLocked locked && !isNewApp)
             {
                 errors.Add($"{capabilitySlug}.{property.Key}: {locked.Reason}");
             }
-            else if (field.Editable is FieldEditableDerived derived && !isNewApp)
+            else if (field.Editable is FieldEditableDerived derived)
             {
                 errors.Add($"{capabilitySlug}.{property.Key}: {derived.Reason}");
             }
@@ -333,7 +433,14 @@ public static partial class CapabilityResolver
                 // supplied a value yet).
                 var compiled = ResolveValuePattern(valuePattern, allowPublicHosts);
 
-                if (compiled is not null)
+                if (valuePattern == ExternalTargetHostPatternString && IsLinkLocalOrMetadataHost(asString))
+                {
+                    // Ahead of both host checks, and independent of
+                    // AllowPublicHosts: that flag opens public hostnames, not
+                    // the machine's own metadata service.
+                    errors.Add($"{capabilitySlug}.{property.Key}: {ExternalTargetForbiddenHostMessage}");
+                }
+                else if (compiled is not null)
                 {
                     if (!compiled.IsMatch(asString))
                     {

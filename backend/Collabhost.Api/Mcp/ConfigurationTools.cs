@@ -186,7 +186,10 @@ public class ConfigurationTools
                             type = fieldDescriptor.Type,
                             value,
                             defaultValue,
-                            editable = fieldDescriptor.Editable is not FieldEditableLocked,
+                            // Only an Always field takes an edit: update_settings refuses Locked
+                            // (set at registration) and Derived (decided by the app type) alike.
+                            // REST carries the kind itself; this boolean must say the same thing.
+                            editable = fieldDescriptor.Editable is FieldEditableAlways,
                             requiresRestart = fieldDescriptor.RequiresRestart
                         }
                     );
