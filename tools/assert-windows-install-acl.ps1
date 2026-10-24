@@ -111,9 +111,6 @@ function Get-AccountAccessMask
     return $rights
 }
 
-$items = @(Get-Item -LiteralPath $root -Force) + @(Get-ChildItem -LiteralPath $root -Recurse -Force)
-$violations = New-Object System.Collections.Generic.List[string]
-$counts = [ordered]@{ Items = $items.Count; Writable = 0; ReadOnly = 0; Other = 0; Owners = @{} }
 
 if ($Expect -eq 'Open')
 {
@@ -134,6 +131,12 @@ if ($Expect -eq 'Open')
     Write-Host 'Pre-fix posture present.'
     return
 }
+
+# The Open check above reads one item. A pre-fix tree can hold items this account
+# cannot list; they are only expected to be gone once the tree is restricted.
+$items = @(Get-Item -LiteralPath $root -Force) + @(Get-ChildItem -LiteralPath $root -Recurse -Force)
+$violations = New-Object System.Collections.Generic.List[string]
+$counts = [ordered]@{ Items = $items.Count; Writable = 0; ReadOnly = 0; Other = 0; Owners = @{} }
 
 $allowedSids = @($systemSid, $AdministratorsSid, $accountSid)
 
