@@ -693,6 +693,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & (Join-Path $env:RUNNER_TEMP 'prefix\docs\install-system.ps1') -Version $env:TAG
 
+      # The runner refuses a bind on port 80, so the proxy moves to 8080/8443
+      # (see the script). The installer keeps the config on an upgrade.
+      - name: Move the proxy off ports 80 and 443
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & tools/set-windows-proxy-ports.ps1 -SettingsFile (Join-Path $env:DATA_ROOT 'config\appsettings.json') -ServiceName Collabhost
+
       - name: Pre-fix permissions are open (negative control)
         shell: pwsh
         run: |
@@ -817,7 +825,7 @@ jobs:
             throw 'dotnet-bundle is empty: the service did not re-extract its native libraries.'
           }
           Write-Host 'Service answered /api/v1/status and re-extracted its native libraries into dotnet-bundle.'
-          & tools/assert-windows-proxy.ps1 -StorageDir (Join-Path $env:DATA_ROOT 'caddy') -DataDir (Join-Path $env:DATA_ROOT 'data')
+          & tools/assert-windows-proxy.ps1 -HttpsPort 8443 -StorageDir (Join-Path $env:DATA_ROOT 'caddy') -DataDir (Join-Path $env:DATA_ROOT 'data')
 
       - name: Fresh install
         shell: pwsh
@@ -826,6 +834,7 @@ jobs:
           & docs/install-system.ps1 -Uninstall -PurgeData
           if (Test-Path -LiteralPath $env:DATA_ROOT) { throw "$env:DATA_ROOT survived -Uninstall -PurgeData." }
           & docs/install-system.ps1 -Version $env:TAG
+          & tools/set-windows-proxy-ports.ps1 -SettingsFile (Join-Path $env:DATA_ROOT 'config\appsettings.json') -ServiceName Collabhost
           & tools/assert-windows-install-acl.ps1 -Scope System -Path $env:DATA_ROOT -Account 'NT SERVICE\Collabhost' -Expect Restricted
 
       - name: Service runs under the restricted permissions (fresh)
@@ -842,7 +851,7 @@ jobs:
           }
           if (-not $ok) { throw 'Status endpoint never came up under the service.' }
           if (-not (Test-Path -LiteralPath (Join-Path $env:DATA_ROOT 'data\collabhost.db'))) { throw 'The service did not create its database.' }
-          & tools/assert-windows-proxy.ps1 -StorageDir (Join-Path $env:DATA_ROOT 'caddy') -DataDir (Join-Path $env:DATA_ROOT 'data')
+          & tools/assert-windows-proxy.ps1 -HttpsPort 8443 -StorageDir (Join-Path $env:DATA_ROOT 'caddy') -DataDir (Join-Path $env:DATA_ROOT 'data')
           # Re-check after the service and its proxy have written their own files.
           & tools/assert-windows-install-acl.ps1 -Scope System -Path $env:DATA_ROOT -Account 'NT SERVICE\Collabhost' -Expect Restricted
           # A service has no console: the key file is how its operator gets the
@@ -896,6 +905,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & (Join-Path $env:RUNNER_TEMP 'prefix\docs\install.ps1') -Version $env:TAG -SkipPath -RegisterUserService
 
+      # As in the system-scope leg: the runner refuses port 80. The installer
+      # keeps appsettings.json on an upgrade.
+      - name: Move the proxy off ports 80 and 443
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & tools/set-windows-proxy-ports.ps1 -SettingsFile (Join-Path $HOME '.collabhost\bin\appsettings.json') -ServiceName CollabhostUser
+
       - name: Pre-fix permissions are open (negative control)
         shell: pwsh
         run: |
@@ -929,7 +946,7 @@ jobs:
           }
           if (-not $ok) { throw 'Status endpoint never came up under the service.' }
           Write-Host 'Upgrade: service answered /api/v1/status with the binaries read-only to it.'
-          & tools/assert-windows-proxy.ps1 -StorageDir (Join-Path $bin 'caddy') -DataDir (Join-Path $bin 'data')
+          & tools/assert-windows-proxy.ps1 -HttpsPort 8443 -StorageDir (Join-Path $bin 'caddy') -DataDir (Join-Path $bin 'data')
 
       - name: Fresh registration
         shell: pwsh
@@ -939,6 +956,7 @@ jobs:
           & docs/install.ps1 -UnregisterUserService
           Remove-Item -LiteralPath $bin -Recurse -Force
           & docs/install.ps1 -Version $env:TAG -SkipPath -RegisterUserService
+          & tools/set-windows-proxy-ports.ps1 -SettingsFile (Join-Path $bin 'appsettings.json') -ServiceName CollabhostUser
           $ok = $false
           for ($i = 0; $i -lt 90; $i++) {
             try {
@@ -949,7 +967,7 @@ jobs:
           }
           if (-not $ok) { throw 'Status endpoint never came up under the service.' }
           if (-not (Test-Path -LiteralPath (Join-Path $bin 'data\collabhost.db'))) { throw 'The service did not create its database.' }
-          & tools/assert-windows-proxy.ps1 -StorageDir (Join-Path $bin 'caddy') -DataDir (Join-Path $bin 'data')
+          & tools/assert-windows-proxy.ps1 -HttpsPort 8443 -StorageDir (Join-Path $bin 'caddy') -DataDir (Join-Path $bin 'data')
           & tools/assert-windows-install-acl.ps1 -Scope User -Path $bin -Account 'NT SERVICE\CollabhostUser' -Expect Restricted
           # A service has no console: the key file is how its operator gets the
           # first admin key.

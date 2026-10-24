@@ -53,6 +53,7 @@ on:
       - 'tools/assert-admin-key-file.ps1'
       - 'tools/assert-windows-install-acl.ps1'
       - 'tools/assert-windows-proxy.ps1'
+      - 'tools/set-windows-proxy-ports.ps1'
       - 'release-assets/**'
       - 'frontend/**'
 
@@ -1225,6 +1226,18 @@ jobs:
             'console'        { & docs/install.ps1 -Version "v$env:VER" -SkipPath }
           }
 
+      # The runner refuses a bind on port 80, so the proxy moves to 8080/8443
+      # (see the script). The installers keep appsettings.json on a re-run.
+      - name: Move the proxy off ports 80 and 443
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          switch ($env:SHAPE) {
+            'user-service'   { & tools/set-windows-proxy-ports.ps1 -SettingsFile (Join-Path $HOME '.collabhost\bin\appsettings.json') -ServiceName CollabhostUser }
+            'system-service' { & tools/set-windows-proxy-ports.ps1 -SettingsFile 'C:\ProgramData\Collabhost\config\appsettings.json' -ServiceName Collabhost }
+            'console'        { & tools/set-windows-proxy-ports.ps1 -SettingsFile (Join-Path $HOME '.collabhost\bin\appsettings.json') }
+          }
+
       - name: The proxy runs and issues a certificate
         shell: pwsh
         run: |
@@ -1254,7 +1267,7 @@ jobs:
               } catch { Start-Sleep -Seconds 1 }
             }
             if (-not $ok) { throw 'Status endpoint never came up.' }
-            & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-windows-proxy.ps1') -StorageDir $storage -DataDir $data -ShowLog
+            & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-windows-proxy.ps1') -HttpsPort 8443 -StorageDir $storage -DataDir $data -ShowLog
             switch ($env:SHAPE) {
               'user-service'   { & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-windows-install-acl.ps1') -Scope User -Path $userBin -Account 'NT SERVICE\CollabhostUser' -Expect Restricted }
               'system-service' { & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-windows-install-acl.ps1') -Scope System -Path 'C:\ProgramData\Collabhost' -Account 'NT SERVICE\Collabhost' -Expect Restricted }
@@ -1294,7 +1307,7 @@ jobs:
             } catch { Start-Sleep -Seconds 1 }
           }
           if (-not $ok) { throw 'Status endpoint never came up after the re-run.' }
-          & tools/assert-windows-proxy.ps1 -StorageDir $storage -DataDir $data
+          & tools/assert-windows-proxy.ps1 -HttpsPort 8443 -StorageDir $storage -DataDir $data
           if ($env:SHAPE -eq 'system-service') {
             & tools/assert-windows-install-acl.ps1 -Scope System -Path 'C:\ProgramData\Collabhost' -Account 'NT SERVICE\Collabhost' -Expect Restricted
           } else {

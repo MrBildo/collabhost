@@ -14,7 +14,7 @@
        no proxyDetail. The proxy creates its local certificate authority when
        Collabhost loads its configuration into it, so a proxy that cannot write
        its storage reports "degraded" here, with the reason in proxyDetail.
-    2. A TLS handshake on 127.0.0.1:443 for the Portal's host name is answered
+    2. A TLS handshake on 127.0.0.1 (port -HttpsPort) for the Portal's host name is answered
        with a certificate for that name, issued by the proxy's local authority,
        and the Portal answers over HTTPS with its HTML page.
     3. With -StorageDir: the local authority's root certificate and the
@@ -29,6 +29,9 @@
 
 .PARAMETER HostName
     The Portal's host name (portal subdomain + base domain).
+
+.PARAMETER HttpsPort
+    The proxy's HTTPS port (443 unless Proxy:ListenAddress moves it).
 
 .PARAMETER StorageDir
     Where the proxy's certificate storage must be.
@@ -46,6 +49,7 @@ param
 (
     [string]$Url = 'http://localhost:58400',
     [string]$HostName = 'collabhost.collab.internal',
+    [int]$HttpsPort = 443,
     [string]$StorageDir,
     [string]$DataDir,
     [int]$TimeoutSeconds = 90,
@@ -92,12 +96,12 @@ function Write-ProxyLog
 
 function Get-ServedCertificate
 {
-    param([string]$ServerName)
+    param([string]$ServerName, [int]$Port)
 
     $client = New-Object System.Net.Sockets.TcpClient
     try
     {
-        $client.Connect('127.0.0.1', 443)
+        $client.Connect('127.0.0.1', $Port)
         # Accept any certificate: the check below is who issued it, not whether
         # this runner trusts the proxy's local authority.
         $accept = [System.Net.Security.RemoteCertificateValidationCallback] { $true }
@@ -156,7 +160,7 @@ while ((Get-Date) -lt $deadline)
 {
     try
     {
-        $cert = Get-ServedCertificate -ServerName $HostName
+        $cert = Get-ServedCertificate -ServerName $HostName -Port $HttpsPort
         if ($cert.Issuer -match 'Caddy Local Authority')
         {
             break
@@ -174,7 +178,7 @@ while ((Get-Date) -lt $deadline)
 if ($null -eq $cert)
 {
     Write-ProxyDiagnostic -StatusBody $statusBody -DataDirectory $DataDir
-    throw "No certificate from the proxy's local authority for $HostName on 127.0.0.1:443 within ${TimeoutSeconds}s ($lastError)."
+    throw "No certificate from the proxy's local authority for $HostName on 127.0.0.1:$HttpsPort within ${TimeoutSeconds}s ($lastError)."
 }
 
 $dnsName = $cert.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::DnsName, $false)
@@ -185,13 +189,13 @@ if ($dnsName -ne $HostName)
 }
 
 $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
-$page = & $curl -k -sS --fail --max-time 30 --resolve "${HostName}:443:127.0.0.1" "https://$HostName/" 2>&1 | Out-String
+$page = & $curl -k -sS --fail --max-time 30 --resolve "${HostName}:${HttpsPort}:127.0.0.1" "https://${HostName}:$HttpsPort/" 2>&1 | Out-String
 if ($LASTEXITCODE -ne 0 -or $page -notmatch '(?i)<!doctype html')
 {
     Write-Host $page
-    throw "https://$HostName/ did not answer with the Portal's HTML page (curl exit $LASTEXITCODE)."
+    throw "https://${HostName}:$HttpsPort/ did not answer with the Portal's HTML page (curl exit $LASTEXITCODE)."
 }
-Write-Host "  ok: https://$HostName/ answers with the Portal's HTML page"
+Write-Host "  ok: https://${HostName}:$HttpsPort/ answers with the Portal's HTML page"
 
 # 3. The storage is where the install says it is.
 if ($StorageDir)
