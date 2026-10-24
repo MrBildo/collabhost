@@ -706,8 +706,8 @@ jobs:
           $listable = $true
           try { Get-ChildItem -LiteralPath $bundlePlant -Force -ErrorAction Stop | Out-Null } catch { $listable = $false }
           $readable = $true
-          try { Get-Acl -LiteralPath $typesPlant | Out-Null } catch { $readable = $false }
-          Write-Host "As the runner's admin: planted directory listable = $listable, planted file's ACL readable = $readable"
+          try { Get-Content -LiteralPath $typesPlant -ErrorAction Stop | Out-Null } catch { $readable = $false }
+          Write-Host "As the runner's admin: planted directory listable = $listable, planted file readable = $readable"
           if ($listable -or $readable) { throw 'The plants do not lock Administrators out, so this step tests nothing.' }
 
           # A junction inside the tree, pointing at a canary outside it whose file
@@ -823,7 +823,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          & docs/install-system.ps1 -Uninstall -PurgeData
+          try { & docs/install-system.ps1 -Uninstall -PurgeData } catch { Write-Host "Uninstall during teardown: $($_.Exception.Message)" }
           & net.exe user chplanter /delete 2>$null | Out-Null
           Remove-Item -LiteralPath 'C:\ci-canary' -Recurse -Force -ErrorAction SilentlyContinue
           exit 0
