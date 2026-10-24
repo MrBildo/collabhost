@@ -112,6 +112,107 @@ Collabhost generates) is the usual choice. A longer key stops startup with an
 error naming the limit (exit code 40, §9.9) before anything is written to the
 database.
 
+### 2.1 Replacing keys
+
+A key can't be changed in place. To replace one, create a new user with the
+same role, move whatever used the old key over to the new one, then deactivate
+the old user. A deactivated user's key is refused at once, by the REST API, the
+dashboard and the MCP tools. Deactivation can't be undone; if you deactivate the
+wrong user, create a new one.
+
+To replace **every** key (for example after someone else may have read the
+database, which stores keys in plain text; §8.0 says who should after upgrading
+to v1.10.0):
+
+1. Sign in to the dashboard with your current admin key. Open **Users** and
+   choose **+ New User**. Give it a name, choose **Administrator**, and choose
+   **Create User**. Copy the key from the dialog, store it somewhere safe, tick
+   **I have copied and saved this key**, and choose **Done**.
+2. Choose **Sign out**, then sign in with the new admin key. Do the rest of the
+   steps signed in as the new admin.
+3. For each other active user, create a replacement with the same role
+   (**+ New User**, then **Agent** or **Administrator**), and put its key
+   wherever the old key was used: an agent's MCP configuration (`authKey`),
+   scripts, CI secrets, monitors. The **New User** form doesn't offer the
+   read-only role; create read-only replacements with the REST call below.
+4. On the **Users** page, choose **Deactivate** on every old user, the old admin
+   last. Collabhost keeps at least one active administrator, so the old admin
+   can only be deactivated once the new one exists.
+5. Restart Collabhost (`sudo systemctl restart collabhost`,
+   `Restart-Service Collabhost`, `Restart-Service CollabhostUser`,
+   `systemctl --user restart collabhost.service`, or stop and start the binary).
+   A log view that was opened with an old key keeps streaming until it
+   disconnects; the restart closes it, and it can't reconnect.
+6. Tidy up what still holds an old key:
+   - If `Auth:AdminKey` in `appsettings.json` or `COLLABHOST_ADMIN_KEY` holds the
+     old admin key, remove it or replace it with the new key. Leaving the old
+     value there doesn't bring the old key back, but it leaves the old secret in
+     a file. Changing that setting is **not** a way to replace the admin key: a
+     new value adds an `Admin (recovery)` user and the old admin key keeps
+     working until you deactivate its user.
+   - Delete `initial-admin-key.txt` from the data directory if it is still
+     there.
+   - A backup of the database taken before this (the copies in `data/backups/`,
+     or your own) still lists the old users as active. If you ever restore one,
+     replace the keys again.
+
+To check, call the API with an old key; it answers `401`:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:58400/api/v1/auth/me -H "X-User-Key: <old key>"
+```
+
+**The same steps through the REST API** (any role, including read-only; role
+names are `administrator`, `agent` and `readOnly`). Each create call returns
+the new user's key in `authKey`; it is shown once.
+
+Linux and macOS:
+
+```sh
+# 1. A new admin, created with the current admin key.
+curl -s -X POST http://localhost:58400/api/v1/users \
+  -H "X-User-Key: $OLD_ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{"name":"Admin (2026-10)","role":"administrator"}'
+
+# 2. From here on, use the new admin key: check it, create replacements, list users.
+curl -s http://localhost:58400/api/v1/auth/me -H "X-User-Key: $NEW_ADMIN_KEY"
+curl -s -X POST http://localhost:58400/api/v1/users \
+  -H "X-User-Key: $NEW_ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{"name":"status page (2026-10)","role":"readOnly"}'
+curl -s http://localhost:58400/api/v1/users -H "X-User-Key: $NEW_ADMIN_KEY"
+
+# 3. Deactivate each old user by its id from the list.
+curl -s -X PATCH http://localhost:58400/api/v1/users/<id>/deactivate -H "X-User-Key: $NEW_ADMIN_KEY"
+```
+
+Windows (PowerShell):
+
+```powershell
+# 1. A new admin, created with the current admin key.
+$old   = @{ 'X-User-Key' = '<current admin key>' }
+$admin = Invoke-RestMethod -Method Post http://localhost:58400/api/v1/users -Headers $old `
+           -ContentType 'application/json' -Body '{"name":"Admin (2026-10)","role":"administrator"}'
+$admin.authKey     # store this key
+
+# 2. From here on, use the new admin key.
+$new = @{ 'X-User-Key' = $admin.authKey }
+Invoke-RestMethod http://localhost:58400/api/v1/auth/me -Headers $new
+Invoke-RestMethod -Method Post http://localhost:58400/api/v1/users -Headers $new `
+  -ContentType 'application/json' -Body '{"name":"ci-agent (2026-10)","role":"agent"}'
+
+# 3. Deactivate every user created before the new admin.
+$users = Invoke-RestMethod http://localhost:58400/api/v1/users -Headers $new
+foreach ($u in $users) {
+    if ($u.isActive -and $u.createdAt -lt $admin.createdAt) {
+        Invoke-RestMethod -Method Patch "http://localhost:58400/api/v1/users/$($u.id)/deactivate" -Headers $new
+    }
+}
+```
+
+Step 3 in PowerShell deactivates every user older than the new admin, so create
+the new admin first and the other replacements after it, as above. Then restart
+Collabhost and tidy up (steps 5 and 6).
+
 ---
 
 ## 3. Opening the dashboard
@@ -257,7 +358,7 @@ Then `.\startup.ps1`.
 | `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string | `720h` |
 | `COLLABHOST_PROXY_DNS_PROVIDER`  | `Proxy:DnsProvider` — ACME DNS-01 provider for real Let's Encrypt certs (e.g. `cloudflare`). Unset by default → Caddy uses the internal CA. Enables the DNS-01 issuer when set. See §8.4. | Caddy DNS-provider module name | `cloudflare` |
 | `COLLABHOST_PROXY_DNS_API_TOKEN_ENV_VAR` | `Proxy:DnsApiTokenEnvVar` — the **name** of another host environment variable that holds the DNS provider's API token. Not the token value itself: Collabhost emits `{env.<this-name>}` into Caddy's config, and Caddy reads the named variable from its process environment at issue time. Default `CLOUDFLARE_API_TOKEN`. See §8.4. | Env-var name (not the token) | `CLOUDFLARE_API_TOKEN` |
-| `COLLABHOST_PROXY_STORAGE_PATH`  | `Proxy:StoragePath` — root directory for Caddy's CA, account keys, and per-host certificates. Unset by default → user-scope resolves to Caddy's XDG default `~/.local/share/caddy/`; the Linux system-scope unit sets `/var/lib/collabhost/caddy/` and the Windows system-scope service `%ProgramData%\Collabhost\caddy\`. Drives the CA-trust artifacts in §9.11.1. | Absolute directory path | `/var/lib/collabhost/caddy` |
+| `COLLABHOST_PROXY_STORAGE_PATH`  | `Proxy:StoragePath` — root directory for Caddy's CA, account keys, and per-host certificates. Unset by default → a Linux user-scope install resolves to Caddy's XDG default `~/.local/share/caddy/` (macOS: `~/Library/Application Support/Caddy/`), and a Windows user-scope install to `caddy\` in the install folder (Collabhost starts the proxy without `%AppData%`, so Caddy falls back to its working directory); the Linux system-scope unit sets `/var/lib/collabhost/caddy/` and the Windows system-scope service `%ProgramData%\Collabhost\caddy\`. Drives the CA-trust artifacts in §9.11.1. | Absolute directory path | `/var/lib/collabhost/caddy` |
 | `COLLABHOST_LOGS_PATH`          | `Diagnostics:CrashLogs:Directory` — crash-log output directory. Unset by default → `{data-directory}/logs/` (i.e. `data/logs/` next to the binary, or the per-shape logs path in §9.7). See §9.7. | Absolute directory path | `/var/log/collabhost` |
 | `COLLABHOST_CONFIG_PATH`        | Absolute path to the operator-facing `appsettings.json` that Collabhost loads via an explicit `AddJsonFile`. Set by the system-scope installer to `/etc/collabhost/appsettings.json` so the canonical config lives outside the read-only install tree; **unset in user-scope**, where the binary's working-directory `appsettings.json` is used. To relocate the config in a system-scope install, set this in a systemd drop-in. | Absolute file path | `/etc/collabhost/appsettings.json` |
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
@@ -1020,18 +1121,20 @@ are refreshed. Upgrading an install made by an earlier version of the script,
 which left `%ProgramData%\Collabhost\` readable by every local user, applies
 the restricted permissions with no further step.
 
-**If other people have accounts on this machine,** they could read that folder
-before the upgrade, and user keys are stored in the database as plain text.
-After upgrading such an install, replace every key: the admin key and every
-user key, Agent keys included. To replace a key, create a new user with the
-same role on the **Users** page, move whatever used the old key to the new one
-(for the admin key, sign in with the new one), then deactivate the old user.
-If you trusted the local certificate authority on other devices, regenerate it
-too, because its private key was in the same folder: stop the service, delete
-`%ProgramData%\Collabhost\caddy\pki\` and
-`%ProgramData%\Collabhost\caddy\certificates\local\`, start the service, then
-import the new root certificate on each device (§9.11) and remove the old one.
-On a machine only you sign in to, none of this is needed.
+**Before the upgrade, other local users could read that folder:** the database
+stores every user key in plain text, and `caddy\` holds the private key of the
+local certificate authority. Whether you need to act depends on who else uses
+the machine; §8.0 says who should replace keys. If you do:
+
+1. **Replace every key**, the admin key and every user key, Agent and read-only
+   keys included, as described in §2.1. Then restart the service
+   (`Restart-Service Collabhost`) so that nothing connected with an old key
+   stays connected.
+2. **If you trusted the local certificate authority on other devices**, replace
+   it as described in §9.11.4: stop the service, delete
+   `%ProgramData%\Collabhost\caddy\pki\` and
+   `%ProgramData%\Collabhost\caddy\certificates\local\`, start the service, then
+   on each device import the new root certificate and remove the old one.
 
 **Uninstall:**
 
@@ -1769,8 +1872,8 @@ For a foreground launch (no service wrapper), `Ctrl-C` on the running process
 is sufficient — Collabhost's shutdown path drains its supervised children
 before exiting.
 
-**Changes in v1.10.0 to check when you upgrade.** None of them needs a step on
-a default install; each says who is affected.
+**Changes in v1.10.0 to check when you upgrade.** Most need no step on a
+default install; each says who is affected.
 
 - **The bundled proxy (Caddy 2.11.7) is stricter with requests to your apps.**
   There is no Collabhost setting for any of these three:
@@ -1795,18 +1898,26 @@ a default install; each says who is affected.
   uses; otherwise registration is refused. Apps registered before v1.10.0 are
   not re-checked. `serveMode` can no longer be set at registration; the app
   type decides it.
-- **Linux system scope:** re-running `install-system.sh` puts the service in a
+- **External routes to link-local or cloud-metadata addresses are refused**
+  (`169.254.x.x`, `fe80::`, `metadata.google.internal`), at registration and
+  when settings are saved, whatever `AllowPublicHosts` is set to (§5.7).
+  Routes registered earlier keep routing and aren't re-checked: look in
+  **Routes** (or `GET /api/v1/routes`) for such an upstream, and remove the app
+  or point it somewhere else. An upstream like that can't be saved again.
+- **Linux system scope:** re-run the current `install-system.sh` (fetch it
+  again, or use the one-line installer; a copy saved from an earlier release
+  installs that release's unit, without the sandbox). It puts the service in a
   systemd sandbox, and your hosted apps run inside it (§5.5.2). Check the
   sandbox table there if an app uses a device, `sudo`, its own namespaces, or
   writes outside `/var/lib/collabhost`. A drop-in with `Delegate=yes` now
   needs `ProtectControlGroups=no` as well (§5.5.2).
 - **Windows:** re-running `install-system.ps1`, or `install.ps1
   -RegisterUserService` for the user-scope service, narrows the folder
-  permissions with no other step (§5.5.4, §5.5.5). On a system-scope install
-  on a machine other people sign in to, replace your keys afterwards (§5.5.4).
-  For the user-scope
-  service, a database, user-types folder or certificate storage you moved out
-  of the default folders needs a `Modify` grant (§5.5.5).
+  permissions with no other step (§5.5.4, §5.5.5). If it reports a junction or
+  symbolic link in the folder, delete the link and re-run. For the user-scope
+  service, a database, user-types folder, crash-log folder or certificate
+  storage you moved out of the default folders needs a `Modify` grant (§5.5.5).
+  Whether to replace keys afterwards is the last item in this list.
 - **Linux and macOS user scope, if you installed an earlier release from a
   shell with `umask 000`:** that installer could create your shell startup
   file writable by every user, and this installer does not change it. Remove
@@ -1819,16 +1930,30 @@ a default install; each says who is affected.
   ```
 
   If you are not sure how your shell was set up, running it does no harm.
-- **Secrets in a systemd unit:** if a drop-in sets the admin key or a DNS API
-  token on an `Environment=` line, move it to a file referenced with
-  `EnvironmentFile=` (§5.5.1); any local user can read `Environment=` values.
+- **Secrets in a systemd unit:** if a drop-in sets the admin key, a DNS API
+  token or a telemetry API key on an `Environment=` line, move it to a file
+  referenced with `EnvironmentFile=` (§5.5.1); any local user can read
+  `Environment=` values.
 - **Installer downloads are HTTPS only.** A `COLLABHOST_INSTALL_BASE_URL` or
   `COLLABHOST_INSTALL_SCRIPT_BASE_URL` that starts with `http://` is refused
   unless it points at this machine or `COLLABHOST_INSTALL_ALLOW_HTTP=1` is set
   (§5.4).
-- **First-run admin key:** a fresh install no longer writes the key to the
-  journal or the Windows Event Log; it prints it once and saves it to
-  `initial-admin-key.txt` (§2). An existing install keeps the key it has.
+- **First-run admin key:** a fresh install prints the key once and saves it to
+  `initial-admin-key.txt` (§2); it no longer goes to any log. Earlier releases
+  wrote a generated key to every log Collabhost wrote to: the Windows
+  Application Event Log (which anyone who can sign in can read, on any Windows
+  install: console run, user-scope or system-scope service), the systemd
+  journal, and any OpenTelemetry collector. Upgrading doesn't remove those
+  entries. An existing install keeps the key it has; the next item says whether
+  to replace it.
+- **Who should replace keys.** If Collabhost generated your admin key and
+  anyone else could read those logs, or if other people have accounts on the
+  machine, replace your keys (§2.1). Other accounts matter because of where
+  earlier releases kept the keys: on a Windows system-scope install, other
+  local users could read the database, which stores every key in plain text
+  (§5.5.4 covers that install, the local certificate authority included); on a
+  Linux or macOS user-scope install, the database may have been readable by
+  other local users who can enter your home folder.
 
 **Breaking in v1.9.0 — the proxy-binary env override was renamed.** If you point
 Collabhost at a specific Caddy binary with the `COLLABHOST_CADDY_PATH` environment
@@ -1902,8 +2027,9 @@ To upgrade Collabhost, re-run the install script. The installer is
   the new shipped file on each upgrade so operator edits survive while new
   shipped defaults are picked up automatically (see §8.2).
 - Caddy storage directory (`Proxy:StoragePath` — see the §5.4 row for the
-  per-scope default; user-scope resolves to `~/.local/share/caddy/`,
-  system-scope to `/var/lib/collabhost/caddy/`) — your CA root, account
+  per-scope default; Linux user-scope resolves to `~/.local/share/caddy/`,
+  Windows user-scope to `caddy\` in the install folder, Linux system-scope to
+  `/var/lib/collabhost/caddy/`) — your CA root, account
   keys, and per-host certificates carry across the upgrade so operator-trusted
   trust-store imports (see §9.11) keep working.
 
@@ -2629,17 +2755,22 @@ behavior). The root certificate sits at:
 ```
 
 The table below maps the resolved `Proxy:StoragePath` onto the root-cert
-path for each default install shape (including the per-OS Caddy defaults
-for macOS and Windows, which the §5.4 row summarizes as "Caddy's XDG
-default"):
+path for each default install shape (including the macOS and Windows
+user-scope defaults, which the §5.4 row spells out):
 
 | Install shape | `Proxy:StoragePath` | Root cert path |
 |---------------|---------------------|----------------|
 | User-scope (Linux, `install.sh`) | unset → Caddy default | `~/.local/share/caddy/pki/authorities/local/root.crt` |
-| User-scope (macOS, `install.sh`) | unset → Caddy default | `~/Library/Application Support/caddy/pki/authorities/local/root.crt` |
+| User-scope (macOS, `install.sh`) | unset → Caddy default | `~/Library/Application Support/Caddy/pki/authorities/local/root.crt` |
 | System-scope (Linux, `install-system.sh`) | `/var/lib/collabhost/caddy` (set in the systemd unit) | `/var/lib/collabhost/caddy/pki/authorities/local/root.crt` |
 | System-scope (Windows, `install-system.ps1`) | `%ProgramData%\Collabhost\caddy` (set on the service) | `%ProgramData%\Collabhost\caddy\pki\authorities\local\root.crt` |
-| Workstation Windows | unset → Caddy default | `%AppData%\Caddy\pki\authorities\local\root.crt` |
+| User-scope (Windows, `install.ps1`: console or user-scope service) | unset → `caddy\` in the install folder | `%USERPROFILE%\.collabhost\bin\caddy\pki\authorities\local\root.crt` (default install folder) |
+
+On Windows, Collabhost starts the proxy without `%AppData%` in its
+environment, so Caddy keeps its storage in the install folder rather than
+`%AppData%\Caddy\`. A Windows user-scope install made before v1.4.1 may still
+have an `%AppData%\Caddy\` folder. Current versions don't use it, but it holds
+an older certificate authority's private key; §9.11.4 says to delete it.
 
 If unsure, search:
 
@@ -2724,7 +2855,7 @@ macOS uses its own store.
 
 Email or AirDrop the `root.crt` to the device, tap to install the
 profile, then enable full trust in **Settings → General → About →
-Certificate Trust Settings → enable for "Caddy Local Authority"**. The
+Certificate Trust Settings → enable for "Collabhost Local Authority"**. The
 two-step install / explicit-trust dance is iOS's standard root-cert
 posture; without the second step the cert is installed but not trusted.
 
@@ -2748,11 +2879,127 @@ domain. Operators who outgrow the per-device ceremony move to a public
 domain plus Let's Encrypt (§8.4); LE's root is already in every device's
 trust store, so the import step disappears.
 
-The Caddy root cert rotates only when its underlying private key
-rotates (uncommon — operator-driven via Caddy storage manipulation, not
-a routine event). Day-to-day per-host certificates are short-lived and
+The root certificate only changes if you replace the certificate authority
+(§9.11.4). Day-to-day per-host certificates are short-lived and
 auto-renewed by Caddy without operator action; once the root is trusted,
 the per-host renewals carry the trust automatically.
+
+#### 9.11.4 Replacing the local certificate authority
+
+Replace the certificate authority if someone else may have read its private
+key (`root.key`), for example on a shared machine. Afterwards every device that
+trusted the old root has to trust the new one instead; until it does, browsers
+on that device warn about the dashboard and your apps.
+
+1. **Find the proxy's storage folder** for your install:
+
+   | Install shape | Storage folder |
+   |---|---|
+   | Linux, system (`install-system.sh`) | `/var/lib/collabhost/caddy/` |
+   | Linux, user (`install.sh`) | `~/.local/share/caddy/` |
+   | macOS, user (`install.sh`) | `~/Library/Application Support/Caddy/` |
+   | Windows, system (`install-system.ps1`) | `%ProgramData%\Collabhost\caddy\` |
+   | Windows, user (`install.ps1`, console or user service) | `caddy\` in the install folder: `%USERPROFILE%\.collabhost\bin\caddy\` by default |
+   | `Proxy:StoragePath` / `COLLABHOST_PROXY_STORAGE_PATH` set | that folder |
+
+   On a Windows user install made before v1.4.1 there may also be an
+   `%AppData%\Caddy\` folder. Current versions don't use it, but it holds an
+   older certificate authority's private key: delete it.
+
+2. **Note the old root's fingerprint** (you'll need it to remove the old root
+   from devices):
+
+   ```sh
+   openssl x509 -in <storage folder>/pki/authorities/local/root.crt -noout -fingerprint -sha256
+   ```
+   ```powershell
+   (Get-PfxCertificate <storage folder>\pki\authorities\local\root.crt).Thumbprint
+   ```
+
+   Removing it from a macOS device takes the SHA-1 fingerprint, so if you trust
+   the root on a Mac, also run the `openssl` command with `-sha1` in place of
+   `-sha256`.
+
+3. **Stop Collabhost.** The proxy stops with it.
+
+4. **Delete two folders** inside the storage folder: `pki/` (the certificate
+   authority) and `certificates/local/` (the site certificates it signed).
+   Delete both: if you keep `certificates/local/`, the proxy goes on serving the
+   old site certificates, which the new root doesn't vouch for, until each one
+   comes up for renewal.
+
+5. **Start Collabhost.** The proxy creates a new certificate authority and
+   issues new site certificates as it starts. Start any app that doesn't start
+   on its own.
+
+The commands for steps 3 to 5:
+
+```sh
+# Linux, system install
+sudo systemctl stop collabhost
+sudo rm -rf /var/lib/collabhost/caddy/pki /var/lib/collabhost/caddy/certificates/local
+sudo systemctl start collabhost
+
+# Linux / macOS, user install (stop it the way you run it: Ctrl+C, or the user service)
+systemctl --user stop collabhost.service                       # if you use the user service
+rm -rf ~/.local/share/caddy/pki ~/.local/share/caddy/certificates/local                  # Linux
+rm -rf ~/Library/Application\ Support/Caddy/pki ~/Library/Application\ Support/Caddy/certificates/local   # macOS
+systemctl --user start collabhost.service                      # or start collabhost again
+```
+
+```powershell
+# Windows, system install (elevated PowerShell)
+Stop-Service Collabhost
+Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\caddy\pki", "$env:ProgramData\Collabhost\caddy\certificates\local"
+Start-Service Collabhost
+
+# Windows, user install (stop the console window with Ctrl+C, or the user service)
+Stop-Service CollabhostUser                                    # if you use the user service
+Remove-Item -Recurse -Force "$HOME\.collabhost\bin\caddy\pki", "$HOME\.collabhost\bin\caddy\certificates\local"
+Start-Service CollabhostUser                                   # or start collabhost.exe again
+```
+
+6. **Check.** The `root.crt` in `pki/authorities/local/` now has a different
+   fingerprint (step 2's command). Until the host itself trusts the new root,
+   opening the dashboard there warns about the certificate; that is expected.
+
+7. **On each device, trust the new root and remove the old one.** Copy the new
+   `root.crt` off the host and import it as in §9.11.2. The old and the new root
+   have the **same name** ("Collabhost Local Authority - 2026 ECC Root"), so
+   remove the old one by its fingerprint, not its name:
+
+   - **Windows:** import the new root, then remove every other Collabhost root
+     (use the same store you imported into; `Cert:\CurrentUser\Root` for
+     per-user trust):
+
+     ```powershell
+     Import-Certificate -FilePath .\root.crt -CertStoreLocation Cert:\LocalMachine\Root
+     $keep = (Get-PfxCertificate .\root.crt).Thumbprint
+     Get-ChildItem Cert:\LocalMachine\Root |
+       Where-Object { $_.Subject -like '*Collabhost Local Authority*' -and $_.Thumbprint -ne $keep } |
+       Remove-Item
+     ```
+
+     If you trust roots from more than one Collabhost host on this device,
+     remove only the old root's thumbprint (step 2) instead.
+   - **Debian / Ubuntu:** copy the new root over the file you added before, then
+     update; the old root is dropped from the trust store:
+
+     ```sh
+     sudo cp root.crt /usr/local/share/ca-certificates/collabhost-caddy.crt
+     sudo update-ca-certificates
+     ```
+   - **Fedora / RHEL:** the same, with
+     `/etc/pki/ca-trust/source/anchors/collabhost-caddy.crt` and
+     `sudo update-ca-trust`.
+   - **macOS:** remove the old root by its SHA-1 fingerprint, then add the new
+     one as in §9.11.2:
+
+     ```sh
+     sudo security delete-certificate -Z <old SHA-1 fingerprint> /Library/Keychains/System.keychain
+     ```
+   - **Firefox, iOS, Android:** delete the old "Collabhost Local Authority"
+     certificate in the settings where you added it, then import the new one.
 
 ### 9.12 User-type changes are not picked up (Linux)
 
@@ -2879,18 +3126,24 @@ machine-store edits as already-authorized.
 
 ### 10.3 Bundled-Caddy CA storage (deliberately persistent)
 
-> **Note.** Your bundled-Caddy CA storage is **not** removed by the user-scope
-> teardown steps above. This is deliberate — preserving the CA across
-> reinstalls means devices that imported your CA root cert (per §9.11) keep
-> working through reinstall. To wipe the CA too (every LAN device will need
-> to re-trust the freshly generated root on next install), also remove:
+> **Note.** On Linux and macOS, your bundled-Caddy CA storage is **not**
+> removed by the user-scope teardown steps above. This is deliberate —
+> preserving the CA across reinstalls means devices that imported your CA root
+> cert (per §9.11) keep working through reinstall. To wipe the CA too (every
+> LAN device will need to re-trust the freshly generated root on next install),
+> also remove:
 >
 > | Platform | Path |
 > |----------|------|
 > | Linux (user-scope, `Proxy:StoragePath` unset) | `~/.local/share/caddy/` |
-> | macOS (user-scope) | `~/Library/Application Support/caddy/` |
-> | Windows (user-scope) | `%AppData%\Caddy\` |
+> | macOS (user-scope) | `~/Library/Application Support/Caddy/` |
 > | Linux system-scope | `/var/lib/collabhost/caddy/` (already covered by the §5.5.2 uninstall block) |
+>
+> On Windows user scope the CA lives in `caddy\` inside the install folder, so
+> removing the install folder (§10.2, step 2) removes it too, and devices that
+> trusted it need the new root after a reinstall. An `%AppData%\Caddy\`
+> folder left by an install made before v1.4.1 is unused; delete it (it holds
+> an older CA's private key).
 >
 > If you set `Proxy:StoragePath` to a custom location, remove that path
 > instead. See §9.11.1 for the full path table and how the storage layout
