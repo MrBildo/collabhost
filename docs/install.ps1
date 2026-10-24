@@ -169,6 +169,18 @@ $UserServiceEventSource = 'Collabhost'
 # The privilege the account must hold to run a service with no interactive login.
 $ServiceLogonRight      = 'SeServiceLogonRight'
 
+# The directories under a user-scope install that the service writes at runtime,
+# relative to the install directory: data\ (the SQLite database, its backups,
+# crash logs, the proxy's bootstrap config and per-app writable data, all under
+# the data directory by default), UserTypes\ (operator-authored app types; the
+# service creates it on first start when missing) and dotnet-bundle\ (where the
+# single-file binary extracts its native libraries). A service account that does
+# not own the install tree gets Modify on these and Read & Execute on everything
+# else, so it cannot replace collabhost.exe, caddy.exe, wwwroot\ or
+# appsettings.json. That matters because the install directory is on the
+# operator's PATH and the operator runs collabhost elevated for --update-hosts.
+$UserServiceWritableDirNames = @('data', 'UserTypes', 'dotnet-bundle')
+
 function Test-IsElevated
 {
     $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -339,6 +351,167 @@ function Test-IsInstallerIdentity
     catch
     {
         return $false
+    }
+}
+
+# Run icacls and fail loud on any error. None of these calls pass /C: with /C,
+# icacls reports a per-item failure only in its text output and can still exit
+# 0, so a partly applied ACL would look like success. Without /C it stops at the
+# first failing item and exits non-zero, which this turns into a terminating
+# error (the service is stopped while this runs, so nothing should hold a lock).
+function Invoke-IcaclsCommand
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    $output = & icacls.exe @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0)
+    {
+        throw "icacls $($Arguments -join ' ') failed with exit code $LASTEXITCODE.`n$($output -join [Environment]::NewLine)"
+    }
+}
+
+# Junctions and symbolic links under a tree, the root included. Collabhost never
+# creates one in its data or install tree, and icacls /T walks through a directory
+# junction into its target and changes the ACLs there, with or without /L
+# (inheritance set on a parent directory does not cross one). Whoever could write
+# into the tree before this installer restricted it (any local user on an older
+# system install, the service account on an older user-scope install) could create
+# a junction, and an elevated ACL change would then land on whatever it points at.
+# The installer refuses to go on instead (see Get-LinkRefusalMessage).
+# -ErrorAction Stop: a directory that cannot be listed could hide a link, so it is
+# an error here, not something to skip.
+function Get-LinkInTree
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $items = @(Get-Item -LiteralPath $Path -Force) + @(Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction Stop)
+    return @($items | Where-Object { $_.Attributes -band [System.IO.FileAttributes]::ReparsePoint } | ForEach-Object { $_.FullName })
+}
+
+function Get-LinkRefusalMessage
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$Links,
+        [Parameter(Mandatory = $true)][string]$State
+    )
+
+    $list = ($Links | ForEach-Object { "  $_" }) -join [Environment]::NewLine
+    return @"
+Found a junction or symbolic link inside ${Path}:
+$list
+Collabhost never creates links there, and this installer will not change permissions
+through one: the change would land on whatever the link points at. $State
+If you did not create the link, delete the link itself and re-run the installer
+('rmdir <path>' for a directory link, 'del <path>' for a file link; neither touches
+the target). If you created it to keep data elsewhere, move the data back into
+$Path and set the location in appsettings.json instead.
+"@
+}
+
+# Broad principals (every local user, one way or another) holding a write-type right
+# on the install directory or on collabhost.exe. The default install directory under
+# the operator's profile has none. A directory created elsewhere inherits from its
+# parent: under a drive root, for example, Authenticated Users get Modify on
+# everything below. Then any local user can replace collabhost.exe, which is on the
+# operator's PATH and is run elevated for --update-hosts. The installer does not
+# change the ACL of a directory the operator chose; it warns (see the install body).
+# Inherit-only entries count too: they are what new files below the directory get.
+function Get-BroadWriteAccess
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$InstallPath
+    )
+
+    $broadSids = @{
+        'S-1-5-32-545' = 'BUILTIN\Users'
+        'S-1-5-11'     = 'Authenticated Users'
+        'S-1-1-0'      = 'Everyone'
+        'S-1-5-4'      = 'INTERACTIVE'
+    }
+    # WriteData, AppendData, WriteExtendedAttributes, DeleteSubdirectoriesAndFiles,
+    # WriteAttributes, Delete, ChangePermissions, TakeOwnership, GenericAll, GenericWrite.
+    $writeMask = 0x2 -bor 0x4 -bor 0x10 -bor 0x40 -bor 0x100 -bor 0x10000 -bor 0x40000 -bor 0x80000 -bor 0x10000000 -bor 0x40000000
+
+    $found = New-Object System.Collections.Generic.List[string]
+    foreach ($target in @($InstallPath, (Join-Path $InstallPath 'collabhost.exe')))
+    {
+        if (-not (Test-Path -LiteralPath $target))
+        {
+            continue
+        }
+        foreach ($rule in (Get-Acl -LiteralPath $target).GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+        {
+            $sid = $rule.IdentityReference.Value
+            if ($rule.AccessControlType -eq 'Allow' -and $broadSids.ContainsKey($sid) -and (([int64][int]$rule.FileSystemRights -band $writeMask) -ne 0))
+            {
+                $found.Add("$($broadSids[$sid]) can write $target")
+            }
+        }
+    }
+    return @($found | Select-Object -Unique)
+}
+
+# Give a service account that does not own the install tree read access to the
+# whole tree and write access only where the service writes at runtime (see
+# $UserServiceWritableDirNames). It first removes every ACE the account holds
+# anywhere in the tree, including the Modify-on-everything grant older installers
+# made, so re-running -RegisterUserService over an older install lands on the
+# same ACL as a fresh one. The writable directories are created here if missing,
+# because the account cannot create them itself once the tree is read-only to it.
+function Grant-UserServiceAccess
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$InstallPath,
+        [Parameter(Mandatory = $true)][string]$Account
+    )
+
+    $writableDirs = foreach ($name in $UserServiceWritableDirNames)
+    {
+        Join-Path $InstallPath $name
+    }
+
+    # The recursive /remove:g below must not follow a link (see Get-LinkInTree). The
+    # service is stopped by now; the same check ran before it was stopped.
+    $links = Get-LinkInTree -Path $InstallPath
+    if ($links.Count -gt 0)
+    {
+        throw (Get-LinkRefusalMessage -Path $InstallPath -Links $links -State 'The service is stopped; delete the link and re-run with -RegisterUserService to finish.')
+    }
+
+    foreach ($dir in $writableDirs)
+    {
+        if (-not (Test-Path -LiteralPath $dir))
+        {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+    }
+
+    # Between the removal and the grants the account has no access to the tree. If a
+    # step fails there, say how to restore it rather than leaving a service that
+    # cannot start with no explanation.
+    try
+    {
+        Invoke-IcaclsCommand -Arguments @($InstallPath, '/remove:g', $Account, '/T', '/Q')
+        Invoke-IcaclsCommand -Arguments @($InstallPath, '/grant:r', "${Account}:(OI)(CI)RX", '/Q')
+
+        foreach ($dir in $writableDirs)
+        {
+            Invoke-IcaclsCommand -Arguments @($dir, '/grant:r', "${Account}:(OI)(CI)M", '/Q')
+        }
+    }
+    catch
+    {
+        throw "Setting the service account's access to $InstallPath failed part way, so '$Account' may not be able to start the service. Fix the cause below, then re-run install.ps1 -RegisterUserService (with the account flag you registered with) to restore it.`n$($_.Exception.Message)"
     }
 }
 
@@ -738,22 +911,17 @@ function Register-CollabhostUserService
 
     # Grant the service account scoped access to the install tree when it does not already
     # own it: the virtual account (never the operator) and a dedicated named account both
-    # need it; the operator's own account already owns the tree and is skipped. Grant Modify
-    # on the whole install tree -- binary, wwwroot, appsettings, data/, and dotnet-bundle/
-    # all live together under $BinDir for a user-scope install, and this covers every
-    # writable subdir the binary creates at runtime (data/, logs) without having to
-    # enumerate them. This is NOT wider than the operator-account model, which runs as the
-    # operator who already owns the whole tree. Run after the service exists so a virtual
-    # account name resolves; the ACEs live on the directories, so removing the install
-    # removes the grant with it (mirrors install-system.ps1).
+    # need it; the operator's own account already owns the tree and is skipped. The grant is
+    # Read & Execute on the whole tree and Modify only on the directories the service writes
+    # at runtime (see Grant-UserServiceAccess): the binaries, wwwroot\ and appsettings.json
+    # stay unwritable by the service, because the operator runs these binaries from PATH,
+    # some of them elevated. Run after the service exists so a virtual account name
+    # resolves; the ACEs live on the directories, so removing the install removes the grant
+    # with it (mirrors install-system.ps1).
     if ($needsFilesystemGrant)
     {
-        Write-Host "Granting '$accountName' access to the install tree ($BinDir)..."
-        & icacls.exe $BinDir /grant "${accountName}:(OI)(CI)M" /T /C | Out-Null
-        if ($LASTEXITCODE -ne 0)
-        {
-            throw "icacls grant on '$BinDir' for '$accountName' failed with exit code $LASTEXITCODE."
-        }
+        Write-Host "Granting '$accountName' read access to the install tree ($BinDir) and write access to its data directories..."
+        Grant-UserServiceAccess -InstallPath $BinDir -Account $accountName
     }
 
     # Crash-recovery: restart on the first + second failure (5s delay), no action
@@ -1038,7 +1206,7 @@ if (-not $Tag)
     }
 }
 
-# Accepts vX.Y.Z and SemVer 2.0 §9 pre-release tags (e.g. v1.2.1-rc1, v2.0.0-beta.3).
+# Accepts vX.Y.Z and SemVer 2.0 section 9 pre-release tags (e.g. v1.2.1-rc1, v2.0.0-beta.3).
 # Build metadata (+...) is intentionally rejected -- archive filenames use the version
 # as a path segment and '+' is friction across tools. Keep this pattern in sync with
 # publish.yml, install-integration.yml, install-lib.sh, and install-system.ps1.
@@ -1204,12 +1372,28 @@ try
         New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
     }
 
-    # If -RegisterUserService and the service is already registered + running, stop
-    # it before overwriting collabhost.exe -- Windows holds an exclusive lock on a
-    # running EXE and Copy-Item would otherwise fail. Re-registered/started below.
     if ($RegisterUserService)
     {
+        # The service registration below changes ACLs recursively, which must not
+        # follow a link (see Get-LinkInTree). Check before stopping anything, so a
+        # refusal leaves the running service as it was.
+        $links = Get-LinkInTree -Path $InstallPath
+        if ($links.Count -gt 0)
+        {
+            throw (Get-LinkRefusalMessage -Path $InstallPath -Links $links -State 'Nothing has been changed and the service has not been stopped.')
+        }
+
+        # If the service is already registered + running, stop it before overwriting
+        # collabhost.exe -- Windows holds an exclusive lock on a running EXE and
+        # Copy-Item would otherwise fail. Re-registered/started below.
         Stop-CollabhostUserServiceIfRunning
+    }
+    elseif (Get-CollabhostUserService)
+    {
+        # A plain re-run does not touch the boot service, including the permissions
+        # its account holds on this directory. An older installer gave that account
+        # Modify on the whole directory; only -RegisterUserService narrows it.
+        Write-Warning "The '$UserServiceName' boot service is registered, but this run does not include -RegisterUserService, so the service and the permissions its account holds on its install directory are left as they were. To update them, re-run from an elevated PowerShell with -RegisterUserService (plus the account flag you registered with). See INSTALL.md section 5.5.5."
     }
 
     # Overwrite files that are part of the bundle.
@@ -1230,7 +1414,7 @@ try
 
     # wwwroot: always overwrite from the archive. This is the Portal SPA bundle
     # and must track the binary version exactly. Operators do not edit it; new
-    # versions ship new bundles (see INSTALL.md §8 "Overwritten on re-run").
+    # versions ship new bundles (see INSTALL.md section 8 "Overwritten on re-run").
     $WwwrootDst = Join-Path $InstallPath 'wwwroot'
     if (Test-Path -LiteralPath $WwwrootDst)
     {
@@ -1380,6 +1564,14 @@ try
 
     # data/ is never in the archive -- leave any existing directory untouched.
     # Merge-safe by construction.
+
+    # ---- Install-directory permission check --------------------------------
+
+    $broadWriters = @(Get-BroadWriteAccess -InstallPath $InstallPath)
+    if ($broadWriters.Count -gt 0)
+    {
+        Write-Warning ("Other local users can modify the Collabhost binaries in $InstallPath`:`n  " + ($broadWriters -join "`n  ") + "`nAnyone with an account on this machine could replace collabhost.exe, which is on your PATH and which you run elevated for --update-hosts. The directory inherits these permissions from its parent; the default install directory ($HOME\.collabhost\bin) does not have them. Reinstall there, or remove these permissions from $InstallPath. See INSTALL.md section 5.5.5.")
+    }
 
     # ---- PATH integration ---------------------------------------------------
 
