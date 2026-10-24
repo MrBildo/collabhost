@@ -161,7 +161,9 @@ while ((Get-Date) -lt $deadline)
     try
     {
         $cert = Get-ServedCertificate -ServerName $HostName -Port $HttpsPort
-        if ($cert.Issuer -match 'Caddy Local Authority')
+        # Collabhost names its local authority in the proxy configuration; the
+        # certificates it issues are signed by that authority's intermediate.
+        if ($cert.Issuer -match '\bCN=Collabhost Local Authority\b')
         {
             break
         }
