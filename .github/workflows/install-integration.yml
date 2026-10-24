@@ -56,6 +56,8 @@ on:
         required: true
         default: ''
 
+# Every job only reads: the installers download public release assets and the
+# checkouts fetch a public repository. resolve-version needs no token at all.
 permissions:
   contents: read
 
@@ -63,6 +65,7 @@ jobs:
   resolve-version:
     name: Resolve target version
     runs-on: ubuntu-latest
+    permissions: {}
     timeout-minutes: 5
     # For workflow_run: only proceed when publish.yml completed successfully on
     # a release event. This excludes failed publish runs and any PR-time
@@ -135,7 +138,9 @@ jobs:
       COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
       CADDY_BIN: ${{ matrix.caddy_bin }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       # Run the live install script (the one this branch ships). Uses the
       # checked-out script, NOT the published one, so a PR change to the
@@ -406,7 +411,9 @@ jobs:
     env:
       TAG: ${{ needs.resolve-version.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: First install
         shell: pwsh
@@ -646,7 +653,9 @@ jobs:
       PRE_ACL_FIX_REF: v1.9.0
       DATA_ROOT: C:\ProgramData\Collabhost
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the pre-fix installer scripts
         shell: pwsh
@@ -842,7 +851,9 @@ jobs:
       TAG: ${{ needs.resolve-version.outputs.version }}
       PRE_ACL_FIX_REF: v1.9.0
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the pre-fix installer scripts
         shell: pwsh
@@ -959,12 +970,18 @@ jobs:
     env:
       TAG: ${{ needs.resolve-version.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: arm64
+          # The action registers emulators by running this image privileged.
+          # Its default is the floating :latest tag, which pinning the action
+          # does not pin, so name the image by digest.
+          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
       # Run the entire installer + verification suite inside a linux/arm64
       # Debian container. QEMU emulation is slow (5-15x slower than native),
@@ -1188,7 +1205,9 @@ jobs:
     env:
       TAG: ${{ needs.resolve-version.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       # Layer 1 -- install + service-start.
       #

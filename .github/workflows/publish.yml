@@ -4,8 +4,14 @@ on:
   release:
     types: [published]
 
-permissions:
-  contents: write
+# No job gets a token permission it does not ask for. The jobs that run npm and
+# dotnet hold a read-only token: packages can run their own code during install
+# and build (npm lifecycle scripts, NuGet MSBuild targets), and that code must
+# not be able to change a release. They hand their output on as workflow
+# artifacts. Only the final release job can write to the release, and it runs
+# no package manager: it checks the artifacts against their checksums, signs a
+# build-provenance attestation for the archives, and uploads them.
+permissions: {}
 
 jobs:
   extract-version:
@@ -42,22 +48,29 @@ jobs:
     needs: extract-version
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # --ignore-scripts: no dependency's install script runs. None is needed:
+      # esbuild and Biome take their native binaries from per-platform
+      # packages, and fsevents is macOS-only and optional.
       - name: Install
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Build
         run: npx vite build
       - name: Upload frontend artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: frontend-dist
           path: frontend/dist
@@ -68,6 +81,8 @@ jobs:
     needs: [extract-version, build-frontend]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -101,20 +116,22 @@ jobs:
             collabhost_bin: collabhost
             ext: tar.gz
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       # The SDK comes from global.json, never a floating channel: a
       # self-contained publish bundles the runtime its SDK ships with, so the
       # SDK pin decides which .NET runtime (and Kestrel) every archive carries.
       # The "Verify bundled .NET runtime" step below proves it per leg.
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           global-json-file: global.json
 
       # Pull the pre-built frontend into the API project so dotnet publish
       # picks it up as static web assets.
       - name: Download frontend artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: frontend-dist
           path: backend/Collabhost.Api/wwwroot
@@ -149,7 +166,7 @@ jobs:
       # the x64 ubuntu runner via GOOS/GOARCH.
       # ---------------------------------------------------------------------
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.version
           cache: false
@@ -591,121 +608,139 @@ jobs:
 
           cat "${ARCHIVE}.sha256"
 
-      # Log any pre-existing assets on the release for this leg before
-      # clobbering. Re-publishing the same tag (or re-triggering the workflow
-      # on an existing release) replaces assets silently via --clobber. This
-      # step makes the overwrite visible in the workflow log. Spec §16.2
-      # covers the operator posture: re-cut to the next patch version rather
-      # than re-publishing a tag.
-      - name: Log existing release assets (pre-upload)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-          VER: ${{ needs.extract-version.outputs.version }}
-          RID: ${{ matrix.rid }}
-          EXT: ${{ matrix.ext }}
-        run: |
-          set -euo pipefail
-
-          ARCHIVE="collabhost-${VER}-${RID}.${EXT}"
-          CHECKSUM="${ARCHIVE}.sha256"
-
-          echo "Checking for existing assets on release ${TAG} that would be clobbered..."
-          EXISTING=$(gh release view "${TAG}" --repo MrBildo/collabhost --json assets --jq \
-            ".assets[] | select(.name == \"${ARCHIVE}\" or .name == \"${CHECKSUM}\") | .name" \
-            || true)
-
-          if [[ -n "${EXISTING}" ]]; then
-            echo "WARNING: the following asset(s) already exist on ${TAG} and will be replaced by --clobber:"
-            echo "${EXISTING}"
-            echo "If this is not a matrix re-run, consider re-cutting to the next patch version (spec §16.2)."
-          else
-            echo "No pre-existing assets for this leg on ${TAG}."
-          fi
-
-      # Upload archive + per-archive checksum to the GitHub Release that
-      # triggered this workflow. --clobber makes re-runs idempotent.
-      - name: Upload release assets
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-          VER: ${{ needs.extract-version.outputs.version }}
-          RID: ${{ matrix.rid }}
-          EXT: ${{ matrix.ext }}
-        run: |
-          set -euo pipefail
-
-          gh release upload "${TAG}" \
-            "collabhost-${VER}-${RID}.${EXT}" \
-            "collabhost-${VER}-${RID}.${EXT}.sha256" \
-            --repo MrBildo/collabhost \
-            --clobber
-
-      # Per-leg checksum artifact for the aggregation job. Bumped to 7 days
-      # so `publish-checksums` can be re-run after an aggregation failure
-      # discovered later in the week without re-running the matrix.
-      - name: Upload per-leg checksum artifact
-        uses: actions/upload-artifact@v6
+      # Hand the archive and its checksum to the release job as one workflow
+      # artifact. This job's token is read-only, so it cannot touch the
+      # release itself.
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: checksum-${{ matrix.rid }}
-          path: collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}.sha256
+          name: archive-${{ matrix.rid }}
+          path: |
+            collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}
+            collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}.sha256
+          if-no-files-found: error
           retention-days: 7
 
-  publish-checksums:
-    name: Aggregate checksums.txt
-    needs: build-matrix
+  # The only job that can write to the release. It checks out no code and runs
+  # no package manager: everything it handles is a build artifact, checked
+  # against its checksum before it is signed or uploaded. Keep the checks in
+  # step with the "release-assets" job in publish-dryrun.yml, which runs the
+  # same steps on every dry run. The artifacts are kept 7 days, so this job can
+  # be re-run on its own after a failure here.
+  release:
+    name: Attest and upload release assets
+    needs: [extract-version, build-matrix]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write      # upload the release assets
+      id-token: write      # the signing certificate for the provenance attestation
+      attestations: write  # store the attestation on the repository
+    env:
+      VER: ${{ needs.extract-version.outputs.version }}
     steps:
-      - name: Download per-leg checksums
-        uses: actions/download-artifact@v7
+      - name: Download archives
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          pattern: checksum-*
+          pattern: archive-*
           merge-multiple: true
-          path: checksums-in
+          path: assets
 
-      - name: Aggregate
+      # Build checksums.txt from the per-archive checksums, then check that
+      # exactly the four archives arrived and that each still matches its
+      # checksum. checksums.txt is normalized to text-mode lines: sha256sum on
+      # the Windows leg (Git-Bash) writes "<hash>  *<file>", the other legs
+      # "<hash>  <file>", and installers read one format.
+      - name: Aggregate and verify checksums
         shell: bash
+        working-directory: assets
         run: |
           set -euo pipefail
 
-          # Normalize the aggregated file to text-mode format: strip any
-          # leading '*' from the filename column. sha256sum on Git-Bash
-          # (Windows runners) defaults to binary mode and emits
-          # "<hash>  *<filename>", while Linux/macOS emit
-          # "<hash>  <filename>". Normalizing here means checksums.txt is
-          # uniform across platforms -- human operators reading the file
-          # see one format, and installer parsers don't need per-line
-          # tolerance for the '*' prefix.
-          cat checksums-in/*.sha256 | sed 's/  \*/  /' > checksums.txt
-          cat checksums.txt
+          # The four platform archives, as build-matrix produces them.
+          EXPECTED=(
+            "collabhost-${VER}-win-x64.zip"
+            "collabhost-${VER}-osx-arm64.tar.gz"
+            "collabhost-${VER}-linux-x64.tar.gz"
+            "collabhost-${VER}-linux-arm64.tar.gz"
+          )
 
-      - name: Log existing checksums.txt (pre-upload)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
+          for archive in "${EXPECTED[@]}"; do
+            if [[ ! -f "${archive}" || ! -f "${archive}.sha256" ]]; then
+              echo "MISSING: ${archive} or ${archive}.sha256" >&2
+              exit 1
+            fi
+          done
 
-          EXISTING=$(gh release view "${TAG}" --repo MrBildo/collabhost --json assets --jq \
-            '.assets[] | select(.name == "checksums.txt") | .name' \
-            || true)
-
-          if [[ -n "${EXISTING}" ]]; then
-            echo "WARNING: checksums.txt already exists on ${TAG} and will be replaced by --clobber."
-            echo "If this is not a matrix re-run, consider re-cutting to the next patch version (spec §16.2)."
-          else
-            echo "No pre-existing checksums.txt on ${TAG}."
+          ARCHIVES=$(find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) | wc -l)
+          if [[ "${ARCHIVES}" -ne "${#EXPECTED[@]}" ]]; then
+            echo "Expected ${#EXPECTED[@]} archives, found ${ARCHIVES}:" >&2
+            ls -la >&2
+            exit 1
           fi
 
-      - name: Upload aggregated checksums to release
+          for archive in "${EXPECTED[@]}"; do
+            cat "${archive}.sha256"
+          done | sed 's/  \*/  /' > checksums.txt
+
+          echo "checksums.txt:"
+          cat checksums.txt
+          sha256sum -c checksums.txt
+
+      # A signed statement of which workflow, commit and tag built each
+      # archive, verifiable by anyone with `gh attestation verify` (see
+      # INSTALL.md). Unlike checksums.txt, it cannot be replaced by someone who
+      # can only edit the release.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            assets/*.zip
+            assets/*.tar.gz
+
+      # Verify each archive with the command INSTALL.md gives operators before
+      # anything is uploaded, so a release never ships an archive the
+      # documented check would reject.
+      - name: Verify attestations
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          gh release upload "${TAG}" checksums.txt --repo MrBildo/collabhost --clobber
+
+          # INSTALL.md tells operators to expect refs/tags/<tag> as the source.
+          if [[ "${GITHUB_REF}" != "refs/tags/${TAG}" ]]; then
+            echo "GITHUB_REF is '${GITHUB_REF}', expected 'refs/tags/${TAG}'." >&2
+            exit 1
+          fi
+
+          for archive in assets/*.zip assets/*.tar.gz; do
+            gh attestation verify "${archive}" \
+              --repo MrBildo/collabhost \
+              --signer-workflow MrBildo/collabhost/.github/workflows/publish.yml \
+              --source-ref "refs/tags/${TAG}"
+          done
+
+      # --clobber replaces assets already on the release, so a re-run is
+      # idempotent. The log names anything it replaces: if this is not a
+      # re-run, cut the next patch version rather than re-publishing a tag.
+      - name: Upload release assets
+        shell: bash
+        working-directory: assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          FILES=( *.zip *.tar.gz *.sha256 checksums.txt )
+
+          EXISTING=$(gh release view "${TAG}" --repo MrBildo/collabhost --json assets --jq '.assets[].name')
+          for file in "${FILES[@]}"; do
+            if grep -Fxq "${file}" <<< "${EXISTING}"; then
+              echo "WARNING: ${file} is already on ${TAG} and will be replaced."
+            fi
+          done
+
+          gh release upload "${TAG}" "${FILES[@]}" --repo MrBildo/collabhost --clobber

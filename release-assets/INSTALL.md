@@ -2719,3 +2719,29 @@ if ($expected -ne $actual) { throw 'Checksum mismatch.' } else { 'OK' }
 
 The install scripts do this automatically — failure to match aborts the
 install before extraction.
+
+### Verifying build provenance
+
+A checksum shows the download arrived intact, but `checksums.txt` sits on the
+same release page as the archive, so anyone able to replace one could replace
+both. Each archive therefore also carries a signed build-provenance
+attestation: a record, signed through GitHub, of the repository, workflow and
+release tag that built it. It cannot be forged by editing the release.
+
+To check it, install the [GitHub CLI](https://cli.github.com/) and run, in the
+directory holding the archive (use the archive and version you downloaded):
+
+```sh
+gh attestation verify collabhost-X.Y.Z-linux-x64.tar.gz \
+  --repo MrBildo/collabhost \
+  --signer-workflow MrBildo/collabhost/.github/workflows/publish.yml \
+  --source-ref refs/tags/vX.Y.Z
+```
+
+The command works the same on Windows (PowerShell accepts the line on one line,
+or with each `\` replaced by a backtick). It prints `Verification succeeded!`
+when the archive was built by the release workflow from that tag. Anything
+else, including "no attestations found", means the archive is not the one the
+release built: do not install it. The two flags after `--repo` matter: without
+them, an archive built by this repository's test workflows would also pass.
+Releases published before provenance was added have no attestation.
