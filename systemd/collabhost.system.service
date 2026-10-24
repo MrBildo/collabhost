@@ -18,10 +18,13 @@
 #   * Pinned to /opt/collabhost (binaries + wwwroot), /var/lib/collabhost
 #     (data), /etc/collabhost (config) -- the canonical Linux server layout.
 #   * AmbientCapabilities=CAP_NET_BIND_SERVICE lets the bundled Caddy bind
-#     :80/:443 without root and without per-binary setcap. This is the line
-#     that resolves card #214 (cap_net_bind_service xattr stripped on cp
-#     during upgrade) by construction -- no binary attribute, no upgrade
-#     fragility.
+#     :80/:443 without root and without per-binary setcap, so an upgrade that
+#     copies a new caddy binary cannot strip a file capability (there is none).
+#   * A systemd sandbox (the "Sandboxing" block below). Every app Collabhost
+#     supervises is a child of this service and runs inside the same sandbox,
+#     so the block is sized for "a host for ordinary web apps", not for
+#     Collabhost alone. INSTALL.md section 5.5.2 lists what it blocks and how
+#     to relax one setting for a hosted app that genuinely needs it.
 
 [Unit]
 Description=Collabhost
@@ -56,7 +59,7 @@ Environment="COLLABHOST_PROXY_STORAGE_PATH=/var/lib/collabhost/caddy"
 # our existing ReadWritePaths so the host can land its native deps without
 # touching $HOME.
 Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/collabhost/dotnet-bundle"
-# Card #246 (c2-A): explicit content-root + config-file paths. Without these, the
+# Explicit content-root + config-file paths. Without these, the
 # binary's default ContentRoot is AppContext.BaseDirectory (= /opt/collabhost/bin/),
 # which is where the binary lives but NOT where the operator-facing config + Portal
 # assets live. ASPNETCORE_CONTENTROOT pins ContentRoot to /opt/collabhost so wwwroot
@@ -72,9 +75,10 @@ Environment="ASPNETCORE_ENVIRONMENT=Production"
 # Privileged-port bind without root, without per-binary setcap. The kernel
 # grants cap_net_bind_service to the process tree, which the bundled Caddy
 # child inherits (CapabilityBoundingSet caps the upper bound so other code
-# paths cannot accidentally request more). This is the load-bearing line that
-# closes card #214: Caddy never needs setcap on the binary itself, so a `cp`
-# upgrade cannot strip the xattr (because there is no xattr).
+# paths cannot accidentally request more). Caddy never needs setcap on the
+# binary itself, so a `cp` upgrade cannot strip the xattr (because there is no
+# xattr). Ambient capabilities survive NoNewPrivileges= below; file
+# capabilities set with setcap would not.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
@@ -85,16 +89,48 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 Restart=on-failure
 RestartSec=5
 
-# Conservative process hygiene. ProtectSystem=strict + the explicit
-# ReadWritePaths is the standard "service can write to its data dirs and
-# nothing else" shape. PrivateTmp keeps stray /tmp files isolated. Add
-# additional hardening directives in a drop-in override if your deployment
-# allows (NoNewPrivileges, ProtectKernelTunables, etc. are standard
-# candidates).
+# Sandboxing. Collabhost and every app it supervises run inside this block.
+#
+# Filesystem: the whole tree is read-only except the two state roots.
+# /etc/collabhost is deliberately NOT writable: the service only reads its
+# config there, and the installer (as root, outside this unit) writes it.
+# Files the service and its apps create are group-readable at most (UMask).
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/lib/collabhost /var/log/collabhost /etc/collabhost
+ReadWritePaths=/var/lib/collabhost /var/log/collabhost
+UMask=0027
+#
+# Privilege: nothing in this tree can gain privileges through setuid/setgid
+# binaries (sudo, su) or create setuid/setgid files.
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+#
+# Kernel surfaces a web app has no business touching: hardware devices (a
+# minimal /dev with null, zero, random, urandom, tty, pts, shm), kernel
+# tunables, modules, logs, the cgroup tree, the clock and the hostname.
+# Collabhost's own cgroup-based process containment is not available under
+# the system unit in any case (the service cgroup is not delegated to it);
+# systemd itself stops every process in the unit when the service stops.
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+#
+# Other processes on the host are invisible in /proc (apps still see their
+# own user's processes). No new namespaces (containers, unshare), no realtime
+# scheduling, no personality changes, native-architecture syscalls only, and
+# only the socket families web apps use (local, IPv4, IPv6, netlink for
+# interface lookups).
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target

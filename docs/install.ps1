@@ -41,6 +41,21 @@ $ErrorActionPreference = 'Stop'
 # Speeds up Invoke-WebRequest by avoiding Internet Explorer engine probe.
 $ProgressPreference = 'SilentlyContinue'
 
+# Windows PowerShell 5.1 runs on .NET Framework. When the framework is set to an
+# explicit protocol list (older machines, or a policy) that list can leave
+# TLS 1.2 out, and every GitHub download then fails. In that case use TLS 1.2.
+# The OS default (SystemDefault, value 0) is left alone: it already negotiates
+# TLS 1.2 or newer on supported Windows versions. PowerShell 7 always uses the
+# OS default.
+if ($PSVersionTable.PSVersion.Major -lt 6)
+{
+    $currentProtocols = [Net.ServicePointManager]::SecurityProtocol
+    if ([int]$currentProtocols -ne 0 -and -not ($currentProtocols -band [Net.SecurityProtocolType]::Tls12))
+    {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    }
+}
+
 # Retry wrapper for network calls. Mirrors `curl --retry 3 --retry-delay 2` in
 # install.sh. Only retries on transport/transient failures (WebException),
 # NOT on HTTP 4xx (404s on a wrong tag should fail immediately).
@@ -132,7 +147,9 @@ Options:
 
 Environment:
   COLLABHOST_VERSION           Same as -Version
-  COLLABHOST_INSTALL_BASE_URL  Override archive download base URL (default: GitHub Releases)
+  COLLABHOST_INSTALL_BASE_URL  Override archive download base URL (default: GitHub Releases).
+                               Must be https:// (http://localhost and http://127.0.0.1 are accepted).
+  COLLABHOST_INSTALL_ALLOW_HTTP=1  Accept a plain http:// base URL pointing at another host.
 '@
     return
 }
@@ -1178,6 +1195,109 @@ if ($UnregisterUserService)
 
 # ---- Defaults ---------------------------------------------------------------
 
+# ---- Download policy --------------------------------------------------------
+
+# Every download (the archive and checksums.txt) goes over HTTPS. A plain
+# http:// base URL (COLLABHOST_INSTALL_BASE_URL) is accepted in exactly two
+# cases, and each is announced on the console:
+#
+#   * The host is this machine (localhost, 127.x.y.z, [::1]). The request never
+#     leaves the host, so nothing on a network can read or alter it.
+#   * COLLABHOST_INSTALL_ALLOW_HTTP=1 is set. The operator accepts that the
+#     archive and the checksum it is verified against both arrive unprotected,
+#     so the checksum no longer proves anything.
+#
+# The rule is applied again to the address each download finally came from:
+# Windows PowerShell 5.1 follows an https -> http redirect without complaint
+# (PowerShell 7 refuses one), so a response that ended on plain HTTP from
+# another host is rejected before it is used. The host test is System.Uri's
+# own, the same parser the download connects with, so the address checked is
+# the address connected to. Keep these two functions identical in install.ps1
+# and install-system.ps1.
+function Assert-DownloadUrl
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [string]$Label,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Url,
+        [switch]$Quiet
+    )
+
+    $parsed = $null
+    if (-not [uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$parsed) -or ($parsed.Scheme -ne 'https' -and $parsed.Scheme -ne 'http'))
+    {
+        throw "Refusing ${Label}: '$Url' is not an https:// URL."
+    }
+
+    if ($parsed.Scheme -eq 'https')
+    {
+        return
+    }
+
+    if ($parsed.IsLoopback)
+    {
+        if (-not $Quiet)
+        {
+            Write-Host "Note: $Label uses plain HTTP to $($parsed.Host), which is this machine."
+        }
+        return
+    }
+
+    if ($env:COLLABHOST_INSTALL_ALLOW_HTTP -eq '1')
+    {
+        if (-not $Quiet)
+        {
+            Write-Warning "$Label uses plain HTTP to $($parsed.Host) (COLLABHOST_INSTALL_ALLOW_HTTP=1). The archive and its checksum both arrive unprotected: anyone on the network path can replace them."
+        }
+        return
+    }
+
+    throw "Refusing ${Label}: '$Url' is plain HTTP. Use an https:// URL; a mirror on this machine (http://localhost, http://127.0.0.1) is accepted. To download over plain HTTP from another host anyway, set COLLABHOST_INSTALL_ALLOW_HTTP=1."
+}
+
+function Assert-DownloadResponse
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        $Response,
+        [Parameter(Mandatory = $true)]
+        [string]$RequestUrl,
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    # The final address after any redirects: HttpWebResponse.ResponseUri on
+    # Windows PowerShell 5.1, HttpResponseMessage.RequestMessage.RequestUri on
+    # PowerShell 7.
+    $final = $null
+    $base = $Response.BaseResponse
+    if ($null -ne $base -and $base.PSObject.Properties['ResponseUri'])
+    {
+        $final = $base.ResponseUri
+    }
+    elseif ($null -ne $base -and $base.PSObject.Properties['RequestMessage'] -and $base.RequestMessage)
+    {
+        $final = $base.RequestMessage.RequestUri
+    }
+
+    if ($null -eq $final)
+    {
+        throw "Could not tell where the $Label download came from; refusing to use it."
+    }
+
+    # An HTTPS request must end on HTTPS, wherever the redirect pointed.
+    if (([uri]$RequestUrl).Scheme -eq 'https' -and $final.Scheme -ne 'https' -and $env:COLLABHOST_INSTALL_ALLOW_HTTP -ne '1')
+    {
+        throw "Refusing the $Label download: it was requested over HTTPS and redirected to $($final.AbsoluteUri). To accept a redirect to plain HTTP anyway, set COLLABHOST_INSTALL_ALLOW_HTTP=1."
+    }
+
+    Assert-DownloadUrl -Label "$Label download (after redirects)" -Url $final.AbsoluteUri -Quiet
+}
+
 $Repo       = 'MrBildo/collabhost'
 $Tag        = if ($Version) { $Version } elseif ($env:COLLABHOST_VERSION) { $env:COLLABHOST_VERSION } else { '' }
 
@@ -1220,6 +1340,7 @@ $Archive       = "collabhost-$VersionNumber-$Rid.$Ext"
 $BaseUrl       = if ($env:COLLABHOST_INSTALL_BASE_URL) { $env:COLLABHOST_INSTALL_BASE_URL } else { "https://github.com/$Repo/releases/download/$Tag" }
 $ArchiveUrl    = "$BaseUrl/$Archive"
 $ChecksumsUrl  = "$BaseUrl/checksums.txt"
+Assert-DownloadUrl -Label 'COLLABHOST_INSTALL_BASE_URL' -Url $BaseUrl
 
 # ---- Download + verify ------------------------------------------------------
 
@@ -1271,14 +1392,16 @@ try
     }
 
     Write-Host "Downloading $Archive$SizeHint..."
-    Invoke-WithRetry -Script {
-        Invoke-WebRequest -UseBasicParsing -Uri $ArchiveUrl -OutFile $ArchivePath
-    } | Out-Null
+    $archiveResponse = Invoke-WithRetry -Script {
+        Invoke-WebRequest -UseBasicParsing -Uri $ArchiveUrl -OutFile $ArchivePath -PassThru
+    }
+    Assert-DownloadResponse -Response $archiveResponse -RequestUrl $ArchiveUrl -Label 'archive'
 
     Write-Host 'Downloading checksums.txt...'
-    Invoke-WithRetry -Script {
-        Invoke-WebRequest -UseBasicParsing -Uri $ChecksumsUrl -OutFile $ChecksumsPath
-    } | Out-Null
+    $checksumsResponse = Invoke-WithRetry -Script {
+        Invoke-WebRequest -UseBasicParsing -Uri $ChecksumsUrl -OutFile $ChecksumsPath -PassThru
+    }
+    Assert-DownloadResponse -Response $checksumsResponse -RequestUrl $ChecksumsUrl -Label 'checksums.txt'
 
     Write-Host 'Verifying SHA-256...'
     # sha256sum output: "<hash>  <filename>" (two spaces). Match on filename

@@ -20,6 +20,11 @@
 # Globals (caller pre-sets):
 #   REPO                   -- "owner/repo" for download URL construction
 #
+# Functions the caller defines (both install.sh and install-system.sh do, before
+# this file is sourced):
+#   check_download_url     -- validates a download URL against the HTTPS-only
+#                             policy and sets CURL_PROTO_ARGS for curl
+#
 # Globals set by detect_platform:
 #   RID                    -- linux-x64 / linux-arm64 / osx-arm64
 #   EXT                    -- archive extension (always tar.gz on POSIX)
@@ -106,7 +111,7 @@ resolve_sha_command() {
 resolve_tag() {
   if [ -z "${TAG:-}" ]; then
     echo "Resolving latest release from GitHub..."
-    LATEST_JSON="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" || {
+    LATEST_JSON="$(curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" || {
       echo "Failed to query https://api.github.com/repos/${REPO}/releases/latest" >&2
       exit 1
     }
@@ -139,7 +144,30 @@ resolve_tag() {
 # Writes the archive + checksums.txt into TMP_DIR. Verifies the checksum and
 # does a defense-in-depth gzip-magic check on the downloaded archive. Exits
 # non-zero on any failure with an operator-readable message on stderr.
+#
+# The archive and checksums.txt come from the same base URL, so the checksum
+# only means something if that base URL is HTTPS. check_download_url (defined
+# by the calling script) refuses a plain-HTTP base before anything downloads.
 download_and_verify() {
+  if declare -F check_download_url >/dev/null 2>&1; then
+    check_download_url "COLLABHOST_INSTALL_BASE_URL" "${ARCHIVE_URL}"
+  else
+    # An install script saved from an earlier release fetches this (current)
+    # library at run time but does not define check_download_url. Hold that
+    # combination to HTTPS-only rather than failing on a missing function.
+    case "${ARCHIVE_URL}" in
+      https://*)
+        CURL_PROTO_ARGS=(--proto '=https' --proto-redir '=https' --tlsv1.2)
+        ;;
+      *)
+        echo "Refusing COLLABHOST_INSTALL_BASE_URL: '${ARCHIVE_URL}' is not an https:// URL." >&2
+        echo "  Download the current install script and run that; it explains the accepted alternatives." >&2
+        exit 1
+        ;;
+    esac
+  fi
+  local proto_args=("${CURL_PROTO_ARGS[@]}")
+
   # Heartbeat: emit archive size from a HEAD request so the operator knows what
   # to expect during the silent download window. The same HEAD response also
   # serves as a pre-flight existence check -- a 404 here means the version tag
@@ -151,7 +179,7 @@ download_and_verify() {
   local head_status=""
   local raw_cl=""
   local size_mb=""
-  head_headers="$(curl -sIL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" 2>/dev/null)" || true
+  head_headers="$(curl "${proto_args[@]}" -sIL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" 2>/dev/null)" || true
   head_status="$(printf '%s\n' "${head_headers}" | awk '/^HTTP\// {code=$2} END {print code+0}')" || true
   if [ "${head_status}" = "404" ]; then
     echo "Release tag '${TAG}' not found. See https://github.com/${REPO}/releases for available versions." >&2
@@ -167,10 +195,10 @@ download_and_verify() {
   fi
 
   echo "Downloading ${ARCHIVE}${size_hint}..."
-  curl -fsSL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" -o "${TMP_DIR}/${ARCHIVE}"
+  curl "${proto_args[@]}" -fsSL --retry 3 --retry-delay 2 "${ARCHIVE_URL}" -o "${TMP_DIR}/${ARCHIVE}"
 
   echo "Downloading checksums.txt..."
-  curl -fsSL --retry 3 --retry-delay 2 "${CHECKSUMS_URL}" -o "${TMP_DIR}/checksums.txt"
+  curl "${proto_args[@]}" -fsSL --retry 3 --retry-delay 2 "${CHECKSUMS_URL}" -o "${TMP_DIR}/checksums.txt"
 
   echo "Verifying SHA-256..."
   # Portable lookup -- match the archive name exactly in the second column.

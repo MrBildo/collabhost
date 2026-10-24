@@ -46,12 +46,27 @@ RestartSec=5
 #
 # Environment="COLLABHOST_DATA_PATH=%h/collabhost-data"
 # Environment="COLLABHOST_PROXY_BASE_DOMAIN=collabhost.lan"
-# Environment="COLLABHOST_ADMIN_KEY=01JABCDEFGHJKMNPQRSTVWXYZ"
 #
-# DNS-01 ACME issuer (real Let's Encrypt certs on a public domain). Required when
-# Proxy:DnsProvider is set in appsettings.json. Replace with your provider's token.
+# Secrets -- the admin key (COLLABHOST_ADMIN_KEY), or a DNS provider's API token
+# for real Let's Encrypt certificates (CLOUDFLARE_API_TOKEN, needed when
+# Proxy:DnsProvider is set) -- do NOT go on an Environment= line. An
+# Environment= value is a property of the unit: anyone who can query the
+# service manager reads it with `systemctl show` (for a system-wide unit, that
+# is every local user). Put secrets in a file only you can read instead:
 #
-# Environment="CLOUDFLARE_API_TOKEN=replace-me"
+#   mkdir -p ~/.config/collabhost
+#   touch ~/.config/collabhost/secrets.env
+#   chmod 600 ~/.config/collabhost/secrets.env
+#
+# with one NAME=value per line, for example:
+#
+#   COLLABHOST_ADMIN_KEY=01JABCDEFGHJKMNPQRSTVWXYZ
+#   CLOUDFLARE_API_TOKEN=replace-me
+#
+# and uncomment this line (systemd reads the file at start; `systemctl show`
+# reports only its path):
+#
+# EnvironmentFile=%h/.config/collabhost/secrets.env
 
 # Conservative process hygiene. Tighten further if your deployment shape allows
 # (PrivateTmp, ProtectSystem, NoNewPrivileges, etc. are standard candidates -- not

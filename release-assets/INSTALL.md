@@ -256,9 +256,10 @@ Then `.\startup.ps1`.
 | `COLLABHOST_LOGS_PATH`          | `Diagnostics:CrashLogs:Directory` — crash-log output directory. Unset by default → `{data-directory}/logs/` (i.e. `data/logs/` next to the binary, or the per-shape logs path in §9.7). See §9.7. | Absolute directory path | `/var/log/collabhost` |
 | `COLLABHOST_CONFIG_PATH`        | Absolute path to the operator-facing `appsettings.json` that Collabhost loads via an explicit `AddJsonFile`. Set by the system-scope installer to `/etc/collabhost/appsettings.json` so the canonical config lives outside the read-only install tree; **unset in user-scope**, where the binary's working-directory `appsettings.json` is used. To relocate the config in a system-scope install, set this in a systemd drop-in. | Absolute file path | `/etc/collabhost/appsettings.json` |
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
-| `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey` | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
-| `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. | URL (no trailing slash) | `http://localhost:9000/releases/vX.Y.Z` |
-| `COLLABHOST_INSTALL_SCRIPT_BASE_URL` | Install-script only — base URL for the script/lib mirror, the host the installer self-fetches `install-lib.sh` from when it is not co-located beside the script (the `curl ... \| bash` and standalone-download paths). Overrides the default GitHub Pages URL. Useful for testing install scripts against a local mirror. | URL (no trailing slash) | `http://localhost:9000/collabhost` |
+| `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey`. A secret: under a systemd unit, set it in a mode-0600 `EnvironmentFile=`, never on an `Environment=` line (§5.5.1 explains why). | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
+| `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. Must be `https://`; a plain `http://` URL is accepted only when it points at this machine (`localhost`, `127.x.y.z`, `[::1]`), or with `COLLABHOST_INSTALL_ALLOW_HTTP=1`. The installer says which applies. | URL (no trailing slash) | `http://localhost:9000/releases/vX.Y.Z` |
+| `COLLABHOST_INSTALL_SCRIPT_BASE_URL` | Install-script only (Linux / macOS) — base URL for the script/lib mirror, the host the installer self-fetches `install-lib.sh` from when it is not co-located beside the script (the `curl ... \| bash` and standalone-download paths). Overrides the default GitHub Pages URL. Useful for testing install scripts against a local mirror. Same `https://` rule as the row above. | URL (no trailing slash) | `http://localhost:9000/collabhost` |
+| `COLLABHOST_INSTALL_ALLOW_HTTP` | Install-script only — set to `1` to accept a plain `http://` value in the two rows above when it points at another host. Every installer downloads over HTTPS otherwise, and refuses to follow a redirect from HTTPS to HTTP. With this set, the archive and the checksum it is verified against both arrive unprotected, so the checksum no longer proves anything; the installer prints a warning. | `1` | `1` |
 
 **Caddy binary resolution — two-tier precedence (highest first):**
 
@@ -349,17 +350,25 @@ are the same; only the endpoint changes.)
 
 How to set these depends on which install shape you're running.
 
+`OTEL_EXPORTER_OTLP_HEADERS` carries your API key, so under systemd it goes
+in a file only its owner can read, referenced with `EnvironmentFile=`. Never
+put it on an `Environment=` line: those values are unit properties that
+`systemctl show` prints, and for a system-wide unit any local user can run
+that (§5.5.1).
+
 **Linux user-scope (`install.sh` / `collabhost.user.service`).** Either
 add the lines to your startup wrapper alongside the other `COLLABHOST_*`
 exports (§5.2) or, if you're running under the bundled user-scope systemd
-template, drop them into the unit's drop-in directory:
+template, put the key in a private file and the rest in a drop-in:
 
 ```sh
-mkdir -p ~/.config/systemd/user/collabhost.service.d
+mkdir -p ~/.config/collabhost ~/.config/systemd/user/collabhost.service.d
+touch ~/.config/collabhost/otel.env && chmod 600 ~/.config/collabhost/otel.env
+echo 'OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY' > ~/.config/collabhost/otel.env
 cat > ~/.config/systemd/user/collabhost.service.d/otel.conf <<'EOF'
 [Service]
+EnvironmentFile=%h/.config/collabhost/otel.env
 Environment="OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io:443"
-Environment="OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY"
 Environment="OTEL_SERVICE_NAME=collabhost"
 Environment="OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod"
 EOF
@@ -367,24 +376,32 @@ systemctl --user daemon-reload
 systemctl --user restart collabhost.service
 ```
 
-**Linux system-scope (`install-system.sh`).** Add a drop-in under
-`/etc/systemd/system/collabhost.service.d/` (do not edit
+**Linux system-scope (`install-system.sh`).** Put the key in a root-only
+file (systemd reads it as root before starting the service), then add a
+drop-in under `/etc/systemd/system/collabhost.service.d/` (do not edit
 `/etc/systemd/system/collabhost.service` directly — see §5.5.2 for why):
 
 ```sh
+sudo install -m 0600 -o root -g root /dev/null /etc/collabhost/otel.env
+echo 'OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY' | sudo tee /etc/collabhost/otel.env >/dev/null
 sudo systemctl edit collabhost.service
 # In the editor, add:
 #   [Service]
+#   EnvironmentFile=/etc/collabhost/otel.env
 #   Environment="OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io:443"
-#   Environment="OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY"
 #   Environment="OTEL_SERVICE_NAME=collabhost"
 #   Environment="OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod"
 sudo systemctl daemon-reload
 sudo systemctl restart collabhost.service
 ```
 
-The drop-in is preserved across upgrades because systemd merges drop-ins on
-top of the base unit (§5.5.2).
+(`install -m 0600 ... /dev/null <file>` creates an empty file, or empties an
+existing one, with the right owner and mode; `tee` then writes into it without
+changing either.)
+
+The drop-in and the env file are preserved across upgrades: systemd merges
+drop-ins on top of the base unit (§5.5.2), and the installer never touches
+either file.
 
 **Windows user-scope (`install.ps1`).** Set the variables in your startup
 wrapper (§5.3):
@@ -493,9 +510,35 @@ Logs flow to `journald`:
 journalctl --user -u collabhost -f
 ```
 
-The template carries commented-out `Environment=` lines for the common
-operator-relevant overrides (`COLLABHOST_DATA_PATH`, `COLLABHOST_PROXY_BASE_DOMAIN`,
-`COLLABHOST_ADMIN_KEY`, ACME provider tokens). See §5.4 for the full reference.
+The template carries commented-out `Environment=` lines for ordinary
+overrides (`COLLABHOST_DATA_PATH`, `COLLABHOST_PROXY_BASE_DOMAIN`). See §5.4
+for the full reference.
+
+**Secrets go in an environment file, not on an `Environment=` line.** An
+`Environment=` value is a property of the unit: anyone who can query the
+service manager reads it with `systemctl show` (for a system-wide unit, that is
+every local user, whatever the mode of the file it came from). For the admin
+key (`COLLABHOST_ADMIN_KEY`) or a DNS provider's API token
+(`CLOUDFLARE_API_TOKEN`), create a file only you can read, one `NAME=value` per
+line, and point the unit at it; the template carries the commented-out line:
+
+```sh
+mkdir -p ~/.config/collabhost
+touch ~/.config/collabhost/secrets.env && chmod 600 ~/.config/collabhost/secrets.env
+# add e.g.  CLOUDFLARE_API_TOKEN=...  to the file, then in the unit:
+#   EnvironmentFile=%h/.config/collabhost/secrets.env
+```
+
+`systemctl show` reports only the file's path. For the system-scope unit the
+same shape applies with a root-owned file, mode 0600 (§5.4.1 has a worked
+example).
+
+**File permissions.** `install.sh` writes `appsettings.json` and
+`appsettings.shipped.json` readable and writable by you only (mode 0600), and
+creates the data directory (`data/` beside the binary, or
+`$COLLABHOST_DATA_PATH` if it is set when you run the installer) as mode 0700,
+whatever your shell's umask. Re-running the installer puts those modes back if
+they were loosened.
 
 #### 5.5.2 System-scope service (`install-system.sh`)
 
@@ -543,6 +586,31 @@ bundled Caddy can bind `:80`/`:443` without root and **without** per-binary
 `setcap`. This is the load-bearing line that keeps the system-install free of
 the "cap stripped on `cp` upgrade" failure mode.
 
+**The sandbox.** The unit runs Collabhost inside a systemd sandbox, and every
+app Collabhost runs is a child of the service, so **your hosted apps run inside
+the same sandbox**. It is sized for ordinary web apps (.NET, Node, static
+sites, Go or Python services that listen on a port and write to their data
+path); those are unaffected. `systemd-analyze security collabhost` scores the
+unit. What it blocks, and the drop-in line that relaxes it for an app that
+genuinely needs it:
+
+| Blocked for Collabhost and every hosted app | Unit settings | To allow it, add to a drop-in |
+|---|---|---|
+| Writing anywhere except `/var/lib/collabhost` and `/var/log/collabhost`. `/etc/collabhost` is read-only to the service (only the installer writes it); `/home` is hidden. | `ProtectSystem=strict`, `ReadWritePaths=`, `ProtectHome=true` | `ReadWritePaths=/the/path` (adds to the list) |
+| New files readable by other users: files are created `0640`, directories `0750` at most | `UMask=0027` | `UMask=0022` |
+| Gaining privileges: setuid and setgid binaries run without their extra privileges, and setting the setuid or setgid bit fails. (A setuid-root helper such as `sudo` could not act as root under earlier releases either: the unit's capability bounding set has only ever allowed binding low ports.) | `NoNewPrivileges=yes`, `RestrictSUIDSGID=yes` | `NoNewPrivileges=no` and `RestrictSUIDSGID=no`. A helper that needs root still will not get it; run it outside Collabhost. |
+| Hardware devices: GPUs, serial/USB adapters, `/dev/kvm`. A minimal `/dev` (`null`, `zero`, `random`, `urandom`, `tty`, `pts`, `shm`) remains. | `PrivateDevices=yes` | `PrivateDevices=no`, plus the device's group for the `collabhost` user |
+| Creating namespaces: `unshare`, rootless containers, a browser sandbox that needs user namespaces | `RestrictNamespaces=yes` | `RestrictNamespaces=user` (or the types needed) |
+| Socket families other than local, IPv4, IPv6 and netlink: raw packet capture, Bluetooth | `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK` | `RestrictAddressFamilies=AF_PACKET` (adds to the list) |
+| 32-bit (non-native) binaries on a 64-bit host | `SystemCallArchitectures=native` | `SystemCallArchitectures=` (empty clears it) |
+| Seeing other users' processes in `/proc` | `ProtectProc=invisible` | `ProtectProc=default` |
+| Kernel tunables (`/proc/sys`), modules, kernel log, the system clock, the hostname, the cgroup tree, realtime scheduling, personality changes | `ProtectKernelTunables=`, `ProtectKernelModules=`, `ProtectKernelLogs=`, `ProtectClock=`, `ProtectHostname=`, `ProtectControlGroups=`, `RestrictRealtime=`, `LockPersonality=` (all `yes`) | The matching setting `=no` |
+
+Relaxing a setting relaxes it for Collabhost and for every hosted app. If one
+app needs much more than this (a container runtime, device access), consider
+running it outside Collabhost and fronting it with an `external-route` app
+(§5.7).
+
 **Verify the install:**
 
 ```sh
@@ -580,6 +648,7 @@ the smart-merge in §8.2 preserves operator edits.
 **Upgrade:**
 
 ```sh
+curl -fsSL https://mrbildo.github.io/collabhost/install-system.sh -o install-system.sh
 sudo bash install-system.sh                # latest
 sudo bash install-system.sh --version v1.2.3  # pinned
 ```
@@ -587,6 +656,18 @@ sudo bash install-system.sh --version v1.2.3  # pinned
 The unit is `restart`ed automatically at the end of the upgrade. Data and
 Caddy storage are preserved; binaries, `wwwroot/`, the unit itself, and
 `LICENSES/` are refreshed.
+
+Fetch the current `install-system.sh` before upgrading (the first line above).
+The unit file is written by the script itself, so a copy of the script saved
+from an earlier release installs that release's unit. The one-liner
+(`curl ... | sudo bash`) always runs the current script.
+
+Upgrading a v1.9.x (or earlier) install applies the sandbox described above
+with no other step. If you added drop-ins under
+`/etc/systemd/system/collabhost.service.d/`, they still apply on top; check
+any that relied on a hosted app running `sudo`, using a device or a
+namespace, or writing to `/etc/collabhost`, and add the matching line from the
+sandbox table.
 
 **Uninstall:**
 
@@ -1219,13 +1300,13 @@ install. Keep them separate:
 
 The system-scope systemd unit (§5.5.2) runs with `ProtectSystem=strict`. Only
 the paths in the unit's `ReadWritePaths` are writable. The unit grants
-`ReadWritePaths=/var/lib/collabhost /var/log/collabhost /etc/collabhost` —
+`ReadWritePaths=/var/lib/collabhost /var/log/collabhost` —
 i.e. the **entire `/var/lib/collabhost` subtree** (which contains the platform
 data root `${COLLABHOST_DATA_PATH}` at `/var/lib/collabhost/data`, the Caddy
 storage, the dotnet-bundle and per-app bundle dirs, and every per-app writable
-path), plus the log directory (`/var/log/collabhost`) and the operator config
-directory (`/etc/collabhost`). **`/srv`, `/opt`, and a home directory are not
-in it.** An app you register under `/srv/<slug>/` runs fine,
+path), plus the log directory (`/var/log/collabhost`). **`/etc/collabhost`,
+`/srv`, `/opt`, and a home directory are not in it** (and `/home` is not
+visible at all). An app you register under `/srv/<slug>/` runs fine,
 but any attempt it makes to write *into* that tree (a database file next to
 the binary, a `data/` subdirectory beside it) fails at runtime with a
 permission error — even though the directory looks writable from a shell,
@@ -1937,11 +2018,12 @@ change as a small migration, not a setting flip.
    process environment. `Proxy:DnsApiTokenEnvVar` is the *name* of a host
    environment variable Caddy reads at issue time — set that named variable
    to the actual token in your startup wrapper (§5.2 / §5.3) or your
-   service unit's environment. The bundled systemd unit templates carry a
-   commented-out `Environment=` example for this; if you do not have a
-   local copy, the templates are at
-   `https://github.com/MrBildo/collabhost/blob/main/systemd/collabhost.user.service`
-   and `.../collabhost.system.service`.
+   service unit's environment. Under systemd, put the token in a mode-0600
+   file referenced with `EnvironmentFile=`, never on an `Environment=` line
+   (§5.5.1 explains why; §5.4.1 shows the system-scope shape). The user-scope
+   template carries the commented-out `EnvironmentFile=` line; if you do not
+   have a local copy, it is at
+   `https://github.com/MrBildo/collabhost/blob/main/systemd/collabhost.user.service`.
 4. **Restart Collabhost.** Caddy regenerates routes on next sync;
    certificates are issued (or re-loaded from cache) on the first request
    to each new hostname.
