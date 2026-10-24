@@ -680,7 +680,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $pw = 'Aa1!' + [Guid]::NewGuid().ToString('N')
+          # 14 characters: net user asks a Y/N question for anything longer, and
+          # there is no console to answer it here.
+          $pw = 'Aa1!' + [Guid]::NewGuid().ToString('N').Substring(0, 10)
           & net.exe user chplanter $pw /add | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'net user /add failed.' }
           $bundlePlant = Join-Path $env:DATA_ROOT 'dotnet-bundle\planted'
