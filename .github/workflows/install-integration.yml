@@ -817,6 +817,7 @@ jobs:
             throw 'dotnet-bundle is empty: the service did not re-extract its native libraries.'
           }
           Write-Host 'Service answered /api/v1/status and re-extracted its native libraries into dotnet-bundle.'
+          & tools/assert-windows-proxy.ps1 -StorageDir (Join-Path $env:DATA_ROOT 'caddy') -DataDir (Join-Path $env:DATA_ROOT 'data')
 
       - name: Fresh install
         shell: pwsh
@@ -841,7 +842,8 @@ jobs:
           }
           if (-not $ok) { throw 'Status endpoint never came up under the service.' }
           if (-not (Test-Path -LiteralPath (Join-Path $env:DATA_ROOT 'data\collabhost.db'))) { throw 'The service did not create its database.' }
-          # Re-check after the service has written its own files.
+          & tools/assert-windows-proxy.ps1 -StorageDir (Join-Path $env:DATA_ROOT 'caddy') -DataDir (Join-Path $env:DATA_ROOT 'data')
+          # Re-check after the service and its proxy have written their own files.
           & tools/assert-windows-install-acl.ps1 -Scope System -Path $env:DATA_ROOT -Account 'NT SERVICE\Collabhost' -Expect Restricted
           # A service has no console: the key file is how its operator gets the
           # first admin key.
@@ -861,7 +863,9 @@ jobs:
   # passwordless virtual account NT SERVICE\CollabhostUser). Checks that the
   # service account can write only where it writes at runtime and cannot modify
   # the binaries on the operator's PATH, after an upgrade over the pre-fix
-  # script and on a fresh registration.
+  # script and on a fresh registration. "Where it writes" includes the proxy's
+  # storage, so both paths also check that the proxy runs and issues a
+  # certificate, which only works if it can write there.
   install-windows-user-service:
     name: Install win-x64 (user-scope service)
     needs: resolve-version
@@ -925,6 +929,7 @@ jobs:
           }
           if (-not $ok) { throw 'Status endpoint never came up under the service.' }
           Write-Host 'Upgrade: service answered /api/v1/status with the binaries read-only to it.'
+          & tools/assert-windows-proxy.ps1 -StorageDir (Join-Path $bin 'caddy') -DataDir (Join-Path $bin 'data')
 
       - name: Fresh registration
         shell: pwsh
@@ -944,6 +949,7 @@ jobs:
           }
           if (-not $ok) { throw 'Status endpoint never came up under the service.' }
           if (-not (Test-Path -LiteralPath (Join-Path $bin 'data\collabhost.db'))) { throw 'The service did not create its database.' }
+          & tools/assert-windows-proxy.ps1 -StorageDir (Join-Path $bin 'caddy') -DataDir (Join-Path $bin 'data')
           & tools/assert-windows-install-acl.ps1 -Scope User -Path $bin -Account 'NT SERVICE\CollabhostUser' -Expect Restricted
           # A service has no console: the key file is how its operator gets the
           # first admin key.

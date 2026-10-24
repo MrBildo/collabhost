@@ -69,6 +69,7 @@ tools/*
 !tools/assert-admin-key-file.ps1
 !tools/assert-admin-key-file.sh
 !tools/assert-windows-install-acl.ps1
+!tools/assert-windows-proxy.ps1
 !tools/build-caddy.ps1
 !tools/build-caddy.sh
 !tools/compute-wwwroot-hash.sh
