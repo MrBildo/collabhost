@@ -49,6 +49,8 @@ on:
       - 'global.json'
       - 'tools/verify-bundled-runtime.sh'
       - 'tools/verify-caddy-build.sh'
+      - 'tools/assert-admin-key-file.sh'
+      - 'tools/assert-admin-key-file.ps1'
       - 'release-assets/**'
       - 'frontend/**'
 
