@@ -190,13 +190,20 @@ $ServiceLogonRight      = 'SeServiceLogonRight'
 # relative to the install directory: data\ (the SQLite database, its backups,
 # crash logs, the proxy's bootstrap config and per-app writable data, all under
 # the data directory by default), UserTypes\ (operator-authored app types; the
-# service creates it on first start when missing) and dotnet-bundle\ (where the
-# single-file binary extracts its native libraries). A service account that does
-# not own the install tree gets Modify on these and Read & Execute on everything
-# else, so it cannot replace collabhost.exe, caddy.exe, wwwroot\ or
-# appsettings.json. That matters because the install directory is on the
-# operator's PATH and the operator runs collabhost elevated for --update-hosts.
-$UserServiceWritableDirNames = @('data', 'UserTypes', 'dotnet-bundle')
+# service creates it on first start when missing), dotnet-bundle\ (where the
+# single-file binary extracts its native libraries) and caddy\ (the proxy's
+# storage: its local certificate authority, the certificates it issues and its
+# lock files). The proxy writes caddy\ itself, not collabhost.exe: Collabhost
+# starts it in the install directory without %AppData%, so Caddy keeps its data
+# in .\caddy. It creates its certificate authority there the first time
+# Collabhost loads a configuration into it, and a configuration it cannot create
+# the authority for is refused; it also writes every certificate it issues
+# there. A service account that does not own the
+# install tree gets Modify on these and Read & Execute on everything else, so
+# it cannot replace collabhost.exe, caddy.exe, wwwroot\ or appsettings.json.
+# That matters because the install directory is on the operator's PATH and the
+# operator runs collabhost elevated for --update-hosts.
+$UserServiceWritableDirNames = @('data', 'UserTypes', 'dotnet-bundle', 'caddy')
 
 function Test-IsElevated
 {

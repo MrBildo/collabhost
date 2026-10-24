@@ -54,7 +54,7 @@ $ErrorActionPreference = 'Stop'
 
 if (-not $WritableDirs)
 {
-    $WritableDirs = if ($Scope -eq 'System') { @('data', 'user-types', 'caddy', 'logs', 'dotnet-bundle') } else { @('data', 'UserTypes', 'dotnet-bundle') }
+    $WritableDirs = if ($Scope -eq 'System') { @('data', 'user-types', 'caddy', 'logs', 'dotnet-bundle') } else { @('data', 'UserTypes', 'dotnet-bundle', 'caddy') }
 }
 if (-not $ReadOnlyDirs)
 {
