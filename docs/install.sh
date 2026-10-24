@@ -25,10 +25,19 @@
 
 set -euo pipefail
 
+# Nothing this script creates may be writable by another user, whatever the
+# umask of the shell that runs it: not the install directories (including
+# ~/.collabhost above the default one), not the files copied into them, and not
+# the shell startup file it creates when you have none yet. `umask go-w` adds
+# group and other write to the mask and leaves every other bit as it was, so it
+# never loosens a stricter umask (0077 stays 0077).
+umask go-w
+
 # ---- Defaults ----------------------------------------------------------------
 
 REPO="MrBildo/collabhost"
-INSTALL_PATH="${HOME}/.collabhost/bin"
+DEFAULT_INSTALL_ROOT="${HOME}/.collabhost"
+INSTALL_PATH="${DEFAULT_INSTALL_ROOT}/bin"
 SKIP_PATH=""
 TAG="${COLLABHOST_VERSION:-}"
 
@@ -258,12 +267,27 @@ if [ -f "${INSTALL_PATH}/appsettings.json" ] || [ -d "${INSTALL_PATH}/data" ]; t
 fi
 
 # The install directory holds the collabhost binary you run (and is usually on
-# your PATH), so nobody else may write to it, whatever your shell's umask:
-# group and other write permission come off it (and off LICENSES/ below) on
-# every run, before anything is copied in.
+# your PATH). Another user who can write to it, or to the directory above it,
+# can put their own binary there: write permission on the parent is enough to
+# rename the install directory away and create a new one. So:
+#   * Directories this run creates, parents included, never get group or other
+#     write (the umask set at the top).
+#   * Group and other write come off the install directory (and LICENSES/
+#     below) on every run, before anything is copied in.
+#   * In the default layout, ~/.collabhost (the directory above bin/) is the
+#     installer's own, so it gets the same on every run. That also repairs one
+#     an earlier installer created group- or world-writable.
+# Nothing above that is changed: not your home directory, and not directories
+# above a custom --install-path that already exist. They are yours, and making
+# sure no other user can write to them is up to you.
 if ! mkdir -p "${INSTALL_PATH}" || ! chmod go-w "${INSTALL_PATH}"; then
   echo "Could not create ${INSTALL_PATH} or remove group and other write permission from it." >&2
   echo "  The installer must own the install directory. Fix its ownership, or choose another --install-path." >&2
+  exit 1
+fi
+if [ "${INSTALL_PATH%/}" = "${DEFAULT_INSTALL_ROOT}/bin" ] && ! chmod go-w "${DEFAULT_INSTALL_ROOT}"; then
+  echo "Could not remove group and other write permission from ${DEFAULT_INSTALL_ROOT}." >&2
+  echo "  The installer must own it: another user who can write to it can replace the binary. Fix its ownership, or choose another --install-path." >&2
   exit 1
 fi
 

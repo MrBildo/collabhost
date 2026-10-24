@@ -537,10 +537,19 @@ example).
 `appsettings.shipped.json` readable and writable by you only (mode 0600), and
 creates the data directory (`data/` beside the binary, or
 `$COLLABHOST_DATA_PATH` if it is set when you run the installer) as mode 0700,
-whatever your shell's umask. It also removes group and other write permission
-from the install directory and its `LICENSES/` folder, so no other user can
-replace the binary. Re-running the installer puts those modes back if they
-were loosened.
+whatever your shell's umask. Nothing else it creates is writable by another
+user either, whatever your umask: the install directory and any directories
+above it that it creates, the files it copies in, and your shell startup file
+(`~/.bashrc`, `~/.zshrc` or `~/.profile`) if it creates one. On every run it
+also removes group and other write permission from the install directory, its
+`LICENSES/` folder and, in the default layout, `~/.collabhost`, so no other
+user can replace the binary through any of them. Re-running the installer
+repairs those modes if they were loosened, including on an install made by an
+earlier release. Directories above those are left as they are: your home
+directory, and the parents of a custom `--install-path` that already existed.
+Make sure no other user can write to them, because write permission on a
+directory is enough to rename what is inside it and put something else in its
+place.
 
 The user unit template sets `UMask=0077`, so what Collabhost and your apps
 create while running is yours only too: that covers a data directory you set
