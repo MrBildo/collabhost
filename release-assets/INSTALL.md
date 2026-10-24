@@ -257,7 +257,7 @@ Then `.\startup.ps1`.
 | `COLLABHOST_CONFIG_PATH`        | Absolute path to the operator-facing `appsettings.json` that Collabhost loads via an explicit `AddJsonFile`. Set by the system-scope installer to `/etc/collabhost/appsettings.json` so the canonical config lives outside the read-only install tree; **unset in user-scope**, where the binary's working-directory `appsettings.json` is used. To relocate the config in a system-scope install, set this in a systemd drop-in. | Absolute file path | `/etc/collabhost/appsettings.json` |
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
 | `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey`. A secret: under a systemd unit, set it in a mode-0600 `EnvironmentFile=`, never on an `Environment=` line (§5.5.1 explains why). | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
-| `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. Must be `https://`; a plain `http://` URL is accepted only when it points at this machine (`localhost`, `127.x.y.z`, `[::1]`), or with `COLLABHOST_INSTALL_ALLOW_HTTP=1`. The installer says which applies. | URL (no trailing slash) | `http://localhost:9000/releases/vX.Y.Z` |
+| `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. Must be `https://`; a plain `http://` URL is accepted only when it points at this machine (`localhost`, `127.x.y.z`, `[::1]`), or with `COLLABHOST_INSTALL_ALLOW_HTTP=1`. The installer says which applies. With a URL on this machine, whatever program is listening on that port supplies the archive and its checksum; on a machine other people can log in to, make sure it is your own mirror. | URL (no trailing slash) | `http://localhost:9000/releases/vX.Y.Z` |
 | `COLLABHOST_INSTALL_SCRIPT_BASE_URL` | Install-script only (Linux / macOS) — base URL for the script/lib mirror, the host the installer self-fetches `install-lib.sh` from when it is not co-located beside the script (the `curl ... \| bash` and standalone-download paths). Overrides the default GitHub Pages URL. Useful for testing install scripts against a local mirror. Same `https://` rule as the row above. | URL (no trailing slash) | `http://localhost:9000/collabhost` |
 | `COLLABHOST_INSTALL_ALLOW_HTTP` | Install-script only — set to `1` to accept a plain `http://` value in the two rows above when it points at another host. Every installer downloads over HTTPS otherwise, and refuses to follow a redirect from HTTPS to HTTP. With this set, the archive and the checksum it is verified against both arrive unprotected, so the checksum no longer proves anything; the installer prints a warning. | `1` | `1` |
 
@@ -537,8 +537,17 @@ example).
 `appsettings.shipped.json` readable and writable by you only (mode 0600), and
 creates the data directory (`data/` beside the binary, or
 `$COLLABHOST_DATA_PATH` if it is set when you run the installer) as mode 0700,
-whatever your shell's umask. Re-running the installer puts those modes back if
-they were loosened.
+whatever your shell's umask. It also removes group and other write permission
+from the install directory and its `LICENSES/` folder, so no other user can
+replace the binary. Re-running the installer puts those modes back if they
+were loosened.
+
+The user unit template sets `UMask=0077`, so what Collabhost and your apps
+create while running is yours only too: that covers a data directory you set
+with `COLLABHOST_DATA_PATH` in the unit rather than when running the
+installer, and the database inside it. A unit copied from an earlier release
+does not have that line; add `UMask=0077` under `[Service]`, then run
+`systemctl --user daemon-reload` and restart the service.
 
 #### 5.5.2 System-scope service (`install-system.sh`)
 
@@ -668,6 +677,21 @@ with no other step. If you added drop-ins under
 any that relied on a hosted app running `sudo`, using a device or a
 namespace, or writing to `/etc/collabhost`, and add the matching line from the
 sandbox table.
+
+One drop-in now needs a second line: `Delegate=yes`, which hands the service's
+cgroup to Collabhost so it can put each app in a cgroup of its own. The unit
+now sets `ProtectControlGroups=yes`, which keeps the cgroup tree read-only, so
+`Delegate=yes` on its own no longer turns that on. Nothing fails; the only
+sign is one line Collabhost logs at startup ("Linux process containment
+unavailable: no writable cgroup v2"), after which it stops and kills each app
+through its process group instead. To keep per-app cgroups, add
+`ProtectControlGroups=no` to the same drop-in:
+
+```ini
+[Service]
+Delegate=yes
+ProtectControlGroups=no
+```
 
 **Uninstall:**
 

@@ -102,6 +102,7 @@ check_download_url() {
   if [ "${host}" = "localhost" ] || [ "${host}" = "[::1]" ] \
     || printf '%s' "${host}" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
     echo "Note: ${label} uses plain HTTP to ${host}, which is this machine. Redirects must be HTTPS." >&2
+    echo "  Whatever is listening on that port here supplies every file downloaded from it. Make sure it is your own mirror: on a shared machine, another local user could be holding the port." >&2
     CURL_PROTO_ARGS=(--proto '=http,https' --proto-redir '=https' --tlsv1.2)
     return 0
   fi
@@ -256,7 +257,15 @@ if [ -f "${INSTALL_PATH}/appsettings.json" ] || [ -d "${INSTALL_PATH}/data" ]; t
   IS_REINSTALL=1
 fi
 
-mkdir -p "${INSTALL_PATH}"
+# The install directory holds the collabhost binary you run (and is usually on
+# your PATH), so nobody else may write to it, whatever your shell's umask:
+# group and other write permission come off it (and off LICENSES/ below) on
+# every run, before anything is copied in.
+if ! mkdir -p "${INSTALL_PATH}" || ! chmod go-w "${INSTALL_PATH}"; then
+  echo "Could not create ${INSTALL_PATH} or remove group and other write permission from it." >&2
+  echo "  The installer must own the install directory. Fix its ownership, or choose another --install-path." >&2
+  exit 1
+fi
 
 # Overwrite files that are part of the bundle.
 cp "${EXTRACT_DIR}/collabhost" "${INSTALL_PATH}/"
@@ -264,6 +273,7 @@ cp "${EXTRACT_DIR}/caddy"      "${INSTALL_PATH}/"
 cp "${EXTRACT_DIR}/INSTALL.md" "${INSTALL_PATH}/"
 
 mkdir -p "${INSTALL_PATH}/LICENSES"
+chmod go-w "${INSTALL_PATH}/LICENSES"
 # Clear then copy -- keeps LICENSES/ in sync with what the archive ships.
 rm -f "${INSTALL_PATH}/LICENSES/"*
 cp "${EXTRACT_DIR}/LICENSES/"* "${INSTALL_PATH}/LICENSES/"

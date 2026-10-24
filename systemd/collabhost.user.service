@@ -40,6 +40,13 @@ ExecStart=%h/.collabhost/bin/collabhost
 Restart=on-failure
 RestartSec=5
 
+# Files Collabhost and its apps create are readable by you only: the data
+# directory (wherever COLLABHOST_DATA_PATH points, including a path set on an
+# Environment= line below), the database inside it that holds user keys, and
+# anything the apps write. Change it to 0022 only if another user's process
+# has to read what this service writes.
+UMask=0077
+
 # Operator-relevant environment overrides. Uncomment and set as needed -- these
 # layer on top of appsettings.json (env > appsettings > built-in default). See
 # INSTALL.md section 5 for the full reference.

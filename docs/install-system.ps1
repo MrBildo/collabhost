@@ -720,7 +720,7 @@ function Assert-DownloadUrl
     {
         if (-not $Quiet)
         {
-            Write-Host "Note: $Label uses plain HTTP to $($parsed.Host), which is this machine."
+            Write-Host "Note: $Label uses plain HTTP to $($parsed.Host), which is this machine. Whatever is listening on that port here supplies the archive and the checksum it is checked against. Make sure it is your own mirror: on a shared machine, another local user could be holding the port."
         }
         return
     }

@@ -110,7 +110,10 @@ RestrictSUIDSGID=yes
 # minimal /dev with null, zero, random, urandom, tty, pts, shm), kernel
 # tunables, modules, logs, the cgroup tree, the clock and the hostname.
 # Collabhost's own cgroup-based process containment is not available under
-# the system unit in any case (the service cgroup is not delegated to it);
+# the system unit: the service cgroup is not delegated to it, and
+# ProtectControlGroups=yes keeps the cgroup tree read-only even if it were.
+# Turning containment on takes both Delegate=yes and ProtectControlGroups=no
+# in a drop-in; Delegate=yes alone does not turn it on. Either way,
 # systemd itself stops every process in the unit when the service stops.
 PrivateDevices=yes
 ProtectKernelTunables=yes

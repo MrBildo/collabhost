@@ -140,6 +140,7 @@ check_download_url() {
   if [ "${host}" = "localhost" ] || [ "${host}" = "[::1]" ] \
     || printf '%s' "${host}" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
     echo "Note: ${label} uses plain HTTP to ${host}, which is this machine. Redirects must be HTTPS." >&2
+    echo "  Whatever is listening on that port here supplies every file downloaded from it. Make sure it is your own mirror: on a shared machine, another local user could be holding the port." >&2
     CURL_PROTO_ARGS=(--proto '=http,https' --proto-redir '=https' --tlsv1.2)
     return 0
   fi
@@ -573,7 +574,10 @@ RestrictSUIDSGID=yes
 # minimal /dev with null, zero, random, urandom, tty, pts, shm), kernel
 # tunables, modules, logs, the cgroup tree, the clock and the hostname.
 # Collabhost's own cgroup-based process containment is not available under
-# the system unit in any case (the service cgroup is not delegated to it);
+# the system unit: the service cgroup is not delegated to it, and
+# ProtectControlGroups=yes keeps the cgroup tree read-only even if it were.
+# Turning containment on takes both Delegate=yes and ProtectControlGroups=no
+# in a drop-in; Delegate=yes alone does not turn it on. Either way,
 # systemd itself stops every process in the unit when the service stops.
 PrivateDevices=yes
 ProtectKernelTunables=yes
