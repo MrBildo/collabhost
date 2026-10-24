@@ -4,8 +4,8 @@ namespace Collabhost.Api.Capabilities;
 //
 // When false (default), CapabilityResolver.ValidateEdits enforces
 // CapabilityResolver.ExternalTargetHostPatternString on external-target.host --
-// restricting external-route upstreams to loopback / RFC1918 / link-local IPv4
-// addresses and *.local / *.lan / IPv6 loopback hostnames. The platform's stance
+// restricting external-route upstreams to loopback / RFC1918 IPv4 addresses and
+// *.local / *.lan / IPv6 loopback hostnames. The platform's stance
 // is single-operator-dogfood / homelab; the first operator who tries to front
 // api.openai.com discovers the platform has an opinion.
 //
@@ -15,6 +15,9 @@ namespace Collabhost.Api.Capabilities;
 // targets -- for example, fronting an external SaaS endpoint behind a
 // {slug}.collab.<domain> route. The flip is opt-in because the platform
 // cannot reason about whether the operator MEANT to front a public host.
+//
+// Neither setting admits a link-local or cloud instance-metadata host; that
+// refusal (CapabilityResolver.IsLinkLocalOrMetadataHost) applies either way.
 public class ExternalTargetSettings
 {
     public const string SectionName = "ExternalTarget";

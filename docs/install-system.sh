@@ -538,8 +538,10 @@ if [ -n "${IS_REINSTALL}" ]; then
   echo "Reinstall: data and Caddy storage preserved; binaries + unit + wwwroot refreshed."
   echo "On first boot of a new binary, watch for migration backups under ${DATA_DIR}/backups/."
 else
-  echo "First boot: collabhost prints its admin key once to stdout."
-  echo "  Capture it with: journalctl -u collabhost --since '5 min ago' | grep 'Collabhost admin key:'"
+  echo "First boot: collabhost saves its admin key once, to ${DATA_DIR}/initial-admin-key.txt."
+  echo "  Read it with: sudo cat ${DATA_DIR}/initial-admin-key.txt  (then delete the file)"
+  echo "  No such file? Releases from before the key file logged the key to the journal instead:"
+  echo "    journalctl -u collabhost --since '5 min ago' | grep 'Collabhost admin key:'"
   echo "  See ${INSTALL_PREFIX}/INSTALL.md §2 for details."
 fi
 echo ""

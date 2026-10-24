@@ -96,7 +96,7 @@ The frontend dev server proxies API requests to the backend automatically. Open 
 
 ### Initial admin key (dev)
 
-On first run the backend seeds an administrator account and prints the API key to stdout. Copy it into the dashboard's API key prompt; it's stored in `localStorage` per browser.
+On first run the backend seeds an administrator account, prints the API key to stdout, and saves a copy to `initial-admin-key.txt` in the data directory. Copy it into the dashboard's API key prompt; it's stored in `localStorage` per browser.
 
 To pin a specific key for dev work, add it to a gitignored `appsettings.Development.json`:
 
