@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/path-segment'
 import { request } from './client'
 import type {
   ActionResult,
@@ -30,49 +31,49 @@ function getApps(): Promise<AppListItem[]> {
 }
 
 function getAppDetail(slug: string): Promise<AppDetail> {
-  return request(`/apps/${slug}`)
+  return request(`/apps/${encodePathSegment(slug)}`)
 }
 
 function startApp(slug: string): Promise<ActionResult> {
-  return request(`/apps/${slug}/start`, { method: 'POST' })
+  return request(`/apps/${encodePathSegment(slug)}/start`, { method: 'POST' })
 }
 
 function stopApp(slug: string): Promise<ActionResult> {
-  return request(`/apps/${slug}/stop`, { method: 'POST' })
+  return request(`/apps/${encodePathSegment(slug)}/stop`, { method: 'POST' })
 }
 
 function restartApp(slug: string): Promise<ActionResult> {
-  return request(`/apps/${slug}/restart`, { method: 'POST' })
+  return request(`/apps/${encodePathSegment(slug)}/restart`, { method: 'POST' })
 }
 
 function killApp(slug: string): Promise<ActionResult> {
-  return request(`/apps/${slug}/kill`, { method: 'POST' })
+  return request(`/apps/${encodePathSegment(slug)}/kill`, { method: 'POST' })
 }
 
 function deleteApp(slug: string): Promise<void> {
-  return request(`/apps/${slug}`, { method: 'DELETE' })
+  return request(`/apps/${encodePathSegment(slug)}`, { method: 'DELETE' })
 }
 
 // --- Settings ---
 
 function getAppSettings(slug: string): Promise<AppSettings> {
-  return request(`/apps/${slug}/settings`)
+  return request(`/apps/${encodePathSegment(slug)}/settings`)
 }
 
 function updateAppSettings(slug: string, body: UpdateSettingsRequest): Promise<AppSettings> {
-  return request(`/apps/${slug}/settings`, {
+  return request(`/apps/${encodePathSegment(slug)}/settings`, {
     method: 'PUT',
     body: JSON.stringify(body),
   })
 }
 
-// Card #336: preview-only import of the operator-managed runtime-config file.
+// Preview-only import of the operator-managed runtime-config file.
 // The endpoint reads <artifactDir>/config.json (or the configured path), returns
 // the flat string->string entries and the names of any skipped non-flat entries.
 // It does NOT persist — the operator reviews the preview and saves via the
 // standard settings-save flow.
 function importRuntimeConfigFile(slug: string): Promise<RuntimeConfigFileImportResponse> {
-  return request(`/apps/${slug}/runtime-config-file/import`, { method: 'POST' })
+  return request(`/apps/${encodePathSegment(slug)}/runtime-config-file/import`, { method: 'POST' })
 }
 
 // --- Logs ---
@@ -85,7 +86,7 @@ function getAppLogs(
   if (params?.lines) searchParams.set('lines', String(params.lines))
   if (params?.stream) searchParams.set('stream', params.stream)
   const qs = searchParams.toString()
-  return request(`/apps/${slug}/logs${qs ? `?${qs}` : ''}`)
+  return request(`/apps/${encodePathSegment(slug)}/logs${qs ? `?${qs}` : ''}`)
 }
 
 // --- Dashboard ---
@@ -106,7 +107,7 @@ function getAppTypes(): Promise<AppTypeListItem[]> {
 }
 
 function getRegistrationSchema(typeSlug: string): Promise<RegistrationSchema> {
-  return request(`/app-types/${typeSlug}/registration`)
+  return request(`/app-types/${encodePathSegment(typeSlug)}/registration`)
 }
 
 // --- Create App ---
@@ -125,7 +126,7 @@ function fetchUsers(): Promise<User[]> {
 }
 
 function fetchUser(id: string): Promise<User> {
-  return request(`/users/${id}`)
+  return request(`/users/${encodePathSegment(id)}`)
 }
 
 function createUser(body: CreateUserRequest): Promise<UserCreateResponse> {
@@ -136,7 +137,7 @@ function createUser(body: CreateUserRequest): Promise<UserCreateResponse> {
 }
 
 function deactivateUser(id: string): Promise<void> {
-  return request(`/users/${id}/deactivate`, { method: 'PATCH' })
+  return request(`/users/${encodePathSegment(id)}/deactivate`, { method: 'PATCH' })
 }
 
 function fetchMe(): Promise<MeResponse> {

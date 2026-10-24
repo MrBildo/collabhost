@@ -115,4 +115,52 @@ describe('parseAnsiToSegments', () => {
     const result = parseAnsiToSegments('\x1b[31m\x1b[1mbold-red')
     expect(result).toEqual([{ text: 'bold-red', color: '--wm-red', bold: true, dim: false }])
   })
+
+  test('OSC terminated by ESC backslash is stripped', () => {
+    const result = parseAnsiToSegments('\x1b]8;;https://example.test\x1b\\link')
+    expect(result).toEqual([{ text: 'link', color: null, bold: false, dim: false }])
+  })
+
+  test('an unterminated OSC does not swallow a later colour sequence', () => {
+    // The OSC body cannot cross another escape, so the BEL further on does not
+    // close it and the red SGR in between still applies.
+    const result = parseAnsiToSegments('\x1b]x\x1b[31mred\x07tail')
+    expect(result).toEqual([
+      { text: ']x', color: null, bold: false, dim: false },
+      { text: 'redtail', color: '--wm-red', bold: false, dim: false },
+    ])
+  })
+
+  test('a long line of unterminated OSC starts parses in linear time', () => {
+    // 100,000 characters of `ESC ]` repeats: the earlier pattern rescanned to the
+    // end of the line from every one of them, about 1.4 s on a dev machine.
+    const hostile = '\x1b]'.repeat(50_000)
+
+    const started = performance.now()
+    const result = parseAnsiToSegments(hostile)
+    const elapsedMs = performance.now() - started
+
+    expect(result).toEqual([{ text: ']'.repeat(50_000), color: null, bold: false, dim: false }])
+    expect(elapsedMs).toBeLessThan(250)
+  })
+
+  test('control characters other than tab are removed from displayed text', () => {
+    const result = parseAnsiToSegments('a\x00b\x08c\td\re\x7ff\x85g\x9bh')
+    expect(result).toEqual([{ text: 'abc\tdefgh', color: null, bold: false, dim: false }])
+  })
+
+  test('bidirectional override and isolate characters are removed', () => {
+    const result = parseAnsiToSegments('user‮gnp.exe⁦x⁩‬')
+    expect(result).toEqual([{ text: 'usergnp.exex', color: null, bold: false, dim: false }])
+  })
+
+  test('removal applies inside coloured segments and drops segments left empty', () => {
+    const result = parseAnsiToSegments('\x1b[31m\x00\x1b[32mok‮')
+    expect(result).toEqual([{ text: 'ok', color: '--wm-green', bold: false, dim: false }])
+  })
+
+  test('ordinary non-ASCII text is kept', () => {
+    const result = parseAnsiToSegments('café — 日本語 ✓')
+    expect(result).toEqual([{ text: 'café — 日本語 ✓', color: null, bold: false, dim: false }])
+  })
 })
