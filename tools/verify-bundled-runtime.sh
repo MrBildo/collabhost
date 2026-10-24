@@ -12,11 +12,18 @@
 #   3. the Microsoft.NETCore.App and Microsoft.AspNetCore.App runtime packs
 #      named in the deps manifest embedded in the single-file bundle must
 #      both equal the version from step 2;
-#   4. unless --no-exec is given, the binary is also run and the .NET host's
-#      own trace must report the same runtime packs it loaded.
+#   4. unless --no-exec is given, the binary is run and the version of the
+#      native host inside it must equal the version from step 2. A
+#      single-file bundle's host (singlefilehost) comes from the
+#      Microsoft.NETCore.App runtime pack and has its version compiled in;
+#      the host prints it in its trace as "Invoked apphost [version: X]". This
+#      reading is independent of the manifest step 3 reads (the trace's own
+#      "runtimepack:" lines are the host parsing that same manifest, so they
+#      are not used here). ASP.NET Core has no native host, so its version
+#      comes from step 3 alone.
 #
 # .NET 10 servicing releases ship the runtime and ASP.NET Core at the same
-# patch version, which is what steps 3 and 4 rely on. If a future release ever
+# patch version, which is what step 3 relies on. If a future release ever
 # splits them, this check fails loudly rather than passing a mismatch.
 #
 # Usage: tools/verify-bundled-runtime.sh [--no-exec] <path-to-collabhost-binary>
@@ -91,29 +98,26 @@ for pack in Microsoft.NETCore.App Microsoft.AspNetCore.App; do
   check_versions manifest "${pack}" "${FOUND}"
 done
 
-# Step 4: ask the binary itself.
+# Step 4: ask the binary's native host for its own version.
 if [[ "${EXEC}" -eq 1 ]]; then
   TRACE_FILE="$(mktemp)"
   trap 'rm -f "${TRACE_FILE}"' EXIT
 
   # The host writes its trace to stderr. --version exits before the app
-  # starts, but only after the host has resolved the bundled runtime.
+  # starts, but only after the host has started.
   if ! COREHOST_TRACE=1 "${BIN}" --version 2> "${TRACE_FILE}" > /dev/null; then
     echo "Running '${BIN} --version' failed." >&2
     tail -n 40 "${TRACE_FILE}" >&2
     exit 1
   fi
 
-  for pack in Microsoft.NETCore.App Microsoft.AspNetCore.App; do
-    # Lines look like:
-    #   runtimepack: runtimepack.Microsoft.NETCore.App.Runtime.linux-x64, version: 10.0.13
-    FOUND="$(tr -d '\r' < "${TRACE_FILE}" \
-      | sed -n "s/.*runtimepack: runtimepack\.${pack//./\\.}\.Runtime\.[^,]*, version: \([0-9][0-9.]*\).*/\1/p" \
-      | sort -u)"
-    check_versions "host trace" "${pack}" "${FOUND}"
-  done
+  # The line looks like: --- Invoked apphost [version: 10.0.13 @Commit: <sha>] main = {
+  FOUND="$(tr -d '\r' < "${TRACE_FILE}" \
+    | sed -n 's/.*Invoked apphost \[version: \([0-9][0-9.]*\).*/\1/p' \
+    | sort -u)"
+  check_versions "native host" "Microsoft.NETCore.App" "${FOUND}"
 else
-  echo "  skipped (host trace): --no-exec, the binary cannot run on this machine."
+  echo "  skipped (native host): --no-exec, the binary cannot run on this machine."
 fi
 
 if [[ "${FAILED}" -ne 0 ]]; then
