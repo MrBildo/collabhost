@@ -1,5 +1,6 @@
 import type { AppStatus, StreamEntry } from '@/api/types'
 import { API_BASE, AUTH_STORAGE_KEY, LOG_BUFFER_CAP } from '@/lib/constants'
+import { encodePathSegment } from '@/lib/path-segment'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const RECONNECT_DELAY_MS = 3_000
@@ -15,8 +16,8 @@ const LIVENESS_TIMEOUT_MS = 45_000
  * place. The third buffer-cap policy site in this file (the gap-overflow
  * branch in the 'log' handler) is intentionally NOT routed through this
  * helper: gap-overflow is a full RESET (to a lone 'reset' disclosure marker,
- * not silently to `[]` — FE-SSE-01) because the missing range cannot be
- * recovered, which is a different policy from "trim to fit." (#319, #425)
+ * not silently to `[]`) because the missing range cannot be
+ * recovered, which is a different policy from "trim to fit."
  */
 function trimToBufferCap(entries: StreamEntry[]): StreamEntry[] {
   return entries.length > LOG_BUFFER_CAP ? entries.slice(-LOG_BUFFER_CAP) : entries
@@ -86,8 +87,19 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
       return
     }
 
-    const lastId = maxIdRef.current > 0 ? `&lastEventId=${maxIdRef.current}` : ''
-    const url = `${API_BASE}/apps/${slug}/logs/stream?key=${authKey}${lastId}`
+    // The slug comes from the address bar; a value that cannot be a single path
+    // segment gets an error state rather than a stream to some other path.
+    let slugSegment: string
+    try {
+      slugSegment = encodePathSegment(slug)
+    } catch {
+      setError('Invalid app slug')
+      return
+    }
+
+    const query = new URLSearchParams({ key: authKey })
+    if (maxIdRef.current > 0) query.set('lastEventId', String(maxIdRef.current))
+    const url = `${API_BASE}/apps/${slugSegment}/logs/stream?${query.toString()}`
     const es = new EventSource(url)
 
     function scheduleFlush(): void {
@@ -107,7 +119,7 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
     es.addEventListener('log', (e: MessageEvent) => {
       // Guard the parse: a malformed frame must not throw uncaught inside the
       // EventSource listener (which would kill processing of that frame and is
-      // invisible to the operator). Drop the bad frame and keep streaming (FE-SSE-02).
+      // invisible to the operator). Drop the bad frame and keep streaming.
       let data: {
         id: number
         timestamp: string
@@ -131,7 +143,7 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
         const gap = data.id - maxIdRef.current - 1
         // If the gap exceeds the buffer cap, the dropped range is unrecoverable
         // and larger than anything we hold, so reset. Disclose the loss with a
-        // 'reset' marker (FE-SSE-01) — a bigger drop must be LOUDER than the
+        // 'reset' marker — a bigger drop must be LOUDER than the
         // bounded 'gap' marker below, not silent (the inversion the audit named).
         if (gap > LOG_BUFFER_CAP) {
           entriesRef.current = [{ type: 'reset', dropped: gap }]
@@ -155,7 +167,7 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
     })
 
     es.addEventListener('status', (e: MessageEvent) => {
-      // Same parse guard as the 'log' listener (FE-SSE-02).
+      // Same parse guard as the 'log' listener.
       let data: { state: string; timestamp: string }
       try {
         data = JSON.parse(e.data)
@@ -171,7 +183,7 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
       scheduleFlush()
     })
 
-    // Keepalive is a real named SSE event (#437 / #310): the backend emits
+    // Keepalive is a real named SSE event: the backend emits
     // `event: keepalive` with a `{"timestamp":...}` payload every 30s so an idle
     // stream isn't dropped by a proxy/client idle-read timeout. The handler is an
     // idle-reset, not a rendered entry — it marks activity so the liveness
@@ -179,7 +191,7 @@ function useLogStream(slug: string, options?: UseLogStreamOptions): UseLogStream
     // producing no logs. The payload is intentionally not parsed/rendered: its
     // only job is to prove the connection is still flowing. (Previously this was
     // an SSE *comment* `:keepalive`, which EventSource silently ignores — so no FE
-    // listener could ever fire; #310 made it a real named event.)
+    // listener could ever fire.)
     es.addEventListener('keepalive', () => {
       markActivity()
     })

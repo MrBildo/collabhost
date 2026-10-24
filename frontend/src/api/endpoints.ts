@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/path-segment'
 import { request } from './client'
 import type {
   ActionResult,
@@ -25,59 +26,63 @@ import type {
 
 // --- Apps ---
 
+// Every function that puts a caller-supplied value into the path is async, so a
+// value encodePathSegment refuses rejects the returned Promise rather than
+// throwing before one exists.
+
 function getApps(): Promise<AppListItem[]> {
   return request('/apps')
 }
 
-function getAppDetail(slug: string): Promise<AppDetail> {
-  return request(`/apps/${slug}`)
+async function getAppDetail(slug: string): Promise<AppDetail> {
+  return request(`/apps/${encodePathSegment(slug)}`)
 }
 
-function startApp(slug: string): Promise<ActionResult> {
-  return request(`/apps/${slug}/start`, { method: 'POST' })
+async function startApp(slug: string): Promise<ActionResult> {
+  return request(`/apps/${encodePathSegment(slug)}/start`, { method: 'POST' })
 }
 
-function stopApp(slug: string): Promise<ActionResult> {
-  return request(`/apps/${slug}/stop`, { method: 'POST' })
+async function stopApp(slug: string): Promise<ActionResult> {
+  return request(`/apps/${encodePathSegment(slug)}/stop`, { method: 'POST' })
 }
 
-function restartApp(slug: string): Promise<ActionResult> {
-  return request(`/apps/${slug}/restart`, { method: 'POST' })
+async function restartApp(slug: string): Promise<ActionResult> {
+  return request(`/apps/${encodePathSegment(slug)}/restart`, { method: 'POST' })
 }
 
-function killApp(slug: string): Promise<ActionResult> {
-  return request(`/apps/${slug}/kill`, { method: 'POST' })
+async function killApp(slug: string): Promise<ActionResult> {
+  return request(`/apps/${encodePathSegment(slug)}/kill`, { method: 'POST' })
 }
 
-function deleteApp(slug: string): Promise<void> {
-  return request(`/apps/${slug}`, { method: 'DELETE' })
+async function deleteApp(slug: string): Promise<void> {
+  return request(`/apps/${encodePathSegment(slug)}`, { method: 'DELETE' })
 }
 
 // --- Settings ---
 
-function getAppSettings(slug: string): Promise<AppSettings> {
-  return request(`/apps/${slug}/settings`)
+async function getAppSettings(slug: string): Promise<AppSettings> {
+  return request(`/apps/${encodePathSegment(slug)}/settings`)
 }
 
-function updateAppSettings(slug: string, body: UpdateSettingsRequest): Promise<AppSettings> {
-  return request(`/apps/${slug}/settings`, {
+async function updateAppSettings(slug: string, body: UpdateSettingsRequest): Promise<AppSettings> {
+  return request(`/apps/${encodePathSegment(slug)}/settings`, {
     method: 'PUT',
     body: JSON.stringify(body),
   })
 }
 
-// Card #336: preview-only import of the operator-managed runtime-config file.
+// Preview-only import of the operator-managed runtime-config file.
 // The endpoint reads <artifactDir>/config.json (or the configured path), returns
 // the flat string->string entries and the names of any skipped non-flat entries.
 // It does NOT persist — the operator reviews the preview and saves via the
 // standard settings-save flow.
-function importRuntimeConfigFile(slug: string): Promise<RuntimeConfigFileImportResponse> {
-  return request(`/apps/${slug}/runtime-config-file/import`, { method: 'POST' })
+async function importRuntimeConfigFile(slug: string): Promise<RuntimeConfigFileImportResponse> {
+  return request(`/apps/${encodePathSegment(slug)}/runtime-config-file/import`, { method: 'POST' })
 }
 
 // --- Logs ---
 
-function getAppLogs(
+async function getAppLogs(
   slug: string,
   params?: { lines?: number; stream?: 'all' | 'stdout' | 'stderr' },
 ): Promise<LogsResponse> {
@@ -85,7 +90,7 @@ function getAppLogs(
   if (params?.lines) searchParams.set('lines', String(params.lines))
   if (params?.stream) searchParams.set('stream', params.stream)
   const qs = searchParams.toString()
-  return request(`/apps/${slug}/logs${qs ? `?${qs}` : ''}`)
+  return request(`/apps/${encodePathSegment(slug)}/logs${qs ? `?${qs}` : ''}`)
 }
 
 // --- Dashboard ---
@@ -105,8 +110,8 @@ function getAppTypes(): Promise<AppTypeListItem[]> {
   return request('/app-types')
 }
 
-function getRegistrationSchema(typeSlug: string): Promise<RegistrationSchema> {
-  return request(`/app-types/${typeSlug}/registration`)
+async function getRegistrationSchema(typeSlug: string): Promise<RegistrationSchema> {
+  return request(`/app-types/${encodePathSegment(typeSlug)}/registration`)
 }
 
 // --- Create App ---
@@ -124,8 +129,8 @@ function fetchUsers(): Promise<User[]> {
   return request('/users')
 }
 
-function fetchUser(id: string): Promise<User> {
-  return request(`/users/${id}`)
+async function fetchUser(id: string): Promise<User> {
+  return request(`/users/${encodePathSegment(id)}`)
 }
 
 function createUser(body: CreateUserRequest): Promise<UserCreateResponse> {
@@ -135,8 +140,8 @@ function createUser(body: CreateUserRequest): Promise<UserCreateResponse> {
   })
 }
 
-function deactivateUser(id: string): Promise<void> {
-  return request(`/users/${id}/deactivate`, { method: 'PATCH' })
+async function deactivateUser(id: string): Promise<void> {
+  return request(`/users/${encodePathSegment(id)}/deactivate`, { method: 'PATCH' })
 }
 
 function fetchMe(): Promise<MeResponse> {

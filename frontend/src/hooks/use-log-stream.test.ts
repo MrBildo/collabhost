@@ -172,6 +172,21 @@ describe('useLogStream', () => {
     expect(es.url).toBe('/api/v1/apps/my-app/logs/stream?key=test-key-123')
   })
 
+  test('a slug carrying path characters stays inside its one URL segment', () => {
+    // React Router decodes `/apps/..%2Fusers` to the param `../users`; raw, that
+    // would point the stream at /api/v1/users/logs/stream.
+    renderHook(() => useLogStream('../users'))
+
+    expect(latestInstance().url).toBe('/api/v1/apps/..%2Fusers/logs/stream?key=test-key-123')
+  })
+
+  test('a dot-segment slug opens no stream and reports an error', () => {
+    const { result } = renderHook(() => useLogStream('..'))
+
+    expect(MockEventSource.instances).toHaveLength(0)
+    expect(result.current.error).toBe('Invalid app slug')
+  })
+
   test('slug change resets lastEventId in reconnect URL', () => {
     const { rerender } = renderHook(({ slug }: { slug: string }) => useLogStream(slug), {
       initialProps: { slug: 'app-a' },
