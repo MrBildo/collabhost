@@ -49,14 +49,17 @@ on:
       - 'global.json'
       - 'tools/verify-bundled-runtime.sh'
       - 'tools/verify-caddy-build.sh'
+      - 'tools/assert-admin-key-file.sh'
+      - 'tools/assert-admin-key-file.ps1'
       - 'release-assets/**'
       - 'frontend/**'
 
-# Read-only token. The dry-run never writes to the Releases surface, never
-# creates tags. Workflow-run artifacts upload via actions/upload-artifact
-# only need the default GITHUB_TOKEN which has implicit write to its own run.
-permissions:
-  contents: read
+# No job gets a token permission it does not ask for, as in publish.yml. The
+# dry-run never writes to the Releases surface and never creates tags; workflow
+# artifacts are stored with the run's own artifact token, not GITHUB_TOKEN.
+# The release-assets job may sign a provenance attestation (manual runs only),
+# which is why it alone asks for id-token and attestations.
+permissions: {}
 
 jobs:
   resolve-version:
@@ -99,22 +102,27 @@ jobs:
     needs: resolve-version
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # --ignore-scripts, as in publish.yml.
       - name: Install
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Build
         run: npx vite build
       - name: Upload frontend artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: frontend-dist
           path: frontend/dist
@@ -125,6 +133,8 @@ jobs:
     needs: [resolve-version, build-frontend]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -158,16 +168,18 @@ jobs:
             collabhost_bin: collabhost
             ext: tar.gz
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       # SDK from global.json, as in publish.yml: the pin decides which .NET
       # runtime the self-contained archive carries.
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           global-json-file: global.json
 
       - name: Download frontend artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: frontend-dist
           path: backend/Collabhost.Api/wwwroot
@@ -180,7 +192,7 @@ jobs:
       # to the publish bundle pipeline.
       # ---------------------------------------------------------------------
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.version
           cache: false
@@ -534,56 +546,126 @@ jobs:
 
           cat "${ARCHIVE}.sha256"
 
-      # Dry-run divergence point: instead of `gh release upload`, attach the
-      # archive + per-leg checksum to the workflow run as a downloadable
-      # artifact. Operators inspect the run page; nothing leaks to Releases.
+      # Dry-run divergence point: the archive and its checksum go to the
+      # release-assets job as one workflow artifact, as in publish.yml, but no
+      # job here uploads to a release. Operators fetch the archives from the
+      # run page; archive-smoke below consumes the same artifact.
       - name: Upload archive artifact (workflow run)
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: archive-${{ matrix.rid }}
           path: |
             collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}
             collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}.sha256
+          if-no-files-found: error
           retention-days: 7
 
-      # Per-leg checksum artifact for the aggregation job. Same shape as
-      # publish.yml so the aggregator can be a near-copy.
-      - name: Upload per-leg checksum artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: checksum-${{ matrix.rid }}
-          path: collabhost-*-${{ matrix.rid }}.${{ matrix.ext }}.sha256
-          retention-days: 7
-
-  aggregate-checksums:
-    name: Aggregate checksums.txt
-    needs: build-matrix
+  # Mirrors publish.yml's release job up to its upload: the same checksum
+  # aggregation and checks. Manual runs also sign a provenance attestation and
+  # verify it, so the signing path is proven before a release relies on it,
+  # and check that the operator's command in INSTALL.md (which names
+  # publish.yml as the signer) rejects a dry-run archive. Pull-request runs
+  # skip the signing: every attestation is written to a public transparency
+  # log, and a PR's throwaway archives do not belong there. In place of the
+  # release upload, checksums.txt is stored as a run artifact.
+  release-assets:
+    name: Attest and check release assets (no upload)
+    needs: [resolve-version, build-matrix]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      id-token: write      # the signing certificate (manual runs only)
+      attestations: write  # store and read the attestation (manual runs only)
+    env:
+      VER: ${{ needs.resolve-version.outputs.version }}
     steps:
-      - name: Download per-leg checksums
-        uses: actions/download-artifact@v7
+      - name: Download archives
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          pattern: checksum-*
+          pattern: archive-*
           merge-multiple: true
-          path: checksums-in
+          path: assets
 
-      - name: Aggregate
+      # Same script as publish.yml "Aggregate and verify checksums".
+      - name: Aggregate and verify checksums
         shell: bash
+        working-directory: assets
         run: |
           set -euo pipefail
 
-          # Mirrors publish.yml normalization: strip the leading '*' that
-          # Git-Bash sha256sum emits in binary mode so the aggregated file
-          # matches the format installer parsers expect.
-          cat checksums-in/*.sha256 | sed 's/  \*/  /' > checksums.txt
+          # The four platform archives, as build-matrix produces them.
+          EXPECTED=(
+            "collabhost-${VER}-win-x64.zip"
+            "collabhost-${VER}-osx-arm64.tar.gz"
+            "collabhost-${VER}-linux-x64.tar.gz"
+            "collabhost-${VER}-linux-arm64.tar.gz"
+          )
+
+          for archive in "${EXPECTED[@]}"; do
+            if [[ ! -f "${archive}" || ! -f "${archive}.sha256" ]]; then
+              echo "MISSING: ${archive} or ${archive}.sha256" >&2
+              exit 1
+            fi
+          done
+
+          ARCHIVES=$(find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) | wc -l)
+          if [[ "${ARCHIVES}" -ne "${#EXPECTED[@]}" ]]; then
+            echo "Expected ${#EXPECTED[@]} archives, found ${ARCHIVES}:" >&2
+            ls -la >&2
+            exit 1
+          fi
+
+          for archive in "${EXPECTED[@]}"; do
+            cat "${archive}.sha256"
+          done | sed 's/  \*/  /' > checksums.txt
+
+          echo "checksums.txt:"
           cat checksums.txt
+          sha256sum -c checksums.txt
+
+      - name: Attest build provenance (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            assets/*.zip
+            assets/*.tar.gz
+
+      # The positive check is publish.yml's "Verify attestations" with this
+      # workflow as the signer and this run's ref as the source. The negative
+      # check is the operator's command from INSTALL.md, which must refuse a
+      # dry-run archive because publish.yml did not sign it.
+      - name: Verify attestations (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          for archive in assets/*.zip assets/*.tar.gz; do
+            gh attestation verify "${archive}" \
+              --repo MrBildo/collabhost \
+              --signer-workflow MrBildo/collabhost/.github/workflows/publish-dryrun.yml \
+              --source-ref "${GITHUB_REF}"
+
+            if OUT=$(gh attestation verify "${archive}" \
+                --repo MrBildo/collabhost \
+                --signer-workflow MrBildo/collabhost/.github/workflows/publish.yml 2>&1); then
+              echo "${OUT}" >&2
+              echo "FAIL: ${archive} passed the release-signer check; a dry-run archive must not." >&2
+              exit 1
+            fi
+            echo "ok: ${archive} is refused by the release-signer check:"
+            echo "${OUT}" | tail -3
+          done
 
       - name: Upload aggregated checksums (workflow run)
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: checksums-aggregated
-          path: checksums.txt
+          path: assets/checksums.txt
+          if-no-files-found: error
           retention-days: 7
 
   # Self-fetch guard: PR-time validation that the .sh installers can source
@@ -619,8 +701,12 @@ jobs:
     name: Installer self-fetch guard
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Self-fetch from a clean (non-co-located) layout
         shell: bash
@@ -788,9 +874,17 @@ jobs:
       EXT: ${{ matrix.ext }}
       COLLABHOST_BIN: ${{ matrix.collabhost_bin }}
       CADDY_BIN: ${{ matrix.caddy_bin }}
+    permissions:
+      contents: read
     steps:
+      # Only tools/ is needed: the admin-key check script.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: tools
+
       - name: Download archive artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: archive-${{ matrix.rid }}
           path: archive-in
@@ -948,6 +1042,14 @@ jobs:
               exit 1
             }
             echo "HTTP smoke check passed: status, root, deep link."
+
+            # Same admin-key check as install-integration.yml: the first run
+            # also saves the key, owner-only, in the data directory, and it
+            # must be the key it printed.
+            bash "${GITHUB_WORKSPACE}/tools/assert-admin-key-file.sh" \
+              --data-dir "${INSTALL_DIR}/data" \
+              --stdout "${LOG}" \
+              --url "http://localhost:${PORT}"
           fi
 
           # Bounded stop ladder: SIGINT -> 5s grace -> SIGTERM -> 3s grace -> SIGKILL.
@@ -1027,6 +1129,12 @@ jobs:
             if ($deep.Content -notmatch '(?i)<!doctype html') { throw 'SPA fallback not wired: /apps returned non-HTML.' }
 
             Write-Host 'HTTP smoke check passed: status, root, deep link.'
+
+            # Same admin-key check as install-integration.yml.
+            & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-admin-key-file.ps1') `
+              -DataDir (Join-Path $InstallDir 'data') `
+              -StdoutLog $log `
+              -Url "http://localhost:$port"
           }
 
           if (-not $proc.HasExited) {
