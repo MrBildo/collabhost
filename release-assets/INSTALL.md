@@ -140,7 +140,8 @@ to v1.10.0):
    can only be deactivated once the new one exists.
 5. Restart Collabhost (`sudo systemctl restart collabhost`,
    `Restart-Service Collabhost`, `Restart-Service CollabhostUser`,
-   `systemctl --user restart collabhost.service`, or stop and start the binary).
+   `systemctl --user restart collabhost.service`, or stop and start the binary;
+   the service commands need an elevated PowerShell on Windows).
    A log view that was opened with an old key keeps streaming until it
    disconnects; the restart closes it, and it can't reconnect.
 6. Tidy up what still holds an old key:
@@ -1319,7 +1320,7 @@ the process, not in ports:
 | Front door on `:80`/`:443` | yes — bundled Caddy binds them (Windows doesn't gate low ports) | yes — bundled Caddy binds them |
 | Boot start, no login | yes | yes |
 | Multi-operator handoff | account-independent by default; tied to an account with `-RunAsCurrentUser` | yes (account-independent) |
-| Elevation | only for register/unregister | install + every upgrade |
+| Elevation | to register/unregister, and to stop, start, or restart the service | install + every upgrade |
 
 **Verify the install:**
 
@@ -1338,7 +1339,8 @@ Get-Content "$env:USERPROFILE\.collabhost\bin\data\initial-admin-key.txt"
 Delete the file once you have stored the key. If you can't find it, use the
 configured-key break-glass path: set
 `Auth:AdminKey` in `%USERPROFILE%\.collabhost\bin\appsettings.json` to a known
-value and restart the service (`Restart-Service CollabhostUser`). See §2.
+value and restart the service (`Restart-Service CollabhostUser`, from an
+elevated PowerShell). See §2.
 
 **Upgrade:** re-run with the same account flag you registered with (add
 `-RunAsCurrentUser` or the same `-ServiceCredential` if you used one; the
@@ -1856,7 +1858,7 @@ sudo systemctl stop collabhost
 # Windows system-scope service (canonical, v1.3+, §5.5.4)
 Stop-Service Collabhost
 
-# Windows user-scope service (install.ps1 -RegisterUserService, §5.5.5)
+# Windows user-scope service (install.ps1 -RegisterUserService, §5.5.5; elevated PowerShell)
 Stop-Service CollabhostUser
 
 # Windows / NSSM (legacy, v1.2 and earlier, §5.5.3)
@@ -2155,7 +2157,7 @@ The migration shape:
 4. **Transfer the Caddy storage directory separately.** The proxy's CA
    root, account keys, and per-host certificates do **not** live inside
    `data/` on a default user-scope install — they sit at whatever
-   `Proxy:StoragePath` resolves to. Per the §5.4 row, user-scope resolves to
+   `Proxy:StoragePath` resolves to. Per the §5.4 row, Linux user-scope resolves to
    Caddy's XDG default `~/.local/share/caddy/` (a path *outside* the
    `data/` tree, so the step-3 `rsync` does not pick it up); system-scope
    resolves to `/var/lib/collabhost/caddy/`. Copy this directory across in
@@ -2916,9 +2918,14 @@ on that device warn about the dashboard and your apps.
    (Get-PfxCertificate <storage folder>\pki\authorities\local\root.crt).Thumbprint
    ```
 
-   Removing it from a macOS device takes the SHA-1 fingerprint, so if you trust
-   the root on a Mac, also run the `openssl` command with `-sha1` in place of
-   `-sha256`.
+   Removing it from a macOS device takes the SHA-1 fingerprint written without
+   colons, so if you trust the root on a Mac, also note this one (`openssl`
+   prints the fingerprint with colons; `cut` and `tr` strip the label and the
+   colons):
+
+   ```sh
+   openssl x509 -in <storage folder>/pki/authorities/local/root.crt -noout -fingerprint -sha1 | cut -d= -f2 | tr -d :
+   ```
 
 3. **Stop Collabhost.** The proxy stops with it.
 
@@ -2953,7 +2960,7 @@ Stop-Service Collabhost
 Remove-Item -Recurse -Force "$env:ProgramData\Collabhost\caddy\pki", "$env:ProgramData\Collabhost\caddy\certificates\local"
 Start-Service Collabhost
 
-# Windows, user install (stop the console window with Ctrl+C, or the user service)
+# Windows, user install (elevated PowerShell if you use the user service; Ctrl+C in the console window otherwise)
 Stop-Service CollabhostUser                                    # if you use the user service
 Remove-Item -Recurse -Force "$HOME\.collabhost\bin\caddy\pki", "$HOME\.collabhost\bin\caddy\certificates\local"
 Start-Service CollabhostUser                                   # or start collabhost.exe again
@@ -2992,11 +2999,11 @@ Start-Service CollabhostUser                                   # or start collab
    - **Fedora / RHEL:** the same, with
      `/etc/pki/ca-trust/source/anchors/collabhost-caddy.crt` and
      `sudo update-ca-trust`.
-   - **macOS:** remove the old root by its SHA-1 fingerprint, then add the new
-     one as in §9.11.2:
+   - **macOS:** remove the old root by its SHA-1 fingerprint (from step 2,
+     without colons), then add the new one as in §9.11.2:
 
      ```sh
-     sudo security delete-certificate -Z <old SHA-1 fingerprint> /Library/Keychains/System.keychain
+     sudo security delete-certificate -Z <old SHA-1 fingerprint, no colons> /Library/Keychains/System.keychain
      ```
    - **Firefox, iOS, Android:** delete the old "Collabhost Local Authority"
      certificate in the settings where you added it, then import the new one.
