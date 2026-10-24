@@ -13,3 +13,11 @@
 # (or later) of the module itself.
 #
 # Lines starting with `#` and blank lines are ignored.
+#
+# golang.org/x/net v0.60.0: fixes five HTTP/2 advisories. Four are in the
+# HTTP/2 server Caddy configures on every TLS listener (GO-2026-6617 crash,
+# GO-2026-6603 memory exhaustion, GO-2026-6611 CPU exhaustion, GO-2026-6612
+# flow control) and one in the HTTP/2 client transport its reverse proxy can
+# use (GO-2026-6610 malformed framing headers). Caddy 2.11.7 requires v0.59.0;
+# Caddy's main branch moved to v0.60.0 after that release.
+golang.org/x/net  v0.60.0
