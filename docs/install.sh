@@ -16,6 +16,8 @@
 #   COLLABHOST_INSTALL_SCRIPT_BASE_URL=URL  -- override the script/lib download base URL; the host this
 #                                              script self-fetches install-lib.sh from when it is not
 #                                              co-located (default: GitHub Pages)
+#   COLLABHOST_INSTALL_ALLOW_HTTP=1  -- accept a plain http:// override that is not this machine
+#                                       (downloads are HTTPS-only otherwise; see check_download_url)
 #
 # Verifies archive SHA-256 against the release's checksums.txt before extracting.
 # Preserves existing appsettings.json and data/ on re-run (upgrade-safe).
@@ -23,10 +25,19 @@
 
 set -euo pipefail
 
+# Nothing this script creates may be writable by another user, whatever the
+# umask of the shell that runs it: not the install directories (including
+# ~/.collabhost above the default one), not the files copied into them, and not
+# the shell startup file it creates when you have none yet. `umask go-w` adds
+# group and other write to the mask and leaves every other bit as it was, so it
+# never loosens a stricter umask (0077 stays 0077).
+umask go-w
+
 # ---- Defaults ----------------------------------------------------------------
 
 REPO="MrBildo/collabhost"
-INSTALL_PATH="${HOME}/.collabhost/bin"
+DEFAULT_INSTALL_ROOT="${HOME}/.collabhost"
+INSTALL_PATH="${DEFAULT_INSTALL_ROOT}/bin"
 SKIP_PATH=""
 TAG="${COLLABHOST_VERSION:-}"
 
@@ -51,6 +62,72 @@ TAG="${COLLABHOST_VERSION:-}"
 # for testing). It is the script/lib host (GitHub Pages), distinct from
 # COLLABHOST_INSTALL_BASE_URL, which overrides the archive host (GitHub Releases).
 INSTALL_SCRIPT_BASE_URL="${COLLABHOST_INSTALL_SCRIPT_BASE_URL:-https://mrbildo.github.io/collabhost}"
+
+# ---- Download policy ---------------------------------------------------------
+
+# Every download (the shared library, the archive, checksums.txt) goes over
+# HTTPS: curl is limited to https for the request and for every redirect, with
+# TLS 1.2 or newer. A plain http:// base URL is accepted in exactly two cases,
+# and each is announced on the terminal:
+#
+#   * The host is this machine (localhost, 127.x.y.z or [::1]). The request
+#     never leaves the host, so nothing on a network can read or alter it.
+#     Redirects must still be HTTPS. This is the local-mirror and CI case.
+#   * COLLABHOST_INSTALL_ALLOW_HTTP=1 is set. The operator accepts that the
+#     archive and the checksum it is verified against both arrive unprotected,
+#     so the checksum no longer proves anything.
+#
+# Anything else is refused before the download starts.
+#
+# Usage: check_download_url <label> <url>. Sets CURL_PROTO_ARGS (an array) for
+# that URL, or exits non-zero. install-lib.sh calls it for the archive host.
+# Keep this function identical in install.sh and install-system.sh: both need
+# it before install-lib.sh is available.
+check_download_url() {
+  local label="$1" url="$2" authority host
+  case "${url}" in
+    https://*)
+      CURL_PROTO_ARGS=(--proto '=https' --proto-redir '=https' --tlsv1.2)
+      return 0
+      ;;
+    http://*) ;;
+    *)
+      echo "Refusing ${label}: '${url}' is not an https:// URL." >&2
+      exit 1
+      ;;
+  esac
+
+  # Host part, the way curl reads it: drop the path/query/fragment first, then
+  # any userinfo (so http://127.0.0.1@example.com is example.com), then the port.
+  authority="${url#http://}"
+  authority="${authority%%[/?#]*}"
+  authority="${authority##*@}"
+  case "${authority}" in
+    \[*) host="${authority%%]*}]" ;;
+    *)   host="${authority%%:*}" ;;
+  esac
+  host="$(printf '%s' "${host}" | tr '[:upper:]' '[:lower:]')"
+
+  if [ "${host}" = "localhost" ] || [ "${host}" = "[::1]" ] \
+    || printf '%s' "${host}" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
+    echo "Note: ${label} uses plain HTTP to ${host}, which is this machine. Redirects must be HTTPS." >&2
+    echo "  Whatever is listening on that port here supplies every file downloaded from it. Make sure it is your own mirror: on a shared machine, another local user could be holding the port." >&2
+    CURL_PROTO_ARGS=(--proto '=http,https' --proto-redir '=https' --tlsv1.2)
+    return 0
+  fi
+
+  if [ "${COLLABHOST_INSTALL_ALLOW_HTTP:-}" = "1" ]; then
+    echo "WARNING: ${label} uses plain HTTP to ${host} (COLLABHOST_INSTALL_ALLOW_HTTP=1)." >&2
+    echo "  The archive and its checksum both arrive unprotected: anyone on the network path can replace them." >&2
+    CURL_PROTO_ARGS=(--proto '=http,https' --proto-redir '=http,https' --tlsv1.2)
+    return 0
+  fi
+
+  echo "Refusing ${label}: '${url}' is plain HTTP." >&2
+  echo "  Use an https:// URL. A mirror on this machine (http://localhost, http://127.0.0.1) is accepted." >&2
+  echo "  To download over plain HTTP from another host anyway, set COLLABHOST_INSTALL_ALLOW_HTTP=1." >&2
+  exit 1
+}
 
 source_install_lib() {
   # $0 is the script path when run as a file, or "bash" under a pipe. dirname of
@@ -80,9 +157,10 @@ source_install_lib() {
 
   local lib_url="${INSTALL_SCRIPT_BASE_URL}/install-lib.sh"
   local lib_tmp
+  check_download_url "COLLABHOST_INSTALL_SCRIPT_BASE_URL" "${INSTALL_SCRIPT_BASE_URL}"
   lib_tmp="$(mktemp)"
   echo "Fetching installer library from ${lib_url}..."
-  if ! curl -fsSL --retry 3 --retry-delay 2 "${lib_url}" -o "${lib_tmp}"; then
+  if ! curl "${CURL_PROTO_ARGS[@]}" -fsSL --retry 3 --retry-delay 2 "${lib_url}" -o "${lib_tmp}"; then
     rm -f "${lib_tmp}"
     echo "Failed to fetch install-lib.sh from ${lib_url}." >&2
     echo "  Check your network, or set COLLABHOST_INSTALL_SCRIPT_BASE_URL to a reachable mirror." >&2
@@ -115,6 +193,8 @@ Environment:
   COLLABHOST_INSTALL_BASE_URL         Override archive download base URL (default: GitHub Releases)
   COLLABHOST_INSTALL_SCRIPT_BASE_URL  Override script/lib download base URL -- the host this script
                                       self-fetches install-lib.sh from when not co-located (default: GitHub Pages)
+  COLLABHOST_INSTALL_ALLOW_HTTP=1     Accept a plain http:// override pointing at another host. Downloads are
+                                      HTTPS-only otherwise (http://localhost and http://127.0.0.1 are accepted).
 
 For system-scope installs (root-owned /opt/collabhost layout + dedicated
 service user + system-level systemd unit), see install-system.sh.
@@ -186,7 +266,30 @@ if [ -f "${INSTALL_PATH}/appsettings.json" ] || [ -d "${INSTALL_PATH}/data" ]; t
   IS_REINSTALL=1
 fi
 
-mkdir -p "${INSTALL_PATH}"
+# The install directory holds the collabhost binary you run (and is usually on
+# your PATH). Another user who can write to it, or to the directory above it,
+# can put their own binary there: write permission on the parent is enough to
+# rename the install directory away and create a new one. So:
+#   * Directories this run creates, parents included, never get group or other
+#     write (the umask set at the top).
+#   * Group and other write come off the install directory (and LICENSES/
+#     below) on every run, before anything is copied in.
+#   * In the default layout, ~/.collabhost (the directory above bin/) is the
+#     installer's own, so it gets the same on every run. That also repairs one
+#     an earlier installer created group- or world-writable.
+# Nothing above that is changed: not your home directory, and not directories
+# above a custom --install-path that already exist. They are yours, and making
+# sure no other user can write to them is up to you.
+if ! mkdir -p "${INSTALL_PATH}" || ! chmod go-w "${INSTALL_PATH}"; then
+  echo "Could not create ${INSTALL_PATH} or remove group and other write permission from it." >&2
+  echo "  The installer must own the install directory. Fix its ownership, or choose another --install-path." >&2
+  exit 1
+fi
+if [ "${INSTALL_PATH%/}" = "${DEFAULT_INSTALL_ROOT}/bin" ] && ! chmod go-w "${DEFAULT_INSTALL_ROOT}"; then
+  echo "Could not remove group and other write permission from ${DEFAULT_INSTALL_ROOT}." >&2
+  echo "  The installer must own it: another user who can write to it can replace the binary. Fix its ownership, or choose another --install-path." >&2
+  exit 1
+fi
 
 # Overwrite files that are part of the bundle.
 cp "${EXTRACT_DIR}/collabhost" "${INSTALL_PATH}/"
@@ -194,6 +297,7 @@ cp "${EXTRACT_DIR}/caddy"      "${INSTALL_PATH}/"
 cp "${EXTRACT_DIR}/INSTALL.md" "${INSTALL_PATH}/"
 
 mkdir -p "${INSTALL_PATH}/LICENSES"
+chmod go-w "${INSTALL_PATH}/LICENSES"
 # Clear then copy -- keeps LICENSES/ in sync with what the archive ships.
 rm -f "${INSTALL_PATH}/LICENSES/"*
 cp "${EXTRACT_DIR}/LICENSES/"* "${INSTALL_PATH}/LICENSES/"
@@ -225,6 +329,14 @@ SHIPPED_SRC="${EXTRACT_DIR}/appsettings.json"
 APPSETTINGS_DST="${INSTALL_PATH}/appsettings.json"
 BASELINE_DST="${INSTALL_PATH}/appsettings.shipped.json"
 COLLABHOST_BIN="${INSTALL_PATH}/collabhost"
+
+# appsettings.json can hold the admin key (Auth:AdminKey). Everything that
+# writes it or its baseline below (first-install copy, the merge's temp file,
+# the Proxy:BinaryPath seed) runs under umask 077 so no copy is ever readable
+# by other local users, whatever the operator's umask. The explicit chmod after
+# the seed repairs a file an earlier run left at a looser mode.
+INSTALLER_UMASK="$(umask)"
+umask 077
 
 smart_merge_appsettings "${SHIPPED_SRC}" "${APPSETTINGS_DST}" "${BASELINE_DST}" "${COLLABHOST_BIN}"
 
@@ -296,8 +408,25 @@ else
   fi
 fi
 
-# data/ is never in the archive -- leave any existing directory untouched.
-# Merge-safe by construction.
+chmod 0600 "${APPSETTINGS_DST}"
+if [ -f "${BASELINE_DST}" ]; then
+  chmod 0600 "${BASELINE_DST}"
+fi
+
+# data/ is never in the archive, and its contents are never touched here. It
+# holds the SQLite database (user keys) and, on first boot, the admin key file,
+# so the directory itself is made owner-only: created 0700 if it does not exist
+# yet (Collabhost would otherwise create it at the umask default on first boot)
+# and tightened back to 0700 on every re-run. COLLABHOST_DATA_PATH, when set in
+# the installer's environment, names a relocated data directory.
+DATA_DIR="${COLLABHOST_DATA_PATH:-${INSTALL_PATH}/data}"
+if ! mkdir -p "${DATA_DIR}" || ! chmod 0700 "${DATA_DIR}"; then
+  echo "Could not create or restrict the data directory ${DATA_DIR}." >&2
+  echo "  Collabhost runs as you and must own it. Fix its ownership, or unset COLLABHOST_DATA_PATH to use ${INSTALL_PATH}/data." >&2
+  exit 1
+fi
+
+umask "${INSTALLER_UMASK}"
 
 chmod +x "${INSTALL_PATH}/collabhost" "${INSTALL_PATH}/caddy" || true
 

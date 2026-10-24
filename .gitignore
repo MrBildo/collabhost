@@ -75,6 +75,8 @@ tools/*
 !tools/generate-ids.cs
 !tools/lint-source-comment-refs.py
 !tools/lint-systemd-unit-drift.sh
+!tools/test-install-download-policy.ps1
+!tools/test-install-download-policy.sh
 !tools/test-source-comment-refs.sh
 !tools/verify-bundled-runtime.sh
 !tools/verify-caddy-build.sh

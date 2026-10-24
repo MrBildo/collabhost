@@ -30,6 +30,8 @@
 #   COLLABHOST_INSTALL_SCRIPT_BASE_URL=URL  -- override the script/lib download base URL; the host this
 #                                              script self-fetches install-lib.sh from when it is not
 #                                              co-located (default: GitHub Pages)
+#   COLLABHOST_INSTALL_ALLOW_HTTP=1  -- accept a plain http:// override that is not this machine
+#                                       (downloads are HTTPS-only otherwise; see check_download_url)
 #
 # Re-runnable. On re-run, binaries / wwwroot / unit / LICENSES are overwritten
 # with the new release's contents; appsettings.json is smart-merged; data and
@@ -90,6 +92,72 @@ UNIT_PATH="${UNIT_DIR}/${UNIT_NAME}"
 # COLLABHOST_INSTALL_BASE_URL, which overrides the archive host (GitHub Releases).
 INSTALL_SCRIPT_BASE_URL="${COLLABHOST_INSTALL_SCRIPT_BASE_URL:-https://mrbildo.github.io/collabhost}"
 
+# ---- Download policy ---------------------------------------------------------
+
+# Every download (the shared library, the archive, checksums.txt) goes over
+# HTTPS: curl is limited to https for the request and for every redirect, with
+# TLS 1.2 or newer. A plain http:// base URL is accepted in exactly two cases,
+# and each is announced on the terminal:
+#
+#   * The host is this machine (localhost, 127.x.y.z or [::1]). The request
+#     never leaves the host, so nothing on a network can read or alter it.
+#     Redirects must still be HTTPS. This is the local-mirror and CI case.
+#   * COLLABHOST_INSTALL_ALLOW_HTTP=1 is set. The operator accepts that the
+#     archive and the checksum it is verified against both arrive unprotected,
+#     so the checksum no longer proves anything.
+#
+# Anything else is refused before the download starts.
+#
+# Usage: check_download_url <label> <url>. Sets CURL_PROTO_ARGS (an array) for
+# that URL, or exits non-zero. install-lib.sh calls it for the archive host.
+# Keep this function identical in install.sh and install-system.sh: both need
+# it before install-lib.sh is available.
+check_download_url() {
+  local label="$1" url="$2" authority host
+  case "${url}" in
+    https://*)
+      CURL_PROTO_ARGS=(--proto '=https' --proto-redir '=https' --tlsv1.2)
+      return 0
+      ;;
+    http://*) ;;
+    *)
+      echo "Refusing ${label}: '${url}' is not an https:// URL." >&2
+      exit 1
+      ;;
+  esac
+
+  # Host part, the way curl reads it: drop the path/query/fragment first, then
+  # any userinfo (so http://127.0.0.1@example.com is example.com), then the port.
+  authority="${url#http://}"
+  authority="${authority%%[/?#]*}"
+  authority="${authority##*@}"
+  case "${authority}" in
+    \[*) host="${authority%%]*}]" ;;
+    *)   host="${authority%%:*}" ;;
+  esac
+  host="$(printf '%s' "${host}" | tr '[:upper:]' '[:lower:]')"
+
+  if [ "${host}" = "localhost" ] || [ "${host}" = "[::1]" ] \
+    || printf '%s' "${host}" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
+    echo "Note: ${label} uses plain HTTP to ${host}, which is this machine. Redirects must be HTTPS." >&2
+    echo "  Whatever is listening on that port here supplies every file downloaded from it. Make sure it is your own mirror: on a shared machine, another local user could be holding the port." >&2
+    CURL_PROTO_ARGS=(--proto '=http,https' --proto-redir '=https' --tlsv1.2)
+    return 0
+  fi
+
+  if [ "${COLLABHOST_INSTALL_ALLOW_HTTP:-}" = "1" ]; then
+    echo "WARNING: ${label} uses plain HTTP to ${host} (COLLABHOST_INSTALL_ALLOW_HTTP=1)." >&2
+    echo "  The archive and its checksum both arrive unprotected: anyone on the network path can replace them." >&2
+    CURL_PROTO_ARGS=(--proto '=http,https' --proto-redir '=http,https' --tlsv1.2)
+    return 0
+  fi
+
+  echo "Refusing ${label}: '${url}' is plain HTTP." >&2
+  echo "  Use an https:// URL. A mirror on this machine (http://localhost, http://127.0.0.1) is accepted." >&2
+  echo "  To download over plain HTTP from another host anyway, set COLLABHOST_INSTALL_ALLOW_HTTP=1." >&2
+  exit 1
+}
+
 source_install_lib() {
   # $0 is the script path when run as a file, or "bash" under a pipe. dirname of
   # "bash" is ".", so the co-located check simply misses under a pipe and we fall
@@ -118,9 +186,10 @@ source_install_lib() {
 
   local lib_url="${INSTALL_SCRIPT_BASE_URL}/install-lib.sh"
   local lib_tmp
+  check_download_url "COLLABHOST_INSTALL_SCRIPT_BASE_URL" "${INSTALL_SCRIPT_BASE_URL}"
   lib_tmp="$(mktemp)"
   echo "Fetching installer library from ${lib_url}..."
-  if ! curl -fsSL --retry 3 --retry-delay 2 "${lib_url}" -o "${lib_tmp}"; then
+  if ! curl "${CURL_PROTO_ARGS[@]}" -fsSL --retry 3 --retry-delay 2 "${lib_url}" -o "${lib_tmp}"; then
     rm -f "${lib_tmp}"
     echo "Failed to fetch install-lib.sh from ${lib_url}." >&2
     echo "  Check your network, or set COLLABHOST_INSTALL_SCRIPT_BASE_URL to a reachable mirror." >&2
@@ -154,6 +223,8 @@ Environment:
   COLLABHOST_INSTALL_BASE_URL         Override archive download base URL (default: GitHub Releases)
   COLLABHOST_INSTALL_SCRIPT_BASE_URL  Override script/lib download base URL -- the host this script
                                       self-fetches install-lib.sh from when not co-located (default: GitHub Pages)
+  COLLABHOST_INSTALL_ALLOW_HTTP=1     Accept a plain http:// override pointing at another host. Downloads are
+                                      HTTPS-only otherwise (http://localhost and http://127.0.0.1 are accepted).
 
 For a user-scope install in \$HOME (no root required), see install.sh.
 EOF
@@ -194,8 +265,9 @@ fi
 
 # Hard-fail if not root and sudo is unavailable. Re-exec under sudo otherwise.
 # The re-exec preserves env vars the operator might have set (COLLABHOST_VERSION,
-# COLLABHOST_INSTALL_BASE_URL, COLLABHOST_INSTALL_SCRIPT_BASE_URL) via explicit
-# forwarding (-E is intentionally avoided).
+# COLLABHOST_INSTALL_BASE_URL, COLLABHOST_INSTALL_SCRIPT_BASE_URL,
+# COLLABHOST_INSTALL_ALLOW_HTTP) via explicit forwarding (-E is intentionally
+# avoided).
 require_root() {
   if [ "$(id -u)" -eq 0 ]; then
     return 0
@@ -221,6 +293,7 @@ require_root() {
     COLLABHOST_VERSION="${COLLABHOST_VERSION:-${TAG:-}}" \
     COLLABHOST_INSTALL_BASE_URL="${COLLABHOST_INSTALL_BASE_URL:-}" \
     COLLABHOST_INSTALL_SCRIPT_BASE_URL="${COLLABHOST_INSTALL_SCRIPT_BASE_URL:-}" \
+    COLLABHOST_INSTALL_ALLOW_HTTP="${COLLABHOST_INSTALL_ALLOW_HTTP:-}" \
     bash "$0" "$@"
 }
 
@@ -395,13 +468,17 @@ chmod 0640                    "${APPSETTINGS_DST}"
 # ---- systemd unit ------------------------------------------------------------
 
 # The bundled unit lives in the repo under systemd/collabhost.system.service.
-# It is NOT in the archive (the archive contract is locked at 7 items via
+# It is NOT in the release archive (the archive contents are a fixed list in
 # publish.yml). We embed it here -- keep this in lockstep with
-# systemd/collabhost.system.service in the repo. The two should be byte-for-byte
-# identical apart from the absence of leading commentary that documents the
-# repo file's purpose. (Drift detection: a CI lint could compare the embedded
-# heredoc against the repo file. Filed as a follow-up if it becomes a real
-# problem.)
+# systemd/collabhost.system.service in the repo. The two must be identical from
+# the [Unit] header down once the variables below are substituted; only the
+# leading commentary differs. tools/lint-systemd-unit-drift.sh enforces this in
+# CI.
+#
+# This file is rewritten on every run, so re-running the installer over an
+# existing install is how an existing install picks up unit changes (for
+# example the sandboxing block). Operator drop-ins under
+# ${UNIT_PATH}.d/ are left alone and still apply on top.
 echo "Installing systemd unit at ${UNIT_PATH}..."
 install -d -m 0755 -o root -g root "${UNIT_DIR}"
 
@@ -446,7 +523,7 @@ Environment="COLLABHOST_PROXY_STORAGE_PATH=${CADDY_STORAGE_DIR}"
 # our existing ReadWritePaths so the host can land its native deps without
 # touching \$HOME.
 Environment="DOTNET_BUNDLE_EXTRACT_BASE_DIR=${DOTNET_BUNDLE_DIR}"
-# Card #246 (c2-A): explicit content-root + config-file paths. Without these, the
+# Explicit content-root + config-file paths. Without these, the
 # binary's default ContentRoot is AppContext.BaseDirectory (= /opt/collabhost/bin/),
 # which is where the binary lives but NOT where the operator-facing config + Portal
 # assets live. ASPNETCORE_CONTENTROOT pins ContentRoot to /opt/collabhost so wwwroot
@@ -462,9 +539,10 @@ Environment="ASPNETCORE_ENVIRONMENT=Production"
 # Privileged-port bind without root, without per-binary setcap. The kernel
 # grants cap_net_bind_service to the process tree, which the bundled Caddy
 # child inherits (CapabilityBoundingSet caps the upper bound so other code
-# paths cannot accidentally request more). This is the load-bearing line that
-# closes card #214: Caddy never needs setcap on the binary itself, so a \`cp\`
-# upgrade cannot strip the xattr (because there is no xattr).
+# paths cannot accidentally request more). Caddy never needs setcap on the
+# binary itself, so a \`cp\` upgrade cannot strip the xattr (because there is no
+# xattr). Ambient capabilities survive NoNewPrivileges= below; file
+# capabilities set with setcap would not.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
@@ -475,16 +553,51 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 Restart=on-failure
 RestartSec=5
 
-# Conservative process hygiene. ProtectSystem=strict + the explicit
-# ReadWritePaths is the standard "service can write to its data dirs and
-# nothing else" shape. PrivateTmp keeps stray /tmp files isolated. Add
-# additional hardening directives in a drop-in override if your deployment
-# allows (NoNewPrivileges, ProtectKernelTunables, etc. are standard
-# candidates).
+# Sandboxing. Collabhost and every app it supervises run inside this block.
+#
+# Filesystem: the whole tree is read-only except the two state roots.
+# ${CONFIG_DIR} is deliberately NOT writable: the service only reads its
+# config there, and the installer (as root, outside this unit) writes it.
+# Files the service and its apps create are group-readable at most (UMask).
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=${DATA_ROOT} ${LOG_DIR} ${CONFIG_DIR}
+ReadWritePaths=${DATA_ROOT} ${LOG_DIR}
+UMask=0027
+#
+# Privilege: nothing in this tree can gain privileges through setuid/setgid
+# binaries (sudo, su) or create setuid/setgid files.
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+#
+# Kernel surfaces a web app has no business touching: hardware devices (a
+# minimal /dev with null, zero, random, urandom, tty, pts, shm), kernel
+# tunables, modules, logs, the cgroup tree, the clock and the hostname.
+# Collabhost's own cgroup-based process containment is not available under
+# the system unit: the service cgroup is not delegated to it, and
+# ProtectControlGroups=yes keeps the cgroup tree read-only even if it were.
+# Turning containment on takes both Delegate=yes and ProtectControlGroups=no
+# in a drop-in; Delegate=yes alone does not turn it on. Either way,
+# systemd itself stops every process in the unit when the service stops.
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+#
+# Other processes on the host are invisible in /proc (apps still see their
+# own user's processes). No new namespaces (containers, unshare), no realtime
+# scheduling, no personality changes, native-architecture syscalls only, and
+# only the socket families web apps use (local, IPv4, IPv6, netlink for
+# interface lookups).
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target
