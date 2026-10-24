@@ -750,6 +750,20 @@ Linux install's read-only `appsettings.json` posture); `%ProgramFiles%\Collabhos
 is never granted, so the running service cannot modify its own binaries or
 Portal assets.
 
+`%ProgramData%\Collabhost\` does **not** inherit the permissions of
+`%ProgramData%`, which let every local user read files there and create new
+ones. The installer breaks inheritance at `%ProgramData%\Collabhost\` so only
+`SYSTEM`, `Administrators` and the service account can reach it. That matters
+because `config\` holds the admin key when you set one, `data\` holds the
+database, and `caddy\` holds the private key of the local certificate
+authority you may have trusted on other devices (§3). This is the Windows
+equivalent of the Linux install's `0750` data directories. Every run of the
+script, including an upgrade, re-applies these permissions: it makes
+`Administrators` the owner of everything under `%ProgramData%\Collabhost\`,
+resets any permission changes made by hand inside it, and empties
+`dotnet-bundle\` (the service re-extracts its native libraries there on the
+next start).
+
 The service binds the privileged ports `:80` / `:443` (via the bundled
 Caddy) directly. Unlike Linux, Windows does not restrict low-numbered ports
 to privileged accounts, so the virtual account binds them without a
@@ -821,25 +835,27 @@ The default `NT SERVICE\Collabhost` virtual account is already the
 least-privilege shape and is what most operators should keep. If you have a
 specific reason to run under a different principal — for example a domain
 account so the service can reach network resources under that identity —
-switch the logon account and re-grant the writable data directories to the
-new principal (the installer's `icacls` grants are scoped to the virtual
-account):
+switch the logon account and grant the new principal the same access the
+installer gives the virtual account (the installer's `icacls` grants are scoped
+to the virtual account):
 
 ```powershell
 # Elevated PowerShell. Replace <account>/<password> with your principal.
 sc.exe config Collabhost obj= "<account>" password= "<password>"
 
-# Grant write access on each writable data directory:
-foreach ($d in 'config','data','user-types','caddy','logs','dotnet-bundle') {
-    icacls "$env:ProgramData\Collabhost\$d" /grant "<account>:(OI)(CI)M" /T /C
+# Write access on each writable data directory, read-only access on config:
+foreach ($d in 'data','user-types','caddy','logs','dotnet-bundle') {
+    icacls "$env:ProgramData\Collabhost\$d" /grant "<account>:(OI)(CI)M"
 }
+icacls "$env:ProgramData\Collabhost\config" /grant "<account>:(OI)(CI)RX"
 Restart-Service Collabhost
 ```
 
 Privileged-port binding needs no extra grant on Windows (see §9.10.1). If
 you switch principals and later re-run `install-system.ps1` to upgrade, the
-installer re-applies the `NT SERVICE\Collabhost` account — re-apply your
-custom principal afterward.
+installer re-applies the `NT SERVICE\Collabhost` account and resets the
+permissions under `%ProgramData%\Collabhost\` — re-apply your custom principal
+and its grants afterward.
 
 **Upgrade:**
 
@@ -851,10 +867,13 @@ custom principal afterward.
 The script stops the service before overwriting the binary (Windows holds
 an exclusive lock on a running EXE — file replacement otherwise fails with
 "The process cannot access the file..."), then re-applies the `sc.exe`
-configuration (idempotent), runs the smart-merge against
+configuration (idempotent), re-applies the `%ProgramData%\Collabhost\`
+permissions described above, runs the smart-merge against
 `appsettings.json`, and restarts the service. Data and Caddy storage are
 preserved; binaries, `wwwroot/`, `LICENSES/`, and the service registration
-are refreshed.
+are refreshed. Upgrading an install made by an earlier version of the script,
+which left `%ProgramData%\Collabhost\` readable by every local user, applies
+the restricted permissions with no further step.
 
 **Uninstall:**
 
@@ -975,10 +994,17 @@ The three account choices are mutually exclusive — pick at most one of
   `-ServiceCredential` account) the installer grants that right explicitly and
   records that it made the grant, so `-UnregisterUserService` can revoke exactly
   what it added (a right the account already held is left alone).
-- Grants the service account scoped **`Modify`** access to the install tree via
-  `icacls` when it does not already own it — the virtual account and a dedicated
-  named account both get this grant, so each is turnkey. Your own account already
-  owns the tree, so no grant is added there.
+- Grants the service account scoped access to the install tree via `icacls` when
+  it does not already own it — the virtual account and a dedicated named account
+  both get this grant, so each is turnkey. Your own account already owns the
+  tree, so no grant is added there. The grant is **read-only** on the tree and
+  **`Modify`** only on the three directories the service writes: `data\` (the
+  database, its backups and crash logs), `UserTypes\` and `dotnet-bundle\`. The
+  service therefore cannot replace `collabhost.exe`, `caddy.exe`, `wwwroot\` or
+  `appsettings.json` — this directory is on your `PATH`, and you run `collabhost`
+  elevated for `--update-hosts` (§9.10.2). If you point the database, the user
+  types directory or crash logs somewhere else in `appsettings.json`, grant the
+  service account `Modify` on that location yourself.
 - Sets `DOTNET_BUNDLE_EXTRACT_BASE_DIR` for the service to an account-owned
   directory under the install (a service starts with no loaded user profile, so
   the single-file binary's native-library extraction needs a writable location
@@ -1037,7 +1063,9 @@ value and restart the service (`Restart-Service CollabhostUser`). See §2.
 passwordless default needs no flag). The installer stops the service before
 overwriting the binary (Windows locks a running EXE), refreshes the binary /
 `wwwroot/` / `LICENSES/`, smart-merges `appsettings.json`, re-applies the service
-configuration, and restarts:
+configuration and the install-tree permissions, and restarts. A service
+registered by an earlier version, which gave the service account `Modify` on the
+whole install tree, gets the narrower grant on this upgrade with no further step:
 
 ```powershell
 .\install.ps1 -RegisterUserService                    # latest, passwordless default
