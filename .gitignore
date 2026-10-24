@@ -74,6 +74,7 @@ tools/*
 !tools/lint-systemd-unit-drift.sh
 !tools/test-source-comment-refs.sh
 !tools/verify-bundled-runtime.sh
+!tools/verify-caddy-build.sh
 
 # OS files
 Thumbs.db

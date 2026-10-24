@@ -307,33 +307,12 @@ jobs:
           echo "All declared plugins are baked into the binary."
 
           # The binary records the Go toolchain and module versions it was
-          # built from. `go version -m` reads that metadata without running
-          # the binary, so it works on the cross-compiled linux-arm64 leg too.
-          BUILDINFO="$(go version -m "${BIN}" | tr -d '\r')"
-          EXPECTED_GO="go$(tr -d '[:space:]' < go.version)"
-          BUILT_GO="$(head -n 1 <<< "${BUILDINFO}" | awk '{print $NF}')"
-          if [[ "${BUILT_GO}" != "${EXPECTED_GO}" ]]; then
-            echo "Caddy was compiled with ${BUILT_GO}, but go.version pins ${EXPECTED_GO}." >&2
-            exit 1
-          fi
-          echo "  ok: compiled with ${BUILT_GO}"
-
-          while IFS= read -r line || [[ -n "${line}" ]]; do
-            trimmed="${line#"${line%%[![:space:]]*}"}"
-            [[ -z "${trimmed}" || "${trimmed:0:1}" == "#" ]] && continue
-            # shellcheck disable=SC2206
-            parts=( ${trimmed} )
-            # A replaced module shows as a "=>" line naming its new version.
-            if awk -v m="${parts[0]}" -v v="${parts[1]}" \
-                 '$1 == "=>" && $2 == m && $3 == v { found = 1 } END { exit !found }' <<< "${BUILDINFO}"; then
-              echo "  ok: ${parts[0]} => ${parts[1]}"
-            else
-              echo "  MISSING override: ${parts[0]} ${parts[1]} (caddy-replaces.txt)" >&2
-              echo "--- go version -m ---" >&2
-              echo "${BUILDINFO}" >&2
-              exit 1
-            fi
-          done < caddy-replaces.txt
+          # built from. The shared script checks them against go.version and
+          # caddy-replaces.txt, failing a missing override and a stale one
+          # (the build already requires that version or newer, so the line
+          # does nothing or holds the module back). It reads the metadata with
+          # `go version -m`, so it works on the cross-compiled leg too.
+          bash tools/verify-caddy-build.sh "${BIN}"
 
       # Compute the wwwroot content hash from the downloaded frontend artifact
       # BEFORE publish. The artifact lands at backend/Collabhost.Api/wwwroot,
@@ -391,8 +370,9 @@ jobs:
 
       # Check which .NET runtime packs the built binary carries and fail the
       # leg unless they match what the global.json-pinned SDK bundles: from
-      # the bundle's embedded deps manifest on every leg, and from the .NET
-      # host's own trace on the legs that can run the binary. The linux-arm64
+      # the bundle's embedded deps manifest on every leg, and from the version
+      # compiled into the bundle's native host (which ships in the runtime
+      # pack) on the legs that can run the binary. The linux-arm64
       # leg skips the run: Collabhost is dynamically linked, and qemu alone
       # cannot start an aarch64 glibc binary on the x64 runner.
       - name: Verify bundled .NET runtime

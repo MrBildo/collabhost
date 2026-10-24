@@ -48,6 +48,7 @@ on:
       - 'go.version'
       - 'global.json'
       - 'tools/verify-bundled-runtime.sh'
+      - 'tools/verify-caddy-build.sh'
       - 'release-assets/**'
       - 'frontend/**'
 
@@ -313,31 +314,9 @@ jobs:
 
           echo "All declared plugins are baked into the binary."
 
-          # See publish.yml: check the recorded toolchain and module overrides.
-          BUILDINFO="$(go version -m "${BIN}" | tr -d '\r')"
-          EXPECTED_GO="go$(tr -d '[:space:]' < go.version)"
-          BUILT_GO="$(head -n 1 <<< "${BUILDINFO}" | awk '{print $NF}')"
-          if [[ "${BUILT_GO}" != "${EXPECTED_GO}" ]]; then
-            echo "Caddy was compiled with ${BUILT_GO}, but go.version pins ${EXPECTED_GO}." >&2
-            exit 1
-          fi
-          echo "  ok: compiled with ${BUILT_GO}"
-
-          while IFS= read -r line || [[ -n "${line}" ]]; do
-            trimmed="${line#"${line%%[![:space:]]*}"}"
-            [[ -z "${trimmed}" || "${trimmed:0:1}" == "#" ]] && continue
-            # shellcheck disable=SC2206
-            parts=( ${trimmed} )
-            if awk -v m="${parts[0]}" -v v="${parts[1]}" \
-                 '$1 == "=>" && $2 == m && $3 == v { found = 1 } END { exit !found }' <<< "${BUILDINFO}"; then
-              echo "  ok: ${parts[0]} => ${parts[1]}"
-            else
-              echo "  MISSING override: ${parts[0]} ${parts[1]} (caddy-replaces.txt)" >&2
-              echo "--- go version -m ---" >&2
-              echo "${BUILDINFO}" >&2
-              exit 1
-            fi
-          done < caddy-replaces.txt
+          # See publish.yml: toolchain and module-override checks (missing or
+          # stale) in the shared script.
+          bash tools/verify-caddy-build.sh "${BIN}"
 
       # Mirrors publish.yml "Compute wwwroot hash" -- both call the shared script
       # tools/compute-wwwroot-hash.sh (the single bash implementation, also

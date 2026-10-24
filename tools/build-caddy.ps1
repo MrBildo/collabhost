@@ -76,6 +76,58 @@ function Get-Plugins {
         }
 }
 
+# Check the build metadata a Caddy binary records (`go version -m`) against the
+# pins. Same rules as tools/verify-caddy-build.sh, which the workflows and
+# build-caddy.sh run:
+#   - the toolchain must be the one in go.version;
+#   - every caddy-replaces.txt override must be in the binary and still needed.
+#     A Go `replace` with a version replaces every version of the module, so a
+#     stale override is otherwise invisible: once Caddy requires the pinned
+#     version the line does nothing, and once Caddy requires a newer one the
+#     line silently holds the module back. The required version (the `dep`
+#     line) must therefore be older than the override.
+# Versions compare as major.minor.patch; pre-release suffixes are ignored.
+function Assert-CaddyBuildInfo {
+    param(
+        [Parameter(Mandatory)] [string] $BinaryPath,
+        [Parameter(Mandatory)] [string] $GoVersion,
+        [object[]] $Replaces = @()
+    )
+
+    $toCore = {
+        param([string] $v)
+        [version] (($v -replace '^v', '') -split '[-+]')[0]
+    }
+
+    $buildInfo = @(& go version -m $BinaryPath)
+    if ($LASTEXITCODE -ne 0 -or $buildInfo.Count -eq 0) {
+        throw "go version -m could not read build information from $BinaryPath"
+    }
+    $builtWith = ($buildInfo[0] -split '\s+')[-1]
+    if ($builtWith -ne "go$GoVersion") {
+        throw "Built Caddy reports toolchain '$builtWith', expected 'go$GoVersion' (go.version)"
+    }
+    Write-Host "  ok: compiled with $builtWith" -ForegroundColor Green
+
+    foreach ($r in $Replaces) {
+        $required = $null
+        $landed = $false
+        foreach ($line in $buildInfo) {
+            $cols = $line.Trim() -split '\s+'
+            if ($cols.Count -lt 3 -or $cols[1] -ne $r.Module) { continue }
+            if ($cols[0] -eq 'dep') { $required = $cols[2] }
+            if ($cols[0] -eq '=>' -and $cols[2] -eq $r.Version) { $landed = $true }
+        }
+        if (-not $landed) {
+            throw "MISSING override: $($r.Module) $($r.Version) (caddy-replaces.txt) is not in the binary"
+        }
+        if ($required -and (& $toCore $required) -ge (& $toCore $r.Version)) {
+            throw "STALE override: $($r.Module) $($r.Version) (caddy-replaces.txt). The build already requires $required; delete this line."
+        }
+        Write-Host "  ok: $($r.Module) $required => $($r.Version)" -ForegroundColor Green
+    }
+}
+
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     throw "Go is not installed or not on PATH. See https://go.dev/dl/."
 }
@@ -131,24 +183,7 @@ try {
         throw "xcaddy build failed (exit $LASTEXITCODE)"
     }
 
-    # The binary records the toolchain and module versions it was built from;
-    # check them against the pins.
-    $buildInfo = @(& go version -m $OutputPath)
-    $builtWith = ($buildInfo[0] -split '\s+')[-1]
-    if ($builtWith -ne "go$goVersion") {
-        throw "Built Caddy reports toolchain '$builtWith', expected 'go$goVersion' (go.version)"
-    }
-    Write-Host "  ok: compiled with $builtWith" -ForegroundColor Green
-    foreach ($r in $replaces) {
-        $landed = $buildInfo | Where-Object {
-            $cols = $_.Trim() -split '\s+'
-            $cols.Count -ge 3 -and $cols[0] -eq '=>' -and $cols[1] -eq $r.Module -and $cols[2] -eq $r.Version
-        }
-        if (-not $landed) {
-            throw "Module override missing from built binary: $($r.Module) $($r.Version) (caddy-replaces.txt)"
-        }
-        Write-Host "  ok: $($r.Module) => $($r.Version)" -ForegroundColor Green
-    }
+    Assert-CaddyBuildInfo -BinaryPath $OutputPath -GoVersion $goVersion -Replaces $replaces
 }
 finally {
     $env:GOTOOLCHAIN = $previousToolchain

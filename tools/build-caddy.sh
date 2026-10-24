@@ -85,7 +85,7 @@ done
 
 # Parse caddy-replaces.txt: two columns, <go-module-path> <version>. Each
 # becomes an xcaddy --replace; REPLACE_PAIRS keeps "module version" for the
-# post-build check.
+# summary printed below.
 REPLACES_FILE="${REPO_ROOT}/caddy-replaces.txt"
 if [[ ! -f "${REPLACES_FILE}" ]]; then
     echo "Pin file not found: ${REPLACES_FILE}" >&2
@@ -133,24 +133,8 @@ echo "Building Caddy v${CADDY_VERSION} -> ${OUTPUT_PATH}"
 "${XCADDY_BIN}" build "v${CADDY_VERSION}" "${WITH_ARGS[@]}" ${REPLACE_ARGS[@]+"${REPLACE_ARGS[@]}"} --output "${OUTPUT_PATH}"
 
 # The binary records the toolchain and module versions it was built from;
-# check them against the pins.
-BUILD_INFO="$(go version -m "${OUTPUT_PATH}")"
-BUILT_WITH="$(head -n 1 <<< "${BUILD_INFO}" | awk '{print $NF}')"
-if [[ "${BUILT_WITH}" != "go${GO_VERSION}" ]]; then
-    echo "Built Caddy reports toolchain '${BUILT_WITH}', expected 'go${GO_VERSION}' (go.version)" >&2
-    exit 1
-fi
-echo "  ok: compiled with ${BUILT_WITH}"
-for pair in ${REPLACE_PAIRS[@]+"${REPLACE_PAIRS[@]}"}; do
-    module="${pair% *}"
-    version="${pair#* }"
-    if ! awk -v m="${module}" -v v="${version}" \
-         '$1 == "=>" && $2 == m && $3 == v { found = 1 } END { exit !found }' <<< "${BUILD_INFO}"; then
-        echo "Module override missing from built binary: ${module} ${version} (caddy-replaces.txt)" >&2
-        exit 1
-    fi
-    echo "  ok: ${module} => ${version}"
-done
+# check them against the pins (same check the publish workflows run).
+bash "${SCRIPT_DIR}/verify-caddy-build.sh" "${OUTPUT_PATH}"
 
 echo
 echo "Asserting baked-in plugin modules ..."

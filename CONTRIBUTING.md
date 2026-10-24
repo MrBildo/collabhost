@@ -238,7 +238,7 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 
 **When it runs:**
 
-- **On any PR** that touches `publish.yml`, `publish-dryrun.yml`, `docs/install.sh`, `docs/install.ps1`, `docs/install-system.ps1`, `docs/install-system.sh`, `docs/install-lib.sh`, `global.json`, `caddy.version`, `xcaddy.version`, `go.version`, `caddy-plugins.txt`, `caddy-replaces.txt`, `tools/verify-bundled-runtime.sh`, `frontend/**`, or anything under `release-assets/`. The dry-run is a CI gate on those paths.
+- **On any PR** that touches `publish.yml`, `publish-dryrun.yml`, `docs/install.sh`, `docs/install.ps1`, `docs/install-system.ps1`, `docs/install-system.sh`, `docs/install-lib.sh`, `global.json`, `caddy.version`, `xcaddy.version`, `go.version`, `caddy-plugins.txt`, `caddy-replaces.txt`, `tools/verify-bundled-runtime.sh`, `tools/verify-caddy-build.sh`, `frontend/**`, or anything under `release-assets/`. The dry-run is a CI gate on those paths.
 - **On demand** via `workflow_dispatch` -- run from the Actions tab. Optional `version` input (defaults to `0.0.0-dryrun`) stamps the produced archives.
 
 **How to use it:**

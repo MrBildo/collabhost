@@ -6,11 +6,11 @@
 # Each line becomes `xcaddy build --replace <module>=<module>@<version>`, which
 # writes a go.mod replace directive into the build. Use it only to take a
 # security fix in one of Caddy's own dependencies before a Caddy release
-# carries it. The build verifies that each override landed in the binary
-# (`go version -m`), so a line that no longer applies fails the build.
-#
-# Remove a line once the Caddy version in caddy.version requires that version
-# (or later) of the module itself.
+# carries it. The build (tools/verify-caddy-build.sh) reads the binary with
+# `go version -m` and fails when an override is not in it, and when the build
+# already requires the overridden version or a newer one: at that point the
+# line either does nothing or holds the module back, so the error says to
+# delete it.
 #
 # Lines starting with `#` and blank lines are ignored.
 #
