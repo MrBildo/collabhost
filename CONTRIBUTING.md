@@ -105,12 +105,12 @@ To pin a specific key for dev work, add it to a gitignored `appsettings.Developm
 ```json
 {
   "Auth": {
-    "AdminKey": "<your-ulid>"
+    "AdminKey": "<your-key>"
   }
 }
 ```
 
-Generate a fresh ULID with:
+Any value up to 26 characters works; a longer one stops startup with an error. A ULID is the usual choice. Generate a fresh one with:
 
 ```bash
 dotnet run --file tools/generate-ids.cs
@@ -234,7 +234,7 @@ If your change is large, consider opening a draft PR early to get directional fe
 
 The real release workflow (`.github/workflows/publish.yml`) only runs when a tagged GitHub Release is published. That makes pipeline-only changes (RID matrix tweaks, Caddy version bumps, install-script changes, archive-contract changes) impossible to verify without cutting a real release.
 
-`.github/workflows/publish-dryrun.yml` runs the same build matrix, frontend bundle, Caddy download, archive, and checksum steps -- and uploads the produced archives to the **workflow run** as a downloadable artifact. It never creates a tag and never touches the GitHub Releases surface.
+`.github/workflows/publish-dryrun.yml` runs the same build matrix, frontend bundle, Caddy build (`xcaddy`), archive, and checksum steps -- and uploads the produced archives to the **workflow run** as a downloadable artifact. It never creates a tag and never touches the GitHub Releases surface.
 
 **When it runs:**
 
@@ -274,7 +274,9 @@ It does **not** run on PRs and does **not** trigger on `release.published`. PR-t
 2. `collabhost --version` runs from `$HOME` (catches CWD-relative `ContentRootPath` regressions).
 3. A reinstall preserves an operator-edited `appsettings.json` and a populated `data/` directory.
 4. The bundled Caddy version is reported (and on post-release `workflow_run` runs, must match the `caddy.version` pin on the released commit).
-5. The first-boot admin-key bootstrap line (`Collabhost admin key:`) emits on stdout.
+5. The first-boot admin key is printed once on stdout (`Collabhost admin key:`), saved to `initial-admin-key.txt` in the data directory, and authenticates as an administrator.
+
+Separate jobs cover the service installs: Linux system scope (`install-system.sh`, which also checks the key stays out of the journal), the Windows system-scope service (`install-system.ps1`) and the Windows user-scope service (`install.ps1 -RegisterUserService`). The two Windows jobs also upgrade an install made with the v1.9.0 scripts and check that the install folders end up restricted to the service account and administrators. A manual run against v1.9.0 or earlier fails at the key-file check, because those releases logged the key instead of saving it to a file.
 
 **RID matrix:**
 

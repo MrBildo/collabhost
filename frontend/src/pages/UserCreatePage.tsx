@@ -6,12 +6,15 @@ import { ROUTES } from '@/lib/routes'
 import { ErrorBanner } from '@/shared/ErrorBanner'
 import { KeyRevealDialog } from '@/shared/KeyRevealDialog'
 import { PermissionGate } from '@/shared/PermissionGate'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 function UserCreatePageContent() {
   const navigate = useNavigate()
   const createMutation = useCreateUser()
+  // Each radio is named by its title alone and described by the text under it, so the role's
+  // name stays "Agent" / "Administrator" even though the descriptions mention the other role.
+  const idPrefix = useId()
 
   const [name, setName] = useState('')
   const [role, setRole] = useState<UserRole>('agent')
@@ -126,15 +129,28 @@ function UserCreatePageContent() {
                       checked={role === 'agent'}
                       onChange={() => setRole('agent')}
                       className="mt-0.5"
+                      aria-labelledby={`${idPrefix}-agent-name`}
+                      aria-describedby={`${idPrefix}-agent-summary ${idPrefix}-agent-host`}
                     />
                     <div>
                       <div
+                        id={`${idPrefix}-agent-name`}
                         style={{ fontFamily: 'var(--wm-mono)', fontSize: 'var(--wm-font-sm)', color: 'var(--wm-text)' }}
                       >
                         Agent
                       </div>
-                      <div style={{ fontSize: 'var(--wm-font-xs)', color: 'var(--wm-text-dim)', marginTop: 2 }}>
+                      <div
+                        id={`${idPrefix}-agent-summary`}
+                        style={{ fontSize: 'var(--wm-font-xs)', color: 'var(--wm-text-dim)', marginTop: 2 }}
+                      >
                         Operational access. Can manage apps, settings, and routes.
+                      </div>
+                      <div
+                        id={`${idPrefix}-agent-host`}
+                        style={{ fontSize: 'var(--wm-font-xs)', color: 'var(--wm-text)', marginTop: 6 }}
+                      >
+                        An Agent key can run programs on this host (register any command as an app and start it) and
+                        browse the host's folders. Treat it like shell access to this machine.
                       </div>
                     </div>
                   </label>
@@ -154,15 +170,21 @@ function UserCreatePageContent() {
                       checked={role === 'administrator'}
                       onChange={() => setRole('administrator')}
                       className="mt-0.5"
+                      aria-labelledby={`${idPrefix}-admin-name`}
+                      aria-describedby={`${idPrefix}-admin-summary`}
                     />
                     <div>
                       <div
+                        id={`${idPrefix}-admin-name`}
                         style={{ fontFamily: 'var(--wm-mono)', fontSize: 'var(--wm-font-sm)', color: 'var(--wm-text)' }}
                       >
                         Administrator
                       </div>
-                      <div style={{ fontSize: 'var(--wm-font-xs)', color: 'var(--wm-text-dim)', marginTop: 2 }}>
-                        Full platform access. Can manage users and delete apps.
+                      <div
+                        id={`${idPrefix}-admin-summary`}
+                        style={{ fontSize: 'var(--wm-font-xs)', color: 'var(--wm-text-dim)', marginTop: 2 }}
+                      >
+                        Full platform access: everything an Agent can do, plus managing users and deleting apps.
                       </div>
                     </div>
                   </label>

@@ -57,8 +57,8 @@ Collabhost admin key: 01JABCDEFGHJKMNPQRSTVWXYZ
 
 That line carries the full ULID; it is the value you need. Log lines beside it
 confirm that seeding ran (`Admin user seeded. Key: 01JABCDE...`) and name the
-key file. They carry only the key's first eight characters, which are the
-ULID's timestamp, never the key itself.
+key file. They carry only the key's first eight characters, which are part of
+the ULID's timestamp, never the key itself.
 
 **Operator-grepable substring:** `Collabhost admin key:` (case-sensitive).
 Example:
@@ -106,6 +106,11 @@ user, Collabhost inserts an additional `Admin (recovery)` user with that key as
 a break-glass path; your original admin key still works. On every boot, a
 configured key that matches an existing user is a no-op — this is the steady
 state for operators who set `COLLABHOST_ADMIN_KEY` in a startup wrapper script.
+
+A configured key can be any value up to 26 characters; a ULID (the shape
+Collabhost generates) is the usual choice. A longer key stops startup with an
+error naming the limit (exit code 40, §9.9) before anything is written to the
+database.
 
 ---
 
@@ -252,11 +257,11 @@ Then `.\startup.ps1`.
 | `COLLABHOST_PROXY_CERT_LIFETIME` | `Proxy:CertLifetime` | Caddy duration string | `720h` |
 | `COLLABHOST_PROXY_DNS_PROVIDER`  | `Proxy:DnsProvider` — ACME DNS-01 provider for real Let's Encrypt certs (e.g. `cloudflare`). Unset by default → Caddy uses the internal CA. Enables the DNS-01 issuer when set. See §8.4. | Caddy DNS-provider module name | `cloudflare` |
 | `COLLABHOST_PROXY_DNS_API_TOKEN_ENV_VAR` | `Proxy:DnsApiTokenEnvVar` — the **name** of another host environment variable that holds the DNS provider's API token. Not the token value itself: Collabhost emits `{env.<this-name>}` into Caddy's config, and Caddy reads the named variable from its process environment at issue time. Default `CLOUDFLARE_API_TOKEN`. See §8.4. | Env-var name (not the token) | `CLOUDFLARE_API_TOKEN` |
-| `COLLABHOST_PROXY_STORAGE_PATH`  | `Proxy:StoragePath` — root directory for Caddy's CA, account keys, and per-host certificates. Unset by default → user-scope resolves to Caddy's XDG default `~/.local/share/caddy/`; the system-scope unit sets `/var/lib/collabhost/caddy/`. Drives the CA-trust artifacts in §9.11.1. | Absolute directory path | `/var/lib/collabhost/caddy` |
+| `COLLABHOST_PROXY_STORAGE_PATH`  | `Proxy:StoragePath` — root directory for Caddy's CA, account keys, and per-host certificates. Unset by default → user-scope resolves to Caddy's XDG default `~/.local/share/caddy/`; the Linux system-scope unit sets `/var/lib/collabhost/caddy/` and the Windows system-scope service `%ProgramData%\Collabhost\caddy\`. Drives the CA-trust artifacts in §9.11.1. | Absolute directory path | `/var/lib/collabhost/caddy` |
 | `COLLABHOST_LOGS_PATH`          | `Diagnostics:CrashLogs:Directory` — crash-log output directory. Unset by default → `{data-directory}/logs/` (i.e. `data/logs/` next to the binary, or the per-shape logs path in §9.7). See §9.7. | Absolute directory path | `/var/log/collabhost` |
 | `COLLABHOST_CONFIG_PATH`        | Absolute path to the operator-facing `appsettings.json` that Collabhost loads via an explicit `AddJsonFile`. Set by the system-scope installer to `/etc/collabhost/appsettings.json` so the canonical config lives outside the read-only install tree; **unset in user-scope**, where the binary's working-directory `appsettings.json` is used. To relocate the config in a system-scope install, set this in a systemd drop-in. | Absolute file path | `/etc/collabhost/appsettings.json` |
 | `COLLABHOST_PORTAL_SUBDOMAIN`   | `Portal:Subdomain` — Portal route subdomain | DNS label | `portal` |
-| `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey`. A secret: under a systemd unit, set it in a mode-0600 `EnvironmentFile=`, never on an `Environment=` line (§5.5.1 explains why). | ULID / opaque string | `01JABCDEFGHJKMNPQRSTVWXYZ` |
+| `COLLABHOST_ADMIN_KEY`          | `Auth:AdminKey`. A secret: under a systemd unit, set it in a mode-0600 `EnvironmentFile=`, never on an `Environment=` line (§5.5.1 explains why). | Up to 26 characters (a ULID is the usual choice; see §2) | `01JABCDEFGHJKMNPQRSTVWXYZ` |
 | `COLLABHOST_INSTALL_BASE_URL`   | Install-script only — base URL for archive downloads. Overrides the default GitHub Releases URL. Useful for testing install scripts against local artifact servers. Must be `https://`; a plain `http://` URL is accepted only when it points at this machine (`localhost`, `127.x.y.z`, `[::1]`), or with `COLLABHOST_INSTALL_ALLOW_HTTP=1`. The installer says which applies. With a URL on this machine, whatever program is listening on that port supplies the archive and its checksum; on a machine other people can log in to, make sure it is your own mirror. | URL (no trailing slash) | `http://localhost:9000/releases/vX.Y.Z` |
 | `COLLABHOST_INSTALL_SCRIPT_BASE_URL` | Install-script only (Linux / macOS) — base URL for the script/lib mirror, the host the installer self-fetches `install-lib.sh` from when it is not co-located beside the script (the `curl ... \| bash` and standalone-download paths). Overrides the default GitHub Pages URL. Useful for testing install scripts against a local mirror. Same `https://` rule as the row above. | URL (no trailing slash) | `http://localhost:9000/collabhost` |
 | `COLLABHOST_INSTALL_ALLOW_HTTP` | Install-script only — set to `1` to accept a plain `http://` value in the two rows above when it points at another host. Every installer downloads over HTTPS otherwise, and refuses to follow a redirect from HTTPS to HTTP. With this set, the archive and the checksum it is verified against both arrive unprotected, so the checksum no longer proves anything; the installer prints a warning. | `1` | `1` |
@@ -545,7 +550,9 @@ also removes group and other write permission from the install directory, its
 `LICENSES/` folder and, in the default layout, `~/.collabhost`, so no other
 user can replace the binary through any of them. Re-running the installer
 repairs those modes if they were loosened, including on an install made by an
-earlier release. Directories above those are left as they are: your home
+earlier release. It does not change a shell startup file an earlier release
+created: see §8.0 if you installed from a shell with `umask 000`. Directories
+above those are left as they are: your home
 directory, and the parents of a custom `--install-path` that already existed.
 Make sure no other user can write to them, because write permission on a
 directory is enough to rename what is inside it and put something else in its
@@ -884,7 +891,7 @@ ones. The installer breaks inheritance at `%ProgramData%\Collabhost\` so only
 `SYSTEM`, `Administrators` and the service account can reach it. That matters
 because `config\` holds the admin key when you set one, `data\` holds the
 database, and `caddy\` holds the private key of the local certificate
-authority you may have trusted on other devices (§3). This is the Windows
+authority you may have trusted on other devices (§9.11). This is the Windows
 equivalent of the Linux install's `0750` data directories. Every run of the
 script, including an upgrade, re-applies these permissions: it makes
 `Administrators` the owner of everything under `%ProgramData%\Collabhost\`,
@@ -927,7 +934,7 @@ curl http://localhost:58400/api/v1/status
 # Dashboard reachability check -- exercises the canonical layout split.
 # This is the load-bearing assertion: it confirms wwwroot/, appsettings.json,
 # and the operator-facing data directories all resolved correctly under SCM
-# launch (not just the API listener). See §3 for trusting the bundled CA.
+# launch (not just the API listener). See §9.11 for trusting the bundled CA.
 curl -k https://collabhost.collab.internal/
 ```
 
@@ -1012,6 +1019,19 @@ preserved; binaries, `wwwroot/`, `LICENSES/`, and the service registration
 are refreshed. Upgrading an install made by an earlier version of the script,
 which left `%ProgramData%\Collabhost\` readable by every local user, applies
 the restricted permissions with no further step.
+
+**If other people have accounts on this machine,** they could read that folder
+before the upgrade, and user keys are stored in the database as plain text.
+After upgrading such an install, replace every key: the admin key and every
+user key, Agent keys included. To replace a key, create a new user with the
+same role on the **Users** page, move whatever used the old key to the new one
+(for the admin key, sign in with the new one), then deactivate the old user.
+If you trusted the local certificate authority on other devices, regenerate it
+too, because its private key was in the same folder: stop the service, delete
+`%ProgramData%\Collabhost\caddy\pki\` and
+`%ProgramData%\Collabhost\caddy\certificates\local\`, start the service, then
+import the new root certificate on each device (§9.11) and remove the old one.
+On a machine only you sign in to, none of this is needed.
 
 **Uninstall:**
 
@@ -1619,16 +1639,23 @@ configurations should leave `headers` empty and let each agent supply
   config-file import.
 - **Agent** — everything except the administrator-only operations above. An
   agent can start, stop, restart, kill, register, and reconfigure apps, and
-  can read logs, settings, and the activity event log.
+  can read logs, settings, and the activity event log. **An Agent key can run
+  programs on this host:** it can register an app with any command and start
+  it, and it can browse the host's folders. The program runs as the account
+  Collabhost runs under, inside the same limits (on a Linux system-scope
+  install, the sandbox in §5.5.2). Give an Agent key only to something you
+  would trust with a shell on this machine.
 - **Read-only** — observability only. A read-only key can read system status,
-  the app list, and app detail, but is **refused** every mutating operation
+  the app list, app detail, the route list, and the app types, but is
+  **refused** every mutating operation
   (start/stop/restart/kill/register/delete/settings changes) **and** the reads
   that can carry secrets or operational history (logs, log stream, settings,
   activity events). Use it for status pages, external monitors, and watcher
   automation that should never hold start/kill authority — for example, an
   automation flow that checks "are all my apps running" without being able to
   touch them. Create one by assigning the read-only role when you create the
-  user.
+  user through the REST API (`POST /api/v1/users`, with an administrator key);
+  the dashboard's **New User** form offers only Agent and Administrator.
 
 The role check happens per call on both the REST API and the MCP tools; a
 caller attempting an operation above its role receives an authorization error
@@ -1741,6 +1768,67 @@ launchctl unload ~/Library/LaunchAgents/dev.collabhost.plist
 For a foreground launch (no service wrapper), `Ctrl-C` on the running process
 is sufficient — Collabhost's shutdown path drains its supervised children
 before exiting.
+
+**Changes in v1.10.0 to check when you upgrade.** None of them needs a step on
+a default install; each says who is affected.
+
+- **The bundled proxy (Caddy 2.11.7) is stricter with requests to your apps.**
+  There is no Collabhost setting for any of these three:
+  - Request headers totalling more than about 16 KiB are refused (`431 Request
+    Header Fields Too Large` over HTTP/1.1, a reset connection over HTTP/2).
+    The limit used to be 1 MB. Apps that rely on very large cookies or tokens
+    are the ones that notice.
+  - Request header names containing a dot (`X.Example`) are no longer passed
+    to apps. Names containing an underscore already were not.
+  - An upload or a response that makes no progress for 60 seconds is cut.
+    Pauses between messages on a stream (server-sent events, the MCP endpoint)
+    do not count; a stalled upload or a response that stops mid-body does.
+- **The dashboard can no longer be shown inside a frame on another page.**
+  Every response from Collabhost itself (the dashboard and its API, not your
+  hosted apps) now forbids framing (`X-Frame-Options: DENY` and
+  `Content-Security-Policy: frame-ancestors 'none'`), so a start page that
+  embeds the dashboard in a frame shows an empty or refused frame. Open the
+  dashboard in its own tab. This stops a page on one of your hosted apps from
+  framing a signed-in dashboard; there is no setting to turn it off.
+- **A custom domain pattern is checked when you register an app.** It must
+  produce a valid hostname that neither the dashboard nor another app already
+  uses; otherwise registration is refused. Apps registered before v1.10.0 are
+  not re-checked. `serveMode` can no longer be set at registration; the app
+  type decides it.
+- **Linux system scope:** re-running `install-system.sh` puts the service in a
+  systemd sandbox, and your hosted apps run inside it (§5.5.2). Check the
+  sandbox table there if an app uses a device, `sudo`, its own namespaces, or
+  writes outside `/var/lib/collabhost`. A drop-in with `Delegate=yes` now
+  needs `ProtectControlGroups=no` as well (§5.5.2).
+- **Windows:** re-running `install-system.ps1`, or `install.ps1
+  -RegisterUserService` for the user-scope service, narrows the folder
+  permissions with no other step (§5.5.4, §5.5.5). On a system-scope install
+  on a machine other people sign in to, replace your keys afterwards (§5.5.4).
+  For the user-scope
+  service, a database, user-types folder or certificate storage you moved out
+  of the default folders needs a `Modify` grant (§5.5.5).
+- **Linux and macOS user scope, if you installed an earlier release from a
+  shell with `umask 000`:** that installer could create your shell startup
+  file writable by every user, and this installer does not change it. Remove
+  that permission from the file that holds the
+  `# Added by collabhost installer` line, then re-run the installer over the
+  top, which repairs the install directory (§5.5.1):
+
+  ```sh
+  chmod go-w ~/.bashrc     # or ~/.zshrc / ~/.profile, whichever has the line
+  ```
+
+  If you are not sure how your shell was set up, running it does no harm.
+- **Secrets in a systemd unit:** if a drop-in sets the admin key or a DNS API
+  token on an `Environment=` line, move it to a file referenced with
+  `EnvironmentFile=` (§5.5.1); any local user can read `Environment=` values.
+- **Installer downloads are HTTPS only.** A `COLLABHOST_INSTALL_BASE_URL` or
+  `COLLABHOST_INSTALL_SCRIPT_BASE_URL` that starts with `http://` is refused
+  unless it points at this machine or `COLLABHOST_INSTALL_ALLOW_HTTP=1` is set
+  (§5.4).
+- **First-run admin key:** a fresh install no longer writes the key to the
+  journal or the Windows Event Log; it prints it once and saves it to
+  `initial-admin-key.txt` (§2). An existing install keeps the key it has.
 
 **Breaking in v1.9.0 — the proxy-binary env override was renamed.** If you point
 Collabhost at a specific Caddy binary with the `COLLABHOST_CADDY_PATH` environment
@@ -2171,7 +2259,8 @@ your terminal scrollback has lost it:
   search the file the same way.)
 
 - **Break-glass on a running install (Scenario 3).** Set `COLLABHOST_ADMIN_KEY`
-  to a new ULID and relaunch. If the configured key doesn't match any existing
+  to a new key (up to 26 characters; a fresh ULID is a good choice) and
+  relaunch. If the configured key doesn't match any existing
   user, Collabhost inserts an additional `Admin (recovery)` user with that key.
   Use it to log in and then edit or disable other users from the dashboard.
 
@@ -2294,7 +2383,7 @@ the exit-code taxonomy on startup failure:
 | 20 | Migration failed or pre-migration backup failed | Operator (restore backup — see §9.8) |
 | 30 | Built-in type validation failure | Collabhost team (packaging bug) |
 | 31 | User-type validation failure | Operator (fix / remove the bad JSON) |
-| 40 | Seeder threw unexpectedly (proxy or admin) | Operator (file an issue) |
+| 40 | Seeding failed: a configured admin key longer than 26 characters (the stderr block says so), or the proxy or admin seeder threw unexpectedly | Operator (shorten the key, §2; otherwise file an issue) |
 
 Any code outside this table is unexpected — please file an issue with the
 stderr block.
@@ -2549,6 +2638,7 @@ default"):
 | User-scope (Linux, `install.sh`) | unset → Caddy default | `~/.local/share/caddy/pki/authorities/local/root.crt` |
 | User-scope (macOS, `install.sh`) | unset → Caddy default | `~/Library/Application Support/caddy/pki/authorities/local/root.crt` |
 | System-scope (Linux, `install-system.sh`) | `/var/lib/collabhost/caddy` (set in the systemd unit) | `/var/lib/collabhost/caddy/pki/authorities/local/root.crt` |
+| System-scope (Windows, `install-system.ps1`) | `%ProgramData%\Collabhost\caddy` (set on the service) | `%ProgramData%\Collabhost\caddy\pki\authorities\local\root.crt` |
 | Workstation Windows | unset → Caddy default | `%AppData%\Caddy\pki\authorities\local\root.crt` |
 
 If unsure, search:
@@ -2860,5 +2950,5 @@ instead of `\`. The command succeeds (exit status 0) only when the archive was
 built by the release workflow from that tag. If it fails, including with "no
 attestations found", the archive is not the one the release built: do not
 install it. Keep the two flags after `--repo`: without them, an archive built
-by this repository's test workflows would also pass. Releases published before
-provenance was added have no attestation.
+by this repository's test workflows would also pass. Releases before v1.10.0
+have no attestation.
