@@ -1,0 +1,15 @@
+# Go module overrides baked into the bundled Caddy binary.
+#
+# Format: two whitespace-separated columns per non-comment line:
+#   <go-module-path>  <version>
+#
+# Each line becomes `xcaddy build --replace <module>=<module>@<version>`, which
+# writes a go.mod replace directive into the build. Use it only to take a
+# security fix in one of Caddy's own dependencies before a Caddy release
+# carries it. The build verifies that each override landed in the binary
+# (`go version -m`), so a line that no longer applies fails the build.
+#
+# Remove a line once the Caddy version in caddy.version requires that version
+# (or later) of the module itself.
+#
+# Lines starting with `#` and blank lines are ignored.

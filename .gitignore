@@ -73,6 +73,7 @@ tools/*
 !tools/lint-source-comment-refs.py
 !tools/lint-systemd-unit-drift.sh
 !tools/test-source-comment-refs.sh
+!tools/verify-bundled-runtime.sh
 
 # OS files
 Thumbs.db

@@ -8,9 +8,11 @@ Thanks for your interest in contributing. This guide covers everything you need 
 
 | Tool | Version | Install |
 |------|---------|---------|
-| .NET | 10+ | [dot.net](https://dot.net/download) |
+| .NET SDK | 10.0.4xx, at or above the version in `global.json` | [dot.net](https://dot.net/download) |
 | Node.js | 22+ | [nodejs.org](https://nodejs.org/) |
 | Caddy | 2.x | [caddyserver.com](https://caddyserver.com/docs/install) (optional -- proxy features degrade gracefully without it) |
+
+`global.json` pins the exact .NET SDK that CI and the release pipeline install. A release is a self-contained publish, so that SDK decides which .NET runtime ships inside every archive. Locally, any later patch in the same feature band (10.0.4xx) is accepted; an older SDK, or one from another band, is refused with a "requested SDK version" error. Install the pinned SDK (or a newer 10.0.4xx patch) and the build picks it up.
 
 ## Setup
 
@@ -42,7 +44,7 @@ The resolver reads env var > appsettings > null. `COLLABHOST_PROXY_BINARY_PATH` 
 
 **Getting a Caddy binary:** download from [caddyserver.com](https://caddyserver.com/docs/install) into `tools/caddy/`, or install globally with `winget install CaddyServer.Caddy` (Windows) / `sudo apt install caddy` (Linux). For a global install, point `Proxy:BinaryPath` (or `COLLABHOST_PROXY_BINARY_PATH`) at the absolute path of the system binary.
 
-**Vanilla vs plugin-baked Caddy.** A vanilla Caddy is fine for everyday dev — the proxy defaults to Caddy's internal CA, which doesn't depend on any DNS plugin. The CI release pipeline produces a Caddy with `caddy-dns/cloudflare` (and any other plugins listed in `caddy-plugins.txt`) baked in via `xcaddy`; that binary is what end users get. If you're locally exercising the ACME branch (`Proxy:DnsProvider` set), you need the plugin-baked binary too. Reproduce the CI build locally with `tools/build-caddy.ps1` (Windows) or `tools/build-caddy.sh` (Linux/macOS); both read the same pin files (`caddy.version`, `xcaddy.version`, `caddy-plugins.txt`) the CI workflow does. Requires [Go](https://go.dev/dl/) on PATH.
+**Vanilla vs plugin-baked Caddy.** A vanilla Caddy is fine for everyday dev — the proxy defaults to Caddy's internal CA, which doesn't depend on any DNS plugin. The CI release pipeline produces a Caddy with `caddy-dns/cloudflare` (and any other plugins listed in `caddy-plugins.txt`) baked in via `xcaddy`; that binary is what end users get. If you're locally exercising the ACME branch (`Proxy:DnsProvider` set), you need the plugin-baked binary too. Reproduce the CI build locally with `tools/build-caddy.ps1` (Windows) or `tools/build-caddy.sh` (Linux/macOS); both read the same pin files (`caddy.version`, `xcaddy.version`, `go.version`, `caddy-plugins.txt`, `caddy-replaces.txt`) the CI workflow does. Requires [Go](https://go.dev/dl/) 1.21 or later on PATH; the scripts download and use the toolchain pinned in `go.version`.
 
 #### TLS issuer: internal CA vs ACME (Let's Encrypt)
 
@@ -236,7 +238,7 @@ The real release workflow (`.github/workflows/publish.yml`) only runs when a tag
 
 **When it runs:**
 
-- **On any PR** that touches `publish.yml`, `publish-dryrun.yml`, `docs/install.sh`, `docs/install.ps1`, `docs/install-system.ps1`, `caddy.version`, `xcaddy.version`, `caddy-plugins.txt`, `frontend/**`, or anything under `release-assets/`. The dry-run is a CI gate on those paths.
+- **On any PR** that touches `publish.yml`, `publish-dryrun.yml`, `docs/install.sh`, `docs/install.ps1`, `docs/install-system.ps1`, `docs/install-system.sh`, `docs/install-lib.sh`, `global.json`, `caddy.version`, `xcaddy.version`, `go.version`, `caddy-plugins.txt`, `caddy-replaces.txt`, `tools/verify-bundled-runtime.sh`, `frontend/**`, or anything under `release-assets/`. The dry-run is a CI gate on those paths.
 - **On demand** via `workflow_dispatch` -- run from the Actions tab. Optional `version` input (defaults to `0.0.0-dryrun`) stamps the produced archives.
 
 **How to use it:**

@@ -114,11 +114,15 @@ carries).
 
 1. `npm ci` + `vite build` → copy `frontend/dist` into the API's `wwwroot`
 2. bundled Caddy — `STAGE_CADDY_SOURCE=build` runs `tools/build-caddy.sh` against the
-   ref's `caddy.version` / `xcaddy.version` / `caddy-plugins.txt` (faithful — a Caddy
-   bump in the ref is actually tested on stage); `=copy` copies prod's bundled caddy
+   ref's `caddy.version` / `xcaddy.version` / `go.version` / `caddy-plugins.txt` /
+   `caddy-replaces.txt` (faithful — a Caddy bump in the ref is actually tested on stage;
+   the box's Go must be 1.21+ and able to download the `go.version` toolchain);
+   `=copy` copies prod's bundled caddy
 3. `tools/compute-wwwroot-hash.sh` (the same script `publish.yml` shells; #342/#395)
 4. single-file self-contained `dotnet publish` (with `-p:WwwrootHash` and a
-   `0.0.0-stage-<sha>` version stamp) directly into the publish dir
+   `0.0.0-stage-<sha>` version stamp) directly into the publish dir. The ref's
+   `global.json` decides which SDK is accepted (a 10.0.4xx patch at or above its
+   `sdk.version`), so the box's .NET SDK has to keep up with that pin
 5. assemble + verify the publish contract (`collabhost`, `caddy`, `wwwroot/`,
    `wwwroot.sha256`, docs/licenses) — `install-artifacts` / `install-caddy` read this dir
 
