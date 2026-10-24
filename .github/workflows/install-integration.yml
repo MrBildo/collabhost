@@ -52,7 +52,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag to install (e.g. v0.1.0). Required; the run will fail if absent.'
+        description: 'Release tag to install (e.g. v0.1.0). Required; the run will fail if absent. Tags from before the admin-key file (v1.9.0 and earlier) fail at the key-file step.'
         required: true
         default: ''
 
