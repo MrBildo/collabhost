@@ -40,7 +40,10 @@ name: Install integration
 #   linux-arm64  -> ubuntu-latest+QEMU   (Docker, linux/arm64 platform)
 #   osx-x64      -> not supported; archive dropped in v0.1.1 (see CONTRIBUTING.md)
 #   osx-arm64    -> macos-latest         (native, Apple Silicon)
-#   win-x64      -> windows-latest       (native)
+#   win-x64      -> windows-latest       (native; plus a system-scope service leg
+#                                         and a user-scope service leg, each run
+#                                         as an upgrade over the last pre-fix
+#                                         installer and as a fresh install)
 
 on:
   workflow_run:
@@ -623,6 +626,253 @@ jobs:
           }
 
           Write-Host 'Admin-key bootstrap line emitted.'
+
+  # Windows system-scope service (install-system.ps1). Exercises the real
+  # service registration under NT SERVICE\Collabhost and the permissions the
+  # installer puts on %ProgramData%\Collabhost, on both paths an operator takes:
+  # an upgrade over an install made by the last pre-fix script, and a fresh
+  # install. The runner is elevated, which install-system.ps1 requires.
+  install-windows-system-scope:
+    name: Install win-x64 (system-scope service)
+    needs: resolve-version
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      TAG: ${{ needs.resolve-version.outputs.version }}
+      # The last release whose installers left %ProgramData%\Collabhost on the
+      # ACL inherited from %ProgramData% (readable by every local user) and gave
+      # the user-scope service account Modify on its whole install directory.
+      # The upgrade steps install with that release's scripts first.
+      PRE_ACL_FIX_REF: v1.9.0
+      DATA_ROOT: C:\ProgramData\Collabhost
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch the pre-fix installer scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags --depth 1 origin "refs/tags/$($env:PRE_ACL_FIX_REF):refs/tags/$($env:PRE_ACL_FIX_REF)"
+          if ($LASTEXITCODE -ne 0) { throw "git fetch of $env:PRE_ACL_FIX_REF failed." }
+          # git archive writes the blobs byte for byte (a pipe through pwsh would re-encode them).
+          $zip = Join-Path $env:RUNNER_TEMP 'prefix.zip'
+          git archive --format=zip --output $zip $env:PRE_ACL_FIX_REF docs/install-system.ps1 docs/install.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'git archive failed.' }
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'prefix') -Force
+          Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'prefix\docs')
+
+      - name: Install with the pre-fix script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & (Join-Path $env:RUNNER_TEMP 'prefix\docs\install-system.ps1') -Version $env:TAG
+
+      - name: Pre-fix permissions are open (negative control)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & tools/assert-windows-install-acl.ps1 -Scope System -Path $env:DATA_ROOT -Account 'NT SERVICE\Collabhost' -Expect Open
+
+      # Leave the kind of residue the old ACL allowed: an unprivileged local user
+      # creating files in the native-library extraction directory and in
+      # user-types\, owning them, and granting itself access.
+      - name: Plant files as an unprivileged local user
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pw = 'Aa1!' + [Guid]::NewGuid().ToString('N')
+          & net.exe user chplanter $pw /add | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'net user /add failed.' }
+          $bundlePlant = Join-Path $env:DATA_ROOT 'dotnet-bundle\planted'
+          $typesPlant  = Join-Path $env:DATA_ROOT 'user-types\planted.txt'
+          New-Item -ItemType Directory -Path $bundlePlant -Force | Out-Null
+          Set-Content -LiteralPath (Join-Path $bundlePlant 'version.dll') -Value 'planted'
+          Set-Content -LiteralPath $typesPlant -Value 'planted'
+          foreach ($cmd in @(
+              @($bundlePlant, '/setowner', 'chplanter', '/T'),
+              @($typesPlant, '/setowner', 'chplanter'),
+              @($typesPlant, '/grant', 'chplanter:(M)')))
+          {
+            & icacls.exe @cmd | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "icacls $($cmd -join ' ') failed." }
+          }
+          & icacls.exe $typesPlant
+
+      - name: Upgrade with this commit's script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & docs/install-system.ps1 -Version $env:TAG
+
+      - name: Upgraded permissions are restricted
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & icacls.exe $env:DATA_ROOT
+          & icacls.exe (Join-Path $env:DATA_ROOT 'config\appsettings.json')
+          & tools/assert-windows-install-acl.ps1 -Scope System -Path $env:DATA_ROOT -Account 'NT SERVICE\Collabhost' -Expect Restricted
+
+          if (Test-Path -LiteralPath (Join-Path $env:DATA_ROOT 'dotnet-bundle\planted')) {
+            throw 'The planted directory in dotnet-bundle survived the upgrade.'
+          }
+          $typesPlant = Join-Path $env:DATA_ROOT 'user-types\planted.txt'
+          $owner = (Get-Acl -LiteralPath $typesPlant).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+          if ($owner -ne 'S-1-5-32-544') { throw "user-types\planted.txt is owned by $owner, not Administrators." }
+          Write-Host 'Planted residue: dotnet-bundle entry removed; user-types file now owned by Administrators with no ACE for its creator.'
+
+      - name: Service runs under the restricted permissions (upgrade)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $svc = Get-CimInstance -ClassName Win32_Service -Filter "Name='Collabhost'"
+          Write-Host "Collabhost service: state=$($svc.State) account=$($svc.StartName)"
+          if ($svc.StartName -ne 'NT SERVICE\Collabhost') { throw "Unexpected service account '$($svc.StartName)'." }
+          $ok = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            try {
+              $status = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:58400/api/v1/status' -ErrorAction Stop
+              if ($status.Content -match '"status"') { $ok = $true; break }
+            } catch { }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $ok) {
+            Get-ChildItem -LiteralPath (Join-Path $env:DATA_ROOT 'logs') -ErrorAction SilentlyContinue | Get-Content -Tail 50
+            throw 'Status endpoint never came up under the service.'
+          }
+          if (-not (Get-ChildItem -LiteralPath (Join-Path $env:DATA_ROOT 'dotnet-bundle') -Force)) {
+            throw 'dotnet-bundle is empty: the service did not re-extract its native libraries.'
+          }
+          Write-Host 'Service answered /api/v1/status and re-extracted its native libraries into dotnet-bundle.'
+
+      - name: Fresh install
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & docs/install-system.ps1 -Uninstall -PurgeData
+          if (Test-Path -LiteralPath $env:DATA_ROOT) { throw "$env:DATA_ROOT survived -Uninstall -PurgeData." }
+          & docs/install-system.ps1 -Version $env:TAG
+          & tools/assert-windows-install-acl.ps1 -Scope System -Path $env:DATA_ROOT -Account 'NT SERVICE\Collabhost' -Expect Restricted
+
+      - name: Service runs under the restricted permissions (fresh)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ok = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            try {
+              $status = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:58400/api/v1/status' -ErrorAction Stop
+              if ($status.Content -match '"status"') { $ok = $true; break }
+            } catch { }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $ok) { throw 'Status endpoint never came up under the service.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $env:DATA_ROOT 'data\collabhost.db'))) { throw 'The service did not create its database.' }
+          # Re-check after the service has written its own files.
+          & tools/assert-windows-install-acl.ps1 -Scope System -Path $env:DATA_ROOT -Account 'NT SERVICE\Collabhost' -Expect Restricted
+          Write-Host 'Fresh install: service created its database and answered /api/v1/status.'
+
+      - name: Teardown
+        if: always()
+        shell: pwsh
+        run: |
+          & docs/install-system.ps1 -Uninstall -PurgeData
+          & net.exe user chplanter /delete 2>$null | Out-Null
+          exit 0
+
+  # Windows user-scope service (install.ps1 -RegisterUserService, default
+  # passwordless virtual account NT SERVICE\CollabhostUser). Checks that the
+  # service account can write only where it writes at runtime and cannot modify
+  # the binaries on the operator's PATH, after an upgrade over the pre-fix
+  # script and on a fresh registration.
+  install-windows-user-service:
+    name: Install win-x64 (user-scope service)
+    needs: resolve-version
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      TAG: ${{ needs.resolve-version.outputs.version }}
+      PRE_ACL_FIX_REF: v1.9.0
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch the pre-fix installer scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags --depth 1 origin "refs/tags/$($env:PRE_ACL_FIX_REF):refs/tags/$($env:PRE_ACL_FIX_REF)"
+          if ($LASTEXITCODE -ne 0) { throw "git fetch of $env:PRE_ACL_FIX_REF failed." }
+          $zip = Join-Path $env:RUNNER_TEMP 'prefix.zip'
+          git archive --format=zip --output $zip $env:PRE_ACL_FIX_REF docs/install-system.ps1 docs/install.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'git archive failed.' }
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'prefix') -Force
+
+      - name: Install and register with the pre-fix script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & (Join-Path $env:RUNNER_TEMP 'prefix\docs\install.ps1') -Version $env:TAG -SkipPath -RegisterUserService
+
+      - name: Pre-fix permissions are open (negative control)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & tools/assert-windows-install-acl.ps1 -Scope User -Path (Join-Path $HOME '.collabhost\bin') -Account 'NT SERVICE\CollabhostUser' -Expect Open
+
+      - name: Upgrade with this commit's script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & docs/install.ps1 -Version $env:TAG -SkipPath -RegisterUserService
+
+      - name: Upgraded permissions are restricted and the service runs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = Join-Path $HOME '.collabhost\bin'
+          & icacls.exe (Join-Path $bin 'collabhost.exe')
+          & icacls.exe (Join-Path $bin 'data')
+          & tools/assert-windows-install-acl.ps1 -Scope User -Path $bin -Account 'NT SERVICE\CollabhostUser' -Expect Restricted
+          $svc = Get-CimInstance -ClassName Win32_Service -Filter "Name='CollabhostUser'"
+          Write-Host "CollabhostUser service: state=$($svc.State) account=$($svc.StartName)"
+          if ($svc.StartName -ne 'NT SERVICE\CollabhostUser') { throw "Unexpected service account '$($svc.StartName)'." }
+          $ok = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            try {
+              $status = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:58400/api/v1/status' -ErrorAction Stop
+              if ($status.Content -match '"status"') { $ok = $true; break }
+            } catch { }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $ok) { throw 'Status endpoint never came up under the service.' }
+          Write-Host 'Upgrade: service answered /api/v1/status with the binaries read-only to it.'
+
+      - name: Fresh registration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = Join-Path $HOME '.collabhost\bin'
+          & docs/install.ps1 -UnregisterUserService
+          Remove-Item -LiteralPath $bin -Recurse -Force
+          & docs/install.ps1 -Version $env:TAG -SkipPath -RegisterUserService
+          $ok = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            try {
+              $status = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:58400/api/v1/status' -ErrorAction Stop
+              if ($status.Content -match '"status"') { $ok = $true; break }
+            } catch { }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $ok) { throw 'Status endpoint never came up under the service.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $bin 'data\collabhost.db'))) { throw 'The service did not create its database.' }
+          & tools/assert-windows-install-acl.ps1 -Scope User -Path $bin -Account 'NT SERVICE\CollabhostUser' -Expect Restricted
+          Write-Host 'Fresh registration: service created its database and answered /api/v1/status.'
+
+      - name: Teardown
+        if: always()
+        shell: pwsh
+        run: |
+          & docs/install.ps1 -UnregisterUserService
+          exit 0
 
   install-linux-arm64:
     name: Install linux-arm64 (QEMU)

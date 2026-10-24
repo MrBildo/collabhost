@@ -6,9 +6,11 @@
     Lays the canonical Windows server layout and registers Collabhost as a
     Windows Service running under the dedicated virtual account
     'NT SERVICE\Collabhost'. The %ProgramFiles% side is read-only to that
-    account; the %ProgramData% side is granted to it explicitly per writable
-    directory. This is the least-privilege Windows analog of the Linux
-    system install's dedicated 'collabhost' service user.
+    account. %ProgramData%\Collabhost does not inherit %ProgramData%'s ACL:
+    only SYSTEM, Administrators and the service account can reach it, and the
+    account is granted Modify per writable directory and Read on config\.
+    This is the least-privilege Windows analog of the Linux system install's
+    dedicated 'collabhost' service user and 0750 data directories.
 
       %ProgramFiles%\Collabhost\bin\collabhost.exe  -- binary (read-only to service)
       %ProgramFiles%\Collabhost\bin\caddy.exe       -- bundled Caddy (read-only to service)
@@ -26,7 +28,8 @@
     Requires an administrator-elevated PowerShell. Re-runnable: on re-run,
     binaries / wwwroot / LICENSES are overwritten with the new release's
     contents; appsettings.json is smart-merged; data and Caddy storage are
-    left untouched.
+    left in place, and the %ProgramData%\Collabhost permissions are re-applied
+    (so re-running over an install made by an older script corrects them).
 
     Sister of install-system.sh (Linux system-scope). Self-contained by
     design -- the Windows shared-library extraction is deferred because the
@@ -107,6 +110,15 @@ $DotnetBundleDir    = Join-Path $DataRoot          'dotnet-bundle'
 $AppSettingsPath    = Join-Path $ConfigDir         'appsettings.json'
 $BaselinePath       = Join-Path $ConfigDir         'appsettings.shipped.json'
 
+# %ProgramData%\Collabhost is not left with the ACL it would inherit from
+# %ProgramData%: that ACL lets every local user read files (the admin key in
+# config, the database, the Caddy CA private key) and create files and folders
+# (including in dotnet-bundle\, where the runtime loads native libraries from).
+# The installer breaks inheritance at $DataRoot so only SYSTEM, Administrators
+# and the service account have access, and re-applies that on every run so an
+# upgrade fixes an install laid down by an older script (see
+# Protect-CollabhostDataRoot and Grant-CollabhostServiceAccess below).
+#
 # The %ProgramData% subdirectories the service account is granted Modify on.
 # %ProgramFiles% is deliberately absent: it stays read-only to the account.
 # config/ is also absent: the service never writes config at runtime, so it is
@@ -246,51 +258,104 @@ function Stop-CollabhostServiceIfRunning
     }
 }
 
-# ---- Least-privilege grant helpers ------------------------------------------
+# ---- Least-privilege ACL helpers --------------------------------------------
 
-# Grant the service account Modify on one writable directory. (OI)(CI) makes the
-# grant inherit to files and subdirectories created later; /T re-applies it
-# across the existing tree so files written under a prior LocalSystem-era
-# install become accessible to the virtual account after migration. /C continues
-# past a per-item error (e.g. a transiently locked file) rather than aborting
-# the whole grant.
-function Set-ServiceModifyAccess
+# Run icacls and fail loud on any error. None of these calls pass /C: with /C,
+# icacls reports a per-item failure only in its text output and can still exit
+# 0, so a partly applied ACL would look like success. Without /C it stops at the
+# first failing item and exits non-zero, which this turns into a terminating
+# error (the service is stopped while this runs, so nothing should hold a lock).
+function Invoke-IcaclsCommand
 {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
-    [CmdletBinding()]
     param
     (
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$Account
+        [Parameter(Mandatory = $true)][string[]]$Arguments
     )
 
-    & icacls.exe $Path /grant "${Account}:(OI)(CI)M" /T /C | Out-Null
+    $output = & icacls.exe @Arguments 2>&1
     if ($LASTEXITCODE -ne 0)
     {
-        throw "icacls grant on '$Path' for '$Account' failed with exit code $LASTEXITCODE."
+        throw "icacls $($Arguments -join ' ') failed with exit code $LASTEXITCODE.`n$($output -join [Environment]::NewLine)"
     }
 }
 
-# Grant the service account read-only (Read & Execute) access on one directory.
-# (OI)(CI) makes the grant inherit to files and subdirectories; /T re-applies it
-# across the existing tree so a prior LocalSystem-era install's config files
-# become readable by the virtual account after migration; RX (not M) is the
-# read-only grant -- the service reads config but never writes it. /C continues
-# past a per-item error rather than aborting the whole grant.
-function Set-ServiceReadAccess
+# Restrict the whole %ProgramData%\Collabhost tree to SYSTEM and Administrators.
+# Runs on every install and upgrade, before any config is written, so the tree is
+# never more open than this while the installer works in it. Three steps, in
+# this order so no step re-opens access:
+#   1. Administrators become the owner of every item. An owner can always rewrite
+#      an item's ACL, so a file or folder created earlier by someone else (the old
+#      inherited ACL let any local user create them) must not keep its creator as
+#      owner.
+#   2. Inheritance from %ProgramData% is broken at the root: SYSTEM and
+#      Administrators get full control, inherited by everything below, and
+#      BUILTIN\Users and CREATOR OWNER are no longer passed down.
+#   3. Every item below the root is reset to inherit only, which drops explicit
+#      ACEs and inheritance blocks left on individual files or folders.
+# The service account's own access is added afterwards by
+# Grant-CollabhostServiceAccess, once the service exists and its SID resolves.
+# Precondition: the root already holds the layout directories (the /reset step
+# addresses its children by wildcard).
+function Protect-CollabhostDataRoot
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    # Well-known SIDs, so the call does not depend on the Windows display language.
+    $system         = '*S-1-5-18'
+    $administrators = '*S-1-5-32-544'
+
+    Invoke-IcaclsCommand -Arguments @($Path, '/setowner', $administrators, '/T', '/Q')
+    Invoke-IcaclsCommand -Arguments @($Path, '/inheritance:r', '/grant:r', "${system}:(OI)(CI)F", "${administrators}:(OI)(CI)F", '/Q')
+    Invoke-IcaclsCommand -Arguments @((Join-Path $Path '*'), '/reset', '/T', '/Q')
+}
+
+# Give the service account exactly the access it needs under the protected root:
+# Modify on the directories it writes at runtime, Read & Execute on config\ (it
+# reads appsettings.json at startup and never writes config). Nothing on the root
+# itself. Each grant is (OI)(CI) on the directory and reaches existing and future
+# children by inheritance, which Protect-CollabhostDataRoot has just restored for
+# every item. /grant:r replaces any earlier grant to the same account rather than
+# adding a second one.
+function Grant-CollabhostServiceAccess
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$Account,
+        [Parameter(Mandatory = $true)][string[]]$WritableDirs,
+        [Parameter(Mandatory = $true)][string[]]$ReadOnlyDirs
+    )
+
+    foreach ($dir in $WritableDirs)
+    {
+        Invoke-IcaclsCommand -Arguments @($dir, '/grant:r', "${Account}:(OI)(CI)M", '/Q')
+    }
+
+    foreach ($dir in $ReadOnlyDirs)
+    {
+        Invoke-IcaclsCommand -Arguments @($dir, '/grant:r', "${Account}:(OI)(CI)RX", '/Q')
+    }
+}
+
+# Empty the single-file native-library extraction directory. The runtime
+# re-extracts on the next start, so this only costs a few seconds, and it means
+# nothing that was planted there while the directory was writable by other local
+# users (older installs) survives into the new install. Run only while the
+# service is stopped.
+function Clear-CollabhostBundleCache
 {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     [CmdletBinding()]
     param
     (
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$Account
+        [Parameter(Mandatory = $true)][string]$Path
     )
 
-    & icacls.exe $Path /grant "${Account}:(OI)(CI)(RX)" /T /C | Out-Null
-    if ($LASTEXITCODE -ne 0)
+    if (Test-Path -LiteralPath $Path)
     {
-        throw "icacls read grant on '$Path' for '$Account' failed with exit code $LASTEXITCODE."
+        Get-ChildItem -LiteralPath $Path -Force | Remove-Item -Recurse -Force
     }
 }
 
@@ -464,7 +529,7 @@ if (-not $Tag)
     }
 }
 
-# Accepts vX.Y.Z and SemVer 2.0 §9 pre-release tags (e.g. v1.2.1-rc1, v2.0.0-beta.3).
+# Accepts vX.Y.Z and SemVer 2.0 section 9 pre-release tags (e.g. v1.2.1-rc1, v2.0.0-beta.3).
 # Build metadata (+...) is intentionally rejected -- archive filenames use the version
 # as a path segment and '+' is friction across tools. Keep this pattern in sync with
 # publish.yml, install-integration.yml, install-lib.sh, and install.ps1.
@@ -626,6 +691,14 @@ try
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
         }
     }
+
+    # Lock %ProgramData%\Collabhost down before writing anything into it. On a
+    # fresh install the tree is still empty; on an upgrade from an older script
+    # this is what removes the BUILTIN\Users access that install was left with.
+    # The service account is granted its own access after registration, below.
+    Write-Host "Restricting $DataRoot to SYSTEM and Administrators..."
+    Clear-CollabhostBundleCache -Path $DotnetBundleDir
+    Protect-CollabhostDataRoot -Path $DataRoot
 
     # ---- Install bundle artifacts ------------------------------------------
 
@@ -850,28 +923,18 @@ try
 
     # ---- Least-privilege filesystem grants ---------------------------------
 
-    # Grant the virtual account Modify on each writable %ProgramData% directory.
-    # The service account resolves only once the service is registered (above),
-    # so this must run after registration and before the service starts (it
-    # needs write access at first boot: SQLite, crash logs, Caddy storage, and
-    # the single-file native-lib extract dir). %ProgramFiles% is intentionally
-    # never granted -- it stays read-only to the account, which is the whole
-    # point of moving off LocalSystem.
-    Write-Host "Granting $ServiceAccount write access to data directories..."
-    foreach ($writableDir in $WritableServiceDirs)
-    {
-        Set-ServiceModifyAccess -Path $writableDir -Account $ServiceAccount
-    }
-
-    # Grant the virtual account read-only access on config/. The service reads
-    # appsettings.json (Auth:AdminKey + the rest) at startup but never writes
-    # config at runtime, so Read -- not Modify -- is the correct grant. This
-    # matches the Linux install's read-only appsettings.json posture.
-    Write-Host "Granting $ServiceAccount read access to config directory..."
-    foreach ($readOnlyDir in $ReadOnlyServiceDirs)
-    {
-        Set-ServiceReadAccess -Path $readOnlyDir -Account $ServiceAccount
-    }
+    # Grant the virtual account Modify on each writable %ProgramData% directory
+    # and read-only access on config/. The service account resolves only once the
+    # service is registered (above), so this must run after registration and
+    # before the service starts (it needs write access at first boot: SQLite,
+    # crash logs, Caddy storage, and the single-file native-lib extract dir). The
+    # service reads appsettings.json (Auth:AdminKey + the rest) at startup but
+    # never writes config at runtime, so config/ gets Read, not Modify -- matching
+    # the Linux install's read-only appsettings.json posture. %ProgramFiles% is
+    # intentionally never granted -- it stays read-only to the account, which is
+    # the whole point of moving off LocalSystem.
+    Write-Host "Granting $ServiceAccount write access to data directories and read access to config..."
+    Grant-CollabhostServiceAccess -Account $ServiceAccount -WritableDirs $WritableServiceDirs -ReadOnlyDirs $ReadOnlyServiceDirs
 
     # ---- Service-scoped environment variables ------------------------------
 

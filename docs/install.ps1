@@ -168,6 +168,18 @@ $UserServiceEventSource = 'Collabhost'
 # The privilege the account must hold to run a service with no interactive login.
 $ServiceLogonRight      = 'SeServiceLogonRight'
 
+# The directories under a user-scope install that the service writes at runtime,
+# relative to the install directory: data\ (the SQLite database, its backups,
+# crash logs, the proxy's bootstrap config and per-app writable data, all under
+# the data directory by default), UserTypes\ (operator-authored app types; the
+# service creates it on first start when missing) and dotnet-bundle\ (where the
+# single-file binary extracts its native libraries). A service account that does
+# not own the install tree gets Modify on these and Read & Execute on everything
+# else, so it cannot replace collabhost.exe, caddy.exe, wwwroot\ or
+# appsettings.json. That matters because the install directory is on the
+# operator's PATH and the operator runs collabhost elevated for --update-hosts.
+$UserServiceWritableDirNames = @('data', 'UserTypes', 'dotnet-bundle')
+
 function Test-IsElevated
 {
     $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -338,6 +350,62 @@ function Test-IsInstallerIdentity
     catch
     {
         return $false
+    }
+}
+
+# Run icacls and fail loud on any error. None of these calls pass /C: with /C,
+# icacls reports a per-item failure only in its text output and can still exit
+# 0, so a partly applied ACL would look like success. Without /C it stops at the
+# first failing item and exits non-zero, which this turns into a terminating
+# error (the service is stopped while this runs, so nothing should hold a lock).
+function Invoke-IcaclsCommand
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    $output = & icacls.exe @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0)
+    {
+        throw "icacls $($Arguments -join ' ') failed with exit code $LASTEXITCODE.`n$($output -join [Environment]::NewLine)"
+    }
+}
+
+# Give a service account that does not own the install tree read access to the
+# whole tree and write access only where the service writes at runtime (see
+# $UserServiceWritableDirNames). It first removes every ACE the account holds
+# anywhere in the tree, including the Modify-on-everything grant older installers
+# made, so re-running -RegisterUserService over an older install lands on the
+# same ACL as a fresh one. The writable directories are created here if missing,
+# because the account cannot create them itself once the tree is read-only to it.
+function Grant-UserServiceAccess
+{
+    param
+    (
+        [Parameter(Mandatory = $true)][string]$InstallPath,
+        [Parameter(Mandatory = $true)][string]$Account
+    )
+
+    $writableDirs = foreach ($name in $UserServiceWritableDirNames)
+    {
+        Join-Path $InstallPath $name
+    }
+
+    foreach ($dir in $writableDirs)
+    {
+        if (-not (Test-Path -LiteralPath $dir))
+        {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+    }
+
+    Invoke-IcaclsCommand -Arguments @($InstallPath, '/remove:g', $Account, '/T', '/Q')
+    Invoke-IcaclsCommand -Arguments @($InstallPath, '/grant:r', "${Account}:(OI)(CI)RX", '/Q')
+
+    foreach ($dir in $writableDirs)
+    {
+        Invoke-IcaclsCommand -Arguments @($dir, '/grant:r', "${Account}:(OI)(CI)M", '/Q')
     }
 }
 
@@ -737,22 +805,17 @@ function Register-CollabhostUserService
 
     # Grant the service account scoped access to the install tree when it does not already
     # own it: the virtual account (never the operator) and a dedicated named account both
-    # need it; the operator's own account already owns the tree and is skipped. Grant Modify
-    # on the whole install tree -- binary, wwwroot, appsettings, data/, and dotnet-bundle/
-    # all live together under $BinDir for a user-scope install, and this covers every
-    # writable subdir the binary creates at runtime (data/, logs) without having to
-    # enumerate them. This is NOT wider than the operator-account model, which runs as the
-    # operator who already owns the whole tree. Run after the service exists so a virtual
-    # account name resolves; the ACEs live on the directories, so removing the install
-    # removes the grant with it (mirrors install-system.ps1).
+    # need it; the operator's own account already owns the tree and is skipped. The grant is
+    # Read & Execute on the whole tree and Modify only on the directories the service writes
+    # at runtime (see Grant-UserServiceAccess): the binaries, wwwroot\ and appsettings.json
+    # stay unwritable by the service, because the operator runs these binaries from PATH,
+    # some of them elevated. Run after the service exists so a virtual account name
+    # resolves; the ACEs live on the directories, so removing the install removes the grant
+    # with it (mirrors install-system.ps1).
     if ($needsFilesystemGrant)
     {
-        Write-Host "Granting '$accountName' access to the install tree ($BinDir)..."
-        & icacls.exe $BinDir /grant "${accountName}:(OI)(CI)M" /T /C | Out-Null
-        if ($LASTEXITCODE -ne 0)
-        {
-            throw "icacls grant on '$BinDir' for '$accountName' failed with exit code $LASTEXITCODE."
-        }
+        Write-Host "Granting '$accountName' read access to the install tree ($BinDir) and write access to its data directories..."
+        Grant-UserServiceAccess -InstallPath $BinDir -Account $accountName
     }
 
     # Crash-recovery: restart on the first + second failure (5s delay), no action
@@ -1033,7 +1096,7 @@ if (-not $Tag)
     }
 }
 
-# Accepts vX.Y.Z and SemVer 2.0 §9 pre-release tags (e.g. v1.2.1-rc1, v2.0.0-beta.3).
+# Accepts vX.Y.Z and SemVer 2.0 section 9 pre-release tags (e.g. v1.2.1-rc1, v2.0.0-beta.3).
 # Build metadata (+...) is intentionally rejected -- archive filenames use the version
 # as a path segment and '+' is friction across tools. Keep this pattern in sync with
 # publish.yml, install-integration.yml, install-lib.sh, and install-system.ps1.
@@ -1225,7 +1288,7 @@ try
 
     # wwwroot: always overwrite from the archive. This is the Portal SPA bundle
     # and must track the binary version exactly. Operators do not edit it; new
-    # versions ship new bundles (see INSTALL.md §8 "Overwritten on re-run").
+    # versions ship new bundles (see INSTALL.md section 8 "Overwritten on re-run").
     $WwwrootDst = Join-Path $InstallPath 'wwwroot'
     if (Test-Path -LiteralPath $WwwrootDst)
     {
