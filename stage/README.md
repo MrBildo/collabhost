@@ -59,12 +59,22 @@ exercised; the deploy *kit itself* is pinned at the kit path and refreshed delib
 > dispatcher `exec`s `/opt/collabhost-stage/deploy/deploy-stage.sh` only after a tamper
 > check that the script is **uid 0 and not group/other-writable** (`stat -c '%u' == 0`).
 > So the kit-install step **`chown -R root:root /opt/collabhost-stage/deploy`** after
-> copying `stage/*` in. A non-root owner (it drifted three times when laid out-of-band)
-> makes the dispatcher refuse **every** deploy with `deploy-stage.sh ... failed the tamper
-> check` — a confusing failure mode for a permissions slip. This is now **enforced in
-> `stage/box/stage-standup.sh`** (repo-tracked, #445): re-run the stand-up with the repo
-> `stage/` dir as its 2nd arg to (re)lay the kit root-owned, rather than copying it in
-> out-of-band.
+> copying `stage/*` in. A non-root owner makes the dispatcher refuse **every** deploy with
+> `deploy-stage.sh ... failed the tamper check` — a confusing failure mode for a permissions
+> slip. This is **enforced in `stage/box/stage-standup.sh`** (repo-tracked, #445): re-run the
+> stand-up with the repo `stage/` dir as its 2nd arg to (re)lay the kit root-owned, rather
+> than copying it in out-of-band.
+>
+> **The drift had a second cause (#474).** Until #474, `stage-privop install-artifacts` ran
+> `chown -R collabhost-stage` over the whole `/opt/collabhost-stage`, `deploy/` included, at
+> every deploy. Each deploy therefore broke the tamper check for the next one, and left the
+> root-run helper owned by the service user. That ownership was not reachable: the stage unit's
+> `ProtectSystem=strict` keeps `/opt` read-only for Collabhost and every app it supervises, and
+> `/opt/collabhost-stage` was never in its `ReadWritePaths` (measured 2026-10-25). The ownership
+> rule is the first wall, and the unit's sandbox is the second. `install-artifacts` now chowns
+> only `bin/` and `wwwroot/`, and refuses (exit 8) if `/opt/collabhost-stage` or anything under
+> `deploy/` is not root-owned, is group/world-writable, or is a symlink. Test:
+> `sudo bash stage/tests/test-privop-ownership.sh` on the box.
 
 ## The privileged helper (`stage-privop`)
 
@@ -83,7 +93,7 @@ Verbs (the helper owns each verb's hardcoded paths + exact behavior):
 |---|---|
 | `install-artifacts` | Install the built `collabhost` binary + `wwwroot/` + docs from the publish dir into the stage prefix. |
 | `install-caddy` | Install the bundled `caddy` from the publish dir. |
-| `wipe-data` | Clear stage state (`$STAGE_DATA`, `$STAGE_APP_DATA`, `$STAGE_SRV`). |
+| `wipe-data` | Clear stage state (`$STAGE_DATA`, `$STAGE_APP_DATA`). `$STAGE_SRV` is replaced by `seed-install`, not wiped. |
 | `wipe-ca` | Clear the internal CA storage (only when `STAGE_WIPE_CADDY=1`). |
 | `seed-install` | Copy the built demo trees from `<checkout>/stage/demo-apps` into `/srv/stage`. |
 | `start \| stop \| restart \| status` | Service control. |
@@ -101,11 +111,12 @@ carries).
 > Theo provisions once. A ref that ships a new appsettings key the stage config needs would
 > want a new `stage-privop` verb (Theo's call) — see card #443.
 
-> **Stage tree-ownership relaxation (Theo's half).** Because the install/wipe/seed verbs run
-> as the `collabhost-stage` service user, the stage trees (`$STAGE_PREFIX` incl. `bin/`, the
-> config dir, `$STAGE_DATA_ROOT`, `$STAGE_SRV`) are owned by `collabhost-stage`. Prod keeps
-> binaries root-owned (read-only-deploy posture); stage relaxes that for self-service. The
-> build checkout under `/home/stage-deploy/build` is `stage-deploy`-owned.
+> **Stage tree ownership (Theo's half).** The install/wipe/seed verbs run as root through
+> `stage-privop`. The trees the service runs from are `collabhost-stage`-owned: `bin/`,
+> `wwwroot/`, `$STAGE_DATA_ROOT` and `$STAGE_SRV`. `$STAGE_PREFIX` itself, `deploy/` and the
+> config dir are root-owned by rule (#474). Prod keeps binaries root-owned
+> (read-only-deploy posture); stage relaxes that for `bin/` and `wwwroot/` for self-service.
+> The build checkout under `/home/stage-deploy/build` is `stage-deploy`-owned.
 
 ## Build-on-box (mirrors the prod publish)
 
@@ -133,8 +144,9 @@ only if `STAGE_WIPE_CADDY=1`). It can never reach prod:
 
 1. **The dispatcher's sudoers names only `stage-privop`** — no prod path, no wildcard file
    op (Theo).
-2. **The `wipe-data` / `wipe-ca` verbs hardcode the stage dirs and run as `collabhost-stage`**
-   — the kernel denies the stage user every prod byte (Theo's helper).
+2. **The `wipe-data` / `wipe-ca` verbs run as root but hardcode the stage dirs**, and
+   `_assert_stage` refuses any path that resolves outside a stage root (Theo's helper). The
+   wall is the hardcoded paths plus that assert, not the kernel.
 3. **`assert_wipe_target` pre-flight** (this kit) — before invoking the path-less wipe verb,
    the deploy validates the instance.env-declared stage dirs (which must mirror the helper's
    hardcoded paths), refusing any path that isn't absolute, carries no
