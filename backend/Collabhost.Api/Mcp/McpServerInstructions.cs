@@ -31,7 +31,9 @@ public static class McpServerInstructions
         Workflows:
         - Discovery: list_apps first to get slugs, then get_app for full details including
           technology probes (runtime, frameworks, dependencies).
-        - Lifecycle: start_app/stop_app return immediately. Poll get_app to confirm status.
+        - Lifecycle: start_app returns once the process is launched, which may be before it is
+          'running'; stop_app returns once the stop is done (on Linux, up to the app's shutdown
+          timeout). Poll get_app to confirm status.
           Use restart_app for a stop-then-start cycle. Always try stop_app before kill_app.
         - Registration: list_app_types (includes schemas) -> browse_filesystem ->
           detect_strategy -> register_app -> start_app. register_app and get_app

@@ -14,20 +14,19 @@ namespace Collabhost.Api.Mcp;
 //   5. Returns null on success, or an error CallToolResult on failure (missing/invalid key,
 //      deactivated user, role not entitled).
 //
-// Why per-call: Card #332. When a single user-scope MCP server is shared across multiple bots,
-// a static shared X-User-Key header yields one shared identity for every caller. Per-call
-// authKey is the only channel through which per-bot identity enters a shared server. See the
-// card body and comment thread for the full rationale.
+// Why per-call: one MCP server configuration is often shared by several agents, and a static
+// X-User-Key header pinned in it gives every caller the same identity. The per-call authKey is
+// the only channel through which each agent's own identity reaches a shared server.
 //
-// The header-fallback path is preserved so existing v1.0.x clients that pin X-User-Key in a
-// per-bot .mcp.json (or any other instance-local config) keep working without modification.
-// A per-call authKey overrides the header when both are present.
+// The header-fallback path is preserved so existing v1.0.x clients that pin X-User-Key in
+// their MCP connection config keep working without modification.
 //
-// Card #371 -- two guards make the fallback path loud rather than silent:
-//   * Conflict guard: when a per-call authKey AND a session X-User-Key both resolve to
-//     *different* active User entities, the call is refused. Letting one silently win is how
-//     an MCP call gets attributed to the wrong bot in the activity log (#370). A caller who
-//     supplies a single credential -- authKey only, or header only -- is unaffected.
+// When both are present, the per-call authKey is used, unless the two keys resolve to
+// different users: then the call is refused. Two guards make the fallback path loud rather
+// than silent:
+//   * Conflict guard: the refusal above. Letting one key silently win is how an MCP call gets
+//     recorded in the activity log against the wrong agent. A caller who supplies a single
+//     credential -- authKey only, or header only -- is unaffected.
 //   * Fallback-visibility: any time the header fallback is actually used to authenticate
 //     (no per-call authKey supplied), a warning is logged so the silent path is visible in
 //     operator logs.
@@ -72,11 +71,11 @@ public class McpRequestAuthenticator
             );
         }
 
-        // Conflict guard (#371): when both credentials are present and resolve to different
-        // active users, refuse rather than silently letting the per-call key win. Resolving
-        // both is what surfaces the ambiguity -- a mismatch here is the exact shape that
-        // mis-attributed an MCP call to the wrong bot in #370. Identical key strings cannot
-        // disagree, so skip the double-resolve in that (common) case.
+        // Conflict guard: when both credentials are present and resolve to different users,
+        // refuse rather than silently letting the per-call key win. Resolving both is what
+        // surfaces the ambiguity -- a mismatch here is the shape that records an MCP call
+        // against the wrong agent. Identical key strings cannot disagree, so skip the
+        // double-resolve in that (common) case.
         if (hasCallKey
             && hasHeaderKey
             && !string.Equals(authKey, headerKey, StringComparison.Ordinal))
@@ -122,10 +121,10 @@ public class McpRequestAuthenticator
             );
         }
 
-        // Fallback-visibility (#371): a call that authenticated purely off the pinned header
-        // (no per-call authKey) is the silent path that mis-attributed #370. Log it so the
-        // fallback's use is visible to operators reading the trail, without breaking the
-        // documented v1.0.x backward-compat contract.
+        // Fallback-visibility: a call that authenticated purely off the pinned header (no
+        // per-call authKey) is the silent path that can record activity against the wrong
+        // agent. Log it so the fallback's use is visible to operators reading the trail,
+        // without breaking the documented v1.0.x backward-compat contract.
         if (usingHeaderFallback)
         {
             _logger.LogWarning
