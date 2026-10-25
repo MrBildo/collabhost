@@ -309,7 +309,7 @@ public class DiscoveryTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Lists the application types available for registration, with each type's slug, display name, description, and capability names. Use this when registering a new app to discover valid app type slugs and which capabilities each type has. It returns six built-in types (dotnet-app, nodejs-app, static-site, executable, external-route, internal-service) plus any custom types the operator has added.")]
+    [Description("Lists the application types available for registration, with each type's slug, display name, description, and capability names. Use this when registering a new app to discover valid app type slugs and which capabilities each type has. It returns six built-in types (dotnet-app, nodejs-app, static-site, executable, external-route, internal-service) plus any custom types the operator has added, except those marked internal.")]
     public async Task<CallToolResult> ListAppTypesAsync
     (
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,

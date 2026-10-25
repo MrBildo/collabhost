@@ -68,7 +68,7 @@ public class ConfigurationTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Returns the schema-driven settings for an application, organized by capability. Each section includes the capability name, the schema defining valid fields, and the current effective values (defaults merged with overrides). Use this before update_settings to understand what configuration the app supports. A setting marked 'requiresRestart' means the app must be restarted after changing it.")]
+    [Description("Returns the schema-driven settings for an application, organized by capability. Each section includes the capability name, the schema defining valid fields, and the current effective values (defaults merged with overrides). Use this before update_settings to understand what configuration the app supports. A setting marked 'requiresRestart' takes effect only once the change is applied: with restart_app for a process-based app, or with reload_proxy for a static site or external route (restart_app refuses those). A stopped app picks it up when it is started.")]
     public async Task<CallToolResult> GetSettingsAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
@@ -226,7 +226,7 @@ public class ConfigurationTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Saves capability override settings for an application. Only provided fields are changed -- omitted fields retain their current values. Settings must conform to the schema from get_settings. Some settings require an app restart to take effect (check the 'requiresRestart' flag in get_settings). Use get_settings first to see the schema and current values.")]
+    [Description("Saves capability override settings for an application. Only provided fields are changed -- omitted fields retain their current values. Settings must conform to the schema from get_settings. Some settings take effect only once applied (check the 'requiresRestart' flag in get_settings): with restart_app for a process-based app, or with reload_proxy for a static site or external route. Use get_settings first to see the schema and current values.")]
     public async Task<CallToolResult> UpdateSettingsAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
@@ -491,7 +491,9 @@ file static class UpdateSettingsResultMapping
             ? McpResponseFormatter.Success
             (
                 $"Settings updated for app '{slug}'. Use get_settings to review current values. "
-                + "If any changed settings require restart, use restart_app to apply them."
+                + "If any changed settings require restart, apply them with restart_app for a process-based app, "
+                + "or with reload_proxy for a static site or external route (restart_app refuses those). "
+                + "An app that is stopped picks them up when it is started."
             )
             : result.FailureKind switch
             {
