@@ -11,11 +11,11 @@ using Collabhost.Api.Shared;
 
 namespace Collabhost.Api.Registry;
 
-// Register a new app (code-structure-conventions §8/§9 -- a concrete operation in its owning
-// subsystem). THE divergence operation of the arc: the two registration surfaces have very
-// different RAW inputs (REST's typed nested dictionary with a "discovery" virtual section; MCP's
-// `name` + flat `installDirectory` + raw JSON-string `settings`), and both re-implemented this body
-// near-line-for-line and hand-synced it (#345/#348) -- the exact REST<->MCP drift §8 deletes.
+// Register a new app: the one create sequence both registration surfaces share, kept in the
+// subsystem that owns apps. The two surfaces have very different RAW inputs (REST's typed nested
+// dictionary with a "discovery" virtual section; MCP's `name` + flat `installDirectory` + raw
+// JSON-string `settings`). Each once re-implemented this body near-line-for-line and the two were
+// kept in step by hand, which is how REST and MCP drifted apart; one shared body removes that.
 //
 // The genuine divergence is ENTIRELY at the input edge: each surface ASSEMBLES its raw input into a
 // normalized CreateAppCommand (REST folds "discovery" into "process"; MCP injects installDirectory
@@ -32,13 +32,14 @@ namespace Collabhost.Api.Registry;
 // ActivityEvent (the base RecordAsync helpers stamp the actor + carry the metadata).
 //
 // The 1-vs-2-event conditional: a normal registration records ONE app.created event; an external-
-// route (hasExternalTarget) auto-enables its route at registration (Card #348, D8) and records BOTH
-// app.created AND app.started so the activity feed reflects the route going live -- the same event
-// the manual start path records for routing-only apps. Preserved exactly: both pre-migration bodies
-// recorded the second app.started event only on the hasExternalTarget branch.
+// route (hasExternalTarget) auto-enables its route at registration, because its upstream is
+// operator-declared and there is nothing left to set up, and records BOTH app.created AND
+// app.started so the activity feed reflects the route going live -- the same event the manual start
+// path records for routing-only apps. Preserved exactly: both pre-migration bodies recorded the
+// second app.started event only on the hasExternalTarget branch.
 //
 // ResolveHelpfulNextSteps (the ~40-line method that was duplicated near-verbatim in BOTH surface
-// files) folds in here as a private helper -- a real §8 dedup. Verified char-for-char identical
+// files) folds in here as a private helper, so it exists once. Verified char-for-char identical
 // across the two pre-migration copies modulo field-vs-parameter reference (REST took TypeStore +
 // ProxySettings as params; MCP read the _typeStore / _proxySettings fields -- the same DI singletons).
 public sealed class CreateAppOperation
@@ -85,8 +86,8 @@ public sealed class CreateAppOperation
     private readonly PortalSettings _portalSettings = portalSettings
         ?? throw new ArgumentNullException(nameof(portalSettings));
 
-    // Card #348, D3. Threaded into CapabilityResolver.ValidateEdits when the section under edit is
-    // external-target so the host-pattern check honors the operator's public-hosts opt-in.
+    // Threaded into CapabilityResolver.ValidateEdits when the section under edit is external-target,
+    // so the host-pattern check honors the operator's opt-in to public upstream hosts.
     private readonly ExternalTargetSettings _externalTargetSettings = externalTargetSettings
         ?? throw new ArgumentNullException(nameof(externalTargetSettings));
 
@@ -96,10 +97,10 @@ public sealed class CreateAppOperation
         CancellationToken ct
     )
     {
-        // Exists-check BEFORE type-lookup (Marcus design R3): both pre-migration bodies check
-        // existence first, so a request with a duplicate slug AND a bad type returns the conflict
-        // (REST 409), not the type-not-found -- preserved by running these in this order. The slug
-        // is already the final persisted form (Marcus R7), so the exists-check and the later create
+        // Exists-check BEFORE type-lookup: both pre-migration bodies checked existence first, so a
+        // request with a duplicate slug AND a bad type returns the conflict (REST 409), not the
+        // type-not-found -- preserved by running these in this order. The slug arrives in its final
+        // persisted form (each surface normalizes it), so the exists-check and the later create
         // use the identical slug; the latent REST raw-name-exists-check-vs-normalized-persist
         // inconsistency is structurally impossible here.
         if (await _store.ExistsBySlugAsync(command.Slug, ct))
@@ -125,12 +126,12 @@ public sealed class CreateAppOperation
         }
 
         // Validate all sections BEFORE creating the app so registration is transactional. Validation
-        // runs ONCE here, not in the adapters (Marcus design §1.3) -- the same placement
-        // UpdateSettingsOperation uses. The adapter already assembled the divergent input (REST's
-        // discovery->process merge, MCP's installDirectory injection) into command.Overrides, so the
-        // operation validates every section uniformly.
+        // runs ONCE here, not in the adapters, so the two surfaces cannot validate differently -- the
+        // same placement UpdateSettingsOperation uses. The adapter already assembled the divergent
+        // input (REST's discovery->process merge, MCP's installDirectory injection) into
+        // command.Overrides, so the operation validates every section uniformly.
         //
-        // #436: reject any capability section the resolved app type does not bind. Before this,
+        // Reject any capability section the resolved app type does not bind. Before this,
         // CapabilityResolver.ValidateEdits returned zero errors when CapabilityCatalog.GetSchema was
         // null for a section, so a junk section (a typo'd capability slug, an unbound capability)
         // validated clean and was persisted SILENTLY. Registration is strict-at-create on BOTH
@@ -212,9 +213,9 @@ public sealed class CreateAppOperation
             AppTypeSlug = appType.Slug
         };
 
-        // REG-02: persist the App row and every capability override in ONE transaction (the store
-        // owns the commit). The prior shape created the App, then looped saving overrides, each in
-        // its own context -- so a failure mid-loop left a half-configured app on disk. REG-04: the
+        // Persist the App row and every capability override in ONE transaction (the store owns the
+        // commit). The prior shape created the App, then looped saving overrides, each in its own
+        // context -- so a failure mid-loop left a half-configured app on disk. The
         // exists-check above closes the common duplicate-slug case, but two concurrent creates of the
         // same slug can both pass the check and race to insert -- the loser hits the unique Slug
         // index and the store throws DbUpdateException. Map that to the same Conflict the exists-check
@@ -237,8 +238,8 @@ public sealed class CreateAppOperation
 
         // Routing-only apps (e.g. static sites) start with their route disabled because the operator
         // still needs to populate an artifact directory before the route is meaningful. External-route
-        // apps (Card #348, D8) skip that intermediate step -- the upstream is operator-declared -- so
-        // they auto-enable at registration. Process-based apps have routes tied to process state and
+        // apps skip that intermediate step -- the upstream is operator-declared -- so they
+        // auto-enable at registration. Process-based apps have routes tied to process state and
         // need no explicit toggle here. Byte-identical to both pre-migration bodies.
         var hasRouting = _typeStore.HasBinding(appType.Slug, "routing");
         var hasProcess = _typeStore.HasBinding(appType.Slug, "process");
@@ -266,8 +267,8 @@ public sealed class CreateAppOperation
             ct
         );
 
-        // Card #348 polish (C-1): external-route apps auto-enable at registration (D8). Record
-        // app.started so the activity feed reflects the route going live -- the same event the manual
+        // External-route apps auto-enable at registration (above). Record app.started so the
+        // activity feed reflects the route going live -- the same event the manual
         // start path records for routing-only apps. The 1-vs-2-event conditional: normal registration
         // records only app.created; an external-route records BOTH. Preserved exactly.
         if (hasExternalTarget)
@@ -275,8 +276,8 @@ public sealed class CreateAppOperation
             await RecordAsync(ActivityEventTypes.AppStarted, app, ct);
         }
 
-        // Surface a one-line `collabhost --update-hosts` hint for routed app types (a system-service
-        // or process-only registration has no proxy route and no hosts entry, so it stays silent).
+        // Surface a one-line `collabhost --update-hosts` hint for routed app types (an
+        // internal-service registration has no proxy route and no hosts entry, so it stays silent).
         var hints = ResolveHelpfulNextSteps(hostname);
 
         return OperationResult<CreateAppOutcome>.Success(new CreateAppOutcome(app.Id, app.Slug, hints));
