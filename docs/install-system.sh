@@ -40,8 +40,9 @@
 # Linux only. macOS does not have systemd; for a per-user install on macOS, use
 # install.sh.
 #
-# Card #230 phase 3. Closes #214 by construction (system unit's
-# AmbientCapabilities resolves the cap_net_bind_service-on-cp-upgrade issue).
+# The unit grants the bundled proxy its privileged-port capability through
+# AmbientCapabilities, not setcap on the binary, so an upgrade that copies in a
+# new binary keeps it (details at the unit's AmbientCapabilities line below).
 
 set -euo pipefail
 
@@ -288,7 +289,7 @@ require_root() {
   # already ran, so $TAG holds the operator's choice but $@ is empty and $TAG
   # is a shell var (not exported). Forwarding it via the env-var slot lets the
   # re-exec'd script's resolve_tag pick it up without round-tripping through
-  # CLI argv. (Bug #242.)
+  # CLI argv.
   exec sudo -H \
     COLLABHOST_VERSION="${COLLABHOST_VERSION:-${TAG:-}}" \
     COLLABHOST_INSTALL_BASE_URL="${COLLABHOST_INSTALL_BASE_URL:-}" \
@@ -394,8 +395,8 @@ chmod -R u=rwX,go=rX "${INSTALL_PREFIX}/wwwroot"
 
 # wwwroot.sha256 sidecar: build-time SHA-256 hash of the wwwroot/ tree, written
 # by the publish workflow. Lives at the install prefix root so the UAT runbook
-# can compare against /api/v1/version.wwwrootHash (#342). Optional for archives
-# predating #342 -- absence is silent.
+# can compare against /api/v1/version.wwwrootHash. Archives from before v1.5.0
+# don't carry it, so its absence is silent.
 if [ -f "${EXTRACT_DIR}/wwwroot.sha256" ]; then
   install -m 0644 -o root -g root "${EXTRACT_DIR}/wwwroot.sha256" "${INSTALL_PREFIX}/wwwroot.sha256"
 fi

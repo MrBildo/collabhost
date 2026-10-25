@@ -310,8 +310,8 @@ cp -R "${EXTRACT_DIR}/wwwroot" "${INSTALL_PATH}/"
 
 # wwwroot.sha256 sidecar: build-time SHA-256 hash of the wwwroot/ tree, written
 # by the publish workflow. Sits next to the binary so the UAT runbook can
-# compare against /api/v1/version.wwwrootHash (#342). Optional for archives
-# predating #342 -- absence is silent.
+# compare against /api/v1/version.wwwrootHash. Archives from before v1.5.0
+# don't carry it, so its absence is silent.
 if [ -f "${EXTRACT_DIR}/wwwroot.sha256" ]; then
   cp "${EXTRACT_DIR}/wwwroot.sha256" "${INSTALL_PATH}/"
 fi
@@ -320,7 +320,7 @@ fi
 #
 # First install: copy the archive's shipped appsettings.json into place AND seed the sidecar
 # baseline (appsettings.shipped.json) so the next upgrade has a reference for distinguishing
-# operator-edited keys from untouched defaults (card #161).
+# operator-edited keys from untouched defaults.
 #
 # Upgrade: invoke `collabhost --merge-appsettings <shipped> <ondisk> --baseline <baseline>` to
 # perform the three-way merge. The new binary owns the merge logic so the same shape runs on
@@ -430,7 +430,7 @@ umask "${INSTALLER_UMASK}"
 
 chmod +x "${INSTALL_PATH}/collabhost" "${INSTALL_PATH}/caddy" || true
 
-# ---- macOS: clear quarantine xattr (locked R2, §11.2) ------------------------
+# ---- macOS: clear quarantine xattr (see INSTALL.md §6) -----------------------
 
 if [ "${UNAME_S}" = "Darwin" ]; then
   # || true -- xattr -d errors if the attribute is absent (e.g., on re-run).
