@@ -111,7 +111,7 @@ public class LifecycleTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Stops a running application. For process-based apps on Linux, this sends SIGTERM to the app's process group and force-kills it if it has not exited within its process.shutdownTimeoutSeconds setting; on Windows and other platforms the process is ended immediately, because no graceful-shutdown signal is available there. For static sites, this disables the proxy route. Returns immediately after initiating the stop. Use get_app to check the current status. Stopping an already-stopped app is a safe no-op.")]
+    [Description("Stops a running application. For process-based apps on Linux, this sends SIGTERM to the app's process group and force-kills it if it has not exited within its process.shutdownTimeoutSeconds setting; on Windows the process is ended immediately, because no graceful-shutdown signal is available there. For static sites, this disables the proxy route. Returns immediately after initiating the stop. Use get_app to check the current status. Stopping an already-stopped app is a safe no-op.")]
     public async Task<CallToolResult> StopAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
