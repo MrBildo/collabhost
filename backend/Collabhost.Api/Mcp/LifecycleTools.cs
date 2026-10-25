@@ -12,8 +12,8 @@ using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
-// Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
-// at the top of each body via McpRequestAuthenticator.
+// Every tool takes an optional `authKey` per-call argument. Resolution happens at the top of
+// each body via McpRequestAuthenticator.
 [McpServerToolType]
 public class LifecycleTools
 (
@@ -42,8 +42,8 @@ public class LifecycleTools
     private readonly ProcessSupervisor _supervisor = supervisor
         ?? throw new ArgumentNullException(nameof(supervisor));
 
-    // The migrated lifecycle operations injected directly (code-structure-conventions §8: no
-    // dispatcher). Each tool adapts its slug into the command, calls the operation, and maps the
+    // The migrated lifecycle operations are injected directly, with no dispatcher in between.
+    // Each tool adapts its slug into the command, calls the operation, and maps the
     // result; get_logs is the one remaining body (a read of the supervisor's ring buffer, not a
     // mutating operation, so it never joins the spine).
     private readonly StartAppOperation _startAppOperation = startAppOperation
@@ -89,8 +89,9 @@ public class LifecycleTools
         // returns an empty 404 -- a genuine surface divergence that stays at the surface, exactly
         // as the restart/kill adapters do. The operation re-loads inside the same request scope and
         // handles the dual-branch (routing-only vs process) body; this adapter only adapts the slug
-        // into the command and maps the result back to the MCP shape. Card #365/#366 (writer +
-        // probe on the routing-only branch) and Card #350 (persist-flag) now live in the operation.
+        // into the command and maps the result back to the MCP shape. The routing-only branch's
+        // runtime-config-file render and probe refresh, and the persisted operator-stop flag, now
+        // live in the operation.
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -128,7 +129,7 @@ public class LifecycleTools
 
         // MCP-surface not-found pre-check (the AppNotFound shape REST does not return), as for
         // start_app: the operation owns the dual-branch (routing-only vs process) body and the
-        // Card #350 persist-flag; this adapter adapts the slug into the command and maps the result.
+        // persisted operator-stop flag; this adapter adapts the slug into the command and maps the result.
         var app = await _appStore.GetBySlugAsync(slug, ct);
 
         if (app is null)
@@ -250,7 +251,7 @@ public class LifecycleTools
         // tool-binding marshaller treats parameters with no C# default as REQUIRED (ParameterInfo.HasDefaultValue
         // is false for `int?`/`string?` without an explicit `= null`). Without these, a client call that omits
         // the argument throws ArgumentException through the marshaller, which ModelContextProtocol.Core then
-        // masks to a generic "An error occurred invoking '<tool>'." -- Card #331.
+        // masks to the generic "An error occurred invoking '<tool>'." message.
         [Description("Maximum number of log entries to return (1-500). Defaults to 100.")] int? limit = null,
         [Description("Entries to skip from the start of the buffer for pagination. Defaults to 0.")] int? offset = null,
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
@@ -308,8 +309,7 @@ public class LifecycleTools
 }
 
 // File-scoped mapping from the surface-agnostic operation outcome back to the MCP result shape
-// (§7: the surface holds only its file-scoped mapping). The MCP half of the outcome-mapping
-// template PRs 3-7 copy. K-1 (Kai's PR-1 forward note): OperationResult.FailureKind defaults to
+// (the surface holds only its file-scoped mapping). OperationResult.FailureKind defaults to
 // ordinal-0 NotFound on a success, so the success arm is gated on IsSuccess FIRST -- FailureKind
 // is only read on the failure path. The success shape is the exact { slug, status, appType }
 // object the pre-migration body serialized; every failure kind maps to InvalidParameters, the
