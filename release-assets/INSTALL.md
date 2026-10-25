@@ -1740,7 +1740,9 @@ have reason to believe a transcript has leaked.
 **Backward compatibility.** If an older client pins `X-User-Key` in its MCP
 connection configuration's `headers` block, the server falls back to that
 header when `authKey` is omitted from a tool call. Per-call `authKey` is the
-preferred path and overrides the header when both are present. The header
+preferred path. When both are present, the per-call `authKey` is used, unless
+the two keys belong to different users: then the call is refused ("Conflicting
+credentials"), rather than guessing which identity to record. The header
 fallback is a backward-compatibility path, not the recommended shape — new
 configurations should leave `headers` empty and let each agent supply
 `authKey` per call.

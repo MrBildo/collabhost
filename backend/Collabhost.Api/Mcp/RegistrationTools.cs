@@ -78,13 +78,13 @@ public class RegistrationTools
     (
         [Description("Display name for the application (e.g., 'My API Server').")] string name,
         [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'system-service', 'external-route', 'internal-service').")] string appTypeSlug,
-        // installDirectory loosened to conditionally-required per Card #348 D4.
+        // installDirectory is conditionally required, decided by the type's bindings.
         // For app types that bind process or artifact (dotnet-app, nodejs-app, static-site,
-        // executable, system-service) the directory is still required and validated below
+        // executable, system-service, internal-service) the directory is required and validated below
         // after type lookup. For routing-only types whose upstream is operator-declared
         // (external-route via external-target binding) the parameter is meaningless and
         // accepted as empty or null.
-        [Description("Absolute path to the application's directory on the host filesystem. Required for app types that bind process or artifact (dotnet-app, nodejs-app, static-site, executable, system-service). Accepted as empty or null for routing-only types like external-route, which have no install directory.")] string? installDirectory = null,
+        [Description("Absolute path to the application's directory on the host filesystem. Required for app types that bind process or artifact (dotnet-app, nodejs-app, static-site, executable, system-service, internal-service). Accepted as empty or null for routing-only types like external-route, which have no install directory.")] string? installDirectory = null,
         // Explicit `= null` default is load-bearing: the MCP tool-binding marshaller treats params with no
         // C# default as required. Card #331.
         [Description("Optional JSON object with additional registration settings specific to the app type. Examples: dotnet-app -> {\"process\":{\"command\":\"./myapp\",\"arguments\":\"--port 5000\",\"discoveryStrategy\":\"Manual\"}}; external-route -> {\"external-target\":{\"host\":\"localhost\",\"port\":11235,\"scheme\":\"http\"}}. Valid process keys: command, arguments, workingDirectory, discoveryStrategy, shutdownTimeoutSeconds, startupGracePeriodSeconds, maxStartupRetries. Valid external-target keys: host, port, scheme.")] string? settings = null,
@@ -285,7 +285,7 @@ public class RegistrationTools
         Idempotent = false,
         OpenWorld = false
     )]
-    [Description("Stops and permanently deletes a registered application. The app's process is stopped first (10-second graceful timeout), then the app is removed from the registry. All settings and capability overrides are deleted. This action cannot be undone. Use get_app to verify the app before deleting.")]
+    [Description("Stops and permanently deletes a registered application. The app's process is stopped first (as stop_app does, and force-killed if it has not stopped within 10 seconds), then the app is removed from the registry. All settings and capability overrides are deleted. This action cannot be undone. Use get_app to verify the app before deleting.")]
     public async Task<CallToolResult> DeleteAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
