@@ -166,13 +166,12 @@ public class RegistrationTools
         // settings-JSON parse runs HERE at the adapter, BEFORE the operation's exists-check.
         // Pre-migration the MCP exists-check ran first, so a doubly-invalid request -- an existing
         // slug AND malformed settings JSON -- returned the exists conflict, where it now surfaces
-        // the parse error first. This reorder is
-        // FORCED by the spine and is not a regression: the parse builds the command the operation
-        // consumes, so it cannot run after the operation. Do NOT preserve the old order by adding a
-        // surface-level exists-check here -- that would duplicate the operation's exists-check and
-        // re-leak core logic into the adapter, the exact anti-pattern this migration removed. Zero
-        // state-impact -- both inputs were always errors, so only WHICH error surfaces first changed,
-        // and only on the MCP surface.
+        // the parse error first. This reorder is FORCED by the spine and is not a regression: the
+        // parse builds the command the operation consumes, so it cannot run after the operation. Do
+        // NOT preserve the old order by adding a surface-level exists-check here -- that would
+        // duplicate the operation's exists-check and re-leak core logic into the adapter, the exact
+        // anti-pattern this migration removed. Zero state-impact -- both inputs were always errors,
+        // so only WHICH error surfaces first changed, and only on the MCP surface.
         if (parseError is not null)
         {
             return McpResponseFormatter.InvalidParameters(parseError);
@@ -600,9 +599,9 @@ file static class RegistrationToolExtensions
 
 // File-scoped mapping from the surface-agnostic CreateAppOutcome result back to the MCP result shape
 // (the surface holds only its file-scoped mapping). OperationResult.FailureKind defaults to
-// ordinal-0 NotFound on a success, so this is the FAILURE half
-// only -- the caller gates on IsSuccess first and shapes success inline (the { slug, id, status,
-// writableDataPath, helpfulNextSteps } object).
+// ordinal-0 NotFound on a success, so this is the FAILURE half only -- the caller gates on
+// IsSuccess first and shapes success inline (the { slug, id, status, writableDataPath,
+// helpfulNextSteps } object).
 //
 // Unlike the lifecycle all-to-InvalidParameters collapse, register_app's mapper needs a distinct
 // NotFound arm: the operation's type-not-found returns OperationResult.NotFound, and MCP's
@@ -633,13 +632,13 @@ file static class CreateAppOperationResultMapping
 
 // File-scoped mapping from the surface-agnostic delete outcome back to the MCP result shape (the
 // surface holds only its file-scoped mapping). OperationResult.FailureKind defaults to ordinal-0
-// NotFound on a success, so the success arm is gated
-// on IsSuccess FIRST -- FailureKind is only read on the failure path. The success shape is the exact
-// "Deleted app '{slug}' ({displayName}). This action cannot be undone." message the pre-migration body
-// returned. The MCP-specific not-found (AppNotFound) is handled by the pre-load in the tool body above
-// this mapping, so NotFound cannot reach here on the normal path; any failure that does reach here maps
-// to InvalidParameters, the single MCP error shape (the operation never produces Validation/Conflict on
-// the delete path -- surfacing the operation's message verbatim is the right defensive shape).
+// NotFound on a success, so the success arm is gated on IsSuccess FIRST -- FailureKind is only read
+// on the failure path. The success shape is the exact "Deleted app '{slug}' ({displayName}). This
+// action cannot be undone." message the pre-migration body returned. The MCP-specific not-found
+// (AppNotFound) is handled by the pre-load in the tool body above this mapping, so NotFound cannot
+// reach here on the normal path; any failure that does reach here maps to InvalidParameters, the
+// single MCP error shape (the operation never produces Validation/Conflict on the delete path --
+// surfacing the operation's message verbatim is the right defensive shape).
 file static class DeleteAppOperationResultMapping
 {
     public static CallToolResult ToCallToolResult(this OperationResult<DeleteAppOutcome> result)

@@ -246,8 +246,8 @@ public class DiscoveryTools
         // route surfaces (REST detail + routes, MCP get_app + list_routes). Sharing it closes a
         // drift where get_app's old ternary fell through to "not-running" for a healthy
         // external-route while the other three synthesized the operator-declared upstream.
-        // routeTarget stays null when the app
-        // has no routing capability (the resolver is only consulted for routable apps).
+        // routeTarget stays null when the app has no routing capability (the resolver is only
+        // consulted for routable apps).
         string? routeTarget = null;
 
         if (routingConfiguration is not null)

@@ -43,8 +43,8 @@ public class LifecycleTools
         ?? throw new ArgumentNullException(nameof(supervisor));
 
     // The migrated lifecycle operations are injected directly, with no dispatcher in between.
-    // Each tool adapts its slug into the command, calls the operation, and maps the
-    // result; get_logs is the one remaining body (a read of the supervisor's ring buffer, not a
+    // Each tool adapts its slug into the command, calls the operation, and maps the result. The
+    // get_logs tool is the one remaining body (a read of the supervisor's ring buffer, not a
     // mutating operation, so it never joins the spine).
     private readonly StartAppOperation _startAppOperation = startAppOperation
         ?? throw new ArgumentNullException(nameof(startAppOperation));
