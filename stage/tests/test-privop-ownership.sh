@@ -7,7 +7,7 @@
 # Needs root and the collabhost-stage user, so run it on the box:
 #   sudo bash stage/tests/test-privop-ownership.sh [path/to/stage-privop]
 # With no argument it tests stage/box/stage-privop from this checkout. Pass an older copy to see
-# the cases fail (the d23d7dc privop fails all three).
+# the cases fail (the d23d7dc privop fails cases 1-7).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,10 +30,14 @@ for p in "${PATHS[@]}"; do
   want="$(grep -o -- "$p" "$PRIVOP" | wc -l)"; got="$(grep -o -- "${T}${p}" "$T/privop" | wc -l)"
   [ "$want" = "$got" ] || { echo "remap incomplete for ${p}: ${want} vs ${got}" >&2; exit 2; }
 done
+# Closure: no absolute path under a writable root may survive un-remapped, so a path added to
+# the helper later (and missing from PATHS) stops the test instead of running on the real box.
+left="$(sed '/^[[:space:]]*#/d' "$T/privop" | grep -oE '(^|[^A-Za-z0-9._/-])/(opt|var|srv|home|etc)(/[A-Za-z0-9._-]*)*' || true)"
+[ -z "$left" ] || { echo "un-remapped paths left in the helper copy:" >&2; echo "$left" >&2; exit 2; }
 PREFIX="${T}/opt/collabhost-stage"
 
 setup() {
-  rm -rf -- "${T}/opt" "${T}/home" "${T}/var" "${T}/srv"
+  rm -rf -- "${T:?}/opt" "${T:?}/home" "${T:?}/var" "${T:?}/srv"
   install -d -m 0755 -o root -g root "$PREFIX" "${PREFIX}/deploy" "${T}/opt/collabhost/bin"
   install -m 0644 -o root -g root /dev/null "${PREFIX}/deploy/marker"
   install -d -m 0755 "${T}/home/stage-deploy/build/publish/wwwroot"
@@ -63,6 +67,26 @@ check "exit code" 8 "$rc"
 
 echo "case 3: a group-writable file in deploy/ -> refused (exit 8)"
 setup; chmod 0664 "${PREFIX}/deploy/marker"
+rc=0; bash "$T/privop" install-artifacts >/dev/null 2>&1 || rc=$?
+check "exit code" 8 "$rc"
+
+echo "case 4: the prefix itself owned by the service user -> refused (exit 8)"
+setup; chown "${SVC}:${SVC}" "$PREFIX"
+rc=0; bash "$T/privop" install-artifacts >/dev/null 2>&1 || rc=$?
+check "exit code" 8 "$rc"
+
+echo "case 5: the prefix group-writable -> refused (exit 8)"
+setup; chmod 0775 "$PREFIX"
+rc=0; bash "$T/privop" install-artifacts >/dev/null 2>&1 || rc=$?
+check "exit code" 8 "$rc"
+
+echo "case 6: deploy/ missing -> refused, fails closed (exit 8)"
+setup; rm -rf -- "${PREFIX:?}/deploy"
+rc=0; bash "$T/privop" install-artifacts >/dev/null 2>&1 || rc=$?
+check "exit code" 8 "$rc"
+
+echo "case 7: a symlink inside deploy/ -> refused (exit 8)"
+setup; ln -s /tmp "${PREFIX}/deploy/link"
 rc=0; bash "$T/privop" install-artifacts >/dev/null 2>&1 || rc=$?
 check "exit code" 8 "$rc"
 

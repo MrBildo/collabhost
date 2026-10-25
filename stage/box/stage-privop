@@ -46,18 +46,21 @@ _assert_stage() {
 
 _chown_stage() { chown -R "${SVC_USER}:${SVC_USER}" "$1"; }
 
-# The service user must never own ${PREFIX} itself or anything under ${PREFIX}/deploy:
-# deploy/ holds this helper, which stage-deploy runs as root. If the service user (or any
-# app stage supervises) could write it, a stage app could rewrite the helper and get root
-# on the box at the next stage-status. It also trips the dispatcher's tamper check, so the
-# next deploy is refused (#474). A missing deploy/ fails closed (find's error is a finding).
+# The service user must never own ${PREFIX} itself or anything under ${PREFIX}/deploy.
+# deploy/ holds this helper, which stage-deploy runs as root, and the dispatcher refuses a
+# deploy whose script is not root-owned (#474: the old chown of all of ${PREFIX} broke that
+# at every deploy). The stage unit's ProtectSystem=strict also keeps /opt read-only for the
+# service and its apps; this check keeps the ownership rule from depending on that second wall.
+# Symlinks are refused on purpose: a link in deploy/ can point what root or stage-deploy runs
+# at a writable target. A missing deploy/ fails closed (find's error is a finding).
 _assert_root_owned_boundary() {
   local bad
-  bad="$( { find "${PREFIX}" -maxdepth 0 \( ! -user root -o -perm /022 \) -print
-            find "${PREFIX}/deploy" \( ! -user root -o -perm /022 \) -print; } 2>&1 )" || true
+  bad="$( { find "${PREFIX}" -maxdepth 0 \( ! -user root -o -perm /022 -o -type l \) -print
+            find "${PREFIX}/deploy" \( ! -user root -o -perm /022 -o -type l \) -print; } 2>&1 )" || true
   if [ -n "$bad" ]; then
-    echo "stage-privop: REFUSED -- not root-owned (or group/world-writable) inside the privilege boundary:" >&2
+    echo "stage-privop: REFUSED -- not root-owned, group/world-writable, or a symlink inside the privilege boundary:" >&2
     printf '%s\n' "$bad" | sed 's/^/  /' >&2
+    echo "stage-privop: compare the kit with git, then re-lay it with stage-standup.sh <staging> <repo-stage-dir>; don't chown in place." >&2
     exit 8
   fi
 }
