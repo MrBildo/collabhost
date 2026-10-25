@@ -272,7 +272,7 @@ extract_archive() {
 # shipped file to both appsettings_dst and baseline_dst. On upgrade, runs the
 # new binary's --merge-appsettings subcommand if --version output matches the
 # expected pattern; warns to stderr otherwise, so a version line the gate does
-# not recognise is reported instead of silently skipping the merge.
+# not recognise skips the merge with a warning instead of silently.
 #
 # Caller is responsible for ensuring the parent directory of appsettings_dst
 # exists and the binary is +x.

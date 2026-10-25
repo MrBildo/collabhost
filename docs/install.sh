@@ -309,8 +309,8 @@ rm -rf "${INSTALL_PATH}/wwwroot"
 cp -R "${EXTRACT_DIR}/wwwroot" "${INSTALL_PATH}/"
 
 # wwwroot.sha256 sidecar: build-time SHA-256 hash of the wwwroot/ tree, written
-# by the publish workflow. Sits next to the binary so the UAT runbook can
-# compare against /api/v1/version.wwwrootHash. Archives from before v1.5.0
+# by the publish workflow. Sits next to the binary so it can be compared
+# against /api/v1/version.wwwrootHash. Archives from before v1.5.0
 # don't carry it, so its absence is silent.
 if [ -f "${EXTRACT_DIR}/wwwroot.sha256" ]; then
   cp "${EXTRACT_DIR}/wwwroot.sha256" "${INSTALL_PATH}/"

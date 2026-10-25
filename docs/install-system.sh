@@ -394,8 +394,8 @@ chown -R root:root "${INSTALL_PREFIX}/wwwroot"
 chmod -R u=rwX,go=rX "${INSTALL_PREFIX}/wwwroot"
 
 # wwwroot.sha256 sidecar: build-time SHA-256 hash of the wwwroot/ tree, written
-# by the publish workflow. Lives at the install prefix root so the UAT runbook
-# can compare against /api/v1/version.wwwrootHash. Archives from before v1.5.0
+# by the publish workflow. Lives at the install prefix root so it can be
+# compared against /api/v1/version.wwwrootHash. Archives from before v1.5.0
 # don't carry it, so its absence is silent.
 if [ -f "${EXTRACT_DIR}/wwwroot.sha256" ]; then
   install -m 0644 -o root -g root "${EXTRACT_DIR}/wwwroot.sha256" "${INSTALL_PREFIX}/wwwroot.sha256"
