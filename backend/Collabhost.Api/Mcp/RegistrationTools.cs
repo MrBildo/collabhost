@@ -15,8 +15,8 @@ namespace Collabhost.Api.Mcp;
 
 #pragma warning disable MA0076 // Ulid.ToString is not locale-sensitive
 #pragma warning disable MA0011 // Ulid.ToString/TryParse is not locale-sensitive
-// Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
-// at the top of each body via McpRequestAuthenticator.
+// Every tool takes an optional `authKey` per-call argument. Resolution happens at the top of
+// each body via McpRequestAuthenticator.
 [McpServerToolType]
 public class RegistrationTools
 (
@@ -29,7 +29,7 @@ public class RegistrationTools
     McpRequestAuthenticator authenticator
 )
 {
-    // Both write tools are migrated to the operation spine (code-structure-conventions §8).
+    // Both write tools are migrated to the operation spine, shared with the REST surface.
     // register_app's full create sequence lives in CreateAppOperation, and delete_app's full
     // stop-then-delete sequence (including the probe-cache invalidation REST always had and MCP did
     // not) lives in DeleteAppOperation. The deps those two bodies held that nothing else in this tool
@@ -46,12 +46,12 @@ public class RegistrationTools
     private readonly TypeStore _typeStore = typeStore
         ?? throw new ArgumentNullException(nameof(typeStore));
 
-    // The migrated registration operation injected directly (code-structure-conventions §8: no
-    // dispatcher). register_app adapts its raw input into the command, calls this, and maps the result.
+    // The migrated registration operation is injected directly, with no dispatcher in between.
+    // register_app adapts its raw input into the command, calls this, and maps the result.
     private readonly CreateAppOperation _createAppOperation = createAppOperation
         ?? throw new ArgumentNullException(nameof(createAppOperation));
 
-    // The migrated delete operation injected directly (code-structure-conventions §8: no dispatcher).
+    // The migrated delete operation is injected directly, with no dispatcher in between.
     // delete_app adapts the slug into the command, calls this, and maps the result.
     private readonly DeleteAppOperation _deleteAppOperation = deleteAppOperation
         ?? throw new ArgumentNullException(nameof(deleteAppOperation));
@@ -73,20 +73,20 @@ public class RegistrationTools
         Idempotent = false,
         OpenWorld = false
     )]
-    [Description("Registers a new application on the platform. Requires an app type slug, a display name, and an install directory. The app is created in 'stopped' status and must be started separately with start_app. The response includes 'writableDataPath' -- a platform-provisioned absolute directory inside Collabhost's writable data root; configure any app that writes to disk (e.g. a SQLite connection string) to write there rather than into its install directory, which may be read-only under a hardened deployment. Workflow: call list_app_types to discover valid types and their registration schemas. Optionally call browse_filesystem to find the install directory and detect_strategy to check what Collabhost can auto-detect.")]
+    [Description("Registers a new application on the platform. Requires an app type slug and a display name, plus an install directory for types that run a process or serve files (every built-in type except external-route). The app is created in 'stopped' status and must be started separately with start_app, except an external route: its proxy route is enabled at registration, so use get_app for its current status. The response includes 'writableDataPath' -- a platform-provisioned absolute directory inside Collabhost's writable data root; configure any app that writes to disk (e.g. a SQLite connection string) to write there rather than into its install directory, which may be read-only under a hardened deployment. Workflow: call list_app_types to discover valid types and their capabilities. Optionally call browse_filesystem to find the install directory and detect_strategy to check what Collabhost can auto-detect.")]
     public async Task<CallToolResult> RegisterAppAsync
     (
         [Description("Display name for the application (e.g., 'My API Server').")] string name,
-        [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'system-service', 'external-route', 'internal-service').")] string appTypeSlug,
+        [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'external-route', 'internal-service').")] string appTypeSlug,
         // installDirectory is conditionally required, decided by the type's bindings.
         // For app types that bind process or artifact (dotnet-app, nodejs-app, static-site,
         // executable, system-service, internal-service) the directory is required and validated below
         // after type lookup. For routing-only types whose upstream is operator-declared
         // (external-route via external-target binding) the parameter is meaningless and
         // accepted as empty or null.
-        [Description("Absolute path to the application's directory on the host filesystem. Required for app types that bind process or artifact (dotnet-app, nodejs-app, static-site, executable, system-service, internal-service). Accepted as empty or null for routing-only types like external-route, which have no install directory.")] string? installDirectory = null,
+        [Description("Absolute path to the application's directory on the host filesystem. Required for app types that bind process or artifact (dotnet-app, nodejs-app, static-site, executable, internal-service). Accepted as empty or null for routing-only types like external-route, which have no install directory.")] string? installDirectory = null,
         // Explicit `= null` default is load-bearing: the MCP tool-binding marshaller treats params with no
-        // C# default as required. Card #331.
+        // C# default as required.
         [Description("Optional JSON object with additional registration settings specific to the app type. Examples: dotnet-app -> {\"process\":{\"command\":\"./myapp\",\"arguments\":\"--port 5000\",\"discoveryStrategy\":\"Manual\"}}; external-route -> {\"external-target\":{\"host\":\"localhost\",\"port\":11235,\"scheme\":\"http\"}}. Valid process keys: command, arguments, workingDirectory, discoveryStrategy, shutdownTimeoutSeconds, startupGracePeriodSeconds, maxStartupRetries. Valid external-target keys: host, port, scheme.")] string? settings = null,
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
         CancellationToken ct = default
@@ -109,13 +109,13 @@ public class RegistrationTools
             return McpResponseFormatter.InvalidParameters("appTypeSlug is required.");
         }
 
-        // MCP-surface type lookup for the directoryRequired gate (Marcus R4). The operation looks the
+        // MCP-surface type lookup for the directoryRequired gate. The operation looks the
         // type up again (shared core); this is a cached TypeStore.GetBySlug dictionary read, and the
         // LifecycleTools adapters already double-look-up, so the second read is established + cheap. The
-        // gate itself is single-surface (REST has no installDirectory parameter, Card #348 D4) so it
-        // stays at the surface with its MCP-specific prose -- and the type-not-found here keeps the MCP
+        // gate itself is single-surface (REST has no installDirectory parameter) so it stays at the
+        // surface with its MCP-specific prose -- and the type-not-found here keeps the MCP
         // AppTypeNotFound shape (the operation's NotFound also maps to AppTypeNotFound via the result
-        // mapping below, R5, so the shape is identical whether the surface or the operation catches it).
+        // mapping below, so the shape is identical whether the surface or the operation catches it).
         var appType = _typeStore.GetBySlug(appTypeSlug);
 
         if (appType is null)
@@ -126,7 +126,7 @@ public class RegistrationTools
         // installDirectory is required only for app types that bind `process`
         // (uses it as workingDirectory) or `artifact` (uses it as location).
         // For sparse-capability routing-only types like external-route, the
-        // parameter is meaningless and accepted as null or empty. Card #348, D4.
+        // parameter is meaningless and accepted as null or empty.
         var directoryRequired =
             _typeStore.HasBinding(appType.Slug, "process")
             || _typeStore.HasBinding(appType.Slug, "artifact");
@@ -142,7 +142,7 @@ public class RegistrationTools
 
         // Derive slug from name (the MCP-surface transform: REST takes its slug as-given). Both the
         // derive transform and its derive-failure error prose are single-surface concerns that stay
-        // here (Marcus §1.5); the command carries the already-valid, final-persisted derivedSlug.
+        // here; the command carries the already-valid, final-persisted derivedSlug.
         var derivedSlug = name.Trim().ToLowerInvariant()
             .Replace(' ', '-');
 
@@ -162,16 +162,16 @@ public class RegistrationTools
         // live in the operation; this adapter only produces the divergent input shape.
         var (overrides, parseError) = AssembleOverrides(appType, installDirectory, settings);
 
-        // Deliberate, disclosed ordering -- Card #406 PR 6, finding F-1. The settings-JSON parse runs
-        // HERE at the adapter, BEFORE the operation's exists-check. Pre-migration the MCP exists-check
-        // ran first, so a doubly-invalid request -- an existing slug AND malformed settings JSON --
-        // returned the exists conflict, where it now surfaces the parse error first. This reorder is
-        // FORCED by the spine and is not a regression: the parse builds the command the operation
-        // consumes, so it cannot run after the operation. Do NOT preserve the old order by adding a
-        // surface-level exists-check here -- that would duplicate the operation's exists-check and
-        // re-leak core logic into the adapter, the exact anti-pattern this migration removed. Zero
-        // state-impact -- both inputs were always errors, so only WHICH error surfaces first changed,
-        // and only on the MCP surface.
+        // Deliberate ordering, introduced when register_app moved onto the shared operation. The
+        // settings-JSON parse runs HERE at the adapter, BEFORE the operation's exists-check.
+        // Pre-migration the MCP exists-check ran first, so a doubly-invalid request -- an existing
+        // slug AND malformed settings JSON -- returned the exists conflict, where it now surfaces
+        // the parse error first. This reorder is FORCED by the spine and is not a regression: the
+        // parse builds the command the operation consumes, so it cannot run after the operation. Do
+        // NOT preserve the old order by adding a surface-level exists-check here -- that would
+        // duplicate the operation's exists-check and re-leak core logic into the adapter, the exact
+        // anti-pattern this migration removed. Zero state-impact -- both inputs were always errors,
+        // so only WHICH error surfaces first changed, and only on the MCP surface.
         if (parseError is not null)
         {
             return McpResponseFormatter.InvalidParameters(parseError);
@@ -285,7 +285,7 @@ public class RegistrationTools
         Idempotent = false,
         OpenWorld = false
     )]
-    [Description("Stops and permanently deletes a registered application. The app's process is stopped first (as stop_app does, and force-killed if it has not stopped within 10 seconds), then the app is removed from the registry. All settings and capability overrides are deleted. This action cannot be undone. Use get_app to verify the app before deleting.")]
+    [Description("Stops and permanently deletes a registered application. A running process is stopped first (as stop_app does, and force-killed if it has not stopped within 10 seconds); a static site's or external route's proxy route is disabled first. Then the app is removed from the registry. All settings and capability overrides are deleted. This action cannot be undone. Use get_app to verify the app before deleting.")]
     public async Task<CallToolResult> DeleteAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
@@ -302,8 +302,8 @@ public class RegistrationTools
 
         // delete_app is admin-only -- see Entitlements._agentTools. The authenticator above
         // already enforces this via Entitlements.CanAccessTool, but checking IsAdministrator
-        // here is a belt-and-suspenders double-check at the destructive call site (Card #332,
-        // matches the spirit of the pre-#332 session-time tool-list filter that removed
+        // here is a belt-and-suspenders double-check at the destructive call site (in the spirit of
+        // the older session-time tool-list filter, from before per-call keys, that removed
         // delete_app from the visible surface for non-admin callers).
         if (!_currentUser.IsAdministrator)
         {
@@ -343,7 +343,7 @@ public class RegistrationTools
     public async Task<CallToolResult> BrowseFilesystemAsync
     (
         // Explicit `= null` default is load-bearing: the MCP tool-binding marshaller treats params with no
-        // C# default as required. Card #331.
+        // C# default as required.
         [Description("Absolute filesystem path to list. If omitted, returns root drives/directories.")] string? path = null,
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
         CancellationToken ct = default
@@ -598,13 +598,13 @@ file static class RegistrationToolExtensions
 }
 
 // File-scoped mapping from the surface-agnostic CreateAppOutcome result back to the MCP result shape
-// (§7: the surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
-// OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so this is the FAILURE half
-// only -- the caller gates on IsSuccess first and shapes success inline (the { slug, id, status,
-// writableDataPath, helpfulNextSteps } object).
+// (the surface holds only its file-scoped mapping). OperationResult.FailureKind defaults to
+// ordinal-0 NotFound on a success, so this is the FAILURE half only -- the caller gates on
+// IsSuccess first and shapes success inline (the { slug, id, status, writableDataPath,
+// helpfulNextSteps } object).
 //
 // Unlike the lifecycle all-to-InvalidParameters collapse, register_app's mapper needs a distinct
-// NotFound arm (Marcus R5): the operation's type-not-found returns OperationResult.NotFound, and MCP's
+// NotFound arm: the operation's type-not-found returns OperationResult.NotFound, and MCP's
 // pre-migration shape for that was the rich-prose AppTypeNotFound(slug) -- a different, slug-bearing
 // shape than the bare InvalidParameters. The bare OperationResult.Error string does not carry the slug
 // structurally, so the mapper takes the in-scope appTypeSlug (still the tool parameter) and rebuilds
@@ -612,11 +612,10 @@ file static class RegistrationToolExtensions
 // InvalidParameters, the single MCP error shape for those -- byte-identical to the pre-migration MCP
 // path EXCEPT the exists-check message: the operation returns the bare "An app with slug '...' already
 // exists." (the REST message), dropping the pre-migration MCP "Use list_apps to see existing apps."
-// suffix. Disclosed as a zero-information-loss prose normalization (Marcus R2, the same PR-5 shape Kai
-// passed). The Validation section-errors message is byte-identical: the pre-migration MCP path wrapped
-// it in "Validation errors for '{section}': " but ValidateEdits already prefixes each error with the
-// section + field, so dropping the redundant wrapper is the same zero-loss normalization PR 5 made for
-// update_settings (Marcus R2 family).
+// suffix, a prose normalization that loses no information. The Validation section-errors message is
+// byte-identical: the pre-migration MCP path wrapped it in "Validation errors for '{section}': " but
+// ValidateEdits already prefixes each error with the section + field, so dropping the redundant
+// wrapper is the same no-loss normalization update_settings received.
 file static class CreateAppOperationResultMapping
 {
     public static CallToolResult ToCallToolResult
@@ -631,15 +630,15 @@ file static class CreateAppOperationResultMapping
         };
 }
 
-// File-scoped mapping from the surface-agnostic delete outcome back to the MCP result shape (§7: the
-// surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
-// OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the success arm is gated
-// on IsSuccess FIRST -- FailureKind is only read on the failure path. The success shape is the exact
-// "Deleted app '{slug}' ({displayName}). This action cannot be undone." message the pre-migration body
-// returned. The MCP-specific not-found (AppNotFound) is handled by the pre-load in the tool body above
-// this mapping, so NotFound cannot reach here on the normal path; any failure that does reach here maps
-// to InvalidParameters, the single MCP error shape (the operation never produces Validation/Conflict on
-// the delete path -- surfacing the operation's message verbatim is the right defensive shape).
+// File-scoped mapping from the surface-agnostic delete outcome back to the MCP result shape (the
+// surface holds only its file-scoped mapping). OperationResult.FailureKind defaults to ordinal-0
+// NotFound on a success, so the success arm is gated on IsSuccess FIRST -- FailureKind is only read
+// on the failure path. The success shape is the exact "Deleted app '{slug}' ({displayName}). This
+// action cannot be undone." message the pre-migration body returned. The MCP-specific not-found
+// (AppNotFound) is handled by the pre-load in the tool body above this mapping, so NotFound cannot
+// reach here on the normal path; any failure that does reach here maps to InvalidParameters, the
+// single MCP error shape (the operation never produces Validation/Conflict on the delete path --
+// surfacing the operation's message verbatim is the right defensive shape).
 file static class DeleteAppOperationResultMapping
 {
     public static CallToolResult ToCallToolResult(this OperationResult<DeleteAppOutcome> result)

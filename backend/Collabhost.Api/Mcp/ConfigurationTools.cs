@@ -13,8 +13,8 @@ using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
-// Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
-// at the top of each body via McpRequestAuthenticator.
+// Every tool takes an optional `authKey` per-call argument, so each agent's calls are recorded
+// under its own key. Resolution happens at the top of each body via McpRequestAuthenticator.
 [McpServerToolType]
 public class ConfigurationTools
 (
@@ -43,14 +43,14 @@ public class ConfigurationTools
     private readonly ProxySettings _proxySettings = proxySettings
         ?? throw new ArgumentNullException(nameof(proxySettings));
 
-    // The migrated reload-proxy operation injected directly (code-structure-conventions §8: no
-    // dispatcher). reload_proxy adapts the marker command, calls the operation, and maps the result.
+    // The reload-proxy operation is injected directly, with no dispatcher in between. reload_proxy
+    // adapts the marker command, calls the operation, and maps the result.
     private readonly ReloadProxyOperation _reloadProxyOperation = reloadProxyOperation
         ?? throw new ArgumentNullException(nameof(reloadProxyOperation));
 
-    // The migrated update-settings operation injected directly (code-structure-conventions §8, spine
-    // PR 5 -- the heaviest single body). update_settings adapts its raw `settings` string into the
-    // normalized command (with the MCP-divergence flags) and maps the result. The shared validate ->
+    // The update-settings operation is injected directly, with no dispatcher in between.
+    // update_settings adapts its raw `settings` string into the normalized command (with the
+    // MCP-divergence flags) and maps the result. The shared validate ->
     // merge -> save -> render -> event loop now lives once in UpdateSettingsOperation; the
     // ExternalTargetSettings / RuntimeConfigFileWriter / ICurrentUser / ActivityEventStore deps that
     // body used moved into the operation and are no longer ctor deps here.
@@ -68,7 +68,7 @@ public class ConfigurationTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Returns the schema-driven settings for an application, organized by capability. Each section includes the capability name, the schema defining valid fields, and the current effective values (defaults merged with overrides). Use this before update_settings to understand what configuration the app supports. A setting marked 'requiresRestart' means the app must be restarted after changing it.")]
+    [Description("Returns the schema-driven settings for an application, organized by capability. Each section includes the capability name, the schema defining valid fields, and the current effective values (defaults merged with overrides). Use this before update_settings to understand what configuration the app supports. A setting marked 'requiresRestart' takes effect only once the change is applied: with restart_app for a process-based app, or with reload_proxy for a static site or external route (restart_app refuses those). A stopped app picks it up when it is started.")]
     public async Task<CallToolResult> GetSettingsAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
@@ -226,7 +226,7 @@ public class ConfigurationTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Saves capability override settings for an application. Only provided fields are changed -- omitted fields retain their current values. Settings must conform to the schema from get_settings. Some settings require an app restart to take effect (check the 'requiresRestart' flag in get_settings). Use get_settings first to see the schema and current values.")]
+    [Description("Saves capability override settings for an application. Only provided fields are changed -- omitted fields retain their current values. Settings must conform to the schema from get_settings. Some settings take effect only once applied (check the 'requiresRestart' flag in get_settings): with restart_app for a process-based app, or with reload_proxy for a static site or external route. Use get_settings first to see the schema and current values.")]
     public async Task<CallToolResult> UpdateSettingsAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,
@@ -268,21 +268,20 @@ public class ConfigurationTools
             );
         }
 
-        // Migrated to the operation spine (code-structure-conventions §8): adapt the parsed changes
-        // into the normalized command, call the injected operation directly (no dispatcher), and map
-        // the result back to the CallToolResult this tool returns. The shared identity -> validate ->
-        // merge -> save -> render -> event loop lives once in UpdateSettingsOperation. The pre-
-        // migration outer try/catch around the event record is dropped with the migrated body:
-        // ActivityEventStore.RecordAsync already swallows all exceptions internally (catch Exception ->
-        // LogWarning), so the wrapper was dead defensive code -- dropping it is an observable no-op
-        // (same as the start/stop/reload migrations).
+        // Adapt the parsed changes into the normalized command, call the injected operation directly
+        // (no dispatcher), and map the result back to the CallToolResult this tool returns. The
+        // shared identity -> validate -> merge -> save -> render -> event loop lives once in
+        // UpdateSettingsOperation. The pre-migration outer try/catch around the event record is
+        // dropped with the migrated body: ActivityEventStore.RecordAsync already swallows all
+        // exceptions internally (catch Exception -> LogWarning), so the wrapper was dead defensive
+        // code -- dropping it is an observable no-op (same as the start/stop/reload migrations).
         //
-        // The command flags now MATCH the REST surface (#406 settings parity-fix, the one sanctioned
-        // behavior change of the spine arc): ValidateMergedOverrides + RefreshProbesOnArtifactChange
-        // are TRUE. The pre-migration MCP path ran NEITHER -- a confirmed REST<->MCP drift surfaced (not
-        // fixed) at PR 5 and folded in here per the operator ruling. MCP now (a) runs the post-merge
-        // cross-field check (rejecting the HSTS double-emission collision REST already rejected), and
-        // (b) re-probes on an artifact-section change. RejectUnknownSection stays TRUE -- MCP rejecting
+        // The command flags MATCH the REST surface, a deliberate behavior change made when the two
+        // surfaces moved onto one operation: ValidateMergedOverrides + RefreshProbesOnArtifactChange
+        // are TRUE. The pre-migration MCP path ran NEITHER -- a REST<->MCP drift that was closed here
+        // on purpose rather than carried over. MCP now (a) runs the post-merge cross-field check
+        // (rejecting the HSTS double-emission collision REST already rejected), and (b) re-probes on
+        // an artifact-section change. RejectUnknownSection stays TRUE -- MCP rejecting
         // an unknown section mid-loop where REST skips is intended surface ergonomics, NOT drift.
         var command = new UpdateSettingsCommand
         (
@@ -320,14 +319,14 @@ public class ConfigurationTools
             return authError;
         }
 
-        // Migrated to the operation spine (code-structure-conventions §8): adapt the marker command
-        // (no slug -- the reload acts on no app), call the injected operation, and map the result
-        // back to exactly the fixed "reload requested" message this tool returned before. The
+        // Adapt the marker command (no slug -- the reload acts on no app), call the injected
+        // operation, and map the result back to exactly the fixed "reload requested" message this
+        // tool returned before. The
         // proxy.RequestSync() + the actor-stamped proxy.reloaded event now live once in the
         // operation. The pre-migration outer try/catch around RecordAsync is dropped with the
         // migrated body: ActivityEventStore.RecordAsync already swallows all exceptions internally
         // (catch Exception -> LogWarning), so the wrapper was dead defensive code -- dropping it is
-        // an observable no-op (same as the start/stop migration in PR 3).
+        // an observable no-op (same as the start/stop migration).
         var result = await _reloadProxyOperation.ExecuteAsync(new ReloadProxyCommand(), ct);
 
         return result.ToCallToolResult();
@@ -391,10 +390,10 @@ public class ConfigurationTools
 
             var process = _supervisor.GetProcess(app.Id);
 
-            // Card #435: the one shared RouteTargetResolver synthesizes the upstream-
-            // target string for all 4 route surfaces (REST detail + routes, MCP get_app +
-            // list_routes). External-route apps (Card #348) have no supervised process, so
-            // the resolver surfaces the operator-declared upstream; supervised apps get
+            // The one shared RouteTargetResolver synthesizes the upstream-target string for
+            // all 4 route surfaces (REST detail + routes, MCP get_app + list_routes).
+            // External-route apps have no supervised process, so the resolver surfaces the
+            // operator-declared upstream; supervised apps get
             // "localhost:{port}" from the live process port.
             var hasExternalTarget = bindings.ContainsKey("external-target");
 
@@ -445,10 +444,10 @@ public class ConfigurationTools
     }
 }
 
-// File-scoped mapping from the surface-agnostic reload outcome back to the MCP result shape (§7:
-// the surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note):
-// OperationResult.FailureKind defaults to ordinal-0 NotFound on a success, so the success arm is
-// gated on IsSuccess FIRST -- FailureKind is only read on the failure path. The success arm returns
+// File-scoped mapping from the surface-agnostic reload outcome back to the MCP result shape (the
+// surface holds only its file-scoped mapping). OperationResult.FailureKind defaults to ordinal-0
+// NotFound on a success, so the success arm is gated on IsSuccess FIRST -- FailureKind is only
+// read on the failure path. The success arm returns
 // the fixed "reload requested" message. The reload now HAS a failure path: when the proxy is
 // disabled the operation returns Conflict, which maps to InvalidParameters (the single MCP error
 // shape) carrying the "proxy is disabled" message, so a reload against a dead proxy signals rather
@@ -465,8 +464,8 @@ file static class ReloadProxyResultMapping
 }
 
 // File-scoped mapping from the surface-agnostic settings-update outcome back to the MCP result shape
-// (§7: the surface holds only its file-scoped mapping). K-1 (Kai's PR-1 forward note): FailureKind
-// defaults to ordinal-0 NotFound on a success, so the success arm gates on IsSuccess FIRST.
+// (the surface holds only its file-scoped mapping). FailureKind defaults to ordinal-0 NotFound on a
+// success, so the success arm gates on IsSuccess FIRST.
 //
 // The mapping is byte-faithful to the pre-migration update_settings tool:
 //   - Success -> the fixed "Settings updated for app '{slug}'..." message (slug threaded in).
@@ -491,7 +490,9 @@ file static class UpdateSettingsResultMapping
             ? McpResponseFormatter.Success
             (
                 $"Settings updated for app '{slug}'. Use get_settings to review current values. "
-                + "If any changed settings require restart, use restart_app to apply them."
+                + "If any changed settings require restart, apply them with restart_app for a process-based app, "
+                + "or with reload_proxy for a static site or external route (restart_app refuses those). "
+                + "An app that is stopped picks them up when it is started."
             )
             : result.FailureKind switch
             {
@@ -524,7 +525,7 @@ file static class ConfigurationToolExtensions
         {
             "process" => 0,
             "port-injection" => 1,
-            "external-target" => 2, // Card #348 polish: keep adjacent to routing, matches AppEndpoints order.
+            "external-target" => 2, // Kept adjacent to routing, matching the AppEndpoints order.
             "routing" => 3,
             "health-check" => 4,
             "restart" => 5,

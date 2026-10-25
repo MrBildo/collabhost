@@ -6,13 +6,17 @@ public static class McpServerInstructions
         Collabhost -- self-hosted application platform managing local services and workers.
 
         Apps are identified by slug (lowercase, hyphenated, e.g. 'my-api-server').
-        Seven app types: dotnet-app, nodejs-app, static-site, executable, system-service, external-route, internal-service.
-        Static sites toggle proxy routing on start/stop -- no process involved.
+        Six built-in app types can be registered: dotnet-app, nodejs-app, static-site, executable, external-route, internal-service.
+        list_app_types returns these, plus any custom types the operator has added, except those
+        marked internal.
+        Static sites and external routes have no process: start_app and stop_app enable and disable
+        their proxy route, and restart_app and kill_app refuse them.
         external-route is the right type for services Collabhost does not run (Docker, LAN, Tailscale):
         register with external-target carrying the upstream host + port + optional scheme.
         internal-service is the right type for non-HTTP managed processes (databases, message brokers,
         custom-protocol services): Collabhost runs and supervises the process, no proxy route is generated.
-        Each running app gets a route: {slug}.<configured-base-domain>.
+        Each running app whose type has routing (each of the six above except internal-service) gets a
+        proxy route, by default at {slug}.<configured-base-domain>.
 
         Authentication:
         Every tool accepts an optional `authKey` parameter -- a Collabhost user key (ULID).
@@ -35,14 +39,15 @@ public static class McpServerInstructions
           'running'; stop_app returns once the stop is done (on Linux, up to the app's shutdown
           timeout). Poll get_app to confirm status.
           Use restart_app for a stop-then-start cycle. Always try stop_app before kill_app.
-        - Registration: list_app_types (includes schemas) -> browse_filesystem ->
+        - Registration: list_app_types (types and their capabilities) -> browse_filesystem ->
           detect_strategy -> register_app -> start_app. register_app and get_app
           return 'writableDataPath' -- a platform-provisioned absolute directory
           inside Collabhost's writable data root. Point any app that writes to
           disk (e.g. a SQLite connection string) at this path rather than its
           install directory, which may be read-only under a hardened deployment.
         - Configuration: get_settings then update_settings (read-then-write). Some settings
-          require restart.
+          require a restart to apply: restart_app for a process-based app, reload_proxy for
+          a static site or external route.
         - Diagnostics: get_logs for process output (token-limited, summarize findings),
           list_routes for proxy state, reload_proxy if routes are stale.
 

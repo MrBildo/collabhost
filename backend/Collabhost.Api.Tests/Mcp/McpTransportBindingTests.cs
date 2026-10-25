@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 
 using Collabhost.Api.Authorization;
+using Collabhost.Api.Data.AppTypes;
 using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -706,6 +707,125 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
             "MCP server instructions or tool schemas name an internal reference an operator cannot "
             + "resolve. Offending text: " + string.Join(" | ", leaks)
         );
+    }
+
+    // The server instructions, the list_app_types description and the unknown-type error all name
+    // the built-in app types an agent can register, and those names have to match what
+    // list_app_types returns. system-service, the type of the platform's own proxy, is left out of
+    // that list, so text that names it, or leaves out a type the list returns, tells an agent
+    // something the tool then contradicts. The fixture loads no custom types, so every type the
+    // list returns here is a built-in one.
+    [Fact]
+    public async Task TypeNamesInMcpText_MatchWhatListAppTypesReturns()
+    {
+        var client = _client!;
+
+        var listResult = await client.CallToolAsync
+        (
+            "list_app_types",
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["authKey"] = ApiFixture.AdminKey },
+            cancellationToken: CancellationToken.None
+        );
+
+        ShouldNotBeBindingError(listResult, "list_app_types");
+
+        var listText = listResult.Content.OfType<TextContentBlock>().Single().Text;
+
+        using var document = JsonDocument.Parse(listText[(listText.IndexOf('\n', StringComparison.Ordinal) + 1)..]);
+
+        var returnedSlugs = document.RootElement
+            .EnumerateArray()
+                .Select(type => type.GetProperty("slug").GetString() ?? string.Empty)
+                    .ToList();
+
+        var hiddenSlugs = _fixture.Services.GetRequiredService<TypeStore>()
+            .ListTypes()
+            .Where(type => type.IsInternal)
+                .Select(type => type.Slug)
+                    .ToList();
+
+        // Positive controls: an empty or unparsed list, or no hidden type at all, would let every
+        // check below pass.
+        returnedSlugs.ShouldContain("dotnet-app");
+        returnedSlugs.Count.ShouldBeLessThan(_countWords.Length);
+        hiddenSlugs.ShouldContain("system-service");
+        returnedSlugs.ShouldNotContain(slug => hiddenSlugs.Contains(slug, StringComparer.Ordinal));
+
+        var unknownTypeResult = await client.CallToolAsync
+        (
+            "register_app",
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["name"] = "Unknown Type Probe",
+                ["appTypeSlug"] = "no-such-type",
+                ["installDirectory"] = Path.GetTempPath(),
+                ["authKey"] = ApiFixture.AdminKey
+            },
+            cancellationToken: CancellationToken.None
+        );
+
+        (unknownTypeResult.IsError ?? false).ShouldBeTrue("register_app with an unknown app type must be refused.");
+
+        var unknownTypeError = unknownTypeResult.Content.OfType<TextContentBlock>().Single().Text;
+        unknownTypeError.ShouldContain("not found", Case.Sensitive);
+
+        var instructions = client.ServerInstructions ?? string.Empty;
+        var tools = await client.ListToolsAsync(cancellationToken: CancellationToken.None);
+
+        var listAppTypesDescription = tools.Single(tool => string.Equals(tool.ProtocolTool.Name, "list_app_types", StringComparison.Ordinal)).ProtocolTool.Description ?? string.Empty;
+
+        // Each text names the types in one list sentence. The list is read out of that sentence and
+        // compared with the returned set as a whole, because every type name also appears elsewhere
+        // in the instructions, so a name dropped from the list would still be found in the text.
+        // The count word sits inside the sentence's opening words, so a wrong count fails too.
+        var countWord = _countWords[returnedSlugs.Count];
+        var capitalizedCountWord = char.ToUpperInvariant(countWord[0]) + countWord[1..];
+
+        ShouldListExactly(instructions, $"{capitalizedCountWord} built-in app types can be registered: ", ".", returnedSlugs, "the server instructions");
+        ShouldListExactly(listAppTypesDescription, $"It returns {countWord} built-in types (", ")", returnedSlugs, "the list_app_types description");
+        ShouldListExactly(unknownTypeError, "The built-in ones you can register are ", ".", returnedSlugs, "the unknown-type error");
+
+        List<string> texts = [instructions, unknownTypeError];
+
+        foreach (var tool in tools)
+        {
+            texts.Add(tool.ProtocolTool.Description ?? string.Empty);
+
+            CollectStrings(tool.ProtocolTool.InputSchema, texts);
+        }
+
+        var namingHiddenType = texts
+            .Where(text => hiddenSlugs.Any(hidden => text.Contains(hidden, StringComparison.Ordinal)))
+            .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+        namingHiddenType.ShouldBeEmpty
+        (
+            "MCP text names a type marked internal, which list_app_types does not return. Offending text: "
+            + string.Join(" | ", namingHiddenType)
+        );
+    }
+
+    private static readonly string[] _countWords =
+    [
+        "no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"
+    ];
+
+    private static void ShouldListExactly(string text, string opening, string closing, List<string> expected, string where)
+    {
+        var start = text.IndexOf(opening, StringComparison.Ordinal);
+
+        start.ShouldBeGreaterThanOrEqualTo(0, $"Expected {where} to contain the list sentence opening '{opening}'. Text: {text}");
+        text.LastIndexOf(opening, StringComparison.Ordinal).ShouldBe(start, $"Expected {where} to contain '{opening}' once.");
+
+        var listStart = start + opening.Length;
+        var listEnd = text.IndexOf(closing, listStart, StringComparison.Ordinal);
+
+        listEnd.ShouldBeGreaterThan(listStart, $"Expected the type list in {where} to end with '{closing}'.");
+
+        var listed = text[listStart..listEnd].Split(", ", StringSplitOptions.None);
+
+        listed.Order(StringComparer.Ordinal).ShouldBe(expected.Order(StringComparer.Ordinal), Case.Sensitive, $"The types {where} lists are not exactly the ones list_app_types returns.");
     }
 
     // Matched ignoring case, so a product name in any casing (an environment-variable prefix, a

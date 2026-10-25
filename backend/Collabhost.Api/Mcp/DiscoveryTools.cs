@@ -15,9 +15,9 @@ using ModelContextProtocol.Server;
 
 namespace Collabhost.Api.Mcp;
 
-// Card #332: every tool takes an optional `authKey` per-call argument. Resolution happens
-// at the top of each body via McpRequestAuthenticator. See McpRequestAuthenticator.cs for
-// the per-call vs. header-fallback rationale.
+// Every tool takes an optional `authKey` per-call argument. Resolution happens at the top of
+// each body via McpRequestAuthenticator. See McpRequestAuthenticator.cs for the per-call vs.
+// header-fallback rationale.
 [McpServerToolType]
 public class DiscoveryTools
 (
@@ -242,12 +242,12 @@ public class DiscoveryTools
         var probes = probeResult.Entries;
         var probesStatus = probeResult.Status.ToApiString();
 
-        // Card #435: the one shared RouteTargetResolver synthesizes the upstream-target
-        // string for all 4 route surfaces (REST detail + routes, MCP get_app +
-        // list_routes). MCP-04 was the drift this dedup closes -- get_app's old ternary
-        // fell through to "not-running" for a healthy external-route while the other three
-        // synthesized the operator-declared upstream. routeTarget stays null when the app
-        // has no routing capability (the resolver is only consulted for routable apps).
+        // The one shared RouteTargetResolver synthesizes the upstream-target string for all 4
+        // route surfaces (REST detail + routes, MCP get_app + list_routes). Sharing it closes a
+        // drift where get_app's old ternary fell through to "not-running" for a healthy
+        // external-route while the other three synthesized the operator-declared upstream.
+        // routeTarget stays null when the app has no routing capability (the resolver is only
+        // consulted for routable apps).
         string? routeTarget = null;
 
         if (routingConfiguration is not null)
@@ -309,7 +309,7 @@ public class DiscoveryTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Lists all available application types with their display names, descriptions, capabilities, and registration schemas. Use this when registering a new app to discover valid app type slugs and understand what fields each type requires. The seven built-in types are: dotnet-app, nodejs-app, static-site, executable, system-service, external-route, internal-service.")]
+    [Description("Lists the application types available for registration, with each type's slug, display name, description, and capability names. Use this when registering a new app to discover valid app type slugs and which capabilities each type has. It returns six built-in types (dotnet-app, nodejs-app, static-site, executable, external-route, internal-service) plus any custom types the operator has added, except those marked internal.")]
     public async Task<CallToolResult> ListAppTypesAsync
     (
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
