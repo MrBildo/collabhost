@@ -718,7 +718,6 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
         "Collaboard",
         "Collattice",
         "Collabitat",
-        "Collabot",
         "Cadenza",
         "Recaller",
         "Tessera",
