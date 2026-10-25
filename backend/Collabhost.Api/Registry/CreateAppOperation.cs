@@ -283,24 +283,25 @@ public sealed class CreateAppOperation
         return OperationResult<CreateAppOutcome>.Success(new CreateAppOutcome(app.Id, app.Slug, hints));
     }
 
-    // A type marked internal is left out of every type list, so registration refuses it too, and
-    // what an operator is offered and what registration accepts are one set. The built-in internal
-    // type, system-service, is the proxy's type: the proxy seeder writes that app directly and never
-    // through this operation. A custom type can be marked internal in its own definition file, and
-    // is refused for that reason, so its message names the flag rather than the proxy. Apps of an
-    // internal type that already exist are untouched: editing, starting, stopping and deleting never
-    // consult the flag. Public because register_app checks it before its own install-directory
-    // check, so a caller is told the real reason.
+    // A type marked internal is left out of every type list, so registration refuses it too. The
+    // lists and this refusal both decide by TypeStore.IsRegistrable, so what an operator is offered
+    // and what registration accepts are one set. The built-in internal type, system-service, is the
+    // proxy's type: the proxy seeder writes that app directly and never through this operation. A
+    // custom type can be marked internal in its own definition file, and is refused for that reason,
+    // so its message names the flag rather than the proxy. Apps of an internal type that already
+    // exist are untouched: editing, starting, stopping and deleting never consult the flag. Public
+    // because register_app checks it before its own install-directory check, so a caller is told
+    // the real reason.
     public static string? DescribeRefusal(AppType appType, TypeStore typeStore)
     {
-        if (!appType.IsInternal)
+        if (TypeStore.IsRegistrable(appType))
         {
             return null;
         }
 
         var reason = appType.IsBuiltIn
             ? "Collabhost uses it only for the apps it creates for itself, such as its proxy"
-            : "its type definition marks it internal (\"isInternal\": true), and internal types cannot be registered";
+            : "its type definition marks it internal (\"isInternal\": true)";
 
         var registrable = typeStore.ListRegistrableTypes().Select(type => type.Slug);
 

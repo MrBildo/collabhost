@@ -67,8 +67,9 @@ namespace Collabhost.Api.Tests.Operations;
 //
 //   - Refusal: a type marked internal (system-service, the proxy's type, or a custom type carrying
 //     the flag) is refused with a Validation result naming the registrable types, and nothing is
-//     created. The proxy seeder, which
-//     does not go through registration, still seeds the proxy app of that type.
+//     created. The proxy seeder, which does not go through registration, still seeds the proxy app
+//     of that type. For every loaded type, the registrable list holds it exactly when registration
+//     accepts it.
 //
 // The full HTTP/transport happy path is the dual oracle: RegistrationValidationTests (REST, route-
 // level, untouched) + McpToolTests.RegisterApp_WithInstallDirectory_PersistsArtifactLocation (MCP,
@@ -348,43 +349,7 @@ public sealed class CreateAppOperationTests : IDisposable
     [Fact]
     public async Task CustomInternalType_ReturnsValidation_NamesTheFlag_NoApp_NoEvent()
     {
-        var userTypesDirectory = Path.Combine(Path.GetTempPath(), $"collabhost-internal-user-type-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(userTypesDirectory);
-
-        await File.WriteAllTextAsync
-        (
-            Path.Combine(userTypesDirectory, "hidden-worker.json"),
-            """
-            {
-              "slug": "hidden-worker",
-              "displayName": "Hidden Worker",
-              "isInternal": true,
-              "bindings": {
-                "process": {
-                  "discoveryStrategy": "Manual",
-                  "shutdownTimeoutSeconds": 10
-                }
-              }
-            }
-            """
-        );
-
-        await File.WriteAllTextAsync
-        (
-            Path.Combine(userTypesDirectory, "visible-worker.json"),
-            """
-            {
-              "slug": "visible-worker",
-              "displayName": "Visible Worker",
-              "bindings": {
-                "process": {
-                  "discoveryStrategy": "Manual",
-                  "shutdownTimeoutSeconds": 10
-                }
-              }
-            }
-            """
-        );
+        var userTypesDirectory = await CreateUserTypesDirectoryAsync();
 
         try
         {
@@ -402,13 +367,51 @@ public sealed class CreateAppOperationTests : IDisposable
             result.Error.ShouldBe
             (
                 "App type 'hidden-worker' cannot be registered: its type definition marks it internal "
-                + "(\"isInternal\": true), and internal types cannot be registered. The types you can "
-                + "register are dotnet-app, executable, external-route, internal-service, nodejs-app, "
-                + "static-site, visible-worker."
+                + "(\"isInternal\": true). The types you can register are dotnet-app, executable, "
+                + "external-route, internal-service, nodejs-app, static-site, visible-worker."
             );
 
             await AssertAppCountAsync(0);
             await AssertNoEventRecordedAsync();
+        }
+        finally
+        {
+            Directory.Delete(userTypesDirectory, true);
+        }
+    }
+
+    // Whether a type is offered and whether registration accepts it are decided by one check,
+    // TypeStore.IsRegistrable. For every loaded type, built-in or custom, the registrable list holds
+    // it exactly when registration does not refuse it. The fixture has types on both sides (two
+    // internal, the rest not), so a list or a refusal that stopped using the shared check would
+    // disagree here, while a change to the shared check moves both sides together.
+    [Fact]
+    public async Task EveryLoadedType_IsListedExactlyWhenRegistrationAcceptsIt()
+    {
+        var userTypesDirectory = await CreateUserTypesDirectoryAsync();
+
+        try
+        {
+            var (typeStore, _) = await CreateStoresAsync(userTypesDirectory);
+
+            var loaded = typeStore.ListTypes();
+
+            var listed = typeStore.ListRegistrableTypes()
+                .Select(type => type.Slug)
+                    .Order(StringComparer.Ordinal)
+                    .ToList();
+
+            var accepted = loaded
+                .Where(type => CreateAppOperation.DescribeRefusal(type, typeStore) is null)
+                    .Select(type => type.Slug)
+                    .Order(StringComparer.Ordinal)
+                    .ToList();
+
+            loaded.Count.ShouldBe(9);
+            listed.ShouldNotBeEmpty();
+            listed.Count.ShouldBeLessThan(loaded.Count);
+
+            accepted.ShouldBe(listed, Case.Sensitive, "what registration accepts is not what the type lists offer");
         }
         finally
         {
@@ -511,6 +514,51 @@ public sealed class CreateAppOperationTests : IDisposable
         );
 
         return (operation, proxy);
+    }
+
+    // A user-types folder holding one custom type marked internal (hidden-worker) and one left
+    // visible (visible-worker). The caller deletes it.
+    private static async Task<string> CreateUserTypesDirectoryAsync()
+    {
+        var userTypesDirectory = Path.Combine(Path.GetTempPath(), $"collabhost-internal-user-type-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(userTypesDirectory);
+
+        await File.WriteAllTextAsync
+        (
+            Path.Combine(userTypesDirectory, "hidden-worker.json"),
+            """
+            {
+              "slug": "hidden-worker",
+              "displayName": "Hidden Worker",
+              "isInternal": true,
+              "bindings": {
+                "process": {
+                  "discoveryStrategy": "Manual",
+                  "shutdownTimeoutSeconds": 10
+                }
+              }
+            }
+            """
+        );
+
+        await File.WriteAllTextAsync
+        (
+            Path.Combine(userTypesDirectory, "visible-worker.json"),
+            """
+            {
+              "slug": "visible-worker",
+              "displayName": "Visible Worker",
+              "bindings": {
+                "process": {
+                  "discoveryStrategy": "Manual",
+                  "shutdownTimeoutSeconds": 10
+                }
+              }
+            }
+            """
+        );
+
+        return userTypesDirectory;
     }
 
     private async Task<App> SeedAppAsync(string slug, string appTypeSlug)
