@@ -14,6 +14,8 @@ Thanks for your interest in contributing. This guide covers everything you need 
 
 `global.json` pins the exact .NET SDK that CI and the release pipeline install. A release is a self-contained publish, so that SDK decides which .NET runtime ships inside every archive. Locally, any later patch in the same feature band (10.0.4xx) is accepted; an older SDK, or one from another band, is refused with a "requested SDK version" error. Install the pinned SDK (or a newer 10.0.4xx patch) and the build picks it up.
 
+Updating frontend dependencies needs npm 11 or later (`npm install -g npm@11`). Node 22 comes with npm 10, which stops with `Cannot read properties of null (reading 'edgesOut')` on `npm update`, and when adding or upgrading the test runner (vitest) or Vite. Installing from the committed lockfile (`npm install` or `npm ci`) works with npm 10.
+
 ## Setup
 
 Clone the repo and install frontend dependencies:
