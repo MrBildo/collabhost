@@ -7,6 +7,7 @@
     runner. Reads every item under the given path with Get-Acl and checks it
     against the posture the installers promise. Exits non-zero on any
     violation and prints counts, so a pass shows how much it actually checked.
+    With -Expect Restricted, every writable directory must exist.
 
     -Scope System -Expect Restricted
         %ProgramData%\Collabhost: inheritance broken at the root; every item
@@ -200,6 +201,10 @@ if ($Scope -eq 'System')
 
 $ownerSummary = ($counts.Owners.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '
 Write-Host ("Checked {0} items under {1}: {2} under writable dirs, {3} under read-only dirs, {4} other. Owners: {5}" -f $counts.Items, $root, $counts.Writable, $counts.ReadOnly, $counts.Other, $(if ($ownerSummary) { $ownerSummary } else { 'not checked' }))
+# A writable directory that does not exist has no items to check, so the loop
+# above passes it silently. The installers create every one of them; a missing
+# one means the service will have to create it and may not be allowed to.
+foreach ($wr in $writableRoots) { if (-not (Test-Path -LiteralPath $wr -PathType Container)) { $violations.Add("${wr}: writable directory is missing") } }
 if ($counts.Writable -eq 0) { $violations.Add('No items found under the writable directories: the check covered nothing there.') }
 
 if ($violations.Count -gt 0)

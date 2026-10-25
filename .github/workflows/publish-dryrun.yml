@@ -8,8 +8,10 @@ name: Publish (dry-run)
 # Two supported use cases, same archive output:
 #
 #   1. Pipeline-change validation (card #157 origin, follow-up to #153). PR-triggered on changes
-#      to publish.yml, install scripts, Caddy pins, frontend/, or
-#      release-assets/. Catches archive-contract regressions before tag-cut.
+#      to publish.yml, install scripts, Caddy pins, frontend/,
+#      release-assets/, the install-check tools, or the backend files that
+#      decide where the proxy writes. Catches archive-contract regressions
+#      before tag-cut.
 #
 #   2. Pre-cut UAT archive production (card #352). Operators run the workflow
 #      manually via `workflow_dispatch` against `main` (or a branch pointing
@@ -56,6 +58,11 @@ on:
       - 'tools/set-windows-proxy-ports.ps1'
       - 'release-assets/**'
       - 'frontend/**'
+      # Where the proxy writes is decided here as much as in the installers:
+      # the environment its child process gets and the storage path it is
+      # given. install-smoke-windows checks the installers' grants against it.
+      - 'backend/Collabhost.Api/Supervisor/ChildProcessEnvironment.cs'
+      - 'backend/Collabhost.Api/Proxy/**'
 
 # No job gets a token permission it does not ask for, as in publish.yml. The
 # dry-run never writes to the Releases surface and never creates tags; workflow

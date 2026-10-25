@@ -10,13 +10,18 @@
     leaves that storage unwritable passes every check that only asks whether
     Collabhost itself started.
 
-    1. /api/v1/status settles on proxyState "running", portalReachable true and
-       no proxyDetail. The proxy creates its local certificate authority when
-       Collabhost loads its configuration into it, so a proxy that cannot write
-       its storage reports "degraded" here, with the reason in proxyDetail.
+    1. /api/v1/status leaves proxyState "starting" and reports "running",
+       portalReachable true and no proxyDetail. "running" is set as soon as the
+       proxy's admin API answers, which can be before Collabhost has loaded its
+       configuration into it, so this step alone proves little.
     2. A TLS handshake on 127.0.0.1 (port -HttpsPort) for the Portal's host name is answered
-       with a certificate for that name, issued by the proxy's local authority,
-       and the Portal answers over HTTPS with its HTML page.
+       with a certificate for that name, issued by the proxy's local authority.
+       That needs a loaded configuration, so /api/v1/status is read again
+       here and must still say "running" with no proxyDetail. The proxy creates
+       its local certificate authority at the first configuration load, so a
+       proxy that cannot write its storage reports "degraded" by now, with the
+       reason in proxyDetail. Then the Portal must answer over HTTPS with its
+       HTML page.
     3. With -StorageDir: the local authority's root certificate and the
        certificate for the Portal's host name are on disk in that directory, so
        the storage is where the install says it is.
@@ -122,36 +127,52 @@ function Get-ServedCertificate
     }
 }
 
-$deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-
-# 1. proxyState leaves "starting" (the first configuration load is asynchronous).
-$statusBody = ''
-$status = $null
-while ((Get-Date) -lt $deadline)
+function Read-Status
 {
+    param([string]$BaseUrl)
+
     try
     {
-        $statusBody = (Invoke-WebRequest -UseBasicParsing -Uri "$Url/api/v1/status" -ErrorAction Stop).Content
-        $status = $statusBody | ConvertFrom-Json
-        if ($status.proxyState -and $status.proxyState -ne 'starting')
-        {
-            break
-        }
+        $body = (Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/api/v1/status" -ErrorAction Stop).Content
+        return [pscustomobject]@{ Body = $body; Value = ($body | ConvertFrom-Json) }
     }
     catch
     {
-        $status = $null
+        return [pscustomobject]@{ Body = "(no answer: $($_.Exception.Message))"; Value = $null }
+    }
+}
+
+function Assert-StatusRunning
+{
+    param($Read, [string]$When)
+
+    $value = $Read.Value
+    if ($null -eq $value -or $value.proxyState -ne 'running' -or $value.portalReachable -ne $true -or $null -ne $value.proxyDetail)
+    {
+        Write-ProxyDiagnostic -StatusBody $Read.Body -DataDirectory $DataDir
+        $state = if ($null -eq $value) { 'no answer' } else { $value.proxyState }
+        throw "Expected proxyState 'running' with portalReachable true and no proxyDetail $When; got '$state'."
+    }
+}
+
+$deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+# 1. proxyState leaves "starting". "running" here only means the proxy's admin
+#    API answered; the first configuration load is asynchronous and may not have
+#    happened yet. Step 2 reads the status again once it must have.
+$read = $null
+while ((Get-Date) -lt $deadline)
+{
+    $read = Read-Status -BaseUrl $Url
+    if ($read.Value -and $read.Value.proxyState -and $read.Value.proxyState -ne 'starting')
+    {
+        break
     }
     Start-Sleep -Seconds 1
 }
 
-if ($null -eq $status -or $status.proxyState -ne 'running' -or $status.portalReachable -ne $true -or $null -ne $status.proxyDetail)
-{
-    Write-ProxyDiagnostic -StatusBody $statusBody -DataDirectory $DataDir
-    $state = if ($null -eq $status) { 'no answer' } else { $status.proxyState }
-    throw "Expected proxyState 'running' with portalReachable true and no proxyDetail; got '$state'."
-}
-Write-Host "  ok: proxyState=running, portalReachable=true, no proxyDetail"
+Assert-StatusRunning -Read $read -When 'once the proxy started'
+Write-Host "  ok: proxyState=running, portalReachable=true, no proxyDetail (proxy started)"
 
 # 2. A certificate for the Portal host name, issued by the local authority.
 $cert = $null
@@ -179,7 +200,9 @@ while ((Get-Date) -lt $deadline)
 
 if ($null -eq $cert)
 {
-    Write-ProxyDiagnostic -StatusBody $statusBody -DataDirectory $DataDir
+    # Read the status again: a failed configuration load sets "degraded" and the
+    # reason after step 1 has already passed.
+    Write-ProxyDiagnostic -StatusBody (Read-Status -BaseUrl $Url).Body -DataDirectory $DataDir
     throw "No certificate from the proxy's local authority for $HostName on 127.0.0.1:$HttpsPort within ${TimeoutSeconds}s ($lastError)."
 }
 
@@ -189,6 +212,11 @@ if ($dnsName -ne $HostName)
 {
     throw "The certificate served for $HostName names '$dnsName'."
 }
+
+# Serving that certificate needs a loaded configuration, so the status now
+# reflects at least one configuration load, and any failed one since.
+Assert-StatusRunning -Read (Read-Status -BaseUrl $Url) -When 'after the certificate check'
+Write-Host "  ok: proxyState=running, portalReachable=true, no proxyDetail (after the certificate check)"
 
 $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
 $page = & $curl -k -sS --fail --max-time 30 --resolve "${HostName}:${HttpsPort}:127.0.0.1" "https://${HostName}:$HttpsPort/" 2>&1 | Out-String

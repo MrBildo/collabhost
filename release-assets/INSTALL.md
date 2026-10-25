@@ -1285,8 +1285,11 @@ The three account choices are mutually exclusive — pick at most one of
   (`Proxy:StoragePath` / `COLLABHOST_PROXY_STORAGE_PATH`, where the bundled Caddy
   keeps its certificates and the private key of its local certificate
   authority). The database and user types are checked at startup and fail there
-  with a "not writable" error. The certificate storage is not checked, so a
-  missing grant shows up later, when the proxy first issues a certificate.
+  with a "not writable" error. The certificate storage is not checked at
+  startup. Without write access there, the proxy cannot create its certificate
+  authority, so its first configuration load fails and it reports `degraded`
+  at once. Only where the authority already exists does the failure wait until
+  the proxy next issues or renews a certificate.
 - Refuses to change permissions if it finds a junction or symbolic link inside
   the install directory, and says which. The check runs before the service is
   stopped, so a refusal leaves the running service as it was. A permission
