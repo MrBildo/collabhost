@@ -2,7 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using Collabhost.Api.Registry;
 using Collabhost.Api.Tests.Fixtures;
+
+using Microsoft.Extensions.DependencyInjection;
 
 using Shouldly;
 
@@ -13,6 +16,8 @@ namespace Collabhost.Api.Tests.Registry;
 [Collection("Api")]
 public class SettingsSchemaOverrideTests(ApiFixture fixture)
 {
+    private readonly ApiFixture _fixture = fixture;
+
     private readonly HttpClient _client = fixture.Client;
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -55,15 +60,25 @@ public class SettingsSchemaOverrideTests(ApiFixture fixture)
     {
         // The proxy app is the canonical system-service in production -- its environment-defaults
         // binding declares a schemaOverride that swaps the generic helpText for Caddy-specific copy.
-        // Test fixture cannot rely on proxy auto-seed (no Caddy binary on the test runner), so we
-        // register a fresh system-service app here. The schemaOverride is bound to the AppType, so
-        // every system-service app receives the override -- the proxy is just the production user.
+        // Test fixture cannot rely on proxy auto-seed (no Caddy binary on the test runner), and
+        // registration refuses system-service, so the app is written straight into the store, as the
+        // proxy seeder does. The schemaOverride is bound to the AppType, so every system-service app
+        // receives the override -- the proxy is just the production user.
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var slug = $"test-schema-override-{suffix}";
 
         try
         {
-            await CreateAppAsync(slug, "system-service");
+            await _fixture.Services.GetRequiredService<AppStore>().CreateAsync
+            (
+                new App
+                {
+                    Slug = slug,
+                    DisplayName = $"Schema Override Test {slug}",
+                    AppTypeSlug = "system-service"
+                },
+                CancellationToken.None
+            );
 
             var helpText = await GetVariablesHelpTextAsync(slug);
 

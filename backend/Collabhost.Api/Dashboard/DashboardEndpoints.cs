@@ -38,9 +38,7 @@ public static class DashboardEndpoints
 
         // Match the operator-facing picker: internal types like system-service are
         // hidden by /api/v1/app-types so the dashboard tile reflects the same set.
-        var appTypes = typeStore.ListTypes()
-            .Where(t => !t.IsInternal)
-                .ToList();
+        var appTypes = typeStore.ListRegistrableTypes();
 
         var running = 0;
         var stopped = 0;

@@ -62,8 +62,14 @@ namespace Collabhost.Api.Tests.Operations;
 //     app.started -- the 1-vs-2-event conditional the migration must preserve. This is the path the
 //     operation's hasExternalTarget branch uniquely owns.
 //
-//   - Hints scoping: a non-routed type (system-service -- no routing binding) gets an EMPTY hint list
-//     (no Caddy route, no hosts entry), proving the ResolveHelpfulNextSteps routing gate folded in.
+//   - Hints scoping: a non-routed type (internal-service -- no routing binding) gets an EMPTY hint
+//     list (no Caddy route, no hosts entry), proving the ResolveHelpfulNextSteps routing gate folded in.
+//
+//   - Refusal: a type marked internal (system-service, the proxy's type, or a custom type carrying
+//     the flag) is refused with a Validation result naming the registrable types, and nothing is
+//     created. The proxy seeder, which does not go through registration, still seeds the proxy app
+//     of that type. For every loaded type, the registrable list holds it exactly when registration
+//     accepts it.
 //
 // The full HTTP/transport happy path is the dual oracle: RegistrationValidationTests (REST, route-
 // level, untouched) + McpToolTests.RegisterApp_WithInstallDirectory_PersistsArtifactLocation (MCP,
@@ -294,27 +300,195 @@ public sealed class CreateAppOperationTests : IDisposable
     }
 
     [Fact]
-    public async Task SystemService_Created_EmitsNoHint()
+    public async Task InternalService_Created_EmitsNoHint()
     {
         var (operation, _) = await CreateOperationAsync();
 
         var result = await operation.ExecuteAsync
         (
-            new CreateAppCommand("svc-a", "Svc A", "system-service", []),
+            new CreateAppCommand("svc-a", "Svc A", "internal-service", []),
             CancellationToken.None
         );
 
         result.IsSuccess.ShouldBeTrue();
 
-        // system-service has no routing binding -> no Caddy route -> no hosts hint.
+        // internal-service has no routing binding, so no proxy route and no hosts hint.
         result.Value!.Hints.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task SystemService_ReturnsValidation_NamesRegistrableTypes_NoApp_NoEvent()
+    {
+        var (operation, _) = await CreateOperationAsync();
+
+        var result = await operation.ExecuteAsync
+        (
+            new CreateAppCommand("svc-b", "Svc B", "system-service", []),
+            CancellationToken.None
+        );
+
+        result.IsSuccess.ShouldBeFalse();
+        result.FailureKind.ShouldBe(OperationFailureKind.Validation);
+
+        result.Error.ShouldBe
+        (
+            "App type 'system-service' cannot be registered: Collabhost uses it only for the apps it "
+            + "creates for itself, such as its proxy. The types you can register are dotnet-app, "
+            + "executable, external-route, internal-service, nodejs-app, static-site."
+        );
+
+        await AssertAppCountAsync(0);
+        await AssertNoEventRecordedAsync();
+    }
+
+    // A custom type marked internal in its own definition file is refused too, and its message names
+    // the flag, not the proxy: Collabhost creates no apps of a custom type. The refusal reads the
+    // flag, not the name system-service, so a check rewritten to compare the name would let this
+    // registration through. A custom type left visible beside it shows the registrable list is the
+    // same one list_app_types offers: custom types in, internal ones out.
+    [Fact]
+    public async Task CustomInternalType_ReturnsValidation_NamesTheFlag_NoApp_NoEvent()
+    {
+        var userTypesDirectory = await CreateUserTypesDirectoryAsync();
+
+        try
+        {
+            var (operation, _) = await CreateOperationAsync(userTypesDirectory);
+
+            var result = await operation.ExecuteAsync
+            (
+                new CreateAppCommand("worker-a", "Worker A", "hidden-worker", []),
+                CancellationToken.None
+            );
+
+            result.IsSuccess.ShouldBeFalse();
+            result.FailureKind.ShouldBe(OperationFailureKind.Validation);
+
+            result.Error.ShouldBe
+            (
+                "App type 'hidden-worker' cannot be registered: its type definition marks it internal "
+                + "(\"isInternal\": true). The types you can register are dotnet-app, executable, "
+                + "external-route, internal-service, nodejs-app, static-site, visible-worker."
+            );
+
+            await AssertAppCountAsync(0);
+            await AssertNoEventRecordedAsync();
+        }
+        finally
+        {
+            Directory.Delete(userTypesDirectory, true);
+        }
+    }
+
+    // Whether a type is offered and whether registration accepts it are decided by one check,
+    // TypeStore.IsRegistrable. For every loaded type, built-in or custom, the registrable list holds
+    // it exactly when registration does not refuse it. The fixture has types on both sides (two
+    // internal, the rest not), so a list or a refusal that stopped using the shared check would
+    // disagree here, while a change to the shared check moves both sides together.
+    [Fact]
+    public async Task EveryLoadedType_IsListedExactlyWhenRegistrationAcceptsIt()
+    {
+        var userTypesDirectory = await CreateUserTypesDirectoryAsync();
+
+        try
+        {
+            var (typeStore, _) = await CreateStoresAsync(userTypesDirectory);
+
+            var loaded = typeStore.ListTypes();
+
+            var listed = typeStore.ListRegistrableTypes()
+                .Select(type => type.Slug)
+                    .Order(StringComparer.Ordinal)
+                    .ToList();
+
+            var accepted = loaded
+                .Where(type => CreateAppOperation.DescribeRefusal(type, typeStore) is null)
+                    .Select(type => type.Slug)
+                    .Order(StringComparer.Ordinal)
+                    .ToList();
+
+            loaded.Count.ShouldBe(9);
+            listed.ShouldNotBeEmpty();
+            listed.Count.ShouldBeLessThan(loaded.Count);
+
+            accepted.ShouldBe(listed, Case.Sensitive, "what registration accepts is not what the type lists offer");
+        }
+        finally
+        {
+            Directory.Delete(userTypesDirectory, true);
+        }
+    }
+
+    // The proxy app comes from ProxyAppSeeder, which writes its rows directly and never goes through
+    // registration, so refusing the type at registration leaves the seed alone. Both the fresh-install
+    // run (no proxy row yet) and the upgrade run (the row an earlier version seeded is already there)
+    // are driven against the same database the refused registration uses.
+    [Fact]
+    public async Task ProxySeed_StillSeedsSystemServiceApp_WhileRegistrationRefusesTheType()
+    {
+        var binaryDirectory = Path.Combine(Path.GetTempPath(), $"collabhost-proxy-seed-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(binaryDirectory);
+
+        var binaryPath = Path.Combine(binaryDirectory, "caddy-fake");
+        await File.WriteAllBytesAsync(binaryPath, []);
+
+        try
+        {
+            var (typeStore, _) = await CreateStoresAsync();
+
+            var seeder = new ProxyAppSeeder
+            (
+                _appStore,
+                _dbFactory,
+                typeStore,
+                new ProxySettings
+                {
+                    BaseDomain = "collab.internal",
+                    BinaryPath = binaryPath,
+                    ListenAddress = ":443",
+                    CertLifetime = "168h"
+                },
+                _activityEventStore,
+                NullLogger<ProxyAppSeeder>.Instance
+            );
+
+            await seeder.SeedAsync(CancellationToken.None);
+
+            var seeded = await _appStore.GetBySlugAsync("proxy", CancellationToken.None);
+            seeded.ShouldNotBeNull();
+            seeded.AppTypeSlug.ShouldBe("system-service");
+
+            var (operation, _) = await CreateOperationAsync();
+
+            var refused = await operation.ExecuteAsync
+            (
+                new CreateAppCommand("second-proxy", "Second Proxy", "system-service", []),
+                CancellationToken.None
+            );
+
+            refused.FailureKind.ShouldBe(OperationFailureKind.Validation);
+
+            await seeder.SeedAsync(CancellationToken.None);
+
+            var listed = await _appStore.ListAsync(CancellationToken.None);
+
+            listed.Select(app => app.Slug).ShouldBe(["proxy"]);
+            listed[0].Id.ShouldBe(seeded.Id);
+        }
+        finally
+        {
+            Directory.Delete(binaryDirectory, true);
+        }
     }
 
     // --- Helpers ---
 
-    private async Task<(CreateAppOperation Operation, ProxyManager Proxy)> CreateOperationAsync()
+    private async Task<(CreateAppOperation Operation, ProxyManager Proxy)> CreateOperationAsync
+    (
+        string? userTypesDirectory = null
+    )
     {
-        var (typeStore, capabilityStore) = await CreateStoresAsync();
+        var (typeStore, capabilityStore) = await CreateStoresAsync(userTypesDirectory);
         var supervisor = CreateSupervisor(typeStore, capabilityStore);
         var proxy = CreateProxyManager(supervisor, typeStore, capabilityStore);
 
@@ -342,6 +516,51 @@ public sealed class CreateAppOperationTests : IDisposable
         return (operation, proxy);
     }
 
+    // A user-types folder holding one custom type marked internal (hidden-worker) and one left
+    // visible (visible-worker). The caller deletes it.
+    private static async Task<string> CreateUserTypesDirectoryAsync()
+    {
+        var userTypesDirectory = Path.Combine(Path.GetTempPath(), $"collabhost-internal-user-type-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(userTypesDirectory);
+
+        await File.WriteAllTextAsync
+        (
+            Path.Combine(userTypesDirectory, "hidden-worker.json"),
+            """
+            {
+              "slug": "hidden-worker",
+              "displayName": "Hidden Worker",
+              "isInternal": true,
+              "bindings": {
+                "process": {
+                  "discoveryStrategy": "Manual",
+                  "shutdownTimeoutSeconds": 10
+                }
+              }
+            }
+            """
+        );
+
+        await File.WriteAllTextAsync
+        (
+            Path.Combine(userTypesDirectory, "visible-worker.json"),
+            """
+            {
+              "slug": "visible-worker",
+              "displayName": "Visible Worker",
+              "bindings": {
+                "process": {
+                  "discoveryStrategy": "Manual",
+                  "shutdownTimeoutSeconds": 10
+                }
+              }
+            }
+            """
+        );
+
+        return userTypesDirectory;
+    }
+
     private async Task<App> SeedAppAsync(string slug, string appTypeSlug)
     {
         await using var context = await _dbFactory.CreateDbContextAsync();
@@ -359,7 +578,10 @@ public sealed class CreateAppOperationTests : IDisposable
         return app;
     }
 
-    private async Task<(TypeStore TypeStore, CapabilityStore CapabilityStore)> CreateStoresAsync()
+    private async Task<(TypeStore TypeStore, CapabilityStore CapabilityStore)> CreateStoresAsync
+    (
+        string? userTypesDirectory = null
+    )
     {
         var settings = new ProxySettings
         {
@@ -372,7 +594,10 @@ public sealed class CreateAppOperationTests : IDisposable
         var typeStore = new TypeStore
         (
             new EventBus<TypeStoreReloadedEvent>(),
-            new TypeStoreSettings { UserTypesDirectory = Path.Combine(Path.GetTempPath(), "collabhost-406pr6-notexist") },
+            new TypeStoreSettings
+            {
+                UserTypesDirectory = userTypesDirectory ?? Path.Combine(Path.GetTempPath(), "collabhost-406pr6-notexist")
+            },
             settings,
             new StubHostEnvironment(),
             NullLogger<TypeStore>.Instance

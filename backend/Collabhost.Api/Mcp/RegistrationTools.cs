@@ -80,7 +80,7 @@ public class RegistrationTools
         [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'external-route', 'internal-service').")] string appTypeSlug,
         // installDirectory is conditionally required, decided by the type's bindings.
         // For app types that bind process or artifact (dotnet-app, nodejs-app, static-site,
-        // executable, system-service, internal-service) the directory is required and validated below
+        // executable, internal-service) the directory is required and validated below
         // after type lookup. For routing-only types whose upstream is operator-declared
         // (external-route via external-target binding) the parameter is meaningless and
         // accepted as empty or null.
@@ -121,6 +121,16 @@ public class RegistrationTools
         if (appType is null)
         {
             return McpResponseFormatter.AppTypeNotFound(appTypeSlug);
+        }
+
+        // The operation refuses a type marked internal; checking here as well, with the operation's
+        // own message, keeps the install-directory check below from answering first with a request
+        // for a directory the caller could never use.
+        var refusal = CreateAppOperation.DescribeRefusal(appType, _typeStore);
+
+        if (refusal is not null)
+        {
+            return McpResponseFormatter.InvalidParameters(refusal);
         }
 
         // installDirectory is required only for app types that bind `process`

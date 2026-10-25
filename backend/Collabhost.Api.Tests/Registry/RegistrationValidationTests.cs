@@ -117,6 +117,65 @@ public class RegistrationValidationTests(ApiFixture fixture)
         );
     }
 
+    // system-service is the type of the platform's own proxy, which the platform seeds for itself.
+    // Registration refuses it with a 400 whose message names the types that can be registered, and
+    // creates nothing.
+    [Fact]
+    public async Task RegisterSystemService_ReturnsBadRequestNamingRegistrableTypes_DoesNotCreateApp()
+    {
+        var slug = $"test-sys-refused-{Guid.NewGuid().ToString("N")[..8]}";
+
+        var createPayload = new
+        {
+            name = slug,
+            displayName = "System Service Refusal Test",
+            appTypeSlug = "system-service",
+            values = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["process"] = new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["command"] = "/usr/bin/test",
+                    ["workingDirectory"] = "/tmp"
+                }
+            }
+        };
+
+        try
+        {
+            using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/apps");
+            createRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+            createRequest.Content = JsonContent.Create(createPayload, options: _jsonOptions);
+
+            using var createResponse = await _client.SendAsync(createRequest);
+
+            createResponse.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
+            var problem = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+            var detail = problem.GetProperty("detail").GetString();
+
+            detail.ShouldBe
+            (
+                "App type 'system-service' cannot be registered: Collabhost uses it only for the apps it "
+                + "creates for itself, such as its proxy. The types you can register are dotnet-app, "
+                + "executable, external-route, internal-service, nodejs-app, static-site."
+            );
+
+            using var getRequest = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{slug}");
+            getRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            using var getResponse = await _client.SendAsync(getRequest);
+
+            getResponse.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/apps/{slug}");
+            deleteRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            using var deleteResponse = await _client.SendAsync(deleteRequest);
+        }
+    }
+
     [Fact]
     public async Task RegisterWithValidSettings_CreatesApp()
     {

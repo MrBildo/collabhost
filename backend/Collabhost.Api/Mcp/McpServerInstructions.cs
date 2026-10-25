@@ -8,7 +8,7 @@ public static class McpServerInstructions
         Apps are identified by slug (lowercase, hyphenated, e.g. 'my-api-server').
         Six built-in app types can be registered: dotnet-app, nodejs-app, static-site, executable, external-route, internal-service.
         list_app_types returns these, plus any custom types the operator has added, except those
-        marked internal.
+        marked internal, which register_app refuses.
         Static sites and external routes have no process: start_app and stop_app enable and disable
         their proxy route, and restart_app and kill_app refuse them.
         external-route is the right type for services Collabhost does not run (Docker, LAN, Tailscale):
