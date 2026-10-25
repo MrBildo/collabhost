@@ -59,12 +59,19 @@ exercised; the deploy *kit itself* is pinned at the kit path and refreshed delib
 > dispatcher `exec`s `/opt/collabhost-stage/deploy/deploy-stage.sh` only after a tamper
 > check that the script is **uid 0 and not group/other-writable** (`stat -c '%u' == 0`).
 > So the kit-install step **`chown -R root:root /opt/collabhost-stage/deploy`** after
-> copying `stage/*` in. A non-root owner (it drifted three times when laid out-of-band)
-> makes the dispatcher refuse **every** deploy with `deploy-stage.sh ... failed the tamper
-> check` — a confusing failure mode for a permissions slip. This is now **enforced in
-> `stage/box/stage-standup.sh`** (repo-tracked, #445): re-run the stand-up with the repo
-> `stage/` dir as its 2nd arg to (re)lay the kit root-owned, rather than copying it in
-> out-of-band.
+> copying `stage/*` in. A non-root owner makes the dispatcher refuse **every** deploy with
+> `deploy-stage.sh ... failed the tamper check` — a confusing failure mode for a permissions
+> slip. This is **enforced in `stage/box/stage-standup.sh`** (repo-tracked, #445): re-run the
+> stand-up with the repo `stage/` dir as its 2nd arg to (re)lay the kit root-owned, rather
+> than copying it in out-of-band.
+>
+> **The drift had a second cause (#474).** Until #474, `stage-privop install-artifacts` ran
+> `chown -R collabhost-stage` over the whole `/opt/collabhost-stage`, `deploy/` included, at
+> every deploy. Each deploy therefore handed the service user the root-run helper and broke
+> the tamper check for the next deploy. `install-artifacts` now chowns only `bin/` and
+> `wwwroot/`, and refuses (exit 8) if `/opt/collabhost-stage` or anything under `deploy/` is
+> not root-owned or is group/world-writable. Test: `sudo bash stage/tests/test-privop-ownership.sh`
+> on the box.
 
 ## The privileged helper (`stage-privop`)
 

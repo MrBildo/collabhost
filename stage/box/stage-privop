@@ -46,6 +46,22 @@ _assert_stage() {
 
 _chown_stage() { chown -R "${SVC_USER}:${SVC_USER}" "$1"; }
 
+# The service user must never own ${PREFIX} itself or anything under ${PREFIX}/deploy:
+# deploy/ holds this helper, which stage-deploy runs as root. If the service user (or any
+# app stage supervises) could write it, a stage app could rewrite the helper and get root
+# on the box at the next stage-status. It also trips the dispatcher's tamper check, so the
+# next deploy is refused (#474). A missing deploy/ fails closed (find's error is a finding).
+_assert_root_owned_boundary() {
+  local bad
+  bad="$( { find "${PREFIX}" -maxdepth 0 \( ! -user root -o -perm /022 \) -print
+            find "${PREFIX}/deploy" \( ! -user root -o -perm /022 \) -print; } 2>&1 )" || true
+  if [ -n "$bad" ]; then
+    echo "stage-privop: REFUSED -- not root-owned (or group/world-writable) inside the privilege boundary:" >&2
+    printf '%s\n' "$bad" | sed 's/^/  /' >&2
+    exit 8
+  fi
+}
+
 verb="${1:-}"
 case "$verb" in
   install-artifacts)
@@ -60,7 +76,10 @@ case "$verb" in
     fi
     # Ensure the proxy binary is present (copied from prod once; refresh via install-caddy).
     [ -x "${PREFIX}/bin/caddy" ] || install -m 0750 -o "${SVC_USER}" -g "${SVC_USER}" "${PROD_CADDY}" "${PREFIX}/bin/caddy"
-    _chown_stage "${PREFIX}"
+    # Only the two trees this verb writes. Never ${PREFIX} itself: it holds deploy/ (#474).
+    _chown_stage "${PREFIX}/bin"
+    _chown_stage "${PREFIX}/wwwroot"
+    _assert_root_owned_boundary
     echo "stage-privop: install-artifacts OK"
     ;;
   install-caddy)
