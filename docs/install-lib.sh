@@ -271,8 +271,8 @@ extract_archive() {
 # inline logic. On first install (no appsettings_dst present), copies the
 # shipped file to both appsettings_dst and baseline_dst. On upgrade, runs the
 # new binary's --merge-appsettings subcommand if --version output matches the
-# expected pattern; warns to stderr otherwise (recurrence-prevention from
-# card #213).
+# expected pattern; warns to stderr otherwise, so a version line the gate does
+# not recognise skips the merge with a warning instead of silently.
 #
 # Caller is responsible for ensuring the parent directory of appsettings_dst
 # exists and the binary is +x.
@@ -294,7 +294,8 @@ smart_merge_appsettings() {
 
   # Match "Collabhost X.Y.Z" or "Collabhost vX.Y.Z" -- the optional 'v' guards against
   # any future change to VersionInfo.Current's prefix without re-breaking the gate
-  # (card #213 root cause: the prior regex required 'v' that the binary doesn't emit).
+  # (an earlier pattern required the 'v', which the binary doesn't print, so every
+  # upgrade skipped the merge).
   # Drop the major-version >= 1 constraint -- merge-appsettings shipped in v1.0.0,
   # so a v0.x binary won't recognize it and will exit non-zero, which the gate already
   # handles. Surface a warning when the regex misses so the next format drift is loud

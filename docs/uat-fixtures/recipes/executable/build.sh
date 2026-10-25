@@ -5,7 +5,7 @@
 #   single-binary/      - one Go binary at root, listens on $PORT
 #   multiple-binaries/  - two Go binaries at root (sorted: aaa, bbb)
 #   looks-like-dotnet/  - copy of the dotnet-app/self-contained/ build output
-#                         (drives the §3.3 IsManagedDotnet nudge banner)
+#                         (drives the IsManagedDotnet nudge banner)
 #
 # Cross-OS:
 #   Windows: produces `*.exe` (`ListExecutablesAtRoot` keys off .exe extension).
