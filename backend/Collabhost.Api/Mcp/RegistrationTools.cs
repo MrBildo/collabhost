@@ -73,18 +73,18 @@ public class RegistrationTools
         Idempotent = false,
         OpenWorld = false
     )]
-    [Description("Registers a new application on the platform. Requires an app type slug, a display name, and an install directory. The app is created in 'stopped' status and must be started separately with start_app. The response includes 'writableDataPath' -- a platform-provisioned absolute directory inside Collabhost's writable data root; configure any app that writes to disk (e.g. a SQLite connection string) to write there rather than into its install directory, which may be read-only under a hardened deployment. Workflow: call list_app_types to discover valid types and their registration schemas. Optionally call browse_filesystem to find the install directory and detect_strategy to check what Collabhost can auto-detect.")]
+    [Description("Registers a new application on the platform. Requires an app type slug and a display name, plus an install directory for types that run a process or serve files (every built-in type except external-route). The app is created in 'stopped' status and must be started separately with start_app, except an external route: its proxy route is enabled at registration, so use get_app for its current status. The response includes 'writableDataPath' -- a platform-provisioned absolute directory inside Collabhost's writable data root; configure any app that writes to disk (e.g. a SQLite connection string) to write there rather than into its install directory, which may be read-only under a hardened deployment. Workflow: call list_app_types to discover valid types and their capabilities. Optionally call browse_filesystem to find the install directory and detect_strategy to check what Collabhost can auto-detect.")]
     public async Task<CallToolResult> RegisterAppAsync
     (
         [Description("Display name for the application (e.g., 'My API Server').")] string name,
-        [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'system-service', 'external-route', 'internal-service').")] string appTypeSlug,
+        [Description("App type slug from list_app_types (e.g., 'dotnet-app', 'nodejs-app', 'static-site', 'executable', 'external-route', 'internal-service').")] string appTypeSlug,
         // installDirectory is conditionally required, decided by the type's bindings.
         // For app types that bind process or artifact (dotnet-app, nodejs-app, static-site,
         // executable, system-service, internal-service) the directory is required and validated below
         // after type lookup. For routing-only types whose upstream is operator-declared
         // (external-route via external-target binding) the parameter is meaningless and
         // accepted as empty or null.
-        [Description("Absolute path to the application's directory on the host filesystem. Required for app types that bind process or artifact (dotnet-app, nodejs-app, static-site, executable, system-service, internal-service). Accepted as empty or null for routing-only types like external-route, which have no install directory.")] string? installDirectory = null,
+        [Description("Absolute path to the application's directory on the host filesystem. Required for app types that bind process or artifact (dotnet-app, nodejs-app, static-site, executable, internal-service). Accepted as empty or null for routing-only types like external-route, which have no install directory.")] string? installDirectory = null,
         // Explicit `= null` default is load-bearing: the MCP tool-binding marshaller treats params with no
         // C# default as required. Card #331.
         [Description("Optional JSON object with additional registration settings specific to the app type. Examples: dotnet-app -> {\"process\":{\"command\":\"./myapp\",\"arguments\":\"--port 5000\",\"discoveryStrategy\":\"Manual\"}}; external-route -> {\"external-target\":{\"host\":\"localhost\",\"port\":11235,\"scheme\":\"http\"}}. Valid process keys: command, arguments, workingDirectory, discoveryStrategy, shutdownTimeoutSeconds, startupGracePeriodSeconds, maxStartupRetries. Valid external-target keys: host, port, scheme.")] string? settings = null,
@@ -285,7 +285,7 @@ public class RegistrationTools
         Idempotent = false,
         OpenWorld = false
     )]
-    [Description("Stops and permanently deletes a registered application. The app's process is stopped first (as stop_app does, and force-killed if it has not stopped within 10 seconds), then the app is removed from the registry. All settings and capability overrides are deleted. This action cannot be undone. Use get_app to verify the app before deleting.")]
+    [Description("Stops and permanently deletes a registered application. A running process is stopped first (as stop_app does, and force-killed if it has not stopped within 10 seconds); a static site's or external route's proxy route is disabled first. Then the app is removed from the registry. All settings and capability overrides are deleted. This action cannot be undone. Use get_app to verify the app before deleting.")]
     public async Task<CallToolResult> DeleteAppAsync
     (
         [Description("The app's unique slug identifier. Use list_apps to find available slugs.")] string slug,

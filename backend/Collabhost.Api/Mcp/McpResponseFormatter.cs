@@ -35,8 +35,8 @@ public static class McpResponseFormatter
         [
             new TextContentBlock
             {
-                Text = $"App type '{slug}' not found. Use list_app_types to see available types: "
-                    + "dotnet-app, nodejs-app, static-site, executable, system-service, external-route, internal-service."
+                Text = $"App type '{slug}' not found. Use list_app_types to see the available types. "
+                    + "The built-in ones you can register are dotnet-app, nodejs-app, static-site, executable, external-route, internal-service."
             }
         ],
         IsError = true

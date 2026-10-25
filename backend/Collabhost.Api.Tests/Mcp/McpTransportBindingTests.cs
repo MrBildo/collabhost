@@ -708,6 +708,100 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
         );
     }
 
+    // The server instructions, the list_app_types description and the unknown-type error all name
+    // the built-in app types an agent can register, and those names have to match what
+    // list_app_types returns. system-service, the type of the platform's own proxy, is left out of
+    // that list, so text that names it, or leaves out a type the list returns, tells an agent
+    // something the tool then contradicts. The fixture loads no custom types, so every type the
+    // list returns here is a built-in one.
+    [Fact]
+    public async Task TypeNamesInMcpText_MatchWhatListAppTypesReturns()
+    {
+        var client = _client!;
+
+        var listResult = await client.CallToolAsync
+        (
+            "list_app_types",
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["authKey"] = ApiFixture.AdminKey },
+            cancellationToken: CancellationToken.None
+        );
+
+        ShouldNotBeBindingError(listResult, "list_app_types");
+
+        var listText = listResult.Content.OfType<TextContentBlock>().Single().Text;
+
+        using var document = JsonDocument.Parse(listText[(listText.IndexOf('\n', StringComparison.Ordinal) + 1)..]);
+
+        var returnedSlugs = document.RootElement
+            .EnumerateArray()
+            .Select(type => type.GetProperty("slug").GetString() ?? string.Empty)
+                .ToList();
+
+        // Positive controls: an empty or unparsed list would let every check below pass.
+        returnedSlugs.ShouldContain("dotnet-app");
+        returnedSlugs.ShouldNotContain("system-service");
+        returnedSlugs.Count.ShouldBeLessThan(_countWords.Length);
+
+        var unknownTypeResult = await client.CallToolAsync
+        (
+            "register_app",
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["name"] = "Unknown Type Probe",
+                ["appTypeSlug"] = "no-such-type",
+                ["installDirectory"] = Path.GetTempPath(),
+                ["authKey"] = ApiFixture.AdminKey
+            },
+            cancellationToken: CancellationToken.None
+        );
+
+        (unknownTypeResult.IsError ?? false).ShouldBeTrue("register_app with an unknown app type must be refused.");
+
+        var unknownTypeError = unknownTypeResult.Content.OfType<TextContentBlock>().Single().Text;
+        unknownTypeError.ShouldContain("not found", Case.Sensitive);
+
+        var instructions = client.ServerInstructions ?? string.Empty;
+        var tools = await client.ListToolsAsync(cancellationToken: CancellationToken.None);
+
+        var listAppTypesDescription = tools
+            .Single(tool => string.Equals(tool.ProtocolTool.Name, "list_app_types", StringComparison.Ordinal))
+                .ProtocolTool.Description ?? string.Empty;
+
+        foreach (var slug in returnedSlugs)
+        {
+            instructions.ShouldContain(slug, Case.Sensitive, $"The server instructions do not name '{slug}'.");
+            listAppTypesDescription.ShouldContain(slug, Case.Sensitive, $"The list_app_types description does not name '{slug}'.");
+            unknownTypeError.ShouldContain(slug, Case.Sensitive, $"The unknown-type error does not name '{slug}'.");
+        }
+
+        instructions.ShouldContain($"{_countWords[returnedSlugs.Count]} built-in app types", Case.Sensitive);
+
+        List<string> texts = [instructions, unknownTypeError];
+
+        foreach (var tool in tools)
+        {
+            texts.Add(tool.ProtocolTool.Description ?? string.Empty);
+
+            CollectStrings(tool.ProtocolTool.InputSchema, texts);
+        }
+
+        var namingHiddenType = texts
+            .Where(text => text.Contains("system-service", StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+        namingHiddenType.ShouldBeEmpty
+        (
+            "MCP text names system-service, which list_app_types does not return. Offending text: "
+            + string.Join(" | ", namingHiddenType)
+        );
+    }
+
+    private static readonly string[] _countWords =
+    [
+        "No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"
+    ];
+
     // Matched ignoring case, so a product name in any casing (an environment-variable prefix, a
     // lower-case hostname) is caught too.
     private static readonly string[] _internalReferenceMarkers =
