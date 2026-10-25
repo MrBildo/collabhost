@@ -118,7 +118,7 @@ If no Caddy binary is configured, everything else still works (app management, p
 
 **Operator dashboard** — Real-time stats, app table with inline actions, live activity feed, and streaming log viewers. Everything an operator needs on one screen. The War Machine design system — dark, monospace, industrial — is built for density and quick action.
 
-**Process supervision** — Start, stop, restart, and kill managed processes with platform-native implementations for both Windows and Linux. On Windows: processes launch via `CreateProcess` with dedicated process groups and orphan protection through Win32 Job Objects that guarantee child process cleanup even if Collabhost crashes; stop is an immediate hard-kill (no graceful-shutdown channel today). On Linux: process groups with a graceful `SIGTERM`-then-`SIGKILL` lifecycle (honoring the per-app shutdown timeout) and cgroup-based containment. Crash detection with automatic restart and configurable exponential backoff. Stdout/stderr captured into in-memory ring buffers.
+**Process supervision** — Start, stop, restart, and kill managed processes with platform-native implementations for both Windows and Linux. On Windows: processes launch via `CreateProcess` with dedicated process groups and orphan protection through Win32 Job Objects that guarantee child process cleanup even if Collabhost crashes; stop is an immediate hard-kill (no graceful-shutdown channel today). On Linux: process groups with a graceful `SIGTERM`-then-`SIGKILL` lifecycle (honoring the per-app shutdown timeout) and cgroup-based containment where a writable cgroup is available. Crash detection with automatic restart and configurable exponential backoff. Stdout/stderr captured into in-memory ring buffers.
 
 **Reverse proxy** — Every app gets a subdomain route automatically configured through [Caddy](https://caddyserver.com/). HTTPS via Caddy's internal CA. Routes sync on process state changes — no manual proxy config. The base domain is configurable in `appsettings.json`.
 
@@ -138,7 +138,7 @@ If no Caddy binary is configured, everything else still works (app management, p
 
 `system-service` is the seventh built-in type but is internal — it is the Proxy's own type, seeded by Collabhost at startup and not operator-registerable. The registration picker shows the six types above.
 
-**User management** — Header-based auth with administrator, agent, and read-only roles. One-time API key reveal on creation. The same key authenticates the dashboard, the REST API, and the MCP server — mint a key for an agent and it can operate the platform, or a read-only key for a monitor that should observe but never mutate.
+**User management** — Header-based auth with administrator, agent, and read-only roles. One-time API key reveal on creation. The same key authenticates the dashboard, the REST API, and the MCP server — mint a key for an agent and it can operate the platform, or a read-only key for a monitor that should observe but never mutate. An agent key can run programs on the host (it can register any command as an app and start it) and browse the host's folders, so treat it like shell access to the machine.
 
 **Technology probing** — Automatic detection of runtimes, frameworks, and dependencies for registered apps. No manual tagging required. Surfaces in the dashboard and in `get_app` MCP responses.
 
@@ -149,7 +149,7 @@ Process supervision is the piece of Collabhost that differs most by platform. Th
 | Platform | How processes are supervised |
 |---|---|
 | **Windows** | `CreateProcess` P/Invoke with dedicated process groups, orphan protection through Win32 Job Objects. Stop is an immediate hard-kill — no graceful-shutdown channel today, so the per-app shutdown timeout is Linux-only. |
-| **Linux** | `setsid` process groups with `SIGTERM`/`SIGKILL` lifecycle, cgroup v2 containment. Orphan-proof. |
+| **Linux** | `setsid` process groups with `SIGTERM`/`SIGKILL` lifecycle, plus a cgroup v2 cgroup per app when Collabhost has a writable cgroup to manage (the system-scope service needs a drop-in for that; see INSTALL.md §5.5.2). Without one, apps are stopped through their process groups. |
 | **macOS** | `FallbackProcessRunner`. Processes start and stop, stdout/stderr capture works, and hard kill is available. No graceful shutdown (no `SIGTERM`-equivalent signal handling), no Job Object-equivalent isolation, no orphan protection — if Collabhost crashes, child processes may outlive it. |
 
 Windows and Linux are the recommended deployment targets. macOS runs the platform but with the gaps above — it's best suited for local development rather than long-running production workloads.
@@ -221,7 +221,7 @@ Collabhost exposes an MCP (Model Context Protocol) server so agents can operate 
 |---|---|
 | URL | `http://localhost:58400/mcp` |
 | Transport | Streamable HTTP (stateless) |
-| Auth | `X-User-Key` header with a user's ULID key |
+| Auth | `X-User-Key` header with a user's key |
 | Server name | `collabhost` |
 
 The API port defaults to `58400`. If something else on your host already owns that port, override it via `Hosting:ListenPort` in `appsettings.json` or the `COLLABHOST_HOSTING_LISTEN_PORT` environment variable.
@@ -258,8 +258,8 @@ Drop that in your project's `.mcp.json` (or the equivalent for your client) and 
 | Role | Access |
 |------|--------|
 | Administrator | Full tool surface (18 tools) plus user management through the REST API. |
-| Agent | 17 of 18 tools. Everything except `delete_app` (deletion is administrator-only). |
-| Read-only | Observability only. Reads system status, the app list, and app detail; refused every mutating operation and the secret-bearing reads (logs, settings, activity events). |
+| Agent | 17 of 18 tools. Everything except `delete_app` (deletion is administrator-only). That includes running programs on the host: an agent can register any command as an app and start it, and browse the host's folders. Give an agent key only to something you would trust with a shell on the machine. |
+| Read-only | Observability only. Reads system status, the app list, app detail, routes, and app types; refused every mutating operation and the secret-bearing reads (logs, settings, activity events). |
 
 ### Tool surface
 

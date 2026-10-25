@@ -70,6 +70,23 @@ describe('UserCreatePage', () => {
     expect(screen.getByRole('radio', { name: /Administrator/i })).toBeInTheDocument()
   })
 
+  test('Agent role states that its key can run programs on the host and browse its folders', () => {
+    render(<UserCreatePage />)
+
+    const agentRadio = screen.getByRole('radio', { name: 'Agent' })
+    expect(agentRadio).toHaveAccessibleDescription(/can run programs on this host/i)
+    expect(agentRadio).toHaveAccessibleDescription(/register any command as an app and start it/i)
+    expect(agentRadio).toHaveAccessibleDescription(/browse the host's folders/i)
+    expect(agentRadio).toHaveAccessibleDescription(/shell access to this machine/i)
+  })
+
+  test('Administrator role is described as everything an Agent can do plus users and deletion', () => {
+    render(<UserCreatePage />)
+
+    const adminRadio = screen.getByRole('radio', { name: 'Administrator' })
+    expect(adminRadio).toHaveAccessibleDescription(/everything an Agent can do, plus managing users and deleting apps/i)
+  })
+
   test('Create User button is disabled when name is empty', () => {
     render(<UserCreatePage />)
 
