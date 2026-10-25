@@ -126,7 +126,7 @@ Out of scope for this doc, tracked separately:
 - **CI gate on Caddy bump PRs.** A smoke-test workflow that runs `CaddyClient` against the proposed version before merge.
 - **GitHub Security Advisory automation.** Subscribe Collabhost to advisories that land specifically on `caddyserver/caddy` and surface them in the project's own advisory feed.
 
-If you're picking these up, file a card and link it back to this section.
+If you're picking these up, open an issue and link it back to this section.
 
 ## See also
 

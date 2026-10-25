@@ -52,7 +52,7 @@ same-tab login/logout already notifies subscribers directly, and cross-tab propa
 judged out of scope. That was later reconsidered and **deliberately reversed** — without it,
 a logout (or login) in one tab leaves the other tabs sitting on a stale session until the
 operator reloads, a real and observable wrong state. The `storage` listener was added to
-close that gap (finding FE-AUTH-04, card #434). It is filtered to fire only on changes to
+close that gap. It is filtered to fire only on changes to
 the auth-storage key (a full `clear()` surfaces as a `null` key and is also handled), so
 unrelated `localStorage` writes don't churn the auth snapshot.
 
@@ -69,5 +69,5 @@ the codebase intentionally does **not** do — that a future reviewer would reas
 question, record it here with self-contained rationale. The bar is "deliberate, non-obvious,
 and settled," not "every choice." Keep each entry tight: state the decision, then the
 reasoning a reviewer needs to be satisfied without leaving this file. If a decision later
-reverses (as #2 did), re-cast the entry as decision-with-history rather than deleting it —
+reverses (as entry 2 did), re-cast the entry as decision-with-history rather than deleting it —
 the recorded history is what keeps the question from being re-opened.
