@@ -8,8 +8,10 @@ name: Publish (dry-run)
 # Two supported use cases, same archive output:
 #
 #   1. Pipeline-change validation (card #157 origin, follow-up to #153). PR-triggered on changes
-#      to publish.yml, install scripts, Caddy pins, frontend/, or
-#      release-assets/. Catches archive-contract regressions before tag-cut.
+#      to publish.yml, install scripts, Caddy pins, frontend/,
+#      release-assets/, the install-check tools, or the backend files that
+#      decide where the proxy writes. Catches archive-contract regressions
+#      before tag-cut.
 #
 #   2. Pre-cut UAT archive production (card #352). Operators run the workflow
 #      manually via `workflow_dispatch` against `main` (or a branch pointing
@@ -51,8 +53,16 @@ on:
       - 'tools/verify-caddy-build.sh'
       - 'tools/assert-admin-key-file.sh'
       - 'tools/assert-admin-key-file.ps1'
+      - 'tools/assert-windows-install-acl.ps1'
+      - 'tools/assert-windows-proxy.ps1'
+      - 'tools/set-windows-proxy-ports.ps1'
       - 'release-assets/**'
       - 'frontend/**'
+      # Where the proxy writes is decided here as much as in the installers:
+      # the environment its child process gets and the storage path it is
+      # given. install-smoke-windows checks the installers' grants against it.
+      - 'backend/Collabhost.Api/Supervisor/ChildProcessEnvironment.cs'
+      - 'backend/Collabhost.Api/Proxy/**'
 
 # No job gets a token permission it does not ask for, as in publish.yml. The
 # dry-run never writes to the Releases surface and never creates tags; workflow
@@ -837,10 +847,10 @@ jobs:
   #      (run from $HOME), Portal HTTP responses (/, /apps, /api/v1/status).
   #   -- this does NOT exercise: install.sh / install.ps1's own logic (PATH
   #      manipulation, reinstall preservation, Caddy bundling, sha256 verify).
-  #      Those remain release-time-only via install-integration.yml. The
-  #      install scripts hardcode the GitHub release URL, so driving them
-  #      against a workflow-run artifact would require a script-side hatch
-  #      we have explicitly chosen not to add.
+  #      For Linux and macOS those remain release-time-only via
+  #      install-integration.yml. The Windows installers run against this
+  #      archive in install-smoke-windows below, served from a mirror on the
+  #      runner through COLLABHOST_INSTALL_BASE_URL.
   #
   # Runners mirror install-integration's native legs (linux-arm64 QEMU stays
   # release-only -- 10+ min per leg is too slow for PR feedback).
@@ -1148,3 +1158,176 @@ jobs:
             throw 'Admin-key bootstrap line not seen within 60s.'
           }
           Write-Host 'Admin-key bootstrap line emitted.'
+
+  # Installs THIS PR's win-x64 archive with THIS PR's Windows installers, in each
+  # of the three shapes an operator can pick, and checks that the proxy runs and
+  # issues a certificate. The archive is served from a mirror on the runner
+  # itself: the installers accept COLLABHOST_INSTALL_BASE_URL on a loopback
+  # http:// address, so their own logic runs as it does against a GitHub release
+  # (download, checksum, layout, service registration, the permissions they set).
+  # archive-smoke above boots the archive without an installer, and
+  # install-integration runs the installers only against a published release.
+  #
+  # The proxy check is the one this job exists for. The proxy writes its
+  # certificate storage at runtime, under whatever permissions the installer
+  # left, and a check that only asks whether Collabhost answers /api/v1/status
+  # passes while the proxy cannot write it.
+  install-smoke-windows:
+    name: Install win-x64 (${{ matrix.shape }})
+    needs: [resolve-version, build-matrix]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shape: [user-service, system-service, console]
+    env:
+      VER: ${{ needs.resolve-version.outputs.version }}
+      SHAPE: ${{ matrix.shape }}
+      MIRROR_PORT: '18080'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            docs
+            tools
+
+      - name: Download archive artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: archive-win-x64
+          path: mirror
+
+      # A release carries one checksums.txt with a "<hash>  <archive>" line per
+      # archive; the per-archive .sha256 file is that line.
+      - name: Serve the archive from a mirror on this runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $mirror = Join-Path $env:GITHUB_WORKSPACE 'mirror'
+          Get-Content -LiteralPath (Join-Path $mirror "collabhost-$env:VER-win-x64.zip.sha256") |
+            Set-Content -LiteralPath (Join-Path $mirror 'checksums.txt')
+          Get-ChildItem -LiteralPath $mirror | Format-Table Length, Name | Out-String | Write-Host
+          $server = Start-Process -FilePath python -PassThru -WindowStyle Hidden `
+            -ArgumentList @('-m', 'http.server', $env:MIRROR_PORT, '--bind', '127.0.0.1', '--directory', $mirror)
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$($env:MIRROR_PORT)/checksums.txt" -ErrorAction Stop | Out-Null
+              Write-Host "Mirror up (pid $($server.Id))."
+              exit 0
+            } catch { Start-Sleep -Seconds 1 }
+          }
+          throw 'The mirror did not answer within 30s.'
+
+      - name: Install
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:COLLABHOST_INSTALL_BASE_URL = "http://127.0.0.1:$($env:MIRROR_PORT)"
+          switch ($env:SHAPE) {
+            'user-service'   { & docs/install.ps1 -Version "v$env:VER" -SkipPath -RegisterUserService }
+            'system-service' { & docs/install-system.ps1 -Version "v$env:VER" }
+            'console'        { & docs/install.ps1 -Version "v$env:VER" -SkipPath }
+          }
+
+      # The runner refuses a bind on port 80, so the proxy moves to 8080/8443
+      # (see the script). The installers keep appsettings.json on a re-run.
+      - name: Move the proxy off ports 80 and 443
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          switch ($env:SHAPE) {
+            'user-service'   { & tools/set-windows-proxy-ports.ps1 -SettingsFile (Join-Path $HOME '.collabhost\bin\appsettings.json') -ServiceName CollabhostUser }
+            'system-service' { & tools/set-windows-proxy-ports.ps1 -SettingsFile 'C:\ProgramData\Collabhost\config\appsettings.json' -ServiceName Collabhost }
+            'console'        { & tools/set-windows-proxy-ports.ps1 -SettingsFile (Join-Path $HOME '.collabhost\bin\appsettings.json') }
+          }
+
+      - name: The proxy runs and issues a certificate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $userBin = Join-Path $HOME '.collabhost\bin'
+          $proc = $null
+          if ($env:SHAPE -eq 'system-service') {
+            $storage = 'C:\ProgramData\Collabhost\caddy'
+            $data    = 'C:\ProgramData\Collabhost\data'
+          } else {
+            $storage = Join-Path $userBin 'caddy'
+            $data    = Join-Path $userBin 'data'
+          }
+          if ($env:SHAPE -eq 'console') {
+            # The operator's own run: collabhost.exe from PATH, here from $HOME.
+            Set-Location $HOME
+            $proc = Start-Process -FilePath (Join-Path $userBin 'collabhost.exe') -PassThru -WindowStyle Hidden `
+              -RedirectStandardOutput (Join-Path $HOME 'console.log') -RedirectStandardError (Join-Path $HOME 'console.err.log')
+          }
+          try {
+            $ok = $false
+            for ($i = 0; $i -lt 90; $i++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:58400/api/v1/status' -ErrorAction Stop | Out-Null
+                $ok = $true
+                break
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ok) { throw 'Status endpoint never came up.' }
+            & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-windows-proxy.ps1') -HttpsPort 8443 -StorageDir $storage -DataDir $data -ShowLog
+            switch ($env:SHAPE) {
+              'user-service'   { & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-windows-install-acl.ps1') -Scope User -Path $userBin -Account 'NT SERVICE\CollabhostUser' -Expect Restricted }
+              'system-service' { & (Join-Path $env:GITHUB_WORKSPACE 'tools\assert-windows-install-acl.ps1') -Scope System -Path 'C:\ProgramData\Collabhost' -Account 'NT SERVICE\Collabhost' -Expect Restricted }
+            }
+          } finally {
+            if ($proc -and -not $proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+              Get-Process -Name caddy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+      # Re-running the installer over a running service is the upgrade path: it
+      # stops the service, re-applies the permissions to everything the service
+      # and the proxy have written so far, and starts it again.
+      - name: Re-run the installer, and the proxy still runs with its storage writable
+        if: matrix.shape != 'console'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:COLLABHOST_INSTALL_BASE_URL = "http://127.0.0.1:$($env:MIRROR_PORT)"
+          $userBin = Join-Path $HOME '.collabhost\bin'
+          if ($env:SHAPE -eq 'system-service') {
+            & docs/install-system.ps1 -Version "v$env:VER"
+            $storage = 'C:\ProgramData\Collabhost\caddy'
+            $data    = 'C:\ProgramData\Collabhost\data'
+          } else {
+            & docs/install.ps1 -Version "v$env:VER" -SkipPath -RegisterUserService
+            $storage = Join-Path $userBin 'caddy'
+            $data    = Join-Path $userBin 'data'
+          }
+          $ok = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:58400/api/v1/status' -ErrorAction Stop | Out-Null
+              $ok = $true
+              break
+            } catch { Start-Sleep -Seconds 1 }
+          }
+          if (-not $ok) { throw 'Status endpoint never came up after the re-run.' }
+          & tools/assert-windows-proxy.ps1 -HttpsPort 8443 -StorageDir $storage -DataDir $data
+          if ($env:SHAPE -eq 'system-service') {
+            & tools/assert-windows-install-acl.ps1 -Scope System -Path 'C:\ProgramData\Collabhost' -Account 'NT SERVICE\Collabhost' -Expect Restricted
+          } else {
+            & tools/assert-windows-install-acl.ps1 -Scope User -Path $userBin -Account 'NT SERVICE\CollabhostUser' -Expect Restricted
+          }
+
+      - name: Teardown
+        if: always()
+        shell: pwsh
+        run: |
+          switch ($env:SHAPE) {
+            'user-service'   { try { & docs/install.ps1 -UnregisterUserService } catch { Write-Host "Unregister during teardown: $($_.Exception.Message)" } }
+            'system-service' { try { & docs/install-system.ps1 -Uninstall -PurgeData } catch { Write-Host "Uninstall during teardown: $($_.Exception.Message)" } }
+          }
+          Get-Process -Name collabhost, caddy, python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          exit 0

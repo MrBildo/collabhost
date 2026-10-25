@@ -1260,9 +1260,13 @@ The three account choices are mutually exclusive — pick at most one of
   it does not already own it — the virtual account and a dedicated named account
   both get this grant, so each is turnkey. Your own account already owns the
   tree, so no grant is added there. The grant is **read-only** on the tree and
-  **`Modify`** only on the three directories the service writes: `data\` (the
-  database, its backups and crash logs), `UserTypes\` and `dotnet-bundle\`. On
-  the default install directory (`%USERPROFILE%\.collabhost\bin`), the service
+  **`Modify`** only on the four directories the service writes: `data\` (the
+  database, its backups and crash logs), `UserTypes\`, `dotnet-bundle\` and
+  `caddy\` (the proxy's storage: the private key of its local certificate
+  authority and the certificates it issues; the bundled Caddy keeps it in the
+  install directory, and without write access there it can neither create its
+  certificate authority nor issue a certificate).
+  On the default install directory (`%USERPROFILE%\.collabhost\bin`), the service
   therefore cannot replace `collabhost.exe`, `caddy.exe`, `wwwroot\` or
   `appsettings.json` — this directory is on your `PATH`, and you run `collabhost`
   elevated for `--update-hosts` (§9.10.2). That holds only where nobody else has
@@ -1281,8 +1285,11 @@ The three account choices are mutually exclusive — pick at most one of
   (`Proxy:StoragePath` / `COLLABHOST_PROXY_STORAGE_PATH`, where the bundled Caddy
   keeps its certificates and the private key of its local certificate
   authority). The database and user types are checked at startup and fail there
-  with a "not writable" error. The certificate storage is not checked, so a
-  missing grant shows up later, when the proxy first issues a certificate.
+  with a "not writable" error. The certificate storage is not checked at
+  startup. Without write access there, the proxy cannot create its certificate
+  authority, so its first configuration load fails and it reports `degraded`
+  at once. Only where the authority already exists does the failure wait until
+  the proxy next issues or renews a certificate.
 - Refuses to change permissions if it finds a junction or symbolic link inside
   the install directory, and says which. The check runs before the service is
   stopped, so a refusal leaves the running service as it was. A permission
