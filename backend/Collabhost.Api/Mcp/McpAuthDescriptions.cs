@@ -1,16 +1,18 @@
 namespace Collabhost.Api.Mcp;
 
-// Shared parameter descriptions for the per-call authKey argument carried by every MCP
-// tool (Card #332). Centralized so wording changes propagate consistently to every tool's
-// schema description without per-tool drift.
+// Shared parameter description for the per-call authKey argument carried by every MCP tool.
+// One constant, so a wording change reaches every tool's schema description at once instead
+// of drifting tool by tool. This text is sent to every connected MCP client, so it names
+// nothing an operator outside this project could not look up.
 internal static class McpAuthDescriptions
 {
     public const string AuthKey =
-        "Your Collabhost user key (ULID) used to authenticate this call and stamp activity-log "
-        + "actor attribution. This is the blessed per-bot identity channel through a shared "
-        + "user-scope MCP server; each bot supplies its own key from its own per-bot config "
-        + "(e.g. COLLABHOST_AUTH_KEY in ~/.agents/bots/<bot>/.env). Optional only for backward "
-        + "compatibility: if omitted, the server falls back to the X-User-Key header captured "
-        + "at MCP session setup. Treat as a secret -- it is the same key that authorizes the "
-        + "Collabhost REST control plane.";
+        "Your Collabhost user key (ULID). It authenticates this call and records you as the "
+        + "actor in the activity log. Pass your own key on every call: one MCP server "
+        + "configuration is often shared by several agents, and the per-call key is how each "
+        + "agent's actions are attributed to that agent. Read it from your own secret store "
+        + "(an .env file, a secrets manager, or your agent's configuration). Optional only for "
+        + "backward compatibility: if omitted, the server falls back to the X-User-Key header "
+        + "set on the MCP connection. Treat as a secret -- it is the same key that authorizes "
+        + "the Collabhost REST control plane.";
 }

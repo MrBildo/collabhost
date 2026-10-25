@@ -66,9 +66,9 @@ public class McpRequestAuthenticator
         {
             return Unauthorized
             (
-                "Authentication required. Provide an authKey argument (your per-bot Collabhost "
+                "Authentication required. Provide an authKey argument (your own Collabhost "
                 + "user key) or set the X-User-Key header at MCP connection time. "
-                + "See INSTALL.md § MCP client setup."
+                + "See \"MCP client setup\" in INSTALL.md."
             );
         }
 

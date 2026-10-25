@@ -666,6 +666,103 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
         }
     }
 
+    // The server instructions and every tool and parameter description go to whatever MCP
+    // client an operator connects, so they must name nothing an operator cannot look up: an
+    // internal tracking number, this project's own agent-workspace layout, or a sibling
+    // product. The source-comment lint reads comments only, so the text sent at runtime needs
+    // its own check, read here the way a client receives it.
+    [Fact]
+    public async Task ServerInstructionsAndToolSchemas_NameNoInternalReferences()
+    {
+        var client = _client!;
+
+        var instructions = client.ServerInstructions ?? string.Empty;
+        var tools = await client.ListToolsAsync(cancellationToken: CancellationToken.None);
+
+        List<string> texts = [instructions];
+
+        foreach (var tool in tools)
+        {
+            texts.Add(tool.ProtocolTool.Description ?? string.Empty);
+
+            CollectStrings(tool.ProtocolTool.InputSchema, texts);
+        }
+
+        // Positive controls: an empty surface would pass the absence check below, so first show
+        // that the instructions and the shared authKey parameter description actually arrived.
+        tools.Count.ShouldBeGreaterThan(0);
+        instructions.ShouldContain("Authentication:", Case.Sensitive);
+        texts.ShouldContain(text => text.StartsWith("Your Collabhost user key", StringComparison.Ordinal));
+
+        // Distinct: the shared authKey description repeats once per tool.
+        var leaks = texts
+            .Where(NamesInternalReference)
+            .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+        leaks.ShouldBeEmpty
+        (
+            "MCP server instructions or tool schemas name an internal reference an operator cannot "
+            + "resolve. Offending text: " + string.Join(" | ", leaks)
+        );
+    }
+
+    private static readonly string[] _internalReferenceMarkers =
+    [
+        "Card #",
+        ".agents",
+        "bots/",
+        "Collaboard",
+        "COLLABOARD",
+        "Collattice",
+        "\u00a7"
+    ];
+
+    private static bool NamesInternalReference(string text)
+    {
+        if (_internalReferenceMarkers.Any(marker => text.Contains(marker, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        // A bare "#" followed by a digit is a tracking-number reference.
+        for (var i = 0; i + 1 < text.Length; i++)
+        {
+            if (text[i] == '#' && char.IsAsciiDigit(text[i + 1]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void CollectStrings(System.Text.Json.JsonElement element, List<string> into)
+    {
+        switch (element.ValueKind)
+        {
+            case System.Text.Json.JsonValueKind.String:
+                into.Add(element.GetString() ?? string.Empty);
+                break;
+
+            case System.Text.Json.JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    CollectStrings(property.Value, into);
+                }
+
+                break;
+
+            case System.Text.Json.JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    CollectStrings(item, into);
+                }
+
+                break;
+        }
+    }
+
     // Looks up the most recent ActivityEventTypes.AppCreated row for the given app slug via
     // the REST events endpoint. Returns the actor's id/name for attribution assertions.
     private async Task<(string ActorId, string ActorName)> FindAppCreatedEventAsync(string appSlug)
