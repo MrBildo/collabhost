@@ -117,6 +117,13 @@ public sealed class CreateAppOperation
             return OperationResult<CreateAppOutcome>.NotFound("App type not found.");
         }
 
+        var refusal = DescribeRefusal(appType, _typeStore);
+
+        if (refusal is not null)
+        {
+            return OperationResult<CreateAppOutcome>.Validation(refusal);
+        }
+
         // Validate all sections BEFORE creating the app so registration is transactional. Validation
         // runs ONCE here, not in the adapters (Marcus design §1.3) -- the same placement
         // UpdateSettingsOperation uses. The adapter already assembled the divergent input (REST's
@@ -273,6 +280,29 @@ public sealed class CreateAppOperation
         var hints = ResolveHelpfulNextSteps(hostname);
 
         return OperationResult<CreateAppOutcome>.Success(new CreateAppOutcome(app.Id, app.Slug, hints));
+    }
+
+    // A type marked internal exists for the apps Collabhost creates for itself: today only
+    // system-service, the proxy's type, which the proxy seeder writes directly and never through this
+    // operation. Such a type is already left out of every type list, so registration refuses it too,
+    // and what an operator is offered and what registration accepts are one set. Apps of such a type
+    // that already exist are untouched: editing, starting, stopping and deleting never consult the
+    // flag. Public because register_app checks it before its own install-directory check, so a caller
+    // is told the real reason.
+    public static string? DescribeRefusal(AppType appType, TypeStore typeStore)
+    {
+        if (!appType.IsInternal)
+        {
+            return null;
+        }
+
+        var registrable = typeStore.ListTypes()
+            .Where(type => !type.IsInternal)
+                .Select(type => type.Slug);
+
+        return $"App type '{appType.Slug}' cannot be registered: Collabhost uses it only for the apps it "
+            + "creates for itself, such as its proxy. The types you can register are "
+            + $"{string.Join(", ", registrable)}.";
     }
 
     private static IReadOnlyList<string> ResolveHelpfulNextSteps(string? hostname) =>

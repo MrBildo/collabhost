@@ -309,7 +309,7 @@ public class DiscoveryTools
         Idempotent = true,
         OpenWorld = false
     )]
-    [Description("Lists the application types available for registration, with each type's slug, display name, description, and capability names. Use this when registering a new app to discover valid app type slugs and which capabilities each type has. It returns six built-in types (dotnet-app, nodejs-app, static-site, executable, external-route, internal-service) plus any custom types the operator has added, except those marked internal.")]
+    [Description("Lists the application types available for registration, with each type's slug, display name, description, and capability names. Use this when registering a new app to discover valid app type slugs and which capabilities each type has. It returns six built-in types (dotnet-app, nodejs-app, static-site, executable, external-route, internal-service) plus any custom types the operator has added, except those marked internal, which register_app refuses.")]
     public async Task<CallToolResult> ListAppTypesAsync
     (
         [Description(McpAuthDescriptions.AuthKey)] string? authKey = null,
@@ -329,8 +329,8 @@ public class DiscoveryTools
 
         foreach (var appType in appTypes)
         {
-            // Internal types (e.g. system-service) are platform-managed and not
-            // intended for agent registration. Filter consistently with the
+            // Internal types (e.g. system-service) are platform-managed, and
+            // registration refuses them. Filter consistently with the
             // REST /api/v1/app-types endpoint.
             if (appType.IsInternal)
             {

@@ -1,9 +1,11 @@
 using System.IO.Pipelines;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
 using Collabhost.Api.Authorization;
 using Collabhost.Api.Data.AppTypes;
+using Collabhost.Api.Registry;
 using Collabhost.Api.Tests.Fixtures;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -317,6 +319,99 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
             {
                 Directory.Delete(installDirectory, true);
             }
+        }
+    }
+
+    // register_app refuses system-service, the type of the platform's own proxy, with the same
+    // message REST returns. Without an install directory the refusal still comes first, so the
+    // caller is told the real reason rather than being asked for a directory it cannot use.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RegisterApp_SystemService_IsRefusedNamingRegistrableTypes(bool withInstallDirectory)
+    {
+        var client = _client!;
+
+        var appName = $"mcp-sys-refused-{Guid.NewGuid().ToString("N")[..8]}";
+
+        var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["name"] = appName,
+            ["appTypeSlug"] = "system-service",
+            ["authKey"] = ApiFixture.AdminKey
+        };
+
+        if (withInstallDirectory)
+        {
+            arguments["installDirectory"] = Path.GetTempPath();
+        }
+
+        try
+        {
+            var result = await client.CallToolAsync("register_app", arguments, cancellationToken: CancellationToken.None);
+
+            (result.IsError ?? false).ShouldBeTrue("register_app must refuse system-service.");
+
+            result.Content.OfType<TextContentBlock>().Single().Text.ShouldBe
+            (
+                "App type 'system-service' cannot be registered: Collabhost uses it only for the apps it "
+                + "creates for itself, such as its proxy. The types you can register are dotnet-app, "
+                + "executable, external-route, internal-service, nodejs-app, static-site."
+            );
+
+            using var getRequest = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/apps/{appName}");
+            getRequest.Headers.Add("X-User-Key", ApiFixture.AdminKey);
+
+            using var getResponse = await _fixture.Client.SendAsync(getRequest);
+
+            getResponse.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await DeleteAppAsync(_fixture.Client, appName);
+        }
+    }
+
+    // A system-service app that already exists (the seeded proxy on a real install, or one an
+    // operator registered before registration refused the type) is still listed by list_apps. The
+    // row is written straight into the store, because registration can no longer create one.
+    [Fact]
+    public async Task ListApps_IncludesAnExistingSystemServiceApp()
+    {
+        var client = _client!;
+
+        var slug = $"mcp-existing-sys-{Guid.NewGuid().ToString("N")[..8]}";
+
+        await _fixture.Services.GetRequiredService<AppStore>().CreateAsync
+        (
+            new App
+            {
+                Slug = slug,
+                DisplayName = "Existing System Service",
+                AppTypeSlug = "system-service"
+            },
+            CancellationToken.None
+        );
+
+        try
+        {
+            var result = await client.CallToolAsync
+            (
+                "list_apps",
+                new Dictionary<string, object?>(StringComparer.Ordinal) { ["authKey"] = ApiFixture.AdminKey },
+                cancellationToken: CancellationToken.None
+            );
+
+            ShouldNotBeBindingError(result, "list_apps");
+
+            var text = result.Content.OfType<TextContentBlock>().Single().Text;
+
+            text.ShouldContain($"\"{slug}\"", Case.Sensitive);
+            text.ShouldContain("\"system-service\"", Case.Sensitive);
+        }
+        finally
+        {
+            await DeleteAppAsync(_fixture.Client, slug);
         }
     }
 

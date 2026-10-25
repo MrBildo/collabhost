@@ -62,8 +62,12 @@ namespace Collabhost.Api.Tests.Operations;
 //     app.started -- the 1-vs-2-event conditional the migration must preserve. This is the path the
 //     operation's hasExternalTarget branch uniquely owns.
 //
-//   - Hints scoping: a non-routed type (system-service -- no routing binding) gets an EMPTY hint list
-//     (no Caddy route, no hosts entry), proving the ResolveHelpfulNextSteps routing gate folded in.
+//   - Hints scoping: a non-routed type (internal-service -- no routing binding) gets an EMPTY hint
+//     list (no Caddy route, no hosts entry), proving the ResolveHelpfulNextSteps routing gate folded in.
+//
+//   - Refusal: a type marked internal (system-service, the proxy's type) is refused with a
+//     Validation result naming the registrable types, and nothing is created. The proxy seeder, which
+//     does not go through registration, still seeds the proxy app of that type.
 //
 // The full HTTP/transport happy path is the dual oracle: RegistrationValidationTests (REST, route-
 // level, untouched) + McpToolTests.RegisterApp_WithInstallDirectory_PersistsArtifactLocation (MCP,
@@ -294,20 +298,107 @@ public sealed class CreateAppOperationTests : IDisposable
     }
 
     [Fact]
-    public async Task SystemService_Created_EmitsNoHint()
+    public async Task InternalService_Created_EmitsNoHint()
     {
         var (operation, _) = await CreateOperationAsync();
 
         var result = await operation.ExecuteAsync
         (
-            new CreateAppCommand("svc-a", "Svc A", "system-service", []),
+            new CreateAppCommand("svc-a", "Svc A", "internal-service", []),
             CancellationToken.None
         );
 
         result.IsSuccess.ShouldBeTrue();
 
-        // system-service has no routing binding -> no Caddy route -> no hosts hint.
+        // internal-service has no routing binding, so no proxy route and no hosts hint.
         result.Value!.Hints.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task SystemService_ReturnsValidation_NamesRegistrableTypes_NoApp_NoEvent()
+    {
+        var (operation, _) = await CreateOperationAsync();
+
+        var result = await operation.ExecuteAsync
+        (
+            new CreateAppCommand("svc-b", "Svc B", "system-service", []),
+            CancellationToken.None
+        );
+
+        result.IsSuccess.ShouldBeFalse();
+        result.FailureKind.ShouldBe(OperationFailureKind.Validation);
+
+        result.Error.ShouldBe
+        (
+            "App type 'system-service' cannot be registered: Collabhost uses it only for the apps it "
+            + "creates for itself, such as its proxy. The types you can register are dotnet-app, "
+            + "executable, external-route, internal-service, nodejs-app, static-site."
+        );
+
+        await AssertAppCountAsync(0);
+        await AssertNoEventRecordedAsync();
+    }
+
+    // The proxy app comes from ProxyAppSeeder, which writes its rows directly and never goes through
+    // registration, so refusing the type at registration leaves the seed alone. Both the fresh-install
+    // run (no proxy row yet) and the upgrade run (the row an earlier version seeded is already there)
+    // are driven against the same database the refused registration uses.
+    [Fact]
+    public async Task ProxySeed_StillSeedsSystemServiceApp_WhileRegistrationRefusesTheType()
+    {
+        var binaryDirectory = Path.Combine(Path.GetTempPath(), $"collabhost-493-seed-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(binaryDirectory);
+
+        var binaryPath = Path.Combine(binaryDirectory, "caddy-fake");
+        await File.WriteAllBytesAsync(binaryPath, []);
+
+        try
+        {
+            var (typeStore, _) = await CreateStoresAsync();
+
+            var seeder = new ProxyAppSeeder
+            (
+                _appStore,
+                _dbFactory,
+                typeStore,
+                new ProxySettings
+                {
+                    BaseDomain = "collab.internal",
+                    BinaryPath = binaryPath,
+                    ListenAddress = ":443",
+                    CertLifetime = "168h"
+                },
+                _activityEventStore,
+                NullLogger<ProxyAppSeeder>.Instance
+            );
+
+            await seeder.SeedAsync(CancellationToken.None);
+
+            var seeded = await _appStore.GetBySlugAsync("proxy", CancellationToken.None);
+            seeded.ShouldNotBeNull();
+            seeded.AppTypeSlug.ShouldBe("system-service");
+
+            var (operation, _) = await CreateOperationAsync();
+
+            var refused = await operation.ExecuteAsync
+            (
+                new CreateAppCommand("second-proxy", "Second Proxy", "system-service", []),
+                CancellationToken.None
+            );
+
+            refused.FailureKind.ShouldBe(OperationFailureKind.Validation);
+
+            await seeder.SeedAsync(CancellationToken.None);
+
+            var listed = await _appStore.ListAsync(CancellationToken.None);
+
+            listed.Select(app => app.Slug).ShouldBe(["proxy"]);
+            listed[0].Id.ShouldBe(seeded.Id);
+        }
+        finally
+        {
+            Directory.Delete(binaryDirectory, true);
+        }
     }
 
     // --- Helpers ---
