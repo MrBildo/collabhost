@@ -215,11 +215,11 @@ public sealed class CreateAppOperation
 
         // Persist the App row and every capability override in ONE transaction (the store owns the
         // commit). The prior shape created the App, then looped saving overrides, each in its own
-        // context -- so a failure mid-loop left a half-configured app on disk. The
-        // exists-check above closes the common duplicate-slug case, but two concurrent creates of the
-        // same slug can both pass the check and race to insert -- the loser hits the unique Slug
-        // index and the store throws DbUpdateException. Map that to the same Conflict the exists-check
-        // returns (a 409), not an unhandled 500.
+        // context -- so a failure mid-loop left a half-configured app on disk. The exists-check above
+        // closes the common duplicate-slug case, but two concurrent creates of the same slug can both
+        // pass the check and race to insert -- the loser hits the unique Slug index and the store
+        // throws DbUpdateException. Map that to the same Conflict the exists-check returns (a 409),
+        // not an unhandled 500.
         var overridesToPersist = validatedOverrides
             .Select(o => (o.SectionKey, o.Overrides.ToJsonString(_overrideSerializationOptions)))
                 .ToList();
@@ -267,10 +267,10 @@ public sealed class CreateAppOperation
             ct
         );
 
-        // External-route apps auto-enable at registration (above). Record app.started so the
-        // activity feed reflects the route going live -- the same event the manual
-        // start path records for routing-only apps. The 1-vs-2-event conditional: normal registration
-        // records only app.created; an external-route records BOTH. Preserved exactly.
+        // External-route apps auto-enable at registration (above). Record app.started so the activity
+        // feed reflects the route going live -- the same event the manual start path records for
+        // routing-only apps. The 1-vs-2-event conditional: normal registration records only
+        // app.created; an external-route records BOTH. Preserved exactly.
         if (hasExternalTarget)
         {
             await RecordAsync(ActivityEventTypes.AppStarted, app, ct);
@@ -283,13 +283,14 @@ public sealed class CreateAppOperation
         return OperationResult<CreateAppOutcome>.Success(new CreateAppOutcome(app.Id, app.Slug, hints));
     }
 
-    // A type marked internal exists for the apps Collabhost creates for itself: today only
-    // system-service, the proxy's type, which the proxy seeder writes directly and never through this
-    // operation. Such a type is already left out of every type list, so registration refuses it too,
-    // and what an operator is offered and what registration accepts are one set. Apps of such a type
-    // that already exist are untouched: editing, starting, stopping and deleting never consult the
-    // flag. Public because register_app checks it before its own install-directory check, so a caller
-    // is told the real reason.
+    // A type marked internal is left out of every type list, so registration refuses it too, and
+    // what an operator is offered and what registration accepts are one set. The built-in internal
+    // type, system-service, is the proxy's type: the proxy seeder writes that app directly and never
+    // through this operation. A custom type can be marked internal in its own definition file, and
+    // is refused for that reason, so its message names the flag rather than the proxy. Apps of an
+    // internal type that already exist are untouched: editing, starting, stopping and deleting never
+    // consult the flag. Public because register_app checks it before its own install-directory
+    // check, so a caller is told the real reason.
     public static string? DescribeRefusal(AppType appType, TypeStore typeStore)
     {
         if (!appType.IsInternal)
@@ -297,13 +298,14 @@ public sealed class CreateAppOperation
             return null;
         }
 
-        var registrable = typeStore.ListTypes()
-            .Where(type => !type.IsInternal)
-                .Select(type => type.Slug);
+        var reason = appType.IsBuiltIn
+            ? "Collabhost uses it only for the apps it creates for itself, such as its proxy"
+            : "its type definition marks it internal (\"isInternal\": true), and internal types cannot be registered";
 
-        return $"App type '{appType.Slug}' cannot be registered: Collabhost uses it only for the apps it "
-            + "creates for itself, such as its proxy. The types you can register are "
-            + $"{string.Join(", ", registrable)}.";
+        var registrable = typeStore.ListRegistrableTypes().Select(type => type.Slug);
+
+        return $"App type '{appType.Slug}' cannot be registered: {reason}. "
+            + $"The types you can register are {string.Join(", ", registrable)}.";
     }
 
     private static IReadOnlyList<string> ResolveHelpfulNextSteps(string? hostname) =>

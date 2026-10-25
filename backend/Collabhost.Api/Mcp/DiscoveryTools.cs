@@ -323,20 +323,14 @@ public class DiscoveryTools
             return authError;
         }
 
-        var appTypes = _typeStore.ListTypes();
+        // Internal types (e.g. system-service) are platform-managed, and registration refuses
+        // them, so they are left out here as they are on the REST /api/v1/app-types endpoint.
+        var appTypes = _typeStore.ListRegistrableTypes();
 
         var items = new List<object>();
 
         foreach (var appType in appTypes)
         {
-            // Internal types (e.g. system-service) are platform-managed, and
-            // registration refuses them. Filter consistently with the
-            // REST /api/v1/app-types endpoint.
-            if (appType.IsInternal)
-            {
-                continue;
-            }
-
             var bindings = _typeStore.GetBindings(appType.Slug);
             var capabilities = bindings?.Keys.ToList() ?? [];
 

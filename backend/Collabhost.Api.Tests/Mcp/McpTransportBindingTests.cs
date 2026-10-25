@@ -352,7 +352,9 @@ public class McpTransportBindingTests(ApiFixture fixture) : IAsyncLifetime
 
             (result.IsError ?? false).ShouldBeTrue("register_app must refuse system-service.");
 
-            result.Content.OfType<TextContentBlock>().Single().Text.ShouldBe
+            var text = result.Content.OfType<TextContentBlock>().Single().Text;
+
+            text.ShouldBe
             (
                 "App type 'system-service' cannot be registered: Collabhost uses it only for the apps it "
                 + "creates for itself, such as its proxy. The types you can register are dotnet-app, "

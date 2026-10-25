@@ -50,19 +50,17 @@ public class ExistingSystemServiceAppTests(ApiFixture fixture)
 
         try
         {
-            using (var listResponse = await SendAsync(HttpMethod.Get, "/api/v1/apps"))
-            {
-                listResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using var listResponse = await SendAsync(HttpMethod.Get, "/api/v1/apps");
 
-                var listBody = await listResponse.Content.ReadAsStringAsync();
+            listResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-                listBody.ShouldContain($"\"{slug}\"", Case.Sensitive);
-            }
+            var listBody = await listResponse.Content.ReadAsStringAsync();
 
-            using (var detailResponse = await SendAsync(HttpMethod.Get, $"/api/v1/apps/{slug}"))
-            {
-                detailResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-            }
+            listBody.ShouldContain($"\"{slug}\"", Case.Sensitive);
+
+            using var detailResponse = await SendAsync(HttpMethod.Get, $"/api/v1/apps/{slug}");
+
+            detailResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
 
             var changes = new
             {
@@ -75,19 +73,17 @@ public class ExistingSystemServiceAppTests(ApiFixture fixture)
                 }
             };
 
-            using (var saveResponse = await SendAsync(HttpMethod.Put, $"/api/v1/apps/{slug}/settings", changes))
-            {
-                saveResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using var saveResponse = await SendAsync(HttpMethod.Put, $"/api/v1/apps/{slug}/settings", changes);
 
-                var saveBody = await saveResponse.Content.ReadAsStringAsync();
+            saveResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-                saveBody.ShouldContain("EXAMPLE_TOKEN", Case.Sensitive);
-            }
+            var saveBody = await saveResponse.Content.ReadAsStringAsync();
 
-            using (var deleteResponse = await SendAsync(HttpMethod.Delete, $"/api/v1/apps/{slug}"))
-            {
-                deleteResponse.IsSuccessStatusCode.ShouldBeTrue();
-            }
+            saveBody.ShouldContain("EXAMPLE_TOKEN", Case.Sensitive);
+
+            using var deleteResponse = await SendAsync(HttpMethod.Delete, $"/api/v1/apps/{slug}");
+
+            deleteResponse.IsSuccessStatusCode.ShouldBeTrue();
 
             using var afterDeleteResponse = await SendAsync(HttpMethod.Get, $"/api/v1/apps/{slug}");
 

@@ -205,6 +205,12 @@ public class TypeStore
     public IReadOnlyList<AppType> ListTypes() =>
         _snapshot.Types;
 
+    // The types an operator can register: every loaded type except those marked internal. The
+    // type lists, the dashboard's type count and registration's refusal all read this one method,
+    // so what an operator is offered and what registration accepts cannot drift apart.
+    public IReadOnlyList<AppType> ListRegistrableTypes() =>
+        [.. _snapshot.Types.Where(type => !type.IsInternal)];
+
     public IReadOnlyDictionary<string, string>? GetBindings(string appTypeSlug) =>
         _snapshot.BindingsByTypeSlug.GetValueOrDefault(appTypeSlug);
 
